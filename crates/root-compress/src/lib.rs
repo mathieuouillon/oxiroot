@@ -122,15 +122,37 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
 /// Compress `src` according to `settings` (`algorithm * 100 + level`).
 ///
 /// `settings == 0` means "store uncompressed": the input is returned unchanged
-/// and the caller is expected to store it without a block header. Real encoders
-/// land in M4+.
+/// (the caller stores it without a block header). Otherwise the data is encoded
+/// into ROOT compression blocks. Only Zstd encoding (algorithm 5) is supported.
 pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
     if settings == 0 {
         return Ok(src.to_vec());
     }
-    Err(CompressError::Codec(format!(
-        "compression settings {settings} not yet supported (encoders arrive in M4)"
-    )))
+    let (algorithm, _level) = split_settings(settings);
+    if algorithm != 5 {
+        return Err(CompressError::Codec(format!(
+            "encoding algorithm {algorithm} is not supported (only Zstd)"
+        )));
+    }
+
+    let mut out = Vec::new();
+    for chunk in src.chunks(MAX_CHUNK_SIZE.max(1)) {
+        let frame = codec::zstd_encode(chunk);
+        if frame.len() > MAX_CHUNK_SIZE {
+            return Err(CompressError::Codec(
+                "compressed block exceeds 24-bit size".into(),
+            ));
+        }
+        BlockHeader {
+            tag: *b"ZS",
+            method: 1,
+            compressed_size: frame.len() as u32,
+            uncompressed_size: chunk.len() as u32,
+        }
+        .write(&mut out);
+        out.extend_from_slice(&frame);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -156,6 +178,17 @@ mod tests {
     fn compress_uncompressed_passthrough() {
         let data = b"hello root".to_vec();
         assert_eq!(compress(&data, 0).unwrap(), data);
+    }
+
+    #[test]
+    fn compress_zstd_round_trips() {
+        // Zstd level 5 -> settings 505. Compress, then decompress back.
+        let data = b"the quick brown fox jumps over the lazy dog. ".repeat(40);
+        let compressed = compress(&data, 505).unwrap();
+        // The first block must carry the Zstd tag.
+        assert_eq!(&compressed[0..2], b"ZS");
+        let out = decompress(&compressed, data.len()).unwrap();
+        assert_eq!(out, data);
     }
 
     #[test]

@@ -297,7 +297,16 @@ pub fn rntuple_file_bytes(file_name: &str, ntuple_name: &str, fields: &[ScalarFi
     let name_title_len = (1 + file_name.len()) + 1;
     let f_nbytes_name = first_klen as usize + name_title_len;
     let first_obj_len = (name_title_len + 30 + 18) as u32;
-    write_key_header(&mut w, "TFile", file_name, "", first_obj_len, 100, 0);
+    write_key_header(
+        &mut w,
+        "TFile",
+        file_name,
+        "",
+        first_obj_len,
+        first_obj_len,
+        100,
+        0,
+    );
     w.string(file_name);
     w.string("");
     w.be_i16(5);
@@ -340,6 +349,7 @@ pub fn rntuple_file_bytes(file_name: &str, ntuple_name: &str, fields: &[ScalarFi
         ntuple_name,
         "",
         anchor_obj.len() as u32,
+        anchor_obj.len() as u32,
         anchor_seek as u64,
         100,
     );
@@ -354,6 +364,7 @@ pub fn rntuple_file_bytes(file_name: &str, ntuple_name: &str, fields: &[ScalarFi
         file_name,
         "",
         keylist_obj_len,
+        keylist_obj_len,
         keylist_seek as u64,
         100,
     );
@@ -363,6 +374,7 @@ pub fn rntuple_file_bytes(file_name: &str, ntuple_name: &str, fields: &[ScalarFi
         "ROOT::RNTuple",
         ntuple_name,
         "",
+        anchor_obj.len() as u32,
         anchor_obj.len() as u32,
         anchor_seek as u64,
         100,

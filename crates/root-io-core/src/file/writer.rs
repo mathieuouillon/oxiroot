@@ -37,19 +37,22 @@ pub fn key_len(class: &str, name: &str, title: &str) -> u16 {
 }
 
 /// Write a small-format (32-bit seek) `TKey` header (no payload). `obj_len` is
-/// the uncompressed object size; the on-disk `Nbytes` is `KeyLen + obj_len`
-/// (i.e. the object is stored uncompressed).
+/// the uncompressed object size (`ObjLen`); `payload_len` is the on-disk payload
+/// size (equal to `obj_len` when stored uncompressed). `Nbytes = KeyLen +
+/// payload_len`.
+#[allow(clippy::too_many_arguments)]
 pub fn write_key_header(
     w: &mut WBuffer,
     class: &str,
     name: &str,
     title: &str,
     obj_len: u32,
+    payload_len: u32,
     seek_key: u64,
     seek_pdir: u64,
 ) {
     let klen = key_len(class, name, title);
-    w.be_i32((klen as u32 + obj_len) as i32); // Nbytes (uncompressed: KeyLen + ObjLen)
+    w.be_i32((klen as u32 + payload_len) as i32); // Nbytes = KeyLen + on-disk payload
     w.be_u16(4); // key version (small format)
     w.be_u32(obj_len);
     w.be_u32(DATIME);
@@ -62,8 +65,25 @@ pub fn write_key_header(
     w.string(title);
 }
 
-/// Build a complete TFile holding `objects` in its root directory.
-pub fn write_root_file(file_name: &str, objects: &[ObjectRecord]) -> Vec<u8> {
+/// The on-disk payload for an object: compressed when `compression != 0` and the
+/// result is actually smaller, otherwise the raw object bytes.
+fn on_disk_payload(object: &[u8], compression: u32) -> Vec<u8> {
+    if compression == 0 {
+        return object.to_vec();
+    }
+    match root_compress::compress(object, compression) {
+        Ok(compressed) if compressed.len() < object.len() => compressed,
+        _ => object.to_vec(),
+    }
+}
+
+/// Build a complete TFile holding `objects` in its root directory, optionally
+/// compressing object payloads (`compression` = `algorithm*100 + level`, 0 = none).
+pub fn write_root_file(file_name: &str, objects: &[ObjectRecord], compression: u32) -> Vec<u8> {
+    let payloads: Vec<Vec<u8>> = objects
+        .iter()
+        .map(|o| on_disk_payload(&o.object, compression))
+        .collect();
     let mut w = WBuffer::new();
 
     // --- File header (100 bytes; pointers patched at the end). ---
@@ -76,7 +96,7 @@ pub fn write_root_file(file_name: &str, objects: &[ObjectRecord]) -> Vec<u8> {
     let p_nfree = w.reserve(4);
     let p_nbytes_name = w.reserve(4);
     w.u8(4); // fUnits
-    w.be_u32(0); // fCompress (uncompressed)
+    w.be_u32(compression); // fCompress
     let p_seek_info = w.reserve(4);
     let p_nbytes_info = w.reserve(4);
     w.be_u16(1); // fUUID version
@@ -92,7 +112,16 @@ pub fn write_root_file(file_name: &str, objects: &[ObjectRecord]) -> Vec<u8> {
     let dir_record_len = 30 + 18; // TDirectory fields (30) + UUID (18)
     let first_obj_len = (name_title_len + dir_record_len) as u32;
 
-    write_key_header(&mut w, DIR_CLASS, file_name, "", first_obj_len, 100, 0);
+    write_key_header(
+        &mut w,
+        DIR_CLASS,
+        file_name,
+        "",
+        first_obj_len,
+        first_obj_len,
+        100,
+        0,
+    );
     w.string(file_name); // object: name
     w.string(""); // object: title
                   // TDirectory record.
@@ -109,7 +138,7 @@ pub fn write_root_file(file_name: &str, objects: &[ObjectRecord]) -> Vec<u8> {
 
     // --- One key + object per stored object. ---
     let mut seeks = Vec::with_capacity(objects.len());
-    for obj in objects {
+    for (i, obj) in objects.iter().enumerate() {
         let seek = w.len();
         write_key_header(
             &mut w,
@@ -117,10 +146,11 @@ pub fn write_root_file(file_name: &str, objects: &[ObjectRecord]) -> Vec<u8> {
             &obj.name,
             &obj.title,
             obj.object.len() as u32,
+            payloads[i].len() as u32,
             seek as u64,
             100,
         );
-        w.bytes(&obj.object);
+        w.bytes(&payloads[i]);
         seeks.push(seek);
     }
 
@@ -139,6 +169,7 @@ pub fn write_root_file(file_name: &str, objects: &[ObjectRecord]) -> Vec<u8> {
         file_name,
         "",
         keylist_obj_len,
+        keylist_obj_len,
         keylist_seek as u64,
         100,
     );
@@ -150,6 +181,7 @@ pub fn write_root_file(file_name: &str, objects: &[ObjectRecord]) -> Vec<u8> {
             &obj.name,
             &obj.title,
             obj.object.len() as u32,
+            payloads[i].len() as u32,
             seeks[i] as u64,
             100,
         );

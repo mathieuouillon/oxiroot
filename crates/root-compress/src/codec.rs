@@ -27,3 +27,9 @@ pub(crate) fn zlib_decode(payload: &[u8]) -> Result<Vec<u8>, CompressError> {
     miniz_oxide::inflate::decompress_to_vec_zlib(payload)
         .map_err(|e| CompressError::Codec(format!("zlib: {e:?}")))
 }
+
+/// Encode `data` as a single standard Zstd frame (pure-Rust `ruzstd`). The frame
+/// is what ROOT stores after a block's 9-byte header.
+pub(crate) fn zstd_encode(data: &[u8]) -> Vec<u8> {
+    ruzstd::encoding::compress_to_vec(data, ruzstd::encoding::CompressionLevel::Fastest)
+}

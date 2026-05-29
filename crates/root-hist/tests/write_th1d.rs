@@ -39,7 +39,7 @@ fn writes_a_root_file_that_round_trips() {
 
     // Write a complete .root file, then read it back with our own reader.
     let out = std::path::PathBuf::from("/tmp/rootrs_written_th1d.root");
-    root_hist::write_th1d_file(&out, &h).expect("write file");
+    root_hist::write_th1d_file(&out, &h, 0).expect("write file");
 
     let f2 = RFile::open(&out).expect("reopen written file");
     let keys: Vec<(&str, &str)> = f2
@@ -51,4 +51,20 @@ fn writes_a_root_file_that_round_trips() {
 
     let h2 = read_th1d(&f2, "h1").expect("read back TH1D");
     assert_eq!(h2, h, "histogram must survive the write→read round-trip");
+}
+
+#[test]
+fn writes_a_zstd_compressed_th1d() {
+    let f = RFile::open(fixture("th1d_uncompressed.root")).expect("open fixture");
+    let h = read_th1d(&f, "h1").expect("read TH1D");
+
+    // Write the same histogram Zstd-compressed (505 = Zstd level 5).
+    let out = std::path::PathBuf::from("/tmp/rootrs_written_th1d_zstd.root");
+    root_hist::write_th1d_file(&out, &h, 505).expect("write compressed file");
+
+    let f2 = RFile::open(&out).expect("reopen");
+    let key = f2.key("h1").expect("h1 key");
+    assert!(!key.is_uncompressed(), "object should be stored compressed");
+    let h2 = read_th1d(&f2, "h1").expect("read back compressed TH1D");
+    assert_eq!(h2, h, "compressed histogram must round-trip");
 }

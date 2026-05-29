@@ -13,8 +13,9 @@ use root_io_core::{write_root_file, ObjectRecord};
 use crate::axis::TAxis;
 use crate::th1::TH1;
 
-/// Write a single `TH1D` into a new ROOT file at `path`.
-pub fn write_th1d_file(path: &Path, h: &TH1) -> std::io::Result<()> {
+/// Write a single `TH1D` into a new ROOT file at `path`. `compression` is a
+/// ROOT setting (`algorithm*100 + level`, 0 = none; e.g. 505 = Zstd level 5).
+pub fn write_th1d_file(path: &Path, h: &TH1, compression: u32) -> std::io::Result<()> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -25,7 +26,7 @@ pub fn write_th1d_file(path: &Path, h: &TH1) -> std::io::Result<()> {
         title: h.title.clone(),
         object: th1d_to_bytes(h),
     };
-    std::fs::write(path, write_root_file(file_name, &[record]))
+    std::fs::write(path, write_root_file(file_name, &[record], compression))
 }
 
 // `fBits` values ROOT writes for the embedded TObjects in a fresh histogram.
