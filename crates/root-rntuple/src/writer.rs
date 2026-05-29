@@ -1,12 +1,15 @@
 //! Writing an RNTuple into a ROOT file.
 //!
-//! Supports scalar (`bool`/`i32`/`i64`/`f32`/`f64`), `std::string`, and
-//! `std::vector<T>` fields, uncompressed and single-cluster, with non-split
-//! column encodings — the simplest form the spec allows. The header/page/
-//! page-list/footer envelopes are written as raw blobs at the offsets the
-//! anchor (and the page locators) point to; only the anchor is a `TKey`.
-//! Validated by reading the result back and by official ROOT / uproot.
+//! [`write_rntuple_file`] writes a whole RNTuple in one shot, supporting scalar
+//! (`bool`/`i32`/`i64`/`f32`/`f64`), `std::string`, and `std::vector<T>` fields
+//! in a single cluster, with non-split column encodings and optional page
+//! compression. [`RNTupleWriter`] streams scalar columns one cluster per batch,
+//! so a large dataset need not be held in memory at once. The header/page/
+//! page-list/footer envelopes are written as raw blobs at the offsets the anchor
+//! (and the page locators) point to; only the anchor is a `TKey`. Validated by
+//! reading the result back and by official ROOT / uproot.
 
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use root_io_core::buffer::WBuffer;
@@ -430,6 +433,7 @@ fn build_page_list(
 
 fn build_footer(
     n_entries: u32,
+    num_clusters: u32,
     page_list_offset: usize,
     page_list_len: usize,
     header_checksum: u64,
@@ -444,10 +448,12 @@ fn build_footer(
     }
     p.extend_from_slice(&record_frame(&ext));
 
+    // One cluster group spanning every cluster; it links to the single page-list
+    // envelope that details all clusters' pages.
     let mut cg = Vec::new();
     cg.extend_from_slice(&0u64.to_le_bytes()); // min entry
     cg.extend_from_slice(&(n_entries as u64).to_le_bytes()); // entry span
-    cg.extend_from_slice(&1u32.to_le_bytes()); // num clusters
+    cg.extend_from_slice(&num_clusters.to_le_bytes()); // num clusters
     cg.extend_from_slice(&(page_list_len as u64).to_le_bytes()); // envelope link: uncompressed len
     cg.extend_from_slice(&(page_list_len as i32).to_le_bytes()); // locator size
     cg.extend_from_slice(&(page_list_offset as u64).to_le_bytes()); // locator offset
@@ -580,6 +586,7 @@ pub fn rntuple_file_bytes(
     let seek_footer = w.len();
     let footer_env = build_footer(
         n_entries,
+        1,
         page_list_offset,
         page_list_env.len(),
         header_checksum,
@@ -653,4 +660,376 @@ pub fn write_rntuple_file(
         path,
         rntuple_file_bytes(file_name, ntuple_name, fields, compression),
     )
+}
+
+// --- streaming, multi-cluster writer --------------------------------------
+
+/// One page's location for the page list (one page per column per cluster).
+struct PageRec {
+    offset: u64,
+    disk_size: usize,
+    n_elements: u32,
+    element_offset: i64,
+}
+
+/// Schema + header bookkeeping, fixed once the first batch defines it.
+struct HeaderState {
+    seek: u64,
+    len: usize,
+    checksum: u64,
+    /// `(column type, bit width)` per physical column — must match every batch.
+    signature: Vec<(u16, u16)>,
+}
+
+/// A streaming RNTuple writer: each [`write_batch`](RNTupleWriter::write_batch)
+/// flushes one *cluster* to the sink, so a large dataset can be written one
+/// chunk at a time without ever holding it all in memory. Call
+/// [`finish`](RNTupleWriter::finish) to write the page list, footer, and anchor.
+///
+/// Scalar columns only (`bool`/`i32`/`i64`/`f32`/`f64`); collection and string
+/// fields (whose index offsets are cluster-relative) require the single-cluster
+/// [`write_rntuple_file`].
+pub struct RNTupleWriter<W: Write + Seek> {
+    sink: W,
+    pos: u64,
+    file_name: String,
+    ntuple_name: String,
+    compression: u32,
+    // TFile pointers to patch once the layout is known.
+    p_end: u64,
+    p_nbytes_name: u64,
+    p_dir_nbytes_keys: u64,
+    p_dir_seek_keys: u64,
+    f_nbytes_name: u32,
+    // Set when the first batch defines the schema and writes the header.
+    header: Option<HeaderState>,
+    element_base: Vec<u64>,
+    // Accumulated per-cluster metadata.
+    total_entries: u64,
+    summaries: Vec<(u64, u64)>,
+    cluster_pages: Vec<Vec<PageRec>>,
+}
+
+impl RNTupleWriter<std::fs::File> {
+    /// Create a streaming RNTuple file at `path`.
+    pub fn create(path: &Path, ntuple_name: &str, compression: u32) -> io::Result<Self> {
+        let file_name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file.root")
+            .to_string();
+        let file = std::fs::File::create(path)?;
+        RNTupleWriter::new(file, &file_name, ntuple_name, compression)
+    }
+}
+
+impl<W: Write + Seek> RNTupleWriter<W> {
+    /// Begin writing into an arbitrary seekable sink (the TFile header and root
+    /// directory are written immediately, with pointers to patch at the end).
+    pub fn new(
+        mut sink: W,
+        file_name: &str,
+        ntuple_name: &str,
+        compression: u32,
+    ) -> io::Result<Self> {
+        let mut w = WBuffer::new();
+
+        // TFile header (100 bytes); record the offsets to patch later.
+        w.bytes(b"root");
+        w.be_u32(FILE_VERSION);
+        w.be_u32(100); // fBEGIN
+        let p_end = w.len() as u64;
+        w.be_u32(0); // fEND
+        w.be_u32(0); // fSeekFree
+        w.be_u32(0); // fNbytesFree
+        w.be_u32(0); // nfree
+        let p_nbytes_name = w.len() as u64;
+        w.be_u32(0); // fNbytesName
+        w.u8(4); // fUnits
+        w.be_u32(compression); // fCompress
+        w.be_u32(0); // fSeekInfo
+        w.be_u32(0); // fNbytesInfo
+        w.be_u16(1);
+        w.bytes(&[0u8; 16]);
+        while w.len() < 100 {
+            w.u8(0);
+        }
+
+        // Root directory name key + TDirectory record (at fBEGIN = 100).
+        let first_klen = key_len("TFile", file_name, "");
+        let name_title_len = (1 + file_name.len()) + 1;
+        let f_nbytes_name = (first_klen as usize + name_title_len) as u32;
+        let first_obj_len = (name_title_len + 30 + 18) as u32;
+        write_key_header(
+            &mut w,
+            "TFile",
+            file_name,
+            "",
+            first_obj_len,
+            first_obj_len,
+            100,
+            0,
+        );
+        w.string(file_name);
+        w.string("");
+        w.be_i16(5);
+        w.be_u32(DATIME);
+        w.be_u32(DATIME);
+        let p_dir_nbytes_keys = w.len() as u64;
+        w.be_u32(0); // fNbytesKeys
+        w.be_i32(f_nbytes_name as i32);
+        w.be_u32(100); // fSeekDir
+        w.be_u32(0); // fSeekParent
+        let p_dir_seek_keys = w.len() as u64;
+        w.be_u32(0); // fSeekKeys
+        w.be_u16(1);
+        w.bytes(&[0u8; 16]);
+
+        let prefix = w.into_vec();
+        let pos = prefix.len() as u64;
+        sink.write_all(&prefix)?;
+
+        Ok(RNTupleWriter {
+            sink,
+            pos,
+            file_name: file_name.to_string(),
+            ntuple_name: ntuple_name.to_string(),
+            compression,
+            p_end,
+            p_nbytes_name,
+            p_dir_nbytes_keys,
+            p_dir_seek_keys,
+            f_nbytes_name,
+            header: None,
+            element_base: Vec::new(),
+            total_entries: 0,
+            summaries: Vec::new(),
+            cluster_pages: Vec::new(),
+        })
+    }
+
+    fn put(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.sink.write_all(bytes)?;
+        self.pos += bytes.len() as u64;
+        Ok(())
+    }
+
+    fn patch(&mut self, offset: u64, value: u32) -> io::Result<()> {
+        self.sink.seek(SeekFrom::Start(offset))?;
+        self.sink.write_all(&value.to_be_bytes())
+    }
+
+    /// Append one cluster holding the entries in `fields`. All batches must share
+    /// the same field schema; the first batch fixes it and writes the header.
+    pub fn write_batch(&mut self, fields: &[Field]) -> io::Result<()> {
+        if fields.is_empty() {
+            return Ok(());
+        }
+        for f in fields {
+            if !matches!(
+                f.data,
+                Column::Bool(_) | Column::I32(_) | Column::I64(_) | Column::F32(_) | Column::F64(_)
+            ) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "field {:?}: the streaming multi-cluster writer supports scalar \
+                         columns only (use write_rntuple_file for collections/strings)",
+                        f.name
+                    ),
+                ));
+            }
+        }
+
+        let (field_plans, cols, n_entries) = lower(fields);
+        if n_entries == 0 {
+            return Ok(());
+        }
+        let signature: Vec<(u16, u16)> = cols
+            .iter()
+            .map(|c| (c.column_type as u16, c.bits))
+            .collect();
+
+        match self.header.as_ref().map(|h| h.signature == signature) {
+            Some(true) => {} // schema matches; header already written
+            Some(false) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "field schema changed between batches",
+                ))
+            }
+            None => {
+                // First batch fixes the schema and writes the header.
+                let header_env = build_header(&self.ntuple_name, &field_plans, &cols);
+                let checksum =
+                    u64::from_le_bytes(header_env[header_env.len() - 8..].try_into().unwrap());
+                let seek = self.pos;
+                self.put(&header_env)?;
+                self.element_base = vec![0u64; cols.len()];
+                self.header = Some(HeaderState {
+                    seek,
+                    len: header_env.len(),
+                    checksum,
+                    signature,
+                });
+            }
+        }
+
+        let first_entry = self.total_entries;
+        let mut recs = Vec::with_capacity(cols.len());
+        for (i, c) in cols.iter().enumerate() {
+            let disk = on_disk_page(&c.page, self.compression);
+            let offset = self.pos;
+            let element_offset = self.element_base[i] as i64;
+            self.put(&disk)?;
+            recs.push(PageRec {
+                offset,
+                disk_size: disk.len(),
+                n_elements: c.n,
+                element_offset,
+            });
+            self.element_base[i] += c.n as u64;
+        }
+        self.cluster_pages.push(recs);
+        self.summaries.push((first_entry, n_entries as u64));
+        self.total_entries += n_entries as u64;
+        Ok(())
+    }
+
+    /// Finish the file: write the page list (all clusters), footer, anchor key,
+    /// and key list, then patch the header pointers.
+    pub fn finish(mut self) -> io::Result<()> {
+        let header = self.header.take().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "no batches were written")
+        })?;
+        let num_clusters = self.summaries.len() as u32;
+
+        let page_list_offset = self.pos;
+        let page_list_env = build_page_list_multi(
+            &self.summaries,
+            &self.cluster_pages,
+            self.compression,
+            header.checksum,
+        );
+        self.put(&page_list_env)?;
+
+        let seek_footer = self.pos;
+        let footer_env = build_footer(
+            self.total_entries as u32,
+            num_clusters,
+            page_list_offset as usize,
+            page_list_env.len(),
+            header.checksum,
+        );
+        self.put(&footer_env)?;
+
+        let anchor_obj = build_anchor(
+            header.seek as usize,
+            header.len,
+            seek_footer as usize,
+            footer_env.len(),
+        );
+        let anchor_seek = self.pos;
+        let anchor_len = anchor_obj.len() as u32;
+        let mut kb = WBuffer::new();
+        write_key_header(
+            &mut kb,
+            "ROOT::RNTuple",
+            &self.ntuple_name,
+            "",
+            anchor_len,
+            anchor_len,
+            anchor_seek,
+            100,
+        );
+        let kb = kb.into_vec();
+        self.put(&kb)?;
+        self.put(&anchor_obj)?;
+
+        let keylist_seek = self.pos;
+        let keylist_obj_len = 4 + key_len("ROOT::RNTuple", &self.ntuple_name, "") as u32;
+        let mut klb = WBuffer::new();
+        write_key_header(
+            &mut klb,
+            "TFile",
+            &self.file_name,
+            "",
+            keylist_obj_len,
+            keylist_obj_len,
+            keylist_seek,
+            100,
+        );
+        klb.be_i32(1);
+        write_key_header(
+            &mut klb,
+            "ROOT::RNTuple",
+            &self.ntuple_name,
+            "",
+            anchor_len,
+            anchor_len,
+            anchor_seek,
+            100,
+        );
+        let klb = klb.into_vec();
+        self.put(&klb)?;
+        let keylist_nbytes = key_len("TFile", &self.file_name, "") as u32 + keylist_obj_len;
+        let f_end = self.pos as u32;
+
+        self.patch(self.p_end, f_end)?;
+        self.patch(self.p_nbytes_name, self.f_nbytes_name)?;
+        self.patch(self.p_dir_nbytes_keys, keylist_nbytes)?;
+        self.patch(self.p_dir_seek_keys, keylist_seek as u32)?;
+        self.sink.flush()
+    }
+}
+
+/// Build the page-list envelope for any number of clusters: cluster summaries,
+/// then page locations nested clusters → columns → (one) page.
+fn build_page_list_multi(
+    summaries: &[(u64, u64)],
+    cluster_pages: &[Vec<PageRec>],
+    compression: u32,
+    header_checksum: u64,
+) -> Vec<u8> {
+    let mut p = Vec::new();
+    p.extend_from_slice(&header_checksum.to_le_bytes());
+
+    let summary_frames: Vec<Vec<u8>> = summaries
+        .iter()
+        .map(|&(first, n)| {
+            let mut s = Vec::new();
+            s.extend_from_slice(&first.to_le_bytes());
+            s.extend_from_slice(&n.to_le_bytes()); // high byte = flags (0)
+            record_frame(&s)
+        })
+        .collect();
+    p.extend_from_slice(&list_frame(&summary_frames));
+
+    let cluster_frames: Vec<Vec<u8>> = cluster_pages
+        .iter()
+        .map(|cols| {
+            let col_frames: Vec<Vec<u8>> = cols
+                .iter()
+                .map(|pr| {
+                    let mut page = Vec::new();
+                    page.extend_from_slice(&(pr.n_elements as i32).to_le_bytes()); // no checksum
+                    page.extend_from_slice(&(pr.disk_size as i32).to_le_bytes()); // on-disk size
+                    page.extend_from_slice(&pr.offset.to_le_bytes()); // locator offset
+                    let mut body = Vec::new();
+                    body.extend_from_slice(&1u32.to_le_bytes()); // one page
+                    body.extend_from_slice(&page);
+                    body.extend_from_slice(&pr.element_offset.to_le_bytes());
+                    body.extend_from_slice(&compression.to_le_bytes());
+                    let size = (8 + body.len()) as i64;
+                    let mut frame = (-size).to_le_bytes().to_vec();
+                    frame.extend_from_slice(&body);
+                    frame
+                })
+                .collect();
+            list_frame(&col_frames)
+        })
+        .collect();
+    p.extend_from_slice(&list_frame(&cluster_frames));
+
+    envelope(0x03, &p)
 }
