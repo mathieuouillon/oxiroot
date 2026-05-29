@@ -66,8 +66,9 @@ dependencies are added as later milestones land.
 - **M6** — Round-trip / interop hardening. _In progress: histogram + RNTuple
   Zstd compression ✅; self-describing `TStreamerInfo` emission ✅ (ROOT reads
   our files with no "no StreamerInfo" warning); `update` mode ✅
-  (`append_histograms_file` adds objects to an existing file, with cycle bumps).
-  Remaining: multi-cluster RNTuple, >2 GiB._
+  (`append_histograms_file` adds objects to an existing file, with cycle bumps);
+  streaming multi-cluster RNTuple write ✅ (`RNTupleWriter`, scalar columns).
+  Remaining: >2 GiB, multi-cluster collections._
 
 ## Analysis API
 
@@ -84,10 +85,11 @@ ROOT or uproot.
   `TStreamerInfo` list, so they are self-describing. ✅
 - **RNTuple** — `write_rntuple_file(path, name, &[Field], compression)` writes
   `bool`, 32/64-bit ints, `f32`/`f64`, `std::string`, and `std::vector<T>`
-  columns, optionally Zstd-compressed; validated with `RNTupleReader` and
-  uproot. ✅
+  columns in one cluster, optionally Zstd-compressed. `RNTupleWriter` streams
+  scalar columns one cluster per `write_batch`, for large datasets that should
+  not be held in memory at once. Validated with `RNTupleReader` and uproot. ✅
 - _Follow-ups: float-precision (`TH1F`/`TH2F`/…) write, weighted-histogram
-  `Sumw2`, multi-cluster RNTuple write, `update` mode._
+  `Sumw2`, multi-cluster collection/string fields._
 
 ## License
 
