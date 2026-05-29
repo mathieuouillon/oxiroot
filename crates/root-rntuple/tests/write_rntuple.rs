@@ -94,6 +94,46 @@ fn writes_a_rich_rntuple_that_round_trips() {
 }
 
 #[test]
+fn writes_unsigned_and_more_vector_types() {
+    let fields = vec![
+        Field {
+            name: "u32".into(),
+            data: Column::U32(vec![1, 2, 3_000_000_000]), // > i32::MAX, exercises unsigned
+        },
+        Field {
+            name: "u64".into(),
+            data: Column::U64(vec![1, 2, 10_000_000_000]),
+        },
+        Field {
+            name: "vi64".into(),
+            data: Column::VecI64(vec![vec![], vec![-1], vec![2, 3]]),
+        },
+        Field {
+            name: "vb".into(),
+            data: Column::VecBool(vec![vec![true], vec![], vec![false, true]]),
+        },
+    ];
+
+    let out = PathBuf::from("/tmp/rootrs_more_types.root");
+    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, 0).expect("write");
+
+    let f = RFile::open(&out).expect("reopen");
+    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let field = |n| ntpl.read_field(&f, n).expect("read field");
+    // u32 widens to u64 on read.
+    assert_eq!(field("u32"), FieldValues::U64(vec![1, 2, 3_000_000_000]));
+    assert_eq!(field("u64"), FieldValues::U64(vec![1, 2, 10_000_000_000]));
+    assert_eq!(
+        field("vi64"),
+        FieldValues::VecI64(vec![vec![], vec![-1], vec![2, 3]])
+    );
+    assert_eq!(
+        field("vb"),
+        FieldValues::VecBool(vec![vec![true], vec![], vec![false, true]])
+    );
+}
+
+#[test]
 fn writes_a_zstd_compressed_rntuple_that_round_trips() {
     // Highly compressible columns so the pages are actually stored compressed.
     let n = 1000usize;

@@ -139,6 +139,14 @@ pub fn read_column(
         }
 
         UInt64 => Ok(ColumnValues::U64(fixed(data, bits, pages, false, le_u64)?)),
+        UInt32 => {
+            let raw = fixed(data, bits, pages, false, le_u32)?;
+            Ok(ColumnValues::U64(raw.into_iter().map(u64::from).collect()))
+        }
+        SplitUInt32 => {
+            let raw = fixed(data, bits, pages, true, le_u32)?;
+            Ok(ColumnValues::U64(raw.into_iter().map(u64::from).collect()))
+        }
         Index64 => Ok(ColumnValues::U64(fixed(data, bits, pages, false, le_u64)?)),
         SplitIndex64 => {
             let raw = fixed(data, bits, pages, true, le_u64)?;

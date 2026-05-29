@@ -26,6 +26,8 @@ pub enum FieldValues {
     F64(Vec<f64>),
     /// `std::string`.
     Str(Vec<String>),
+    /// `std::vector<bool>`.
+    VecBool(Vec<Vec<bool>>),
     /// `std::vector<int32_t>`.
     VecI32(Vec<Vec<i32>>),
     /// `std::vector<int64_t>`.
@@ -72,6 +74,7 @@ pub(crate) fn strings(offsets: &[u64], bytes: &[u8]) -> Result<FieldValues> {
 /// data.
 pub(crate) fn collection(offsets: &[u64], data: ColumnValues) -> Result<FieldValues> {
     Ok(match data {
+        ColumnValues::Bits(v) => FieldValues::VecBool(group(offsets, &v)?),
         ColumnValues::I32(v) => FieldValues::VecI32(group(offsets, &v)?),
         ColumnValues::I64(v) => FieldValues::VecI64(group(offsets, &v)?),
         ColumnValues::F32(v) => FieldValues::VecF32(group(offsets, &v)?),

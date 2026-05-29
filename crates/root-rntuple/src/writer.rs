@@ -46,18 +46,26 @@ pub enum Column {
     I32(Vec<i32>),
     /// 64-bit signed integers.
     I64(Vec<i64>),
+    /// 32-bit unsigned integers.
+    U32(Vec<u32>),
+    /// 64-bit unsigned integers.
+    U64(Vec<u64>),
     /// 32-bit floats.
     F32(Vec<f32>),
     /// 64-bit floats.
     F64(Vec<f64>),
     /// `std::string`.
     Str(Vec<String>),
+    /// `std::vector<bool>`.
+    VecBool(Vec<Vec<bool>>),
     /// `std::vector<float>`.
     VecF32(Vec<Vec<f32>>),
     /// `std::vector<double>`.
     VecF64(Vec<Vec<f64>>),
     /// `std::vector<int32_t>`.
     VecI32(Vec<Vec<i32>>),
+    /// `std::vector<int64_t>`.
+    VecI64(Vec<Vec<i64>>),
 }
 
 impl Column {
@@ -67,12 +75,16 @@ impl Column {
             Column::Bool(v) => v.len(),
             Column::I32(v) => v.len(),
             Column::I64(v) => v.len(),
+            Column::U32(v) => v.len(),
+            Column::U64(v) => v.len(),
             Column::F32(v) => v.len(),
             Column::F64(v) => v.len(),
             Column::Str(v) => v.len(),
+            Column::VecBool(v) => v.len(),
             Column::VecF32(v) => v.len(),
             Column::VecF64(v) => v.len(),
             Column::VecI32(v) => v.len(),
+            Column::VecI64(v) => v.len(),
         }
     }
 }
@@ -175,6 +187,24 @@ fn lower(fields: &[Field]) -> (Vec<FieldPlan>, Vec<ColumnPlan>, u32) {
                 field_plans.push(leaf(&f.name, "std::int64_t", fid));
                 col(
                     ColumnType::Int64,
+                    64,
+                    le_bytes(v, |x| x.to_le_bytes()),
+                    v.len(),
+                );
+            }
+            Column::U32(v) => {
+                field_plans.push(leaf(&f.name, "std::uint32_t", fid));
+                col(
+                    ColumnType::UInt32,
+                    32,
+                    le_bytes(v, |x| x.to_le_bytes()),
+                    v.len(),
+                );
+            }
+            Column::U64(v) => {
+                field_plans.push(leaf(&f.name, "std::uint64_t", fid));
+                col(
+                    ColumnType::UInt64,
                     64,
                     le_bytes(v, |x| x.to_le_bytes()),
                     v.len(),
@@ -289,6 +319,58 @@ fn lower(fields: &[Field]) -> (Vec<FieldPlan>, Vec<ColumnPlan>, u32) {
                         bits: 32,
                         field_id: 0,
                         page: le_bytes(&data, |x| x.to_le_bytes()),
+                        n: data.len() as u32,
+                    },
+                ));
+            }
+            Column::VecI64(v) => {
+                field_plans.push(FieldPlan {
+                    name: f.name.clone(),
+                    type_name: "std::vector<std::int64_t>".into(),
+                    parent_id: fid,
+                    role: ROLE_COLLECTION,
+                });
+                let (offsets, data) = flatten(v);
+                col(
+                    ColumnType::Index64,
+                    64,
+                    le_bytes(&offsets, |x| x.to_le_bytes()),
+                    v.len(),
+                );
+                children.push((
+                    fid,
+                    leaf("_0", "std::int64_t", 0),
+                    ColumnPlan {
+                        column_type: ColumnType::Int64,
+                        bits: 64,
+                        field_id: 0,
+                        page: le_bytes(&data, |x| x.to_le_bytes()),
+                        n: data.len() as u32,
+                    },
+                ));
+            }
+            Column::VecBool(v) => {
+                field_plans.push(FieldPlan {
+                    name: f.name.clone(),
+                    type_name: "std::vector<bool>".into(),
+                    parent_id: fid,
+                    role: ROLE_COLLECTION,
+                });
+                let (offsets, data) = flatten(v);
+                col(
+                    ColumnType::Index64,
+                    64,
+                    le_bytes(&offsets, |x| x.to_le_bytes()),
+                    v.len(),
+                );
+                children.push((
+                    fid,
+                    leaf("_0", "bool", 0),
+                    ColumnPlan {
+                        column_type: ColumnType::Bit,
+                        bits: 1,
+                        field_id: 0,
+                        page: pack_bits(&data),
                         n: data.len() as u32,
                     },
                 ));
