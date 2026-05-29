@@ -77,22 +77,22 @@ dependencies are added as later milestones land.
 Build and fill objects from scratch, then save them — and read them back in
 ROOT or uproot.
 
-- **Histograms** — `TH1::new`/`fill`, `TH2::new`/`fill`, `TH3::new`/`fill`, and
-  `TProfile::new`/`fill` follow ROOT's `Fill` semantics (entry counting, flow
-  bins, in-range moment sums; profile Σwy/Σwy²/Σw). Save with
-  `write_th1d_file`/`write_th2d_file`/`write_th3d_file`/`write_tprofile_file`, or
-  several at once (mixed dimensions) with `write_histograms_file`. TH1D/TH2D are
-  byte-identical to ROOT; TH3D/TProfile round-trip real ROOT data and read back
-  in official ROOT (with correct bin errors) and uproot. Written files embed a
-  `TStreamerInfo` list, so they are self-describing. ✅
+- **Histograms** — `TH1/TH2/TH3::new` (+ `new_variable` for non-uniform bins)
+  and `TProfile::new`, with `fill`/`fill_weight` following ROOT's `Fill`
+  semantics. `sumw2()` enables per-bin weighted errors (`bin_error`). Arithmetic:
+  `scale`, `add` (the bin-by-bin merge for combining job outputs), `multiply`,
+  `divide`, `integral` — all with Sumw2 error propagation. Save with
+  `write_th{1,2,3}d_file`/`write_tprofile_file`, `write_histograms_file` (several
+  at once), or `write_histograms_dirs` (organized into subdirectories). Files
+  embed a `TStreamerInfo` list and read back in official ROOT (with correct bin
+  errors and variable edges) and uproot. ✅
 - **RNTuple** — `write_rntuple_file(path, name, &[Field], compression)` writes
-  `bool`, 32/64-bit ints, `f32`/`f64`, `std::string`, and `std::vector<T>`
-  columns in one cluster, optionally Zstd-compressed. `RNTupleWriter` streams
-  those same field types (scalars, strings, vectors) one cluster per
-  `write_batch`, for large datasets that should not be held in memory at once.
-  Validated with `RNTupleReader` and uproot. ✅
-- _Follow-ups: float-precision (`TH1F`/`TH2F`/…) write, weighted-histogram
-  `Sumw2`, >2 GiB files._
+  `bool`, 32/64-bit signed/unsigned ints, `f32`/`f64`, `std::string`, and
+  `std::vector<T>` (bool/int/float) columns, optionally Zstd-compressed.
+  `RNTupleWriter` streams those types one cluster per `write_batch` for large
+  datasets. Validated with `RNTupleReader` and uproot. ✅
+- _Follow-ups: float-precision (`TH1F`/`TH2F`/…) write, >2 GiB files, TTree
+  read._
 
 ## License
 
