@@ -15,14 +15,19 @@ fn appends_objects_to_an_existing_file() {
     let mut a = TH1::new("a", "first", 4, 0.0, 4.0);
     a.fill(0.5);
     a.fill(2.5);
-    root_hist::write_th1d_file(&out, &a, 0).expect("initial write");
+    root_hist::write_th1d_file(&out, &a, root_io_core::Compression::None).expect("initial write");
 
     // Append two more histograms (a TH1D and a TH2D).
     let mut b = TH1::new("b", "second", 3, 0.0, 3.0);
     b.fill(1.5);
     let mut c = TH2::new("c", "third", 2, 0.0, 2.0, 2, 0.0, 2.0);
     c.fill(0.5, 1.5);
-    append_histograms_file(&out, &[Hist::Th1(&b), Hist::Th2(&c)], 0).expect("append");
+    append_histograms_file(
+        &out,
+        &[Hist::Th1(&b), Hist::Th2(&c)],
+        root_io_core::Compression::None,
+    )
+    .expect("append");
 
     // All three are present and intact.
     let f = RFile::open(&out).expect("reopen");
@@ -45,14 +50,15 @@ fn re_adding_a_name_bumps_the_cycle() {
     let out = PathBuf::from("/tmp/rootrs_update_cycle.root");
     let mut v1 = TH1::new("h", "v1", 4, 0.0, 4.0);
     v1.fill(0.5);
-    root_hist::write_th1d_file(&out, &v1, 0).expect("write v1");
+    root_hist::write_th1d_file(&out, &v1, root_io_core::Compression::None).expect("write v1");
 
     // Re-add "h" with different contents; ROOT keeps both at different cycles,
     // newest (highest cycle) wins for a plain lookup.
     let mut v2 = TH1::new("h", "v2", 4, 0.0, 4.0);
     v2.fill(1.5);
     v2.fill(1.5);
-    append_histograms_file(&out, &[Hist::Th1(&v2)], 0).expect("append v2");
+    append_histograms_file(&out, &[Hist::Th1(&v2)], root_io_core::Compression::None)
+        .expect("append v2");
 
     let f = RFile::open(&out).expect("reopen");
     let cycles: Vec<u16> = f

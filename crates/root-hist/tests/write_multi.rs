@@ -18,7 +18,12 @@ fn writes_multiple_histograms_into_one_file() {
     h2.fill(1.5, 1.5);
 
     let out = PathBuf::from("/tmp/rootrs_multi_hist.root");
-    root_hist::write_histograms_file(&out, &[Hist::Th1(&h1), Hist::Th2(&h2)], 0).expect("write");
+    root_hist::write_histograms_file(
+        &out,
+        &[Hist::Th1(&h1), Hist::Th2(&h2)],
+        root_io_core::Compression::None,
+    )
+    .expect("write");
 
     let f = RFile::open(&out).expect("reopen");
     let keys: Vec<(&str, &str)> = f

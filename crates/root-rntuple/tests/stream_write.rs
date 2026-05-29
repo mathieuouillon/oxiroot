@@ -10,7 +10,8 @@ use root_rntuple::{Column, Field, FieldValues, RNTuple, RNTupleWriter};
 #[test]
 fn streams_multiple_clusters() {
     let out = PathBuf::from("/tmp/rootrs_stream_ntuple.root");
-    let mut w = RNTupleWriter::create(&out, "ntpl", 0).expect("create");
+    let mut w =
+        RNTupleWriter::create(&out, "ntpl", root_io_core::Compression::None).expect("create");
 
     // Three clusters of 4 entries each (12 total), pushed one batch at a time.
     let mut expect_x = Vec::new();
@@ -53,7 +54,8 @@ fn streams_collections_and_strings_across_clusters() {
     // empty collections/strings at cluster boundaries. The reader must re-base
     // each cluster's index offsets to reconstruct the values across clusters.
     let out = PathBuf::from("/tmp/rootrs_stream_coll.root");
-    let mut w = RNTupleWriter::create(&out, "ntpl", 505).expect("create");
+    let mut w =
+        RNTupleWriter::create(&out, "ntpl", root_io_core::Compression::Zstd(5)).expect("create");
 
     let v0 = vec![vec![], vec![1.0f32], vec![2.0, 2.0]];
     let s0 = vec!["a".to_string(), "bb".to_string(), "ccc".to_string()];

@@ -31,7 +31,7 @@ fn merge_then_scale_matches_root() {
     assert!((a.bin_error(1) - 52.0_f64.sqrt()).abs() < 1e-9);
 
     let out = PathBuf::from("/tmp/rootrs_merged_scaled.root");
-    root_hist::write_th1d_file(&out, &a, 0).expect("write");
+    root_hist::write_th1d_file(&out, &a, root_io_core::Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
     assert_eq!(read_th1d(&f, "h").unwrap(), a, "round-trips");
 }

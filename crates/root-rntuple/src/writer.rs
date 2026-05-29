@@ -13,7 +13,7 @@ use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use root_io_core::buffer::WBuffer;
-use root_io_core::{key_len, write_key_header};
+use root_io_core::{key_len, write_key_header, Compression};
 
 use crate::column::ColumnType;
 
@@ -95,6 +95,46 @@ pub struct Field {
     pub name: String,
     /// Field data.
     pub data: Column,
+}
+
+impl Field {
+    /// A field named `name` holding `data`.
+    pub fn new(name: impl Into<String>, data: Column) -> Field {
+        Field {
+            name: name.into(),
+            data,
+        }
+    }
+}
+
+/// Generate `Field::<name>(name, Vec<T>)` shortcuts, e.g. `Field::f64("pt", v)`.
+macro_rules! field_ctors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl Field {
+            $(
+                #[doc = concat!("A field holding `", stringify!($variant), "` data.")]
+                pub fn $method(name: impl Into<String>, data: Vec<$elem>) -> Field {
+                    Field::new(name, Column::$variant(data))
+                }
+            )*
+        }
+    };
+}
+
+field_ctors! {
+    bools => Bool(bool),
+    i32 => I32(i32),
+    i64 => I64(i64),
+    u32 => U32(u32),
+    u64 => U64(u64),
+    f32 => F32(f32),
+    f64 => F64(f64),
+    strings => Str(String),
+    vec_bool => VecBool(Vec<bool>),
+    vec_i32 => VecI32(Vec<i32>),
+    vec_i64 => VecI64(Vec<i64>),
+    vec_f32 => VecF32(Vec<f32>),
+    vec_f64 => VecF64(Vec<f64>),
 }
 
 // --- internal lowered model ------------------------------------------------
@@ -577,14 +617,15 @@ fn build_anchor(
 }
 
 /// Build a complete ROOT file containing one RNTuple named `ntuple_name`,
-/// optionally compressing pages (`compression` = `algorithm*100 + level`,
-/// 0 = none; e.g. 505 = Zstd level 5).
+/// optionally compressing pages (`compression` is e.g. `Compression::None` or
+/// `Compression::Zstd(5)`).
 pub fn rntuple_file_bytes(
     file_name: &str,
     ntuple_name: &str,
     fields: &[Field],
-    compression: u32,
+    compression: Compression,
 ) -> Vec<u8> {
+    let compression = compression.setting();
     let (field_plans, cols, n_entries) = lower(fields);
 
     let header_env = build_header(ntuple_name, &field_plans, &cols);
@@ -727,12 +768,12 @@ pub fn rntuple_file_bytes(
 }
 
 /// Write a one-RNTuple ROOT file to `path`, optionally compressing pages
-/// (`compression` = `algorithm*100 + level`, 0 = none; e.g. 505 = Zstd level 5).
+/// (`compression` is e.g. `Compression::None` or `Compression::Zstd(5)`).
 pub fn write_rntuple_file(
     path: &Path,
     ntuple_name: &str,
     fields: &[Field],
-    compression: u32,
+    compression: Compression,
 ) -> std::io::Result<()> {
     let file_name = path
         .file_name()
@@ -794,7 +835,7 @@ pub struct RNTupleWriter<W: Write + Seek> {
 
 impl RNTupleWriter<std::fs::File> {
     /// Create a streaming RNTuple file at `path`.
-    pub fn create(path: &Path, ntuple_name: &str, compression: u32) -> io::Result<Self> {
+    pub fn create(path: &Path, ntuple_name: &str, compression: Compression) -> io::Result<Self> {
         let file_name = path
             .file_name()
             .and_then(|s| s.to_str())
@@ -812,8 +853,9 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         mut sink: W,
         file_name: &str,
         ntuple_name: &str,
-        compression: u32,
+        compression: Compression,
     ) -> io::Result<Self> {
+        let compression = compression.setting();
         let mut w = WBuffer::new();
 
         // TFile header (100 bytes); record the offsets to patch later.

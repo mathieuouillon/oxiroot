@@ -28,7 +28,7 @@ fn round_trips_real_root_th3d() {
     let h = read_th3d(&f, "h3").expect("read TH3D");
 
     let out = PathBuf::from("/tmp/rootrs_roundtrip_th3d.root");
-    root_hist::write_th3d_file(&out, &h, 0).expect("write");
+    root_hist::write_th3d_file(&out, &h, root_io_core::Compression::None).expect("write");
     let f2 = RFile::open(&out).expect("reopen");
     let h2 = read_th3d(&f2, "h3").expect("read back");
     assert_eq!(h2, h, "real ROOT TH3D must survive write→read");
@@ -50,7 +50,7 @@ fn create_fill_save_round_trips() {
     assert!((h.mean_z() - 2.5 / 3.0).abs() < 1e-12, "mean z");
 
     let out = PathBuf::from("/tmp/rootrs_filled_th3d.root");
-    root_hist::write_th3d_file(&out, &h, 0).expect("write");
+    root_hist::write_th3d_file(&out, &h, root_io_core::Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
     let h2 = read_th3d(&f, "h3").expect("read back");
     assert_eq!(h2, h, "filled 3-D histogram must round-trip");
@@ -62,7 +62,8 @@ fn writes_a_zstd_compressed_th3d() {
     let h = read_th3d(&f, "h3").expect("read TH3D");
 
     let out = PathBuf::from("/tmp/rootrs_written_th3d_zstd.root");
-    root_hist::write_th3d_file(&out, &h, 505).expect("write compressed file");
+    root_hist::write_th3d_file(&out, &h, root_io_core::Compression::Zstd(5))
+        .expect("write compressed file");
 
     let f2 = RFile::open(&out).expect("reopen");
     let key = f2.key("h3").expect("h3 key");

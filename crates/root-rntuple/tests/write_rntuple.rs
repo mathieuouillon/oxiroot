@@ -51,7 +51,8 @@ fn writes_a_rich_rntuple_that_round_trips() {
     ];
 
     let out = PathBuf::from("/tmp/rootrs_written_rich_ntuple.root");
-    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, 0).expect("write rntuple");
+    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, root_io_core::Compression::None)
+        .expect("write rntuple");
 
     let f = RFile::open(&out).expect("reopen");
     let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
@@ -115,7 +116,8 @@ fn writes_unsigned_and_more_vector_types() {
     ];
 
     let out = PathBuf::from("/tmp/rootrs_more_types.root");
-    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, 0).expect("write");
+    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, root_io_core::Compression::None)
+        .expect("write");
 
     let f = RFile::open(&out).expect("reopen");
     let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
@@ -151,7 +153,8 @@ fn writes_a_zstd_compressed_rntuple_that_round_trips() {
     ];
 
     let out = PathBuf::from("/tmp/rootrs_written_ntuple_zstd.root");
-    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, 505).expect("write compressed");
+    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, root_io_core::Compression::Zstd(5))
+        .expect("write compressed");
 
     // The file must be much smaller than the raw column bytes (4000 + 8000).
     let file_len = std::fs::metadata(&out).unwrap().len();

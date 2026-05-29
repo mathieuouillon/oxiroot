@@ -14,11 +14,13 @@
 //! little-endian payloads.
 
 pub mod buffer;
+pub mod compression;
 pub mod error;
 pub mod file;
 pub mod streamer;
 pub mod streamer_info;
 
+pub use compression::Compression;
 pub use error::{Error, Result};
 pub use file::{
     key_len, update_root_file, write_key_header, write_key_header_cycle, write_root_file,

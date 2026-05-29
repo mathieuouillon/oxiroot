@@ -39,7 +39,7 @@ fn writes_a_root_file_that_round_trips() {
 
     // Write a complete .root file, then read it back with our own reader.
     let out = std::path::PathBuf::from("/tmp/rootrs_written_th1d.root");
-    root_hist::write_th1d_file(&out, &h, 0).expect("write file");
+    root_hist::write_th1d_file(&out, &h, root_io_core::Compression::None).expect("write file");
 
     let f2 = RFile::open(&out).expect("reopen written file");
     let keys: Vec<(&str, &str)> = f2
@@ -79,7 +79,7 @@ fn create_fill_save_round_trips() {
 
     // Save and read back through our own reader.
     let out = std::path::PathBuf::from("/tmp/rootrs_filled_th1d.root");
-    root_hist::write_th1d_file(&out, &h, 0).expect("write");
+    root_hist::write_th1d_file(&out, &h, root_io_core::Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
     let h2 = read_th1d(&f, "h").expect("read back");
     assert_eq!(h2, h, "filled histogram must round-trip");
@@ -92,7 +92,7 @@ fn written_file_embeds_self_describing_streamer_info() {
     let mut h = TH1::new("h", "", 5, 0.0, 5.0);
     h.fill(2.5);
     let out = std::path::PathBuf::from("/tmp/rootrs_streamerinfo_th1d.root");
-    root_hist::write_th1d_file(&out, &h, 0).expect("write");
+    root_hist::write_th1d_file(&out, &h, root_io_core::Compression::None).expect("write");
 
     let f = RFile::open(&out).expect("reopen");
     let reg = f.streamer_registry().expect("parse embedded streamer info");
@@ -117,7 +117,8 @@ fn writes_a_zstd_compressed_th1d() {
 
     // Write the same histogram Zstd-compressed (505 = Zstd level 5).
     let out = std::path::PathBuf::from("/tmp/rootrs_written_th1d_zstd.root");
-    root_hist::write_th1d_file(&out, &h, 505).expect("write compressed file");
+    root_hist::write_th1d_file(&out, &h, root_io_core::Compression::Zstd(5))
+        .expect("write compressed file");
 
     let f2 = RFile::open(&out).expect("reopen");
     let key = f2.key("h1").expect("h1 key");

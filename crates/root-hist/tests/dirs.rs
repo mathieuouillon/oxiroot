@@ -25,7 +25,7 @@ fn writes_histograms_into_subdirectories() {
             ("signal", &[Hist::Th1(&sr)]),
             ("control", &[Hist::Th1(&cr)]),
         ],
-        0,
+        root_io_core::Compression::None,
     )
     .expect("write");
 

@@ -9,8 +9,8 @@ use std::path::Path;
 use root_io_core::buffer::WBuffer;
 use root_io_core::streamer::{write_tnamed, write_tobject};
 use root_io_core::{
-    update_root_file, write_root_file_with_dirs, write_root_file_with_streamers, ObjectRecord,
-    Subdir,
+    update_root_file, write_root_file_with_dirs, write_root_file_with_streamers, Compression,
+    ObjectRecord, Subdir,
 };
 
 use crate::axis::TAxis;
@@ -19,9 +19,9 @@ use crate::th2::TH2;
 use crate::th3::TH3;
 use crate::tprofile::TProfile;
 
-/// Write a single `TH1D` into a new ROOT file at `path`. `compression` is a
-/// ROOT setting (`algorithm*100 + level`, 0 = none; e.g. 505 = Zstd level 5).
-pub fn write_th1d_file(path: &Path, h: &TH1, compression: u32) -> std::io::Result<()> {
+/// Write a single `TH1D` into a new ROOT file at `path`. `compression`
+/// is e.g. `Compression::None` or `Compression::Zstd(5)`.
+pub fn write_th1d_file(path: &Path, h: &TH1, compression: Compression) -> std::io::Result<()> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -34,7 +34,12 @@ pub fn write_th1d_file(path: &Path, h: &TH1, compression: u32) -> std::io::Resul
     };
     std::fs::write(
         path,
-        write_root_file_with_streamers(file_name, &[record], compression, Some(HIST_STREAMER_INFO)),
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        ),
     )
 }
 
@@ -66,9 +71,9 @@ pub fn th1d_to_bytes(h: &TH1) -> Vec<u8> {
     w.into_vec()
 }
 
-/// Write a single `TH2D` into a new ROOT file at `path`. `compression` is a
-/// ROOT setting (`algorithm*100 + level`, 0 = none; e.g. 505 = Zstd level 5).
-pub fn write_th2d_file(path: &Path, h: &TH2, compression: u32) -> std::io::Result<()> {
+/// Write a single `TH2D` into a new ROOT file at `path`. `compression`
+/// is e.g. `Compression::None` or `Compression::Zstd(5)`.
+pub fn write_th2d_file(path: &Path, h: &TH2, compression: Compression) -> std::io::Result<()> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -81,7 +86,12 @@ pub fn write_th2d_file(path: &Path, h: &TH2, compression: u32) -> std::io::Resul
     };
     std::fs::write(
         path,
-        write_root_file_with_streamers(file_name, &[record], compression, Some(HIST_STREAMER_INFO)),
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        ),
     )
 }
 
@@ -111,9 +121,9 @@ pub fn th2d_to_bytes(h: &TH2) -> Vec<u8> {
     w.into_vec()
 }
 
-/// Write a single `TH3D` into a new ROOT file at `path`. `compression` is a
-/// ROOT setting (`algorithm*100 + level`, 0 = none; e.g. 505 = Zstd level 5).
-pub fn write_th3d_file(path: &Path, h: &TH3, compression: u32) -> std::io::Result<()> {
+/// Write a single `TH3D` into a new ROOT file at `path`. `compression`
+/// is e.g. `Compression::None` or `Compression::Zstd(5)`.
+pub fn write_th3d_file(path: &Path, h: &TH3, compression: Compression) -> std::io::Result<()> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -126,7 +136,12 @@ pub fn write_th3d_file(path: &Path, h: &TH3, compression: u32) -> std::io::Resul
     };
     std::fs::write(
         path,
-        write_root_file_with_streamers(file_name, &[record], compression, Some(HIST_STREAMER_INFO)),
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        ),
     )
 }
 
@@ -162,9 +177,13 @@ pub fn th3d_to_bytes(h: &TH3) -> Vec<u8> {
     w.into_vec()
 }
 
-/// Write a single `TProfile` into a new ROOT file at `path`. `compression` is a
-/// ROOT setting (`algorithm*100 + level`, 0 = none; e.g. 505 = Zstd level 5).
-pub fn write_tprofile_file(path: &Path, h: &TProfile, compression: u32) -> std::io::Result<()> {
+/// Write a single `TProfile` into a new ROOT file at `path`. `compression`
+/// is e.g. `Compression::None` or `Compression::Zstd(5)`.
+pub fn write_tprofile_file(
+    path: &Path,
+    h: &TProfile,
+    compression: Compression,
+) -> std::io::Result<()> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -177,7 +196,12 @@ pub fn write_tprofile_file(path: &Path, h: &TProfile, compression: u32) -> std::
     };
     std::fs::write(
         path,
-        write_root_file_with_streamers(file_name, &[record], compression, Some(HIST_STREAMER_INFO)),
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        ),
     )
 }
 
@@ -250,9 +274,13 @@ impl Hist<'_> {
 }
 
 /// Write several histograms into one ROOT file at `path` (each becomes a key in
-/// the root directory). `compression` is a ROOT setting (`algorithm*100 +
-/// level`, 0 = none; e.g. 505 = Zstd level 5).
-pub fn write_histograms_file(path: &Path, hists: &[Hist], compression: u32) -> std::io::Result<()> {
+/// the root directory). `compression` is e.g. `Compression::None` or
+/// `Compression::Zstd(5)`.
+pub fn write_histograms_file(
+    path: &Path,
+    hists: &[Hist],
+    compression: Compression,
+) -> std::io::Result<()> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -260,7 +288,12 @@ pub fn write_histograms_file(path: &Path, hists: &[Hist], compression: u32) -> s
     let records: Vec<ObjectRecord> = hists.iter().map(Hist::record).collect();
     std::fs::write(
         path,
-        write_root_file_with_streamers(file_name, &records, compression, Some(HIST_STREAMER_INFO)),
+        write_root_file_with_streamers(
+            file_name,
+            &records,
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        ),
     )
 }
 
@@ -271,7 +304,7 @@ pub fn write_histograms_dirs(
     path: &Path,
     root: &[Hist],
     subdirs: &[(&str, &[Hist])],
-    compression: u32,
+    compression: Compression,
 ) -> std::io::Result<()> {
     let file_name = path
         .file_name()
@@ -291,7 +324,7 @@ pub fn write_histograms_dirs(
             file_name,
             &root_objects,
             &dirs,
-            compression,
+            compression.setting(),
             Some(HIST_STREAMER_INFO),
         ),
     )
@@ -304,7 +337,7 @@ pub fn write_histograms_dirs(
 pub fn append_histograms_file(
     path: &Path,
     hists: &[Hist],
-    compression: u32,
+    compression: Compression,
 ) -> std::io::Result<()> {
     let file_name = path
         .file_name()
@@ -316,7 +349,7 @@ pub fn append_histograms_file(
         &existing,
         file_name,
         &records,
-        compression,
+        compression.setting(),
         Some(HIST_STREAMER_INFO),
     )
     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;

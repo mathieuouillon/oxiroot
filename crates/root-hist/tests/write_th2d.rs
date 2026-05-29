@@ -47,7 +47,7 @@ fn create_fill_save_round_trips() {
     assert!((h.mean_y() - 2.5 / 3.0).abs() < 1e-12, "mean y");
 
     let out = PathBuf::from("/tmp/rootrs_filled_th2d.root");
-    root_hist::write_th2d_file(&out, &h, 0).expect("write");
+    root_hist::write_th2d_file(&out, &h, root_io_core::Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
     let h2 = read_th2d(&f, "h2").expect("read back");
     assert_eq!(h2, h, "filled 2-D histogram must round-trip");
@@ -59,7 +59,8 @@ fn writes_a_zstd_compressed_th2d() {
     let h = read_th2d(&f, "h2").expect("read TH2D");
 
     let out = PathBuf::from("/tmp/rootrs_written_th2d_zstd.root");
-    root_hist::write_th2d_file(&out, &h, 505).expect("write compressed file");
+    root_hist::write_th2d_file(&out, &h, root_io_core::Compression::Zstd(5))
+        .expect("write compressed file");
 
     let f2 = RFile::open(&out).expect("reopen");
     let key = f2.key("h2").expect("h2 key");

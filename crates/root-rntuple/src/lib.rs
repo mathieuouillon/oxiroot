@@ -18,6 +18,8 @@ pub mod pagelist;
 pub mod reader;
 pub mod writer;
 
+pub use root_io_core::Compression;
+
 pub use anchor::{RNTupleAnchor, ANCHOR_CLASS};
 pub use column::ColumnType;
 pub use envelope::{read_envelope, read_frame, read_locator, Envelope, Frame, Locator};

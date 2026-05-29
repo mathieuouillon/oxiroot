@@ -21,7 +21,7 @@ fn weighted_sumw2_round_trips() {
     assert_eq!(h.bin_error(2), 1.0);
 
     let out = PathBuf::from("/tmp/rootrs_weighted.root");
-    root_hist::write_th1d_file(&out, &h, 0).expect("write");
+    root_hist::write_th1d_file(&out, &h, root_io_core::Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
     let h2 = read_th1d(&f, "hw").expect("read back");
     assert_eq!(h2, h, "weighted histogram (incl. Sumw2) must round-trip");
@@ -44,7 +44,7 @@ fn variable_bins_round_trip() {
     assert_eq!(h.entries, 6.0);
 
     let out = PathBuf::from("/tmp/rootrs_varbins.root");
-    root_hist::write_th1d_file(&out, &h, 0).expect("write");
+    root_hist::write_th1d_file(&out, &h, root_io_core::Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
     let h2 = read_th1d(&f, "hv").expect("read back");
     assert_eq!(h2, h, "variable-bin histogram must round-trip");

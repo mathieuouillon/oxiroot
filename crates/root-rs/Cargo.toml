@@ -10,4 +10,5 @@ description = "Pure-Rust IO for the CERN ROOT file format (RNTuple + classic his
 [dependencies]
 root-io-core = { workspace = true }
 root-compress = { workspace = true }
+root-rntuple = { workspace = true }
 root-hist = { workspace = true }

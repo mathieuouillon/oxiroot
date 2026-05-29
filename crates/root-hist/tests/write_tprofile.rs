@@ -18,7 +18,7 @@ fn round_trips_real_root_tprofile() {
     let h = read_tprofile(&f, "p").expect("read TProfile");
 
     let out = PathBuf::from("/tmp/rootrs_roundtrip_tprofile.root");
-    root_hist::write_tprofile_file(&out, &h, 0).expect("write");
+    root_hist::write_tprofile_file(&out, &h, root_io_core::Compression::None).expect("write");
     let f2 = RFile::open(&out).expect("reopen");
     let h2 = read_tprofile(&f2, "p").expect("read back");
     assert_eq!(h2, h, "real ROOT TProfile must survive write→read");
@@ -43,7 +43,7 @@ fn create_fill_save_round_trips() {
     assert_eq!(h.bin_entries[1..4], [2.0, 2.0, 1.0]);
 
     let out = PathBuf::from("/tmp/rootrs_filled_tprofile.root");
-    root_hist::write_tprofile_file(&out, &h, 0).expect("write");
+    root_hist::write_tprofile_file(&out, &h, root_io_core::Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
     let h2 = read_tprofile(&f, "p").expect("read back");
     assert_eq!(h2, h, "filled profile must round-trip");
@@ -55,7 +55,8 @@ fn writes_a_zstd_compressed_tprofile() {
     let h = read_tprofile(&f, "p").expect("read TProfile");
 
     let out = PathBuf::from("/tmp/rootrs_written_tprofile_zstd.root");
-    root_hist::write_tprofile_file(&out, &h, 505).expect("write compressed file");
+    root_hist::write_tprofile_file(&out, &h, root_io_core::Compression::Zstd(5))
+        .expect("write compressed file");
 
     let f2 = RFile::open(&out).expect("reopen");
     let key = f2.key("p").expect("p key");
