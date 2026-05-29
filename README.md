@@ -67,8 +67,10 @@ dependencies are added as later milestones land.
   Zstd compression ✅; self-describing `TStreamerInfo` emission ✅ (ROOT reads
   our files with no "no StreamerInfo" warning); `update` mode ✅
   (`append_histograms_file` adds objects to an existing file, with cycle bumps);
-  streaming multi-cluster RNTuple write ✅ (`RNTupleWriter`, scalar columns).
-  Remaining: >2 GiB, multi-cluster collections._
+  streaming multi-cluster RNTuple write ✅ (`RNTupleWriter`, scalars +
+  `std::string`/`std::vector<T>`, with reader-side cluster-offset globalization
+  so real ROOT multi-cluster collection files read correctly). Remaining:
+  >2 GiB._
 
 ## Analysis API
 
@@ -86,10 +88,11 @@ ROOT or uproot.
 - **RNTuple** — `write_rntuple_file(path, name, &[Field], compression)` writes
   `bool`, 32/64-bit ints, `f32`/`f64`, `std::string`, and `std::vector<T>`
   columns in one cluster, optionally Zstd-compressed. `RNTupleWriter` streams
-  scalar columns one cluster per `write_batch`, for large datasets that should
-  not be held in memory at once. Validated with `RNTupleReader` and uproot. ✅
+  those same field types (scalars, strings, vectors) one cluster per
+  `write_batch`, for large datasets that should not be held in memory at once.
+  Validated with `RNTupleReader` and uproot. ✅
 - _Follow-ups: float-precision (`TH1F`/`TH2F`/…) write, weighted-histogram
-  `Sumw2`, multi-cluster collection/string fields._
+  `Sumw2`, >2 GiB files._
 
 ## License
 
