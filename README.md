@@ -21,6 +21,31 @@ container, with **no C++/libROOT dependency**.
 - **Compression**: Zstd (+ uncompressed) for writing; Zstd/zlib/LZ4 decode for
   reading real-world files.
 
+## Usage
+
+Everything common lives behind one import:
+
+```rust
+use root_rs::prelude::*;
+
+// Fill and save a histogram (weighted errors + variable bins available).
+let mut h = TH1::new("pt", "p_{T}", 50, 0.0, 100.0);
+h.sumw2();
+h.fill_weight(42.0, 1.5);
+write_th1d_file("out.root".as_ref(), &h, Compression::Zstd(5))?;
+
+// Write a columnar dataset, then read it back.
+let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
+write_rntuple_file("data.root".as_ref(), "events", &fields, Compression::None)?;
+let f = RFile::open("data.root")?;
+let n = RNTuple::open(&f, "events")?.num_entries();
+```
+
+See [`crates/root-rs/examples/analysis.rs`](crates/root-rs/examples/analysis.rs)
+for an end-to-end mini analysis (weighted/variable-bin histograms, scale/merge,
+per-region subdirectories, a columnar event dataset, read-back). Run it with
+`cargo run -p root-rs --example analysis`.
+
 ## Workspace layout
 
 | Crate | Purpose |
@@ -29,7 +54,7 @@ container, with **no C++/libROOT dependency**.
 | `root-compress` | ROOT 9-byte block framing + codec backends |
 | `root-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
 | `root-hist` | Classic TH1/TH2/TH3/TProfile read/write |
-| `root-rs` | Facade crate: high-level `RFile` API + re-exports |
+| `root-rs` | Facade crate: `prelude` + re-exports of all of the above |
 
 ## Build & test
 
@@ -40,8 +65,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-No external crates are required for the current foundation; codec and checksum
-dependencies are added as later milestones land.
+Dependencies are pure-Rust: `xxhash-rust` (RNTuple XXH3 checksums), `ruzstd`
+(Zstd encode/decode), and `miniz_oxide` (zlib decode). No C/C++ or libROOT.
 
 ## Roadmap
 
