@@ -18,6 +18,20 @@ const K_BYTE_COUNT_MASK: u32 = 0x4000_0000;
 const DATIME: u32 = 0x7d7a_79ca;
 const FILE_VERSION: u32 = 62400;
 
+/// The on-disk bytes for one page: ROOT-compressed when `compression != 0` and
+/// the result is actually smaller, otherwise the raw column bytes. A reader
+/// tells the two apart by comparing the on-disk size to the uncompressed size
+/// (derived from the element count), exactly as ROOT does.
+fn on_disk_page(page: &[u8], compression: u32) -> Vec<u8> {
+    if compression == 0 {
+        return page.to_vec();
+    }
+    match root_compress::compress(page, compression) {
+        Ok(compressed) if compressed.len() < page.len() => compressed,
+        _ => page.to_vec(),
+    }
+}
+
 const ROLE_LEAF: u16 = 0;
 const ROLE_COLLECTION: u16 = 1;
 
@@ -376,7 +390,9 @@ fn build_header(name: &str, fields: &[FieldPlan], cols: &[ColumnPlan]) -> Vec<u8
 fn build_page_list(
     n_entries: u32,
     page_offsets: &[usize],
+    disk_sizes: &[usize],
     cols: &[ColumnPlan],
+    compression: u32,
     header_checksum: u64,
 ) -> Vec<u8> {
     let mut p = Vec::new();
@@ -393,13 +409,13 @@ fn build_page_list(
         .map(|(i, c)| {
             let mut page = Vec::new();
             page.extend_from_slice(&(c.n as i32).to_le_bytes()); // positive: no checksum
-            page.extend_from_slice(&(c.page.len() as i32).to_le_bytes()); // locator size
+            page.extend_from_slice(&(disk_sizes[i] as i32).to_le_bytes()); // on-disk locator size
             page.extend_from_slice(&(page_offsets[i] as u64).to_le_bytes()); // locator offset
             let mut body = Vec::new();
             body.extend_from_slice(&1u32.to_le_bytes()); // one page
             body.extend_from_slice(&page);
             body.extend_from_slice(&0i64.to_le_bytes()); // element offset
-            body.extend_from_slice(&0u32.to_le_bytes()); // compression (uncompressed)
+            body.extend_from_slice(&compression.to_le_bytes()); // compression settings
             let size = (8 + body.len()) as i64;
             let mut frame = (-size).to_le_bytes().to_vec();
             frame.extend_from_slice(&body);
@@ -472,13 +488,27 @@ fn build_anchor(
     obj
 }
 
-/// Build a complete ROOT file containing one RNTuple named `ntuple_name`.
-pub fn rntuple_file_bytes(file_name: &str, ntuple_name: &str, fields: &[Field]) -> Vec<u8> {
+/// Build a complete ROOT file containing one RNTuple named `ntuple_name`,
+/// optionally compressing pages (`compression` = `algorithm*100 + level`,
+/// 0 = none; e.g. 505 = Zstd level 5).
+pub fn rntuple_file_bytes(
+    file_name: &str,
+    ntuple_name: &str,
+    fields: &[Field],
+    compression: u32,
+) -> Vec<u8> {
     let (field_plans, cols, n_entries) = lower(fields);
 
     let header_env = build_header(ntuple_name, &field_plans, &cols);
     let header_checksum =
         u64::from_le_bytes(header_env[header_env.len() - 8..].try_into().unwrap());
+
+    // On-disk page bytes (compressed when it helps) and their sizes.
+    let disk_pages: Vec<Vec<u8>> = cols
+        .iter()
+        .map(|c| on_disk_page(&c.page, compression))
+        .collect();
+    let disk_sizes: Vec<usize> = disk_pages.iter().map(|p| p.len()).collect();
 
     let mut w = WBuffer::new();
 
@@ -492,7 +522,7 @@ pub fn rntuple_file_bytes(file_name: &str, ntuple_name: &str, fields: &[Field]) 
     w.be_u32(0); // nfree
     let p_nbytes_name = w.reserve(4);
     w.u8(4); // fUnits
-    w.be_u32(0); // fCompress
+    w.be_u32(compression); // fCompress
     w.be_u32(0); // fSeekInfo
     w.be_u32(0); // fNbytesInfo
     w.be_u16(1);
@@ -533,12 +563,19 @@ pub fn rntuple_file_bytes(file_name: &str, ntuple_name: &str, fields: &[Field]) 
     let seek_header = w.len();
     w.bytes(&header_env);
     let mut page_offsets = Vec::with_capacity(cols.len());
-    for c in &cols {
+    for dp in &disk_pages {
         page_offsets.push(w.len());
-        w.bytes(&c.page);
+        w.bytes(dp);
     }
     let page_list_offset = w.len();
-    let page_list_env = build_page_list(n_entries, &page_offsets, &cols, header_checksum);
+    let page_list_env = build_page_list(
+        n_entries,
+        &page_offsets,
+        &disk_sizes,
+        &cols,
+        compression,
+        header_checksum,
+    );
     w.bytes(&page_list_env);
     let seek_footer = w.len();
     let footer_env = build_footer(
@@ -600,11 +637,20 @@ pub fn rntuple_file_bytes(file_name: &str, ntuple_name: &str, fields: &[Field]) 
     w.into_vec()
 }
 
-/// Write a one-RNTuple ROOT file to `path`.
-pub fn write_rntuple_file(path: &Path, ntuple_name: &str, fields: &[Field]) -> std::io::Result<()> {
+/// Write a one-RNTuple ROOT file to `path`, optionally compressing pages
+/// (`compression` = `algorithm*100 + level`, 0 = none; e.g. 505 = Zstd level 5).
+pub fn write_rntuple_file(
+    path: &Path,
+    ntuple_name: &str,
+    fields: &[Field],
+    compression: u32,
+) -> std::io::Result<()> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("file.root");
-    std::fs::write(path, rntuple_file_bytes(file_name, ntuple_name, fields))
+    std::fs::write(
+        path,
+        rntuple_file_bytes(file_name, ntuple_name, fields, compression),
+    )
 }

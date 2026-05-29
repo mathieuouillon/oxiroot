@@ -51,7 +51,7 @@ fn writes_a_rich_rntuple_that_round_trips() {
     ];
 
     let out = PathBuf::from("/tmp/rootrs_written_rich_ntuple.root");
-    root_rntuple::write_rntuple_file(&out, "ntpl", &fields).expect("write rntuple");
+    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, 0).expect("write rntuple");
 
     let f = RFile::open(&out).expect("reopen");
     let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
@@ -91,4 +91,38 @@ fn writes_a_rich_rntuple_that_round_trips() {
             vec![4.0, 4.0, 4.0, 4.0],
         ])
     );
+}
+
+#[test]
+fn writes_a_zstd_compressed_rntuple_that_round_trips() {
+    // Highly compressible columns so the pages are actually stored compressed.
+    let n = 1000usize;
+    let x: Vec<i32> = (0..n as i32).map(|i| i % 4).collect();
+    let y: Vec<f64> = vec![2.5; n];
+    let fields = vec![
+        Field {
+            name: "x".into(),
+            data: Column::I32(x.clone()),
+        },
+        Field {
+            name: "y".into(),
+            data: Column::F64(y.clone()),
+        },
+    ];
+
+    let out = PathBuf::from("/tmp/rootrs_written_ntuple_zstd.root");
+    root_rntuple::write_rntuple_file(&out, "ntpl", &fields, 505).expect("write compressed");
+
+    // The file must be much smaller than the raw column bytes (4000 + 8000).
+    let file_len = std::fs::metadata(&out).unwrap().len();
+    assert!(
+        file_len < 6000,
+        "expected compressed file, got {file_len} bytes"
+    );
+
+    let f = RFile::open(&out).expect("reopen");
+    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    assert_eq!(ntpl.num_entries(), n as u64);
+    assert_eq!(ntpl.read_field(&f, "x").expect("x"), FieldValues::I32(x));
+    assert_eq!(ntpl.read_field(&f, "y").expect("y"), FieldValues::F64(y));
 }
