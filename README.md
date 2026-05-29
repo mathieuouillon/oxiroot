@@ -50,7 +50,9 @@ dependencies are added as later milestones land.
 - **M2** — Decompress (Zstd/zlib) + read the classic histogram family — all
   precisions `TH1/2/3{D,F,I,S,C,L}` plus `TProfile`, via the streamer engine;
   parse the `TStreamerInfo` list. ✅ _done_
-- **M3** — RNTuple read end-to-end.
+- **M3** — RNTuple read. _In progress: anchor (XXH3-verified), header/footer
+  envelopes, and the schema (fields + columns) parse against a real ROOT
+  fixture. Next: footer cluster groups → page list → page decode → values._
 - **M4** — TFile write + write a TH1D ROOT can read.
 - **M5** — RNTuple write.
 - **M6** — Round-trip / interop hardening.

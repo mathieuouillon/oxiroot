@@ -8,3 +8,6 @@ repository.workspace = true
 description = "RNTuple reader/writer (ROOT columnar event-data format)"
 
 [dependencies]
+root-io-core = { workspace = true }
+root-compress = { workspace = true }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
