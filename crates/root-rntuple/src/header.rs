@@ -1,10 +1,10 @@
 //! The RNTuple header envelope: the schema (fields + columns).
 
 use root_io_core::buffer::RBuffer;
-use root_io_core::error::{Error, Result};
+use root_io_core::error::Result;
 
 use crate::column::ColumnType;
-use crate::envelope::read_frame;
+use crate::envelope::{read_feature_flags, read_frame, read_string};
 
 /// Field flag: fixed-size array (a trailing `u64` array size follows).
 const FIELD_FLAG_ARRAY: u16 = 0x01;
@@ -129,23 +129,6 @@ impl Header {
             fields,
             columns,
         })
-    }
-}
-
-/// An RNTuple string: a 32-bit little-endian length followed by the bytes.
-fn read_string(r: &mut RBuffer) -> Result<String> {
-    let n = r.le_u32()? as usize;
-    let bytes = r.bytes(n)?;
-    String::from_utf8(bytes.to_vec()).map_err(|_| Error::InvalidUtf8)
-}
-
-/// Read the feature-flag fields (continuing while the signed value is negative).
-fn read_feature_flags(r: &mut RBuffer) -> Result<()> {
-    loop {
-        let flags = r.le_i64()?;
-        if flags >= 0 {
-            return Ok(());
-        }
     }
 }
 

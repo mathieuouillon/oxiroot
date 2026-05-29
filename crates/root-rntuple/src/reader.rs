@@ -1,18 +1,24 @@
-//! Opening an RNTuple from a ROOT file: locate the anchor key, parse and
-//! verify the anchor, and load the header and footer envelopes.
+//! Opening an RNTuple from a ROOT file: anchor → header/footer envelopes →
+//! page-list envelopes → on-demand column decoding.
 
 use root_io_core::error::{Error, Result};
 use root_io_core::RFile;
 
 use crate::anchor::{RNTupleAnchor, ANCHOR_CLASS};
-use crate::envelope::{read_envelope, ENVELOPE_FOOTER, ENVELOPE_HEADER};
+use crate::envelope::{read_envelope, ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST};
+use crate::footer::Footer;
 use crate::header::Header;
+use crate::page::{read_column, ColumnValues};
+use crate::pagelist::{ClusterPages, ClusterSummary, PageInfo, PageList};
 
-/// An opened RNTuple: the verified anchor, the parsed schema (header), and the
-/// decompressed footer envelope. Page-list and data decoding build on this.
+/// An opened RNTuple: verified anchor, parsed schema, cluster summaries, and
+/// per-cluster page locations. Column data is decoded on demand.
 pub struct RNTuple {
     anchor: RNTupleAnchor,
     header: Header,
+    footer: Footer,
+    summaries: Vec<ClusterSummary>,
+    page_clusters: Vec<ClusterPages>,
     header_bytes: Vec<u8>,
     footer_bytes: Vec<u8>,
 }
@@ -35,14 +41,14 @@ impl RNTuple {
             .map_err(|e| Error::Format(format!("decompressing anchor: {e}")))?;
         let anchor = RNTupleAnchor::read(&anchor_object)?;
 
-        let header = read_blob(
+        let header_bytes = read_blob(
             file.data(),
             anchor.seek_header,
             anchor.nbytes_header,
             anchor.len_header,
             "header",
         )?;
-        let footer = read_blob(
+        let footer_bytes = read_blob(
             file.data(),
             anchor.seek_footer,
             anchor.nbytes_footer,
@@ -50,29 +56,55 @@ impl RNTuple {
             "footer",
         )?;
 
-        // Verify the envelope checksums and types up front, and parse the schema.
-        let h = read_envelope(&header)?;
+        let h = read_envelope(&header_bytes)?;
         if h.type_id != ENVELOPE_HEADER {
             return Err(Error::Format(format!(
-                "header envelope has type {:#x}, expected {ENVELOPE_HEADER:#x}",
+                "bad header envelope type {:#x}",
                 h.type_id
             )));
         }
-        let parsed_header = Header::parse(h.payload)?;
+        let header = Header::parse(h.payload)?;
 
-        let f = read_envelope(&footer)?;
+        let f = read_envelope(&footer_bytes)?;
         if f.type_id != ENVELOPE_FOOTER {
             return Err(Error::Format(format!(
-                "footer envelope has type {:#x}, expected {ENVELOPE_FOOTER:#x}",
+                "bad footer envelope type {:#x}",
                 f.type_id
             )));
+        }
+        let footer = Footer::parse(f.payload)?;
+
+        // Read each cluster group's page-list envelope.
+        let mut summaries = Vec::new();
+        let mut page_clusters = Vec::new();
+        for group in &footer.cluster_groups {
+            let blob = read_blob(
+                file.data(),
+                group.page_list.offset,
+                group.page_list.size as u64,
+                group.page_list_len,
+                "page list",
+            )?;
+            let env = read_envelope(&blob)?;
+            if env.type_id != ENVELOPE_PAGELIST {
+                return Err(Error::Format(format!(
+                    "bad page-list envelope type {:#x}",
+                    env.type_id
+                )));
+            }
+            let page_list = PageList::parse(env.payload)?;
+            summaries.extend(page_list.summaries);
+            page_clusters.extend(page_list.clusters);
         }
 
         Ok(RNTuple {
             anchor,
-            header: parsed_header,
-            header_bytes: header,
-            footer_bytes: footer,
+            header,
+            footer,
+            summaries,
+            page_clusters,
+            header_bytes,
+            footer_bytes,
         })
     }
 
@@ -86,6 +118,11 @@ impl RNTuple {
         &self.header
     }
 
+    /// The parsed footer (cluster groups).
+    pub fn footer(&self) -> &Footer {
+        &self.footer
+    }
+
     /// The decompressed header envelope bytes.
     pub fn header_envelope(&self) -> &[u8] {
         &self.header_bytes
@@ -94,6 +131,36 @@ impl RNTuple {
     /// The decompressed footer envelope bytes.
     pub fn footer_envelope(&self) -> &[u8] {
         &self.footer_bytes
+    }
+
+    /// Total number of entries across all clusters.
+    pub fn num_entries(&self) -> u64 {
+        self.summaries.iter().map(|s| s.num_entries).sum()
+    }
+
+    /// Decode physical column `column_index` across all clusters.
+    pub fn read_column(&self, file: &RFile, column_index: usize) -> Result<ColumnValues> {
+        let descriptor = self
+            .header
+            .columns
+            .get(column_index)
+            .ok_or_else(|| Error::Format(format!("no column {column_index}")))?;
+
+        let mut pages: Vec<PageInfo> = Vec::new();
+        for cluster in &self.page_clusters {
+            let column = cluster
+                .columns
+                .get(column_index)
+                .ok_or_else(|| Error::Format(format!("cluster missing column {column_index}")))?;
+            pages.extend_from_slice(&column.pages);
+        }
+
+        read_column(
+            file.data(),
+            descriptor.column_type,
+            descriptor.bits_on_storage,
+            &pages,
+        )
     }
 }
 

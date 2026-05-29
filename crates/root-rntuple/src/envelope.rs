@@ -91,3 +91,43 @@ pub fn read_frame(r: &mut RBuffer) -> Result<Frame> {
         end: start + size,
     })
 }
+
+/// A standard (type-0) on-disk locator: a compressed byte count and a file
+/// offset from the start of the file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Locator {
+    /// Compressed size of the located bytes.
+    pub size: u32,
+    /// File offset of the located bytes.
+    pub offset: u64,
+}
+
+/// Read a type-0 locator. A negative size flags a non-standard locator, which
+/// is not supported here.
+pub fn read_locator(r: &mut RBuffer) -> Result<Locator> {
+    let size = r.le_i32()?;
+    if size < 0 {
+        return Err(Error::Format(
+            "non-standard RNTuple locator is unsupported".into(),
+        ));
+    }
+    let offset = r.le_u64()?;
+    Ok(Locator {
+        size: size as u32,
+        offset,
+    })
+}
+
+/// Read an RNTuple string: a 32-bit little-endian length, then the UTF-8 bytes.
+pub(crate) fn read_string(r: &mut RBuffer) -> Result<String> {
+    let n = r.le_u32()? as usize;
+    let bytes = r.bytes(n)?;
+    String::from_utf8(bytes.to_vec()).map_err(|_| Error::InvalidUtf8)
+}
+
+/// Consume the feature-flag fields (continuing while the signed value is
+/// negative, per the spec's extension convention).
+pub(crate) fn read_feature_flags(r: &mut RBuffer) -> Result<()> {
+    while r.le_i64()? < 0 {}
+    Ok(())
+}

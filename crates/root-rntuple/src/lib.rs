@@ -10,11 +10,17 @@
 pub mod anchor;
 pub mod column;
 pub mod envelope;
+pub mod footer;
 pub mod header;
+pub mod page;
+pub mod pagelist;
 pub mod reader;
 
 pub use anchor::{RNTupleAnchor, ANCHOR_CLASS};
 pub use column::ColumnType;
-pub use envelope::{read_envelope, read_frame, Envelope, Frame};
+pub use envelope::{read_envelope, read_frame, read_locator, Envelope, Frame, Locator};
+pub use footer::{ClusterGroup, Footer};
 pub use header::{ColumnDescriptor, FieldDescriptor, Header, StructRole};
+pub use page::{read_column, ColumnValues};
+pub use pagelist::{ClusterPages, ClusterSummary, ColumnPages, PageInfo, PageList};
 pub use reader::RNTuple;
