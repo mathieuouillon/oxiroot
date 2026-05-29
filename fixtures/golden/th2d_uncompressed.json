@@ -1,0 +1,36 @@
+{
+  "compression": "none",
+  "file": "th2d_uncompressed.root",
+  "h2": {
+    "entries": 21.0,
+    "name": "h2",
+    "nx": 3,
+    "ny": 2,
+    "values": [
+      [
+        1.0,
+        2.0
+      ],
+      [
+        3.0,
+        4.0
+      ],
+      [
+        5.0,
+        6.0
+      ]
+    ],
+    "xedges": [
+      0.0,
+      1.0,
+      2.0,
+      3.0
+    ],
+    "yedges": [
+      0.0,
+      1.0,
+      2.0
+    ]
+  },
+  "sha256": "435d12aac7f758ac34d427d1e1e6f6b67e705d132a2fd2733c3c3d3080b71daf"
+}

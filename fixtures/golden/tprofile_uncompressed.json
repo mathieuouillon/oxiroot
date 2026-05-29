@@ -1,0 +1,22 @@
+{
+  "classname": "TProfile",
+  "edges": [
+    [
+      0.0,
+      1.0,
+      2.0,
+      3.0,
+      4.0
+    ]
+  ],
+  "entries": 5.0,
+  "file": "tprofile_uncompressed.root",
+  "name": "p",
+  "sha256": "033611d3a3158ab0d3ba468f77276b7bf40fb1d46831c090bf714de402b01d64",
+  "values": [
+    15.0,
+    7.5,
+    30.0,
+    0.0
+  ]
+}

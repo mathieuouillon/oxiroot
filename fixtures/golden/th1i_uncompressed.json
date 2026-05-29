@@ -1,0 +1,24 @@
+{
+  "classname": "TH1I",
+  "edges": [
+    [
+      0.0,
+      1.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0
+    ]
+  ],
+  "entries": 5.0,
+  "file": "th1i_uncompressed.root",
+  "name": "h1i",
+  "sha256": "01097f4b10fc3811c1be2390dd23d79d63aaf86fe22757a74e16fc49cebfc346",
+  "values": [
+    100000,
+    200000,
+    300000,
+    400000,
+    500000
+  ]
+}

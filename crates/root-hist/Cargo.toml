@@ -1,0 +1,12 @@
+[package]
+name = "root-hist"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Classic ROOT histograms (TH1/TH2/TH3/TProfile) read/write"
+
+[dependencies]
+root-io-core = { workspace = true }
+root-compress = { workspace = true }

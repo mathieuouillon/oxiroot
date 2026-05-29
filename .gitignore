@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Python oracle / fixture-generation environment
+/.venv
+__pycache__/
+*.pyc
+
+# Local, machine-specific Claude Code settings
+.claude/settings.local.json

@@ -1,0 +1,24 @@
+{
+  "classname": "TH1F",
+  "edges": [
+    [
+      0.0,
+      1.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0
+    ]
+  ],
+  "entries": 5.0,
+  "file": "th1f_uncompressed.root",
+  "name": "h1f",
+  "sha256": "2032ab320d2d266b4c4fb7493222aa9e2b6e9ca2a1d4a3232beae5e13e41523d",
+  "values": [
+    1.5,
+    3.0,
+    4.5,
+    6.0,
+    7.5
+  ]
+}
