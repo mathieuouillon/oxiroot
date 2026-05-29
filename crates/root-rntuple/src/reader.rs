@@ -259,13 +259,43 @@ impl RNTuple {
             .find(|&ci| self.header.columns[ci].column_type.is_index())
     }
 
+    /// Read a collection/string index column as globally cumulative element
+    /// offsets. Index offsets are stored relative to each cluster, so we decode
+    /// the column one cluster at a time and shift each cluster's values by the
+    /// number of elements in all preceding clusters. (This is a no-op for a
+    /// single cluster, and matches a flat decode for delta-encoded indices.)
     fn read_offsets(&self, file: &RFile, column_index: usize) -> Result<Vec<u64>> {
-        match self.read_column(file, column_index)? {
-            ColumnValues::U64(v) => Ok(v),
-            other => Err(Error::Format(format!(
-                "expected index offsets, got {other:?}"
-            ))),
+        let descriptor = self
+            .header
+            .columns
+            .get(column_index)
+            .ok_or_else(|| Error::Format(format!("no column {column_index}")))?;
+
+        let mut out = Vec::new();
+        let mut base = 0u64;
+        for cluster in &self.page_clusters {
+            let column = cluster
+                .columns
+                .get(column_index)
+                .ok_or_else(|| Error::Format(format!("cluster missing column {column_index}")))?;
+            let local = match read_column(
+                file.data(),
+                descriptor.column_type,
+                descriptor.bits_on_storage,
+                &column.pages,
+            )? {
+                ColumnValues::U64(v) => v,
+                other => {
+                    return Err(Error::Format(format!(
+                        "expected index offsets, got {other:?}"
+                    )))
+                }
+            };
+            let cluster_total = local.last().copied().unwrap_or(0);
+            out.extend(local.into_iter().map(|v| v + base));
+            base += cluster_total;
         }
+        Ok(out)
     }
 }
 

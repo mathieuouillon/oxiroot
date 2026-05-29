@@ -48,13 +48,56 @@ fn streams_multiple_clusters() {
 }
 
 #[test]
-fn streaming_compresses_and_rejects_collections() {
-    let out = PathBuf::from("/tmp/rootrs_stream_reject.root");
+fn streams_collections_and_strings_across_clusters() {
+    // vector<f32> and string fields spanning two clusters (compressed), with
+    // empty collections/strings at cluster boundaries. The reader must re-base
+    // each cluster's index offsets to reconstruct the values across clusters.
+    let out = PathBuf::from("/tmp/rootrs_stream_coll.root");
     let mut w = RNTupleWriter::create(&out, "ntpl", 505).expect("create");
-    // A collection column is rejected by the streaming writer.
-    let err = w.write_batch(&[Field {
-        name: "v".into(),
-        data: Column::VecF32(vec![vec![1.0], vec![2.0, 3.0]]),
-    }]);
-    assert!(err.is_err(), "collections must be rejected");
+
+    let v0 = vec![vec![], vec![1.0f32], vec![2.0, 2.0]];
+    let s0 = vec!["a".to_string(), "bb".to_string(), "ccc".to_string()];
+    w.write_batch(&[
+        Field {
+            name: "v".into(),
+            data: Column::VecF32(v0.clone()),
+        },
+        Field {
+            name: "s".into(),
+            data: Column::Str(s0.clone()),
+        },
+    ])
+    .expect("batch 0");
+
+    let v1 = vec![vec![3.0f32, 3.0, 3.0], vec![]];
+    let s1 = vec!["dddd".to_string(), String::new()];
+    w.write_batch(&[
+        Field {
+            name: "v".into(),
+            data: Column::VecF32(v1.clone()),
+        },
+        Field {
+            name: "s".into(),
+            data: Column::Str(s1.clone()),
+        },
+    ])
+    .expect("batch 1");
+    w.finish().expect("finish");
+
+    let f = RFile::open(&out).expect("reopen");
+    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    assert_eq!(ntpl.num_entries(), 5);
+
+    let mut expect_v = v0;
+    expect_v.extend(v1);
+    let mut expect_s = s0;
+    expect_s.extend(s1);
+    assert_eq!(
+        ntpl.read_field(&f, "v").unwrap(),
+        FieldValues::VecF32(expect_v)
+    );
+    assert_eq!(
+        ntpl.read_field(&f, "s").unwrap(),
+        FieldValues::Str(expect_s)
+    );
 }

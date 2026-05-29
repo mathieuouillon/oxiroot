@@ -78,3 +78,32 @@ fn reads_fields_uncompressed() {
 fn reads_fields_zstd_split() {
     check_fields("rntuple_scalars_zstd.root");
 }
+
+/// A `std::vector<float>` field written by official ROOT across three clusters
+/// (with split/delta index encoding). The reader must re-base each cluster's
+/// index offsets to reconstruct the per-entry collections correctly.
+#[test]
+fn reads_real_root_multicluster_collection() {
+    let file = open("rntuple_multicluster_vec.root");
+    let ntpl = RNTuple::open(&file, "ntpl").expect("open RNTuple");
+    assert_eq!(ntpl.num_entries(), 9);
+
+    assert_eq!(
+        ntpl.read_field(&file, "n").expect("n"),
+        FieldValues::I32((0..9).collect())
+    );
+    assert_eq!(
+        ntpl.read_field(&file, "v").expect("v"),
+        FieldValues::VecF32(vec![
+            vec![],
+            vec![10.0],
+            vec![20.0, 21.0],
+            vec![30.0, 31.0, 32.0],
+            vec![],
+            vec![50.0],
+            vec![60.0, 61.0],
+            vec![70.0, 71.0, 72.0],
+            vec![],
+        ])
+    );
+}

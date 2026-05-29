@@ -3,8 +3,8 @@
 //! [`write_rntuple_file`] writes a whole RNTuple in one shot, supporting scalar
 //! (`bool`/`i32`/`i64`/`f32`/`f64`), `std::string`, and `std::vector<T>` fields
 //! in a single cluster, with non-split column encodings and optional page
-//! compression. [`RNTupleWriter`] streams scalar columns one cluster per batch,
-//! so a large dataset need not be held in memory at once. The header/page/
+//! compression. [`RNTupleWriter`] writes those same field types one cluster per
+//! batch, so a large dataset need not be held in memory at once. The header/page/
 //! page-list/footer envelopes are written as raw blobs at the offsets the anchor
 //! (and the page locators) point to; only the anchor is a `TKey`. Validated by
 //! reading the result back and by official ROOT / uproot.
@@ -686,9 +686,9 @@ struct HeaderState {
 /// chunk at a time without ever holding it all in memory. Call
 /// [`finish`](RNTupleWriter::finish) to write the page list, footer, and anchor.
 ///
-/// Scalar columns only (`bool`/`i32`/`i64`/`f32`/`f64`); collection and string
-/// fields (whose index offsets are cluster-relative) require the single-cluster
-/// [`write_rntuple_file`].
+/// Handles the same field types as [`write_rntuple_file`] — scalars,
+/// `std::string`, and `std::vector<T>` — writing each batch's collection/string
+/// index offsets relative to its own cluster, as the format requires.
 pub struct RNTupleWriter<W: Write + Seek> {
     sink: W,
     pos: u64,
@@ -825,22 +825,6 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         if fields.is_empty() {
             return Ok(());
         }
-        for f in fields {
-            if !matches!(
-                f.data,
-                Column::Bool(_) | Column::I32(_) | Column::I64(_) | Column::F32(_) | Column::F64(_)
-            ) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!(
-                        "field {:?}: the streaming multi-cluster writer supports scalar \
-                         columns only (use write_rntuple_file for collections/strings)",
-                        f.name
-                    ),
-                ));
-            }
-        }
-
         let (field_plans, cols, n_entries) = lower(fields);
         if n_entries == 0 {
             return Ok(());
