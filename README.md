@@ -54,7 +54,9 @@ dependencies are added as later milestones land.
   envelopes → schema → cluster groups → page list → page decode, including
   split/zigzag/delta encodings and Zstd-compressed pages, plus a typed field
   API (`read_field`) for scalars, `std::string`, and `std::vector<T>`._
-- **M4** — TFile write + write a TH1D ROOT can read.
+- **M4** — TFile write + a TH1D ROOT can read. _In progress: `TH1D` object
+  serialization is byte-identical to ROOT (`write_th1d`); next is the TFile
+  container (header, first key/TDirectory, key list, free list, streamer info)._
 - **M5** — RNTuple write.
 - **M6** — Round-trip / interop hardening.
 
