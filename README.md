@@ -26,11 +26,19 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 
 ## Quick start
 
-Not yet on crates.io — depend on it via git:
+Not yet on crates.io — depend on it via git. Pull in everything through the
+facade, or just the part you need: the histogram and RNTuple crates are
+independent, so a histogram-only project never compiles the RNTuple code (and
+vice versa).
 
 ```toml
 [dependencies]
+# Everything — histograms + RNTuple — through the facade:
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
+
+# …or depend on just one crate from the same repo:
+oxiroot-hist    = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms only
+oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple only
 ```
 
 ```rust
