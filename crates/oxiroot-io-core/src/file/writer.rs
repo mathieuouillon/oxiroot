@@ -35,10 +35,26 @@ pub struct ObjectRecord {
 
 /// Length of a small-format `TKey` header for the given strings.
 pub fn key_len(class: &str, name: &str, title: &str) -> u16 {
-    // Nbytes(4)+version(2)+ObjLen(4)+Datime(4)+KeyLen(2)+Cycle(2)+SeekKey(4)
-    // +SeekPdir(4) = 26, then three length-prefixed strings.
-    (26 + (1 + class.len()) + (1 + name.len()) + (1 + title.len())) as u16
+    key_len_fmt(class, name, title, false)
 }
+
+/// `TKey` header length in either form. The fixed part is
+/// Nbytes(4)+version(2)+ObjLen(4)+Datime(4)+KeyLen(2)+Cycle(2) plus the two seek
+/// pointers — 4 bytes each in small form, 8 in big — then three length-prefixed
+/// strings.
+pub fn key_len_fmt(class: &str, name: &str, title: &str, big: bool) -> u16 {
+    let fixed = if big { 34 } else { 26 };
+    (fixed + (1 + class.len()) + (1 + name.len()) + (1 + title.len())) as u16
+}
+
+/// ROOT switches a file to the 64-bit ("big") on-disk form once any file pointer
+/// would exceed this many bytes (`kStartBigFile`). Past this point keys, the
+/// directory record, and the file header all widen their seek fields to 64 bits.
+pub const KSTART_BIG_FILE: u64 = 2_000_000_000;
+
+/// Key version written for the small (32-bit seek) form; the big form adds 1000,
+/// which is what the reader keys on ([`crate::file::key`]).
+const KEY_VERSION_SMALL: u16 = 4;
 
 /// Write a small-format (32-bit seek) `TKey` header (no payload). `obj_len` is
 /// the uncompressed object size (`ObjLen`); `payload_len` is the on-disk payload
@@ -55,7 +71,7 @@ pub fn write_key_header(
     seek_key: u64,
     seek_pdir: u64,
 ) {
-    write_key_header_cycle(
+    write_key_header_fmt(
         w,
         class,
         name,
@@ -65,6 +81,7 @@ pub fn write_key_header(
         seek_key,
         seek_pdir,
         1,
+        false,
     );
 }
 
@@ -82,15 +99,54 @@ pub fn write_key_header_cycle(
     seek_pdir: u64,
     cycle: u16,
 ) {
-    let klen = key_len(class, name, title);
+    write_key_header_fmt(
+        w,
+        class,
+        name,
+        title,
+        obj_len,
+        payload_len,
+        seek_key,
+        seek_pdir,
+        cycle,
+        false,
+    );
+}
+
+/// The full `TKey` header writer: small or big (64-bit seek) form per `big`. Used
+/// directly by writers that produce files past [`KSTART_BIG_FILE`]; the small
+/// helpers above delegate here with `big = false`.
+#[allow(clippy::too_many_arguments)]
+pub fn write_key_header_fmt(
+    w: &mut WBuffer,
+    class: &str,
+    name: &str,
+    title: &str,
+    obj_len: u32,
+    payload_len: u32,
+    seek_key: u64,
+    seek_pdir: u64,
+    cycle: u16,
+    big: bool,
+) {
+    let klen = key_len_fmt(class, name, title, big);
     w.be_i32((klen as u32 + payload_len) as i32); // Nbytes = KeyLen + on-disk payload
-    w.be_u16(4); // key version (small format)
+    w.be_u16(if big {
+        KEY_VERSION_SMALL + 1000
+    } else {
+        KEY_VERSION_SMALL
+    });
     w.be_u32(obj_len);
     w.be_u32(DATIME);
     w.be_u16(klen);
     w.be_u16(cycle);
-    w.be_u32(seek_key as u32);
-    w.be_u32(seek_pdir as u32);
+    if big {
+        w.be_u64(seek_key);
+        w.be_u64(seek_pdir);
+    } else {
+        w.be_u32(seek_key as u32);
+        w.be_u32(seek_pdir as u32);
+    }
     w.string(class);
     w.string(name);
     w.string(title);

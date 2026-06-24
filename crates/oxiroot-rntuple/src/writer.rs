@@ -14,7 +14,9 @@ use std::path::Path;
 
 use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{key_len, write_key_header, Compression};
+use oxiroot_io_core::{
+    key_len, key_len_fmt, write_key_header, write_key_header_fmt, Compression, KSTART_BIG_FILE,
+};
 
 use crate::column::ColumnType;
 
@@ -640,12 +642,27 @@ fn build_anchor(
 
 /// Build a complete ROOT file containing one RNTuple named `ntuple_name`,
 /// optionally compressing pages (`compression` is e.g. `Compression::None` or
-/// `Compression::Zstd(5)`).
+/// `Compression::Zstd(5)`). Automatically switches to ROOT's 64-bit ("big")
+/// container form once the file would exceed 2 GiB.
 pub fn rntuple_file_bytes(
     file_name: &str,
     ntuple_name: &str,
     fields: &[Field],
     compression: Compression,
+) -> Result<Vec<u8>> {
+    rntuple_file_bytes_threshold(file_name, ntuple_name, fields, compression, KSTART_BIG_FILE)
+}
+
+/// Like [`rntuple_file_bytes`] but with the big-file threshold injectable for
+/// tests. Writes the small (32-bit) container first; only if that already
+/// exceeds the threshold does it rewrite in the big (64-bit) form, so the
+/// expensive page bytes are copied twice only for genuinely >2 GiB files.
+fn rntuple_file_bytes_threshold(
+    file_name: &str,
+    ntuple_name: &str,
+    fields: &[Field],
+    compression: Compression,
+    threshold: u64,
 ) -> Result<Vec<u8>> {
     let compression = compression.setting();
     let (field_plans, cols, n_entries) = lower(fields);
@@ -661,20 +678,92 @@ pub fn rntuple_file_bytes(
         .collect();
     let disk_sizes: Vec<usize> = disk_pages.iter().map(|p| p.len()).collect();
 
+    let prep = OneShotPrep {
+        file_name,
+        ntuple_name,
+        header_env: &header_env,
+        header_checksum,
+        disk_pages: &disk_pages,
+        disk_sizes: &disk_sizes,
+        cols: &cols,
+        n_entries,
+        compression,
+    };
+
+    let small = rntuple_one_shot_pass(&prep, false)?;
+    if small.len() as u64 <= threshold {
+        return Ok(small);
+    }
+    rntuple_one_shot_pass(&prep, true)
+}
+
+/// Format-independent inputs to a one-shot write pass (all `Copy` references so a
+/// pass can be re-run cheaply in the other container form).
+#[derive(Clone, Copy)]
+struct OneShotPrep<'a> {
+    file_name: &'a str,
+    ntuple_name: &'a str,
+    header_env: &'a [u8],
+    header_checksum: u64,
+    disk_pages: &'a [Vec<u8>],
+    disk_sizes: &'a [usize],
+    cols: &'a [ColumnPlan],
+    n_entries: u32,
+    compression: u32,
+}
+
+/// Write a zeroed file-header seek field (8 bytes big, 4 small).
+fn seek_zero(w: &mut WBuffer, big: bool) {
+    if big {
+        w.be_u64(0);
+    } else {
+        w.be_u32(0);
+    }
+}
+
+/// Write a known seek value as 8 bytes (big) or 4 bytes (small).
+fn seek_value(w: &mut WBuffer, v: u64, big: bool) {
+    if big {
+        w.be_u64(v);
+    } else {
+        w.be_u32(v as u32);
+    }
+}
+
+/// Write one complete RNTuple ROOT file in the small (32-bit) or big (64-bit)
+/// container form. The RNTuple envelopes are format-neutral; only the TFile
+/// header, directory record, and TKeys widen their seek pointers.
+fn rntuple_one_shot_pass(p: &OneShotPrep, big: bool) -> Result<Vec<u8>> {
+    let OneShotPrep {
+        file_name,
+        ntuple_name,
+        header_env,
+        header_checksum,
+        disk_pages,
+        disk_sizes,
+        cols,
+        n_entries,
+        compression,
+    } = *p;
+
     let mut w = WBuffer::new();
 
-    // --- File header (100 bytes). ---
+    // --- File header (100 bytes; fBEGIN is always 100 in either form). ---
     w.bytes(b"root");
-    w.be_u32(FILE_VERSION);
+    w.be_u32(if big {
+        FILE_VERSION + 1_000_000
+    } else {
+        FILE_VERSION
+    });
     w.be_u32(100);
-    let p_end = w.reserve(4);
-    w.be_u32(0); // fSeekFree
+    let p_end = w.reserve(if big { 8 } else { 4 });
+    seek_zero(&mut w, big); // fSeekFree (no free list)
     w.be_u32(0); // fNbytesFree
     w.be_u32(0); // nfree
     let p_nbytes_name = w.reserve(4);
-    w.u8(4); // fUnits
+    w.u8(if big { 8 } else { 4 }); // fUnits
     w.be_u32(compression); // fCompress
-    w.be_u32(0); // fSeekInfo
+    seek_zero(&mut w, big); // fSeekInfo (no streamer info)
     w.be_u32(0); // fNbytesInfo
     w.be_u16(1);
     w.bytes(&[0u8; 16]);
@@ -683,11 +772,13 @@ pub fn rntuple_file_bytes(
     }
 
     // --- Root directory name key + TDirectory (at 100). ---
-    let first_klen = key_len("TFile", file_name, "");
+    let first_klen = key_len_fmt("TFile", file_name, "", big);
     let name_title_len = (1 + file_name.len()) + 1;
     let f_nbytes_name = first_klen as usize + name_title_len;
-    let first_obj_len = (name_title_len + 30 + 18) as u32;
-    write_key_header(
+    // TDirectory record: its three seeks are 4 bytes (small) or 8 (big).
+    let dir_record_len = if big { 42 } else { 30 };
+    let first_obj_len = (name_title_len + dir_record_len + 18) as u32;
+    write_key_header_fmt(
         &mut w,
         "TFile",
         file_name,
@@ -696,25 +787,27 @@ pub fn rntuple_file_bytes(
         first_obj_len,
         100,
         0,
+        1,
+        big,
     );
     w.string(file_name);
     w.string("");
-    w.be_i16(5);
+    w.be_i16(if big { 1005 } else { 5 }); // dir record version (+1000 ⇒ big)
     w.be_u32(DATIME);
     w.be_u32(DATIME);
     let p_dir_nbytes_keys = w.reserve(4);
     w.be_i32(f_nbytes_name as i32);
-    w.be_u32(100);
-    w.be_u32(0);
-    let p_dir_seek_keys = w.reserve(4);
+    seek_value(&mut w, 100, big); // fSeekDir
+    seek_value(&mut w, 0, big); // fSeekParent
+    let p_dir_seek_keys = w.reserve(if big { 8 } else { 4 });
     w.be_u16(1);
     w.bytes(&[0u8; 16]);
 
     // --- RNTuple blobs: header, pages, page list, footer. ---
     let seek_header = w.len();
-    w.bytes(&header_env);
+    w.bytes(header_env);
     let mut page_offsets = Vec::with_capacity(cols.len());
-    for dp in &disk_pages {
+    for dp in disk_pages {
         page_offsets.push(w.len());
         w.bytes(dp);
     }
@@ -722,8 +815,8 @@ pub fn rntuple_file_bytes(
     let page_list_env = build_page_list(
         n_entries,
         &page_offsets,
-        &disk_sizes,
-        &cols,
+        disk_sizes,
+        cols,
         compression,
         header_checksum,
     )?;
@@ -742,7 +835,7 @@ pub fn rntuple_file_bytes(
     let anchor_obj = build_anchor(seek_header, header_env.len(), seek_footer, footer_env.len());
     let anchor_seek = w.len();
     let anchor_len = anchor_obj.len() as u32;
-    write_key_header(
+    write_key_header_fmt(
         &mut w,
         "ROOT::RNTuple",
         ntuple_name,
@@ -751,13 +844,15 @@ pub fn rntuple_file_bytes(
         anchor_len,
         anchor_seek as u64,
         100,
+        1,
+        big,
     );
     w.bytes(&anchor_obj);
 
     // --- Key list (one entry: the anchor). ---
     let keylist_seek = w.len();
-    let keylist_obj_len = 4 + key_len("ROOT::RNTuple", ntuple_name, "") as u32;
-    write_key_header(
+    let keylist_obj_len = 4 + key_len_fmt("ROOT::RNTuple", ntuple_name, "", big) as u32;
+    write_key_header_fmt(
         &mut w,
         "TFile",
         file_name,
@@ -766,9 +861,11 @@ pub fn rntuple_file_bytes(
         keylist_obj_len,
         keylist_seek as u64,
         100,
+        1,
+        big,
     );
     w.be_i32(1); // nkeys
-    write_key_header(
+    write_key_header_fmt(
         &mut w,
         "ROOT::RNTuple",
         ntuple_name,
@@ -777,14 +874,24 @@ pub fn rntuple_file_bytes(
         anchor_len,
         anchor_seek as u64,
         100,
+        1,
+        big,
     );
-    let keylist_nbytes = key_len("TFile", file_name, "") as u32 + keylist_obj_len;
-    let f_end = w.len() as u32;
+    let keylist_nbytes = key_len_fmt("TFile", file_name, "", big) as u32 + keylist_obj_len;
+    let f_end = w.len() as u64;
 
-    w.patch_be_u32(p_end, f_end);
+    if big {
+        w.patch_be_u64(p_end, f_end);
+    } else {
+        w.patch_be_u32(p_end, f_end as u32);
+    }
     w.patch_be_u32(p_nbytes_name, f_nbytes_name as u32);
     w.patch_be_u32(p_dir_nbytes_keys, keylist_nbytes);
-    w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
+    if big {
+        w.patch_be_u64(p_dir_seek_keys, keylist_seek as u64);
+    } else {
+        w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
+    }
 
     Ok(w.into_vec())
 }
@@ -1192,6 +1299,43 @@ fn build_page_list_multi(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{FieldValues, RNTuple};
+    use oxiroot_io_core::RFile;
+
+    #[test]
+    fn one_shot_writes_and_reads_big_format() {
+        let fields = vec![
+            Field::i32("x", vec![1, 2, 3, 4]),
+            Field::f64("y", vec![1.5, 2.5, 3.5, 4.5]),
+        ];
+
+        // Tiny file, but forced into the 64-bit container form via a low
+        // threshold — it must still parse and yield identical values.
+        let bytes =
+            rntuple_file_bytes_threshold("t.root", "ntpl", &fields, Compression::None, 64).unwrap();
+        let f = RFile::from_bytes(bytes).unwrap();
+        assert!(f.header().is_big(), "forced into big-format container");
+        let ntpl = RNTuple::open(&f, "ntpl").unwrap();
+        assert_eq!(ntpl.num_entries(), 4);
+        assert_eq!(
+            ntpl.read_field(&f, "x").unwrap(),
+            FieldValues::I32(vec![1, 2, 3, 4])
+        );
+        assert_eq!(
+            ntpl.read_field(&f, "y").unwrap(),
+            FieldValues::F64(vec![1.5, 2.5, 3.5, 4.5])
+        );
+
+        // The same data under the real threshold stays in small (32-bit) form.
+        let small = rntuple_file_bytes("t.root", "ntpl", &fields, Compression::None).unwrap();
+        let fs = RFile::from_bytes(small).unwrap();
+        assert!(!fs.header().is_big());
+        let ntpl = RNTuple::open(&fs, "ntpl").unwrap();
+        assert_eq!(
+            ntpl.read_field(&fs, "x").unwrap(),
+            FieldValues::I32(vec![1, 2, 3, 4])
+        );
+    }
 
     #[test]
     fn page_limits_reject_oversized_counts_and_sizes() {

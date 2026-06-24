@@ -14,6 +14,7 @@ pub use header::{FileHeader, TUuid, BIG_FILE_VERSION, MAGIC};
 pub use key::{TDatime, TKey};
 pub use rfile::RFile;
 pub use writer::{
-    key_len, update_root_file, write_key_header, write_key_header_cycle, write_root_file,
-    write_root_file_with_dirs, write_root_file_with_streamers, ObjectRecord, Subdir,
+    key_len, key_len_fmt, update_root_file, write_key_header, write_key_header_cycle,
+    write_key_header_fmt, write_root_file, write_root_file_with_dirs,
+    write_root_file_with_streamers, ObjectRecord, Subdir, KSTART_BIG_FILE,
 };
