@@ -10,10 +10,12 @@ license = "MIT"
 repository = "https://github.com/mathieuouillon/oxiroot"
 
 [workspace.dependencies]
-oxiroot-io-core = { path = "crates/oxiroot-io-core" }
-oxiroot-compress = { path = "crates/oxiroot-compress" }
-oxiroot-rntuple = { path = "crates/oxiroot-rntuple" }
-oxiroot-hist = { path = "crates/oxiroot-hist" }
+# `version` (alongside `path`) is what lets these be published to crates.io:
+# cargo uses the path for local builds and the version in the released manifest.
+oxiroot-io-core = { path = "crates/oxiroot-io-core", version = "0.0.1" }
+oxiroot-compress = { path = "crates/oxiroot-compress", version = "0.0.1" }
+oxiroot-rntuple = { path = "crates/oxiroot-rntuple", version = "0.0.1" }
+oxiroot-hist = { path = "crates/oxiroot-hist", version = "0.0.1" }
 
 [profile.release]
 opt-level = 3
