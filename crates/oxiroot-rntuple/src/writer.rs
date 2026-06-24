@@ -771,11 +771,12 @@ pub fn rntuple_file_bytes(
 /// Write a one-RNTuple ROOT file to `path`, optionally compressing pages
 /// (`compression` is e.g. `Compression::None` or `Compression::Zstd(5)`).
 pub fn write_rntuple_file(
-    path: &Path,
+    path: impl AsRef<Path>,
     ntuple_name: &str,
     fields: &[Field],
     compression: Compression,
 ) -> Result<()> {
+    let path = path.as_ref();
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -863,7 +864,12 @@ pub struct RNTupleWriter<W: Write + Seek> {
 
 impl RNTupleWriter<std::fs::File> {
     /// Create a streaming RNTuple file at `path`.
-    pub fn create(path: &Path, ntuple_name: &str, compression: Compression) -> Result<Self> {
+    pub fn create(
+        path: impl AsRef<Path>,
+        ntuple_name: &str,
+        compression: Compression,
+    ) -> Result<Self> {
+        let path = path.as_ref();
         let file_name = path
             .file_name()
             .and_then(|s| s.to_str())

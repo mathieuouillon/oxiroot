@@ -7,11 +7,25 @@
 use std::path::Path;
 
 use oxiroot_io_core::buffer::WBuffer;
+use oxiroot_io_core::error::Result;
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
 use oxiroot_io_core::{
     update_root_file, write_root_file_with_dirs, write_root_file_with_streamers, Compression,
     ObjectRecord, Subdir,
 };
+
+/// Derive the in-file name from `path`, build the file bytes, and write them,
+/// returning the crate [`Result`]. Shared by every `write_*_file` entry point so
+/// they agree on path handling, the default name, and the error type.
+fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Vec<u8>) -> Result<()> {
+    let path = path.as_ref();
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file.root");
+    std::fs::write(path, build(file_name))?;
+    Ok(())
+}
 
 use crate::axis::TAxis;
 use crate::th1::TH1;
@@ -21,26 +35,21 @@ use crate::tprofile::TProfile;
 
 /// Write a single `TH1D` into a new ROOT file at `path`. `compression`
 /// is e.g. `Compression::None` or `Compression::Zstd(5)`.
-pub fn write_th1d_file(path: &Path, h: &TH1, compression: Compression) -> std::io::Result<()> {
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let record = ObjectRecord {
-        class_name: "TH1D".to_string(),
-        name: h.name.clone(),
-        title: h.title.clone(),
-        object: th1d_to_bytes(h),
-    };
-    std::fs::write(
-        path,
+pub fn write_th1d_file(path: impl AsRef<Path>, h: &TH1, compression: Compression) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "TH1D".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: th1d_to_bytes(h),
+        };
         write_root_file_with_streamers(
             file_name,
             &[record],
             compression.setting(),
             Some(HIST_STREAMER_INFO),
-        ),
-    )
+        )
+    })
 }
 
 /// Streamer info (`TList<TStreamerInfo>`) describing the writable histogram
@@ -73,26 +82,21 @@ pub fn th1d_to_bytes(h: &TH1) -> Vec<u8> {
 
 /// Write a single `TH2D` into a new ROOT file at `path`. `compression`
 /// is e.g. `Compression::None` or `Compression::Zstd(5)`.
-pub fn write_th2d_file(path: &Path, h: &TH2, compression: Compression) -> std::io::Result<()> {
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let record = ObjectRecord {
-        class_name: "TH2D".to_string(),
-        name: h.name.clone(),
-        title: h.title.clone(),
-        object: th2d_to_bytes(h),
-    };
-    std::fs::write(
-        path,
+pub fn write_th2d_file(path: impl AsRef<Path>, h: &TH2, compression: Compression) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "TH2D".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: th2d_to_bytes(h),
+        };
         write_root_file_with_streamers(
             file_name,
             &[record],
             compression.setting(),
             Some(HIST_STREAMER_INFO),
-        ),
-    )
+        )
+    })
 }
 
 /// Serialize a `TH2D` object (including its leading byte-count/version header)
@@ -123,26 +127,21 @@ pub fn th2d_to_bytes(h: &TH2) -> Vec<u8> {
 
 /// Write a single `TH3D` into a new ROOT file at `path`. `compression`
 /// is e.g. `Compression::None` or `Compression::Zstd(5)`.
-pub fn write_th3d_file(path: &Path, h: &TH3, compression: Compression) -> std::io::Result<()> {
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let record = ObjectRecord {
-        class_name: "TH3D".to_string(),
-        name: h.name.clone(),
-        title: h.title.clone(),
-        object: th3d_to_bytes(h),
-    };
-    std::fs::write(
-        path,
+pub fn write_th3d_file(path: impl AsRef<Path>, h: &TH3, compression: Compression) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "TH3D".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: th3d_to_bytes(h),
+        };
         write_root_file_with_streamers(
             file_name,
             &[record],
             compression.setting(),
             Some(HIST_STREAMER_INFO),
-        ),
-    )
+        )
+    })
 }
 
 /// Serialize a `TH3D` object (including its leading byte-count/version header)
@@ -180,29 +179,24 @@ pub fn th3d_to_bytes(h: &TH3) -> Vec<u8> {
 /// Write a single `TProfile` into a new ROOT file at `path`. `compression`
 /// is e.g. `Compression::None` or `Compression::Zstd(5)`.
 pub fn write_tprofile_file(
-    path: &Path,
+    path: impl AsRef<Path>,
     h: &TProfile,
     compression: Compression,
-) -> std::io::Result<()> {
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let record = ObjectRecord {
-        class_name: "TProfile".to_string(),
-        name: h.name.clone(),
-        title: h.title.clone(),
-        object: tprofile_to_bytes(h),
-    };
-    std::fs::write(
-        path,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "TProfile".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: tprofile_to_bytes(h),
+        };
         write_root_file_with_streamers(
             file_name,
             &[record],
             compression.setting(),
             Some(HIST_STREAMER_INFO),
-        ),
-    )
+        )
+    })
 }
 
 /// Serialize a `TProfile` object (including its leading byte-count/version
@@ -277,57 +271,47 @@ impl Hist<'_> {
 /// the root directory). `compression` is e.g. `Compression::None` or
 /// `Compression::Zstd(5)`.
 pub fn write_histograms_file(
-    path: &Path,
+    path: impl AsRef<Path>,
     hists: &[Hist],
     compression: Compression,
-) -> std::io::Result<()> {
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let records: Vec<ObjectRecord> = hists.iter().map(Hist::record).collect();
-    std::fs::write(
-        path,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let records: Vec<ObjectRecord> = hists.iter().map(Hist::record).collect();
         write_root_file_with_streamers(
             file_name,
             &records,
             compression.setting(),
             Some(HIST_STREAMER_INFO),
-        ),
-    )
+        )
+    })
 }
 
 /// Write histograms organized into subdirectories: `root` goes in the file's
 /// top directory, and each `(name, hists)` in `subdirs` becomes a `TDirectory`
 /// holding its own histograms (e.g. one directory per analysis region).
 pub fn write_histograms_dirs(
-    path: &Path,
+    path: impl AsRef<Path>,
     root: &[Hist],
     subdirs: &[(&str, &[Hist])],
     compression: Compression,
-) -> std::io::Result<()> {
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let root_objects: Vec<ObjectRecord> = root.iter().map(Hist::record).collect();
-    let dirs: Vec<Subdir> = subdirs
-        .iter()
-        .map(|(name, hists)| Subdir {
-            name: name.to_string(),
-            objects: hists.iter().map(Hist::record).collect(),
-        })
-        .collect();
-    std::fs::write(
-        path,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let root_objects: Vec<ObjectRecord> = root.iter().map(Hist::record).collect();
+        let dirs: Vec<Subdir> = subdirs
+            .iter()
+            .map(|(name, hists)| Subdir {
+                name: name.to_string(),
+                objects: hists.iter().map(Hist::record).collect(),
+            })
+            .collect();
         write_root_file_with_dirs(
             file_name,
             &root_objects,
             &dirs,
             compression.setting(),
             Some(HIST_STREAMER_INFO),
-        ),
-    )
+        )
+    })
 }
 
 /// Append histograms to an existing ROOT file at `path`, rewriting it with the
@@ -335,10 +319,11 @@ pub fn write_histograms_dirs(
 /// whose name matches an existing one is stored at a higher cycle, as ROOT does.
 /// Errors if the file contains an RNTuple (see [`update_root_file`]).
 pub fn append_histograms_file(
-    path: &Path,
+    path: impl AsRef<Path>,
     hists: &[Hist],
     compression: Compression,
-) -> std::io::Result<()> {
+) -> Result<()> {
+    let path = path.as_ref();
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -351,9 +336,9 @@ pub fn append_histograms_file(
         &records,
         compression.setting(),
         Some(HIST_STREAMER_INFO),
-    )
-    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-    std::fs::write(path, bytes)
+    )?;
+    std::fs::write(path, bytes)?;
+    Ok(())
 }
 
 fn write_th1_base(w: &mut WBuffer, h: &TH1) {

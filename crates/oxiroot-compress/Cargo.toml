@@ -10,3 +10,6 @@ description = "ROOT compression block framing and codecs"
 [dependencies]
 miniz_oxide = "0.9.1"
 ruzstd = "0.8.3"
+
+[dev-dependencies]
+proptest.workspace = true

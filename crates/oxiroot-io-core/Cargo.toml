@@ -9,3 +9,12 @@ description = "Core ROOT (TFile) container and buffer primitives"
 
 [dependencies]
 oxiroot-compress = { workspace = true }
+memmap2 = { version = "0.9", optional = true }
+
+[features]
+# Opt-in memory-mapped read path (`RFile::open_mmap`). Off by default so the
+# default build stays pure safe Rust with no extra dependencies.
+mmap = ["dep:memmap2"]
+
+[dev-dependencies]
+proptest.workspace = true

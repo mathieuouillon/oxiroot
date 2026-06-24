@@ -14,11 +14,11 @@
 //! let mut h = TH1::new("pt", "transverse momentum", 50, 0.0, 100.0);
 //! h.sumw2();
 //! h.fill_weight(42.0, 1.5);
-//! write_th1d_file("out.root".as_ref(), &h, Compression::Zstd(5))?;
+//! write_th1d_file("out.root", &h, Compression::Zstd(5))?;
 //!
 //! // Write a columnar dataset, then read it back.
 //! let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
-//! write_rntuple_file("data.root".as_ref(), "events", &fields, Compression::None)?;
+//! write_rntuple_file("data.root", "events", &fields, Compression::None)?;
 //! let f = RFile::open("data.root")?;
 //! let ntpl = RNTuple::open(&f, "events")?;
 //! assert_eq!(ntpl.num_entries(), 2);

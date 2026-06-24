@@ -141,7 +141,7 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
 /// (the caller stores it without a block header). Otherwise the data is encoded
 /// into ROOT compression blocks. Only Zstd encoding (algorithm 5) is supported;
 /// the level is passed through but the pure-Rust backend does not differentiate
-/// it (see [`codec::zstd_encode`]).
+/// it (the output is always valid Zstd that ROOT reads back correctly).
 pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
     if settings == 0 {
         return Ok(src.to_vec());
@@ -226,6 +226,30 @@ mod tests {
             decompress(&buf, 8),
             Err(CompressError::CodecUnavailable(Algorithm::Lz4))
         ));
+    }
+
+    #[test]
+    fn compress_chunks_large_input_into_multiple_blocks() {
+        // Input larger than one 16 MiB chunk must be split into several ROOT
+        // blocks on write and stitched back on read — neither the >chunk write
+        // path nor the multi-block read path was previously exercised.
+        let data: Vec<u8> = b"oxiroot "
+            .iter()
+            .copied()
+            .cycle()
+            .take(MAX_CHUNK_SIZE + 4096)
+            .collect();
+        let compressed = compress(&data, 505).unwrap();
+
+        let mut blocks = 0;
+        let mut cur = &compressed[..];
+        while !cur.is_empty() {
+            let hdr = BlockHeader::parse(cur).unwrap();
+            blocks += 1;
+            cur = &cur[HDR_SIZE + hdr.compressed_size as usize..];
+        }
+        assert!(blocks >= 2, "expected multiple blocks, got {blocks}");
+        assert_eq!(decompress(&compressed, data.len()).unwrap(), data);
     }
 
     #[test]

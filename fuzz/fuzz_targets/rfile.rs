@@ -5,7 +5,7 @@ use oxiroot_io_core::RFile;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(f) = RFile::from_bytes(data.to_vec()) {
-        let names: Vec<String> = f.keys().map(|k| k.name.clone()).collect();
+        let names: Vec<String> = f.keys().iter().map(|k| k.name.clone()).collect();
         for k in f.keys() {
             let _ = k.payload(f.data());
             let _ = k.payload_start(f.data().len());

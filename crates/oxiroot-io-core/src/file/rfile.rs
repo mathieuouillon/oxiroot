@@ -14,9 +14,30 @@ use crate::buffer::RBuffer;
 use crate::error::{Error, Result};
 use crate::streamer_info::{parse_streamer_info, StreamerRegistry};
 
-/// An open ROOT file, read fully into memory.
+/// Backing storage for a file's raw bytes: an owned in-memory buffer or, with
+/// the `mmap` feature, a read-only memory map of the file on disk. Both deref to
+/// `&[u8]`, so all parsing is identical regardless of source.
+enum FileData {
+    Owned(Vec<u8>),
+    #[cfg(feature = "mmap")]
+    Mapped(memmap2::Mmap),
+}
+
+impl std::ops::Deref for FileData {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            FileData::Owned(v) => v,
+            #[cfg(feature = "mmap")]
+            FileData::Mapped(m) => m,
+        }
+    }
+}
+
+/// An open ROOT file. Its bytes are either read fully into memory or, with the
+/// `mmap` feature and `RFile::open_mmap`, memory-mapped.
 pub struct RFile {
-    data: Vec<u8>,
+    data: FileData,
     header: FileHeader,
     root_dir: Directory,
 }
@@ -32,13 +53,31 @@ impl std::fmt::Debug for RFile {
 }
 
 impl RFile {
-    /// Open and parse a ROOT file from disk.
+    /// Open and parse a ROOT file from disk (read fully into memory).
     pub fn open(path: impl AsRef<Path>) -> Result<RFile> {
         Self::from_bytes(std::fs::read(path)?)
     }
 
+    /// Open and parse a ROOT file by memory-mapping it, avoiding a full read into
+    /// memory — useful for large files where only some objects are touched.
+    ///
+    /// Requires the `mmap` feature. The map is read-only; as with any `mmap`,
+    /// the caller must ensure the file is not modified or truncated by another
+    /// process while the [`RFile`] is alive (which would be undefined behavior).
+    #[cfg(feature = "mmap")]
+    pub fn open_mmap(path: impl AsRef<Path>) -> Result<RFile> {
+        let file = std::fs::File::open(path)?;
+        // SAFETY: see the read-only / no-concurrent-modification contract above.
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        Self::from_backing(FileData::Mapped(mmap))
+    }
+
     /// Parse a ROOT file already held in memory.
     pub fn from_bytes(data: Vec<u8>) -> Result<RFile> {
+        Self::from_backing(FileData::Owned(data))
+    }
+
+    fn from_backing(data: FileData) -> Result<RFile> {
         let header = {
             let mut r = RBuffer::new(&data);
             FileHeader::read(&mut r)?
