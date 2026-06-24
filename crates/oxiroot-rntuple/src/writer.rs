@@ -513,6 +513,29 @@ fn build_header(name: &str, fields: &[FieldPlan], cols: &[ColumnPlan]) -> Vec<u8
     envelope(0x01, &p)
 }
 
+/// A page-list entry stores a page's element count and on-disk size as signed
+/// 32-bit fields — the element count's sign bit flags a trailing per-page
+/// checksum — so a single page holds at most `i32::MAX` elements and `i32::MAX`
+/// on-disk bytes. Reject anything larger rather than letting the `as i32` cast
+/// wrap into a negative value that mislabels the page (a corrupt file). A genuine
+/// page that big would need to be split across more clusters by the caller.
+fn check_page_limits(n_elements: u32, disk_size: usize) -> Result<()> {
+    if n_elements > i32::MAX as u32 {
+        return Err(Error::Format(format!(
+            "RNTuple page has {n_elements} elements, over the per-page limit of {} \
+             (write fewer entries per cluster)",
+            i32::MAX
+        )));
+    }
+    if disk_size > i32::MAX as usize {
+        return Err(Error::Format(format!(
+            "RNTuple page on-disk size {disk_size} exceeds the per-page limit of {} bytes",
+            i32::MAX
+        )));
+    }
+    Ok(())
+}
+
 fn build_page_list(
     n_entries: u32,
     page_offsets: &[usize],
@@ -520,7 +543,7 @@ fn build_page_list(
     cols: &[ColumnPlan],
     compression: u32,
     header_checksum: u64,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
     let mut p = Vec::new();
     p.extend_from_slice(&header_checksum.to_le_bytes());
 
@@ -529,29 +552,27 @@ fn build_page_list(
     summary.extend_from_slice(&(n_entries as u64).to_le_bytes()); // num entries (flags=0)
     p.extend_from_slice(&list_frame(&[record_frame(&summary)]));
 
-    let column_frames: Vec<Vec<u8>> = cols
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let mut page = Vec::new();
-            page.extend_from_slice(&(c.n as i32).to_le_bytes()); // positive: no checksum
-            page.extend_from_slice(&(disk_sizes[i] as i32).to_le_bytes()); // on-disk locator size
-            page.extend_from_slice(&(page_offsets[i] as u64).to_le_bytes()); // locator offset
-            let mut body = Vec::new();
-            body.extend_from_slice(&1u32.to_le_bytes()); // one page
-            body.extend_from_slice(&page);
-            body.extend_from_slice(&0i64.to_le_bytes()); // element offset
-            body.extend_from_slice(&compression.to_le_bytes()); // compression settings
-            let size = (8 + body.len()) as i64;
-            let mut frame = (-size).to_le_bytes().to_vec();
-            frame.extend_from_slice(&body);
-            frame
-        })
-        .collect();
+    let mut column_frames: Vec<Vec<u8>> = Vec::with_capacity(cols.len());
+    for (i, c) in cols.iter().enumerate() {
+        check_page_limits(c.n, disk_sizes[i])?;
+        let mut page = Vec::new();
+        page.extend_from_slice(&(c.n as i32).to_le_bytes()); // positive: no checksum
+        page.extend_from_slice(&(disk_sizes[i] as i32).to_le_bytes()); // on-disk locator size
+        page.extend_from_slice(&(page_offsets[i] as u64).to_le_bytes()); // locator offset
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_le_bytes()); // one page
+        body.extend_from_slice(&page);
+        body.extend_from_slice(&0i64.to_le_bytes()); // element offset
+        body.extend_from_slice(&compression.to_le_bytes()); // compression settings
+        let size = (8 + body.len()) as i64;
+        let mut frame = (-size).to_le_bytes().to_vec();
+        frame.extend_from_slice(&body);
+        column_frames.push(frame);
+    }
     let inner = list_frame(&column_frames); // over columns
     p.extend_from_slice(&list_frame(&[inner])); // over clusters
 
-    envelope(0x03, &p)
+    Ok(envelope(0x03, &p))
 }
 
 fn build_footer(
@@ -625,7 +646,7 @@ pub fn rntuple_file_bytes(
     ntuple_name: &str,
     fields: &[Field],
     compression: Compression,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
     let compression = compression.setting();
     let (field_plans, cols, n_entries) = lower(fields);
 
@@ -705,7 +726,7 @@ pub fn rntuple_file_bytes(
         &cols,
         compression,
         header_checksum,
-    );
+    )?;
     w.bytes(&page_list_env);
     let seek_footer = w.len();
     let footer_env = build_footer(
@@ -765,7 +786,7 @@ pub fn rntuple_file_bytes(
     w.patch_be_u32(p_dir_nbytes_keys, keylist_nbytes);
     w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
 
-    w.into_vec()
+    Ok(w.into_vec())
 }
 
 /// Write a one-RNTuple ROOT file to `path`, optionally compressing pages
@@ -781,10 +802,8 @@ pub fn write_rntuple_file(
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("file.root");
-    std::fs::write(
-        path,
-        rntuple_file_bytes(file_name, ntuple_name, fields, compression),
-    )?;
+    let bytes = rntuple_file_bytes(file_name, ntuple_name, fields, compression)?;
+    std::fs::write(path, bytes)?;
     Ok(())
 }
 
@@ -1048,7 +1067,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
             &self.cluster_pages,
             self.compression,
             header.checksum,
-        );
+        )?;
         self.put(&page_list_env)?;
 
         let seek_footer = self.pos;
@@ -1129,7 +1148,7 @@ fn build_page_list_multi(
     cluster_pages: &[Vec<PageRec>],
     compression: u32,
     header_checksum: u64,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
     let mut p = Vec::new();
     p.extend_from_slice(&header_checksum.to_le_bytes());
 
@@ -1144,31 +1163,45 @@ fn build_page_list_multi(
         .collect();
     p.extend_from_slice(&list_frame(&summary_frames));
 
-    let cluster_frames: Vec<Vec<u8>> = cluster_pages
-        .iter()
-        .map(|cols| {
-            let col_frames: Vec<Vec<u8>> = cols
-                .iter()
-                .map(|pr| {
-                    let mut page = Vec::new();
-                    page.extend_from_slice(&(pr.n_elements as i32).to_le_bytes()); // no checksum
-                    page.extend_from_slice(&(pr.disk_size as i32).to_le_bytes()); // on-disk size
-                    page.extend_from_slice(&pr.offset.to_le_bytes()); // locator offset
-                    let mut body = Vec::new();
-                    body.extend_from_slice(&1u32.to_le_bytes()); // one page
-                    body.extend_from_slice(&page);
-                    body.extend_from_slice(&pr.element_offset.to_le_bytes());
-                    body.extend_from_slice(&compression.to_le_bytes());
-                    let size = (8 + body.len()) as i64;
-                    let mut frame = (-size).to_le_bytes().to_vec();
-                    frame.extend_from_slice(&body);
-                    frame
-                })
-                .collect();
-            list_frame(&col_frames)
-        })
-        .collect();
+    let mut cluster_frames: Vec<Vec<u8>> = Vec::with_capacity(cluster_pages.len());
+    for cols in cluster_pages {
+        let mut col_frames: Vec<Vec<u8>> = Vec::with_capacity(cols.len());
+        for pr in cols {
+            check_page_limits(pr.n_elements, pr.disk_size)?;
+            let mut page = Vec::new();
+            page.extend_from_slice(&(pr.n_elements as i32).to_le_bytes()); // no checksum
+            page.extend_from_slice(&(pr.disk_size as i32).to_le_bytes()); // on-disk size
+            page.extend_from_slice(&pr.offset.to_le_bytes()); // locator offset
+            let mut body = Vec::new();
+            body.extend_from_slice(&1u32.to_le_bytes()); // one page
+            body.extend_from_slice(&page);
+            body.extend_from_slice(&pr.element_offset.to_le_bytes());
+            body.extend_from_slice(&compression.to_le_bytes());
+            let size = (8 + body.len()) as i64;
+            let mut frame = (-size).to_le_bytes().to_vec();
+            frame.extend_from_slice(&body);
+            col_frames.push(frame);
+        }
+        cluster_frames.push(list_frame(&col_frames));
+    }
     p.extend_from_slice(&list_frame(&cluster_frames));
 
-    envelope(0x03, &p)
+    Ok(envelope(0x03, &p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_limits_reject_oversized_counts_and_sizes() {
+        // In range, including exactly at the boundary, is accepted.
+        assert!(check_page_limits(1_000_000, 1_000_000).is_ok());
+        assert!(check_page_limits(i32::MAX as u32, i32::MAX as usize).is_ok());
+        // One element past the limit would flip the count's i32 sign bit, which
+        // the format reads as "this page has a trailing checksum" — rejected.
+        assert!(check_page_limits(i32::MAX as u32 + 1, 0).is_err());
+        // One byte past the on-disk-size limit would flip the locator size sign.
+        assert!(check_page_limits(0, i32::MAX as usize + 1).is_err());
+    }
 }
