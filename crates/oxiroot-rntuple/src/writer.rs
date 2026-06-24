@@ -14,9 +14,7 @@ use std::path::Path;
 
 use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{
-    key_len, key_len_fmt, write_key_header, write_key_header_fmt, Compression, KSTART_BIG_FILE,
-};
+use oxiroot_io_core::{key_len_fmt, write_key_header_fmt, Compression, KSTART_BIG_FILE};
 
 use crate::column::ColumnType;
 
@@ -973,6 +971,10 @@ pub struct RNTupleWriter<W: Write + Seek> {
     file_name: String,
     ntuple_name: String,
     compression: u32,
+    /// Whether the container uses the 64-bit ("big") on-disk form. Fixed at
+    /// construction (the header/directory widths are written immediately and
+    /// cannot be widened in place afterwards).
+    big: bool,
     // TFile pointers to patch once the layout is known.
     p_end: u64,
     p_nbytes_name: u64,
@@ -989,11 +991,33 @@ pub struct RNTupleWriter<W: Write + Seek> {
 }
 
 impl RNTupleWriter<std::fs::File> {
-    /// Create a streaming RNTuple file at `path`.
+    /// Create a streaming RNTuple file at `path` (32-bit container; supports up
+    /// to 2 GiB — [`finish`](RNTupleWriter::finish) errors if that is exceeded).
     pub fn create(
         path: impl AsRef<Path>,
         ntuple_name: &str,
         compression: Compression,
+    ) -> Result<Self> {
+        Self::create_fmt(path, ntuple_name, compression, false)
+    }
+
+    /// Like [`create`](RNTupleWriter::create), but writes the 64-bit ("big")
+    /// container form so the file may exceed 2 GiB. Use this when the streamed
+    /// dataset is expected to be large; small files are still valid, just stored
+    /// in the wider form.
+    pub fn create_large(
+        path: impl AsRef<Path>,
+        ntuple_name: &str,
+        compression: Compression,
+    ) -> Result<Self> {
+        Self::create_fmt(path, ntuple_name, compression, true)
+    }
+
+    fn create_fmt(
+        path: impl AsRef<Path>,
+        ntuple_name: &str,
+        compression: Compression,
+        big: bool,
     ) -> Result<Self> {
         let path = path.as_ref();
         let file_name = path
@@ -1002,36 +1026,64 @@ impl RNTupleWriter<std::fs::File> {
             .unwrap_or("file.root")
             .to_string();
         let file = std::fs::File::create(path)?;
-        RNTupleWriter::new(file, &file_name, ntuple_name, compression)
+        RNTupleWriter::new_fmt(file, &file_name, ntuple_name, compression, big)
     }
 }
 
 impl<W: Write + Seek> RNTupleWriter<W> {
     /// Begin writing into an arbitrary seekable sink (the TFile header and root
     /// directory are written immediately, with pointers to patch at the end).
+    /// Small (32-bit) container — see [`new_large`](RNTupleWriter::new_large) for
+    /// the >2 GiB form.
     pub fn new(
-        mut sink: W,
+        sink: W,
         file_name: &str,
         ntuple_name: &str,
         compression: Compression,
     ) -> Result<Self> {
+        Self::new_fmt(sink, file_name, ntuple_name, compression, false)
+    }
+
+    /// Like [`new`](RNTupleWriter::new), but writes the 64-bit ("big") container
+    /// form so the streamed file may exceed 2 GiB.
+    pub fn new_large(
+        sink: W,
+        file_name: &str,
+        ntuple_name: &str,
+        compression: Compression,
+    ) -> Result<Self> {
+        Self::new_fmt(sink, file_name, ntuple_name, compression, true)
+    }
+
+    fn new_fmt(
+        mut sink: W,
+        file_name: &str,
+        ntuple_name: &str,
+        compression: Compression,
+        big: bool,
+    ) -> Result<Self> {
         let compression = compression.setting();
         let mut w = WBuffer::new();
 
-        // TFile header (100 bytes); record the offsets to patch later.
+        // TFile header (100 bytes; fBEGIN is always 100). Record the offsets to
+        // patch later — their widths follow `big`.
         w.bytes(b"root");
-        w.be_u32(FILE_VERSION);
+        w.be_u32(if big {
+            FILE_VERSION + 1_000_000
+        } else {
+            FILE_VERSION
+        });
         w.be_u32(100); // fBEGIN
         let p_end = w.len() as u64;
-        w.be_u32(0); // fEND
-        w.be_u32(0); // fSeekFree
+        seek_zero(&mut w, big); // fEND
+        seek_zero(&mut w, big); // fSeekFree
         w.be_u32(0); // fNbytesFree
         w.be_u32(0); // nfree
         let p_nbytes_name = w.len() as u64;
         w.be_u32(0); // fNbytesName
-        w.u8(4); // fUnits
+        w.u8(if big { 8 } else { 4 }); // fUnits
         w.be_u32(compression); // fCompress
-        w.be_u32(0); // fSeekInfo
+        seek_zero(&mut w, big); // fSeekInfo
         w.be_u32(0); // fNbytesInfo
         w.be_u16(1);
         w.bytes(&[0u8; 16]);
@@ -1040,11 +1092,12 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         }
 
         // Root directory name key + TDirectory record (at fBEGIN = 100).
-        let first_klen = key_len("TFile", file_name, "");
+        let first_klen = key_len_fmt("TFile", file_name, "", big);
         let name_title_len = (1 + file_name.len()) + 1;
         let f_nbytes_name = (first_klen as usize + name_title_len) as u32;
-        let first_obj_len = (name_title_len + 30 + 18) as u32;
-        write_key_header(
+        let dir_record_len = if big { 42 } else { 30 };
+        let first_obj_len = (name_title_len + dir_record_len + 18) as u32;
+        write_key_header_fmt(
             &mut w,
             "TFile",
             file_name,
@@ -1053,19 +1106,21 @@ impl<W: Write + Seek> RNTupleWriter<W> {
             first_obj_len,
             100,
             0,
+            1,
+            big,
         );
         w.string(file_name);
         w.string("");
-        w.be_i16(5);
+        w.be_i16(if big { 1005 } else { 5 });
         w.be_u32(DATIME);
         w.be_u32(DATIME);
         let p_dir_nbytes_keys = w.len() as u64;
         w.be_u32(0); // fNbytesKeys
         w.be_i32(f_nbytes_name as i32);
-        w.be_u32(100); // fSeekDir
-        w.be_u32(0); // fSeekParent
+        seek_value(&mut w, 100, big); // fSeekDir
+        seek_value(&mut w, 0, big); // fSeekParent
         let p_dir_seek_keys = w.len() as u64;
-        w.be_u32(0); // fSeekKeys
+        seek_zero(&mut w, big); // fSeekKeys
         w.be_u16(1);
         w.bytes(&[0u8; 16]);
 
@@ -1079,6 +1134,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
             file_name: file_name.to_string(),
             ntuple_name: ntuple_name.to_string(),
             compression,
+            big,
             p_end,
             p_nbytes_name,
             p_dir_nbytes_keys,
@@ -1101,6 +1157,17 @@ impl<W: Write + Seek> RNTupleWriter<W> {
     fn patch(&mut self, offset: u64, value: u32) -> io::Result<()> {
         self.sink.seek(SeekFrom::Start(offset))?;
         self.sink.write_all(&value.to_be_bytes())
+    }
+
+    /// Patch a seek pointer in the on-disk container width: 8 bytes when `big`,
+    /// 4 otherwise.
+    fn patch_seek(&mut self, offset: u64, value: u64) -> io::Result<()> {
+        self.sink.seek(SeekFrom::Start(offset))?;
+        if self.big {
+            self.sink.write_all(&value.to_be_bytes())
+        } else {
+            self.sink.write_all(&(value as u32).to_be_bytes())
+        }
     }
 
     /// Append one cluster holding the entries in `fields`. All batches must share
@@ -1187,6 +1254,17 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         );
         self.put(&footer_env)?;
 
+        // A small (32-bit) container cannot address past 2 GiB. Fail loudly
+        // rather than truncating the anchor / key-list seek pointers into a
+        // corrupt file; the caller can re-run with `create_large`/`new_large`.
+        if !self.big && self.pos > KSTART_BIG_FILE {
+            return Err(Error::Format(format!(
+                "streamed RNTuple reached {} bytes, over the 2 GiB limit of the 32-bit \
+                 container — construct the writer with create_large / new_large for 64-bit",
+                self.pos
+            )));
+        }
+
         let anchor_obj = build_anchor(
             header.seek as usize,
             header.len,
@@ -1196,7 +1274,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         let anchor_seek = self.pos;
         let anchor_len = anchor_obj.len() as u32;
         let mut kb = WBuffer::new();
-        write_key_header(
+        write_key_header_fmt(
             &mut kb,
             "ROOT::RNTuple",
             &self.ntuple_name,
@@ -1205,15 +1283,18 @@ impl<W: Write + Seek> RNTupleWriter<W> {
             anchor_len,
             anchor_seek,
             100,
+            1,
+            self.big,
         );
         let kb = kb.into_vec();
         self.put(&kb)?;
         self.put(&anchor_obj)?;
 
         let keylist_seek = self.pos;
-        let keylist_obj_len = 4 + key_len("ROOT::RNTuple", &self.ntuple_name, "") as u32;
+        let keylist_obj_len =
+            4 + key_len_fmt("ROOT::RNTuple", &self.ntuple_name, "", self.big) as u32;
         let mut klb = WBuffer::new();
-        write_key_header(
+        write_key_header_fmt(
             &mut klb,
             "TFile",
             &self.file_name,
@@ -1222,9 +1303,11 @@ impl<W: Write + Seek> RNTupleWriter<W> {
             keylist_obj_len,
             keylist_seek,
             100,
+            1,
+            self.big,
         );
         klb.be_i32(1);
-        write_key_header(
+        write_key_header_fmt(
             &mut klb,
             "ROOT::RNTuple",
             &self.ntuple_name,
@@ -1233,16 +1316,18 @@ impl<W: Write + Seek> RNTupleWriter<W> {
             anchor_len,
             anchor_seek,
             100,
+            1,
+            self.big,
         );
         let klb = klb.into_vec();
         self.put(&klb)?;
-        let keylist_nbytes = key_len("TFile", &self.file_name, "") as u32 + keylist_obj_len;
-        let f_end = self.pos as u32;
+        let keylist_nbytes =
+            key_len_fmt("TFile", &self.file_name, "", self.big) as u32 + keylist_obj_len;
 
-        self.patch(self.p_end, f_end)?;
+        self.patch_seek(self.p_end, self.pos)?;
         self.patch(self.p_nbytes_name, self.f_nbytes_name)?;
         self.patch(self.p_dir_nbytes_keys, keylist_nbytes)?;
-        self.patch(self.p_dir_seek_keys, keylist_seek as u32)?;
+        self.patch_seek(self.p_dir_seek_keys, keylist_seek)?;
         self.sink.flush()?;
         Ok(())
     }

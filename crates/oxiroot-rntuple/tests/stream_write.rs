@@ -129,3 +129,36 @@ fn write_batch_rejects_changed_schema() {
         .write_batch(&[Field::i32("x", vec![7]), Field::f64("z", vec![1.0])])
         .is_err());
 }
+
+#[test]
+fn streaming_large_writes_big_format() {
+    let out = PathBuf::from("/tmp/rootrs_stream_large.root");
+    let mut w = RNTupleWriter::create_large(&out, "ntpl", oxiroot_io_core::Compression::None)
+        .expect("create_large");
+    w.write_batch(&[
+        Field::i32("x", vec![1, 2, 3]),
+        Field::f64("y", vec![1.0, 2.0, 3.0]),
+    ])
+    .expect("batch 1");
+    w.write_batch(&[Field::i32("x", vec![4, 5]), Field::f64("y", vec![4.0, 5.0])])
+        .expect("batch 2");
+    w.finish().expect("finish");
+
+    // The 64-bit container round-trips through the reader with all entries in
+    // order across both clusters.
+    let f = RFile::open(&out).expect("reopen");
+    assert!(
+        f.header().is_big(),
+        "create_large writes the 64-bit container"
+    );
+    let ntpl = RNTuple::open(&f, "ntpl").expect("open");
+    assert_eq!(ntpl.num_entries(), 5);
+    assert_eq!(
+        ntpl.read_field(&f, "x").unwrap(),
+        FieldValues::I32(vec![1, 2, 3, 4, 5])
+    );
+    assert_eq!(
+        ntpl.read_field(&f, "y").unwrap(),
+        FieldValues::F64(vec![1.0, 2.0, 3.0, 4.0, 5.0])
+    );
+}
