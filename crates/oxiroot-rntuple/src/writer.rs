@@ -1398,6 +1398,9 @@ mod tests {
         // threshold — it must still parse and yield identical values.
         let bytes =
             rntuple_file_bytes_threshold("t.root", "ntpl", &fields, Compression::None, 64).unwrap();
+        // Also drop it to a temp file so an external reader (uproot) can be run
+        // against the one-shot big-format output out of band.
+        let _ = std::fs::write("/tmp/rootrs_oneshot_big.root", &bytes);
         let f = RFile::from_bytes(bytes).unwrap();
         assert!(f.header().is_big(), "forced into big-format container");
         let ntpl = RNTuple::open(&f, "ntpl").unwrap();
