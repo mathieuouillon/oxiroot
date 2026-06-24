@@ -103,3 +103,29 @@ fn streams_collections_and_strings_across_clusters() {
         FieldValues::Str(expect_s)
     );
 }
+
+#[test]
+fn write_batch_rejects_changed_schema() {
+    let out = PathBuf::from("/tmp/rootrs_stream_schema_change.root");
+    let mut w =
+        RNTupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::None).expect("create");
+
+    w.write_batch(&[Field::i32("x", vec![1, 2, 3])])
+        .expect("first batch fixes the schema");
+
+    // Same physical column type (Int32) but a different field name: the weak
+    // (type, bits) signature would have accepted this and silently mislabeled
+    // the data. The full schema signature rejects it.
+    let err = w
+        .write_batch(&[Field::i32("y", vec![4, 5, 6])])
+        .expect_err("renamed field must be rejected");
+    assert!(
+        matches!(err, oxiroot_io_core::Error::SchemaChanged { .. }),
+        "got {err:?}"
+    );
+
+    // A different field count is likewise rejected.
+    assert!(w
+        .write_batch(&[Field::i32("x", vec![7]), Field::f64("z", vec![1.0])])
+        .is_err());
+}

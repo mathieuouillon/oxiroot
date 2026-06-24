@@ -13,6 +13,7 @@ use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use oxiroot_io_core::buffer::WBuffer;
+use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::{key_len, write_key_header, Compression};
 
 use crate::column::ColumnType;
@@ -774,7 +775,7 @@ pub fn write_rntuple_file(
     ntuple_name: &str,
     fields: &[Field],
     compression: Compression,
-) -> std::io::Result<()> {
+) -> Result<()> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -782,7 +783,8 @@ pub fn write_rntuple_file(
     std::fs::write(
         path,
         rntuple_file_bytes(file_name, ntuple_name, fields, compression),
-    )
+    )?;
+    Ok(())
 }
 
 // --- streaming, multi-cluster writer --------------------------------------
@@ -795,13 +797,39 @@ struct PageRec {
     element_offset: i64,
 }
 
+/// A batch's full lowered schema identity. Every batch must produce an equal
+/// one, otherwise its pages would be appended under the first batch's header and
+/// silently mis-described. Compares field identity (name, type, parent, role) as
+/// well as physical columns — `(type, bits)` alone would let a field rename or
+/// reorder slip through.
+#[derive(PartialEq, Eq)]
+struct SchemaSig {
+    /// `(name, type_name, parent_id, role)` per field, in lowered order.
+    fields: Vec<(String, String, u32, u16)>,
+    /// `(column type, bit width, owning field id)` per physical column.
+    columns: Vec<(u16, u16, u32)>,
+}
+
+fn schema_sig(field_plans: &[FieldPlan], cols: &[ColumnPlan]) -> SchemaSig {
+    SchemaSig {
+        fields: field_plans
+            .iter()
+            .map(|f| (f.name.clone(), f.type_name.clone(), f.parent_id, f.role))
+            .collect(),
+        columns: cols
+            .iter()
+            .map(|c| (c.column_type as u16, c.bits, c.field_id))
+            .collect(),
+    }
+}
+
 /// Schema + header bookkeeping, fixed once the first batch defines it.
 struct HeaderState {
     seek: u64,
     len: usize,
     checksum: u64,
-    /// `(column type, bit width)` per physical column — must match every batch.
-    signature: Vec<(u16, u16)>,
+    /// The lowered schema the first batch committed — must match every batch.
+    signature: SchemaSig,
 }
 
 /// A streaming RNTuple writer: each [`write_batch`](RNTupleWriter::write_batch)
@@ -835,7 +863,7 @@ pub struct RNTupleWriter<W: Write + Seek> {
 
 impl RNTupleWriter<std::fs::File> {
     /// Create a streaming RNTuple file at `path`.
-    pub fn create(path: &Path, ntuple_name: &str, compression: Compression) -> io::Result<Self> {
+    pub fn create(path: &Path, ntuple_name: &str, compression: Compression) -> Result<Self> {
         let file_name = path
             .file_name()
             .and_then(|s| s.to_str())
@@ -854,7 +882,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         file_name: &str,
         ntuple_name: &str,
         compression: Compression,
-    ) -> io::Result<Self> {
+    ) -> Result<Self> {
         let compression = compression.setting();
         let mut w = WBuffer::new();
 
@@ -945,7 +973,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
 
     /// Append one cluster holding the entries in `fields`. All batches must share
     /// the same field schema; the first batch fixes it and writes the header.
-    pub fn write_batch(&mut self, fields: &[Field]) -> io::Result<()> {
+    pub fn write_batch(&mut self, fields: &[Field]) -> Result<()> {
         if fields.is_empty() {
             return Ok(());
         }
@@ -953,18 +981,14 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         if n_entries == 0 {
             return Ok(());
         }
-        let signature: Vec<(u16, u16)> = cols
-            .iter()
-            .map(|c| (c.column_type as u16, c.bits))
-            .collect();
+        let signature = schema_sig(&field_plans, &cols);
 
         match self.header.as_ref().map(|h| h.signature == signature) {
             Some(true) => {} // schema matches; header already written
             Some(false) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "field schema changed between batches",
-                ))
+                return Err(Error::SchemaChanged {
+                    detail: "this batch's field schema differs from the first batch's".into(),
+                })
             }
             None => {
                 // First batch fixes the schema and writes the header.
@@ -1006,9 +1030,9 @@ impl<W: Write + Seek> RNTupleWriter<W> {
 
     /// Finish the file: write the page list (all clusters), footer, anchor key,
     /// and key list, then patch the header pointers.
-    pub fn finish(mut self) -> io::Result<()> {
+    pub fn finish(mut self) -> Result<()> {
         let header = self.header.take().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "no batches were written")
+            Error::Format("RNTuple writer finished with no batches written".into())
         })?;
         let num_clusters = self.summaries.len() as u32;
 
@@ -1087,7 +1111,8 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         self.patch(self.p_nbytes_name, self.f_nbytes_name)?;
         self.patch(self.p_dir_nbytes_keys, keylist_nbytes)?;
         self.patch(self.p_dir_seek_keys, keylist_seek as u32)?;
-        self.sink.flush()
+        self.sink.flush()?;
+        Ok(())
     }
 }
 

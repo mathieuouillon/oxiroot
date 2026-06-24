@@ -18,6 +18,8 @@ pub enum FieldValues {
     I32(Vec<i32>),
     /// 64-bit signed integer.
     I64(Vec<i64>),
+    /// Unsigned 32-bit integer.
+    U32(Vec<u32>),
     /// Unsigned 64-bit integer.
     U64(Vec<u64>),
     /// 32-bit float.
@@ -44,6 +46,7 @@ pub(crate) fn scalar(values: ColumnValues) -> Result<FieldValues> {
         ColumnValues::Bits(v) => FieldValues::Bool(v),
         ColumnValues::I32(v) => FieldValues::I32(v),
         ColumnValues::I64(v) => FieldValues::I64(v),
+        ColumnValues::U32(v) => FieldValues::U32(v),
         ColumnValues::U64(v) => FieldValues::U64(v),
         ColumnValues::F32(v) => FieldValues::F32(v),
         ColumnValues::F64(v) => FieldValues::F64(v),

@@ -21,6 +21,8 @@ pub enum ColumnValues {
     I32(Vec<i32>),
     /// 64-bit signed integer columns (`Int64`, `SplitInt64`).
     I64(Vec<i64>),
+    /// Unsigned 32-bit leaf columns (`UInt32`, `SplitUInt32`).
+    U32(Vec<u32>),
     /// Unsigned 64-bit columns: `UInt64`, and decoded `Index*` offsets.
     U64(Vec<u64>),
     /// 32-bit float columns (`Real32`, `SplitReal32`).
@@ -150,14 +152,10 @@ pub fn read_column(
         }
 
         UInt64 => Ok(ColumnValues::U64(fixed(data, bits, pages, false, le_u64)?)),
-        UInt32 => {
-            let raw = fixed(data, bits, pages, false, le_u32)?;
-            Ok(ColumnValues::U64(raw.into_iter().map(u64::from).collect()))
-        }
-        SplitUInt32 => {
-            let raw = fixed(data, bits, pages, true, le_u32)?;
-            Ok(ColumnValues::U64(raw.into_iter().map(u64::from).collect()))
-        }
+        // Leaf uint32 columns keep their 32-bit identity; only the Index*
+        // offset columns below widen to u64 (they index element data as usize).
+        UInt32 => Ok(ColumnValues::U32(fixed(data, bits, pages, false, le_u32)?)),
+        SplitUInt32 => Ok(ColumnValues::U32(fixed(data, bits, pages, true, le_u32)?)),
         Index64 => Ok(ColumnValues::U64(fixed(data, bits, pages, false, le_u64)?)),
         SplitIndex64 => {
             let raw = fixed(data, bits, pages, true, le_u64)?;

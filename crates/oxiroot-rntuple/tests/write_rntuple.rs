@@ -122,8 +122,8 @@ fn writes_unsigned_and_more_vector_types() {
     let f = RFile::open(&out).expect("reopen");
     let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
     let field = |n| ntpl.read_field(&f, n).expect("read field");
-    // u32 widens to u64 on read.
-    assert_eq!(field("u32"), FieldValues::U64(vec![1, 2, 3_000_000_000]));
+    // u32 round-trips with its 32-bit identity intact (not widened to u64).
+    assert_eq!(field("u32"), FieldValues::U32(vec![1, 2, 3_000_000_000]));
     assert_eq!(field("u64"), FieldValues::U64(vec![1, 2, 10_000_000_000]));
     assert_eq!(
         field("vi64"),
