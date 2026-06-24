@@ -118,6 +118,68 @@ impl TProfile {
         self.xaxis.edges()
     }
 
+    /// Effective number of entries in a bin, `(Σw)² / Σw²` (equal to the entry
+    /// count for unweighted fills). `bin` includes flow.
+    pub fn effective_entries(&self, bin: usize) -> f64 {
+        let sumw = self.bin_entries.get(bin).copied().unwrap_or(0.0);
+        let sumw2 = self
+            .bin_sumw2
+            .get(bin)
+            .copied()
+            .filter(|&s| s > 0.0)
+            .unwrap_or(sumw);
+        if sumw2 > 0.0 {
+            sumw * sumw / sumw2
+        } else {
+            0.0
+        }
+    }
+
+    /// Per-bin error of the profiled value, following ROOT's
+    /// `TProfile::GetBinError` for this profile's `fErrorMode`. `bin` includes
+    /// flow (0 = underflow).
+    ///
+    /// With weight sum `sumw = Σw`, profiled value `mean = Σwy / Σw`, spread
+    /// `v = |Σwy²/Σw − mean²|`, and effective entries
+    /// `neff = (Σw)² / Σw²`:
+    /// - mean (mode 0, the default): `sqrt(v / neff)` — the error on the mean;
+    /// - spread (mode 1): `sqrt(v)` — the RMS spread itself;
+    /// - spread-i (mode 2): `sqrt(v / neff)`, or `1/sqrt(12·neff)` when `v == 0`;
+    /// - spread-g (mode 3): `1/sqrt(Σw)`.
+    pub fn bin_error(&self, bin: usize) -> f64 {
+        let sumw = self.bin_entries.get(bin).copied().unwrap_or(0.0);
+        if sumw == 0.0 {
+            return 0.0;
+        }
+        let sum = self.sums.get(bin).copied().unwrap_or(0.0);
+        let sumy2 = self.sumy2.get(bin).copied().unwrap_or(0.0);
+        let mean = sum / sumw;
+        let variance = (sumy2 / sumw - mean * mean).abs();
+        let neff = self.effective_entries(bin);
+        match self.error_mode {
+            // kERRORSPREAD: the RMS spread itself.
+            1 => variance.sqrt(),
+            // kERRORSPREADI with an empty spread: the uniform-bin estimate.
+            2 if variance <= 0.0 => {
+                if neff > 0.0 {
+                    1.0 / (12.0 * neff).sqrt()
+                } else {
+                    0.0
+                }
+            }
+            // kERRORSPREADG: the weighted error 1/sqrt(Σw).
+            3 => 1.0 / sumw.sqrt(),
+            // kERRORMEAN (default) and kERRORSPREADI with a non-zero spread.
+            _ => {
+                if neff > 0.0 {
+                    (variance / neff).sqrt()
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
     /// Create an empty `TProfile` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and no y restriction. Mirrors ROOT's `TProfile` constructor.
     pub fn new(name: &str, title: &str, nbins: i32, xlo: f64, xhi: f64) -> TProfile {

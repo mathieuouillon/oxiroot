@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th1d, TH1};
+use oxiroot_hist::{read_th1d, TProfile, TH1};
 use oxiroot_io_core::RFile;
 
 #[test]
@@ -19,7 +19,7 @@ fn merge_then_scale_matches_root() {
     b.fill_weight(0.5, 3.0);
     b.fill_weight(2.5, 1.0);
 
-    assert!(a.add(&b, 1.0), "compatible binnings merge");
+    a.add(&b, 1.0).expect("compatible binnings merge");
     // bin1: 2+3 = 5, sumw2 = 4+9 = 13; bin2 = 1; bin3 = 1.
     assert_eq!(a.contents[1], 5.0);
     assert_eq!(a.sumw2[1], 13.0);
@@ -38,9 +38,17 @@ fn merge_then_scale_matches_root() {
 
 #[test]
 fn add_rejects_mismatched_binning() {
+    // Different bin counts.
     let mut a = TH1::new("a", "", 4, 0.0, 4.0);
     let b = TH1::new("b", "", 5, 0.0, 5.0);
-    assert!(!a.add(&b, 1.0), "different bin counts -> no-op");
+    assert!(a.add(&b, 1.0).is_err(), "different bin counts -> error");
+
+    // Same bin count but different range — must also be rejected (cell-count
+    // equality alone would have missed this).
+    let mut c = TH1::new("c", "", 4, 0.0, 4.0);
+    let d = TH1::new("d", "", 4, 0.0, 8.0);
+    assert!(c.add(&d, 1.0).is_err(), "different edges -> error");
+    assert_eq!(c.contents[1], 0.0, "rejected add makes no change");
 }
 
 #[test]
@@ -63,14 +71,62 @@ fn integral_multiply_divide() {
 
     // Efficiency num/den: bin1 = 2/4 = 0.5, bin2 = 1/4 = 0.25.
     let mut eff = num.clone();
-    assert!(eff.divide(&den));
+    eff.divide(&den).expect("compatible binnings");
     assert!((eff.contents[1] - 0.5).abs() < 1e-12);
     assert!((eff.contents[2] - 0.25).abs() < 1e-12);
     // Binomial-ish error from ROOT's default formula stays finite and positive.
     assert!(eff.bin_error(1) > 0.0 && eff.bin_error(1) < 1.0);
 
     // Multiply back by the denominator recovers the numerator contents.
-    assert!(eff.multiply(&den));
+    eff.multiply(&den).expect("compatible binnings");
     assert!((eff.contents[1] - 2.0).abs() < 1e-12);
     assert!((eff.contents[2] - 1.0).abs() < 1e-12);
+}
+
+#[test]
+fn find_bin_routes_nan_and_top_edge() {
+    let h = TH1::new("h", "", 4, 0.0, 4.0);
+    assert_eq!(h.xaxis.find_bin(-0.1), 0, "below range -> underflow");
+    assert_eq!(h.xaxis.find_bin(0.0), 1, "low edge -> first bin");
+    assert_eq!(h.xaxis.find_bin(3.999), 4, "just under top -> last bin");
+    assert_eq!(h.xaxis.find_bin(4.0), 5, "top edge -> overflow");
+    assert_eq!(h.xaxis.find_bin(f64::NAN), 5, "NaN -> overflow (ROOT)");
+    // A NaN fill must not corrupt an in-range bin.
+    let mut h2 = h.clone();
+    h2.fill(f64::NAN);
+    assert_eq!(
+        &h2.values(),
+        &[0.0, 0.0, 0.0, 0.0],
+        "NaN stays out of range"
+    );
+}
+
+#[test]
+fn tprofile_merge_and_bin_error_match_root() {
+    // Two profiles of the same (x,y) stream, split across "jobs", then merged.
+    let mut a = TProfile::new("p", "", 2, 0.0, 2.0);
+    a.fill(0.5, 1.0);
+    a.fill(0.5, 3.0);
+    let mut b = TProfile::new("p", "", 2, 0.0, 2.0);
+    b.fill(0.5, 5.0);
+    b.fill(1.5, 10.0);
+
+    a.add(&b, 1.0).expect("compatible binnings merge");
+    // Bin 1 saw y = {1,3,5}: mean = 3, entries = 3.
+    assert_eq!(a.bin_entries[1], 3.0);
+    assert!((a.values()[0] - 3.0).abs() < 1e-12, "profiled mean = 3");
+    // ROOT default (kERRORMEAN) error on the mean: spread² = <y²>-<y>² =
+    // 35/3 - 9 = 8/3; neff = 3; error = sqrt((8/3)/3) = sqrt(8)/3.
+    let expected = (8.0_f64 / 3.0 / 3.0).sqrt();
+    assert!(
+        (a.bin_error(1) - expected).abs() < 1e-12,
+        "got {}, want {expected}",
+        a.bin_error(1)
+    );
+    // Bin 2 saw a single y = 10: zero spread, zero error on the mean.
+    assert!((a.values()[1] - 10.0).abs() < 1e-12);
+    assert_eq!(a.bin_error(2), 0.0, "single entry -> no spread");
+
+    let mut wrong = TProfile::new("p", "", 3, 0.0, 3.0);
+    assert!(wrong.add(&a, 1.0).is_err(), "different binning rejected");
 }

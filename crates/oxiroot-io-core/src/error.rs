@@ -20,6 +20,11 @@ pub enum Error {
     UnsupportedVersion { class: &'static str, version: u16 },
     /// A generic, described format violation.
     Format(String),
+    /// A histogram operation was asked to combine incompatible binnings.
+    BinningMismatch { detail: String },
+    /// A streaming writer received entries whose schema differs from the
+    /// schema already committed to the file.
+    SchemaChanged { detail: String },
     /// An underlying I/O error (rendered to a string so `Error` stays `Clone`).
     Io(String),
 }
@@ -47,6 +52,8 @@ impl fmt::Display for Error {
                 write!(f, "unsupported {class} version {version}")
             }
             Error::Format(s) => write!(f, "format error: {s}"),
+            Error::BinningMismatch { detail } => write!(f, "binning mismatch: {detail}"),
+            Error::SchemaChanged { detail } => write!(f, "schema changed: {detail}"),
             Error::Io(s) => write!(f, "I/O error: {s}"),
         }
     }

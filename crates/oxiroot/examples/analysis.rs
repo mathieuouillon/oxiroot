@@ -43,7 +43,7 @@ fn main() -> Result<()> {
     let mut signal = pt.clone();
     let mut background = pt.clone();
     background.scale(0.1); // scale background down
-    signal.add(&background, 1.0); // stack background onto signal (a merge)
+    signal.add(&background, 1.0)?; // stack background onto signal (a merge)
     signal.scale(1.0 / signal.integral().max(1.0)); // normalize to unit area
     println!("normalized signal integral = {:.6}", signal.integral());
 
