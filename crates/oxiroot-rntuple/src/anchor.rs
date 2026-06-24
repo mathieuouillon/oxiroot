@@ -14,6 +14,10 @@ pub const ANCHOR_CLASS: &str = "ROOT::RNTuple";
 /// Number of big-endian anchor field bytes covered by the checksum.
 const ANCHOR_FIELDS_LEN: usize = 64;
 
+/// The `ROOT::RNTuple` streamer class version the format spec fixes (and that
+/// our writer, ROOT, and uproot all emit).
+const ANCHOR_CLASS_VERSION: u16 = 2;
+
 /// A parsed RNTuple anchor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RNTupleAnchor {
@@ -46,7 +50,23 @@ impl RNTupleAnchor {
     /// bytes (which begin with ROOT's object header).
     pub fn read(object: &[u8]) -> Result<RNTupleAnchor> {
         let mut r = RBuffer::new(object);
-        let _header = r.read_version()?; // ROOT {byte-count, class version}
+        let header = r.read_version()?; // ROOT {byte-count, class version}
+
+        // The anchor is a byte-count-framed `ROOT::RNTuple` object whose class
+        // version the spec fixes at 2. Reject anything else up front rather than
+        // trusting a malformed/foreign header and parsing 64 bytes from a wrong
+        // offset (the checksum would catch it, but a clear error is better).
+        if header.byte_count.is_none() {
+            return Err(Error::Format(
+                "RNTuple anchor: missing object byte count".into(),
+            ));
+        }
+        if header.version != ANCHOR_CLASS_VERSION {
+            return Err(Error::Format(format!(
+                "RNTuple anchor: unsupported class version {} (expected {ANCHOR_CLASS_VERSION})",
+                header.version
+            )));
+        }
 
         let fields_start = r.pos();
         let version_epoch = r.be_u16()?;

@@ -84,11 +84,21 @@ pub fn read_frame(r: &mut RBuffer) -> Result<Frame> {
         return Err(Error::Format(format!("frame size {size} too small")));
     }
     let n_items = if is_list { r.le_u32()? } else { 0 };
+    let inner_start = r.pos();
+    // The frame must end within the envelope and at or past its own header, so
+    // that the `r.seek(frame.end)` skip and the item loop stay in bounds even
+    // for a corrupt or truncated size.
+    let end = start
+        .checked_add(size)
+        .filter(|&e| e >= inner_start && e <= r.len())
+        .ok_or_else(|| {
+            Error::Format(format!("frame size {size} runs past the envelope payload"))
+        })?;
     Ok(Frame {
         is_list,
         n_items,
-        inner_start: r.pos(),
-        end: start + size,
+        inner_start,
+        end,
     })
 }
 

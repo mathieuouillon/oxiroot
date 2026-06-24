@@ -56,6 +56,11 @@ impl<'a> RBuffer<'a> {
         self.data.len() - self.pos
     }
 
+    /// Total length of the underlying buffer.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
     /// Whether the cursor is at or past the end of the buffer.
     pub fn is_empty(&self) -> bool {
         self.pos >= self.data.len()

@@ -297,6 +297,16 @@ impl RNTuple {
             out.extend(local.into_iter().map(|v| v.wrapping_add(base)));
             base = base.wrapping_add(cluster_total);
         }
+        // An index column carries exactly one offset per entry. If the decoded
+        // count disagrees with the cluster summaries, the column is truncated or
+        // corrupt — fail rather than hand back misaligned collection boundaries.
+        if out.len() as u64 != self.num_entries() {
+            return Err(Error::Format(format!(
+                "index column {column_index}: {} offsets for {} entries",
+                out.len(),
+                self.num_entries()
+            )));
+        }
         Ok(out)
     }
 }

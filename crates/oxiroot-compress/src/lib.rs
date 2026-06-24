@@ -86,6 +86,17 @@ pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Vec<u8>, Compre
     let mut cur = src;
     while out.len() < uncompressed_len {
         let hdr = BlockHeader::parse(cur)?;
+        // A block may not claim more output than the payload still has room for.
+        // This rejects a forged `uncompressed_size` *before* its (possibly large)
+        // codec buffer is allocated, and bounds total growth to `uncompressed_len`
+        // so the loop cannot be driven to amplify output past the declared size.
+        let remaining = uncompressed_len - out.len();
+        if hdr.uncompressed_size as usize > remaining {
+            return Err(CompressError::SizeMismatch {
+                expected: uncompressed_len,
+                got: out.len() + hdr.uncompressed_size as usize,
+            });
+        }
         let payload_end = HDR_SIZE + hdr.compressed_size as usize;
         if cur.len() < payload_end {
             return Err(CompressError::Truncated {
@@ -128,12 +139,14 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
 ///
 /// `settings == 0` means "store uncompressed": the input is returned unchanged
 /// (the caller stores it without a block header). Otherwise the data is encoded
-/// into ROOT compression blocks. Only Zstd encoding (algorithm 5) is supported.
+/// into ROOT compression blocks. Only Zstd encoding (algorithm 5) is supported;
+/// the level is passed through but the pure-Rust backend does not differentiate
+/// it (see [`codec::zstd_encode`]).
 pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
     if settings == 0 {
         return Ok(src.to_vec());
     }
-    let (algorithm, _level) = split_settings(settings);
+    let (algorithm, level) = split_settings(settings);
     if algorithm != 5 {
         return Err(CompressError::Codec(format!(
             "encoding algorithm {algorithm} is not supported (only Zstd)"
@@ -142,7 +155,7 @@ pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
 
     let mut out = Vec::new();
     for chunk in src.chunks(MAX_CHUNK_SIZE.max(1)) {
-        let frame = codec::zstd_encode(chunk);
+        let frame = codec::zstd_encode(chunk, level);
         if frame.len() > MAX_CHUNK_SIZE {
             return Err(CompressError::Codec(
                 "compressed block exceeds 24-bit size".into(),
@@ -212,6 +225,29 @@ mod tests {
         assert!(matches!(
             decompress(&buf, 8),
             Err(CompressError::CodecUnavailable(Algorithm::Lz4))
+        ));
+    }
+
+    #[test]
+    fn decompress_rejects_block_overshooting_declared_length() {
+        // A real zlib block, but its header lies that it expands to 64 MiB while
+        // the caller only expects a few bytes. The per-block bound must reject it
+        // before allocating, not decode the whole thing first.
+        let original = b"small".to_vec();
+        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&original, 6);
+        let mut block = Vec::new();
+        BlockHeader {
+            tag: *b"ZL",
+            method: 8,
+            compressed_size: compressed.len() as u32,
+            uncompressed_size: 64 << 20, // lie: claims 64 MiB
+        }
+        .write(&mut block);
+        block.extend_from_slice(&compressed);
+
+        assert!(matches!(
+            decompress(&block, original.len()),
+            Err(CompressError::SizeMismatch { .. })
         ));
     }
 
