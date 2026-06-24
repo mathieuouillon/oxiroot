@@ -81,6 +81,24 @@ impl ColumnType {
         })
     }
 
+    /// The fixed number of bits each element of this column occupies on storage,
+    /// or `None` for variable-width types (`Switch`, truncated/quantized reals).
+    /// Used to reject a header whose declared `bits_on_storage` contradicts the
+    /// column type, which would otherwise mis-size pages and panic on decode.
+    pub fn storage_bits(self) -> Option<u16> {
+        use ColumnType::*;
+        Some(match self {
+            Bit => 1,
+            Byte | Char | Int8 | UInt8 => 8,
+            Int16 | UInt16 | Real16 | SplitInt16 | SplitUInt16 | SplitReal16 => 16,
+            Int32 | UInt32 | Real32 | Index32 | SplitInt32 | SplitUInt32 | SplitReal32
+            | SplitIndex32 => 32,
+            Int64 | UInt64 | Real64 | Index64 | SplitInt64 | SplitUInt64 | SplitReal64
+            | SplitIndex64 => 64,
+            Switch | Real32Trunc | Real32Quant => return None,
+        })
+    }
+
     /// Whether this is an index/offset column (collection lengths).
     pub fn is_index(self) -> bool {
         matches!(

@@ -64,7 +64,7 @@ impl PageList {
 
         // Cluster summaries: a list of record frames.
         let summary_list = read_frame(&mut r)?;
-        let mut summaries = Vec::with_capacity(summary_list.n_items as usize);
+        let mut summaries = Vec::with_capacity((summary_list.n_items as usize).min(r.remaining()));
         for _ in 0..summary_list.n_items {
             let frame = read_frame(&mut r)?;
             let first_entry = r.le_u64()?;
@@ -79,10 +79,10 @@ impl PageList {
 
         // Page locations: outer list (clusters) of inner list (columns).
         let cluster_list = read_frame(&mut r)?;
-        let mut clusters = Vec::with_capacity(cluster_list.n_items as usize);
+        let mut clusters = Vec::with_capacity((cluster_list.n_items as usize).min(r.remaining()));
         for _ in 0..cluster_list.n_items {
             let column_list = read_frame(&mut r)?;
-            let mut columns = Vec::with_capacity(column_list.n_items as usize);
+            let mut columns = Vec::with_capacity((column_list.n_items as usize).min(r.remaining()));
             for _ in 0..column_list.n_items {
                 columns.push(read_column_pages(&mut r)?);
             }
@@ -103,7 +103,7 @@ impl PageList {
 /// inside the frame.
 fn read_column_pages(r: &mut RBuffer) -> Result<ColumnPages> {
     let frame = read_frame(r)?;
-    let mut pages = Vec::with_capacity(frame.n_items as usize);
+    let mut pages = Vec::with_capacity((frame.n_items as usize).min(r.remaining()));
     for _ in 0..frame.n_items {
         let raw = r.le_i32()?;
         let has_checksum = raw < 0;

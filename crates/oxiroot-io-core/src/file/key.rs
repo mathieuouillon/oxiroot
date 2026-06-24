@@ -8,7 +8,7 @@
 use std::ops::Range;
 
 use crate::buffer::RBuffer;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// Key version at or below which seek pointers are 32-bit.
 const KEY_BIG_VERSION: u16 = 1000;
@@ -118,9 +118,11 @@ impl TKey {
         self.nbytes.unsigned_abs()
     }
 
-    /// Length of the (possibly compressed) object payload on disk.
+    /// Length of the (possibly compressed) object payload on disk. Saturates to
+    /// 0 for a malformed key whose `key_len` exceeds its total byte count
+    /// (rather than underflowing); [`payload`](TKey::payload) rejects such keys.
     pub fn payload_len(&self) -> usize {
-        self.total_bytes() as usize - self.key_len as usize
+        self.total_bytes().saturating_sub(self.key_len as u32) as usize
     }
 
     /// Whether the object payload is stored uncompressed (on-disk size equals
@@ -130,9 +132,51 @@ impl TKey {
     }
 
     /// Byte range of the (possibly compressed) object payload within the file.
+    /// Unvalidated — prefer [`payload`](TKey::payload), which bounds-checks
+    /// against the actual buffer. Kept for callers operating on trusted data.
     pub fn payload_range(&self) -> Range<usize> {
         let start = self.seek_key as usize + self.key_len as usize;
         start..start + self.payload_len()
+    }
+
+    /// Bounds-checked absolute offset of the record body (`fSeekKey + fKeyLen`)
+    /// within a buffer of length `data_len`. Returns an error — never overflows
+    /// `usize` — for a malformed key whose offset wraps or points past the
+    /// buffer. Use this (not [`payload_range`](TKey::payload_range)`.start`) to
+    /// locate a key's body on any untrusted file.
+    pub fn payload_start(&self, data_len: usize) -> Result<usize> {
+        (self.seek_key as usize)
+            .checked_add(self.key_len as usize)
+            .filter(|&s| s <= data_len)
+            .ok_or_else(|| {
+                Error::Format(format!(
+                    "key {:?}: payload offset past end of file",
+                    self.name
+                ))
+            })
+    }
+
+    /// The (possibly compressed) object payload bytes within `data`, fully
+    /// bounds-checked. Returns an error — never panics — for a malformed key
+    /// whose `fSeekKey`/`fKeyLen`/`fNbytes` point outside the buffer or whose
+    /// `fKeyLen` exceeds its byte count. Use this on any untrusted file.
+    pub fn payload<'a>(&self, data: &'a [u8]) -> Result<&'a [u8]> {
+        let start = self.payload_start(data.len())?;
+        let len = self
+            .total_bytes()
+            .checked_sub(self.key_len as u32)
+            .ok_or_else(|| Error::Format(format!("key {:?}: fKeyLen exceeds fNbytes", self.name)))?
+            as usize;
+        let end = start
+            .checked_add(len)
+            .filter(|&e| e <= data.len())
+            .ok_or_else(|| {
+                Error::Format(format!(
+                    "key {:?}: payload runs past end of file",
+                    self.name
+                ))
+            })?;
+        Ok(&data[start..end])
     }
 }
 
@@ -151,5 +195,43 @@ mod tests {
         assert_eq!(dt.hour(), 12);
         assert_eq!(dt.minute(), 34);
         assert_eq!(dt.second(), 56);
+    }
+
+    fn key_with(seek_key: u64, key_len: u16, nbytes: i32) -> TKey {
+        TKey {
+            nbytes,
+            version: 1001, // big format: fSeekKey is a full 64-bit value
+            obj_len: 0,
+            datime: TDatime(0),
+            key_len,
+            cycle: 1,
+            seek_key,
+            seek_pdir: 0,
+            class_name: "TDirectory".into(),
+            name: "d".into(),
+            title: String::new(),
+        }
+    }
+
+    #[test]
+    fn payload_start_rejects_overflowing_offset() {
+        // A hostile big-format TDirectory key whose fSeekKey is near u64::MAX:
+        // `seek_key + key_len` overflows usize. payload_start must return Err,
+        // not panic (debug) or wrap to a small in-bounds offset (release).
+        let key = key_with(u64::MAX - 8, 60, 100);
+        assert!(key.payload_start(4096).is_err());
+        assert!(key.payload(&[0u8; 4096]).is_err());
+
+        // Past-the-end but non-overflowing is likewise rejected.
+        let key = key_with(10_000, 60, 100);
+        assert!(key.payload_start(4096).is_err());
+    }
+
+    #[test]
+    fn payload_start_accepts_in_bounds() {
+        let key = key_with(100, 60, 200);
+        assert_eq!(key.payload_start(1024).unwrap(), 160);
+        // Ending exactly at EOF is valid (slice end is exclusive).
+        assert_eq!(key.payload_start(160).unwrap(), 160);
     }
 }

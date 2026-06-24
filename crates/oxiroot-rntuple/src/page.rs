@@ -29,9 +29,10 @@ pub enum ColumnValues {
     F64(Vec<f64>),
 }
 
-/// Uncompressed byte size of `n` elements stored at `bits` bits each.
+/// Uncompressed byte size of `n` elements stored at `bits` bits each. Computed
+/// in 64-bit to avoid overflow on 32-bit targets for adversarially large counts.
 fn uncompressed_size(bits: u16, n: usize) -> usize {
-    (n * bits as usize).div_ceil(8)
+    (n as u64 * bits as u64).div_ceil(8).min(usize::MAX as u64) as usize
 }
 
 /// Read and decompress one page, verifying its XXH3-64 checksum if present.
@@ -107,6 +108,16 @@ pub fn read_column(
     pages: &[PageInfo],
 ) -> Result<ColumnValues> {
     use ColumnType::*;
+    // Reject a header whose declared bit width contradicts the column type
+    // before it is used to size pages — otherwise a hostile `bits_on_storage`
+    // (e.g. 0 or 64 for an Int32 column) panics in the decode below.
+    if let Some(expected) = column_type.storage_bits() {
+        if bits != expected {
+            return Err(Error::Format(format!(
+                "column {column_type:?}: bits_on_storage {bits}, expected {expected}"
+            )));
+        }
+    }
     match column_type {
         Bit => {
             let mut out = Vec::new();

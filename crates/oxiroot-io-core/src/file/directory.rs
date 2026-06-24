@@ -89,7 +89,7 @@ fn read_keys(data: &[u8], seek_keys: usize) -> Result<Vec<TKey>> {
     let _wrapper = TKey::read(&mut r)?;
     let nkeys = r.be_i32()?.max(0) as usize;
 
-    let mut keys = Vec::with_capacity(nkeys);
+    let mut keys = Vec::with_capacity(nkeys.min(r.remaining()));
     for _ in 0..nkeys {
         keys.push(TKey::read(&mut r)?);
     }

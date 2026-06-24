@@ -182,7 +182,7 @@ pub fn parse_streamer_info(object: &[u8], keylen: usize) -> Result<StreamerRegis
     let _name = r.string()?;
     let count = r.be_i32()?.max(0);
 
-    let mut infos = Vec::with_capacity(count as usize);
+    let mut infos = Vec::with_capacity((count as usize).min(r.remaining()));
     for _ in 0..count {
         let header = tags.read_header(&mut r)?;
         if header.class_name.as_deref() == Some("TStreamerInfo") {
@@ -235,7 +235,7 @@ fn parse_element_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Stre
     let size = r.be_i32()?.max(0);
     let _lower_bound = r.be_i32()?;
 
-    let mut elements = Vec::with_capacity(size as usize);
+    let mut elements = Vec::with_capacity((size as usize).min(r.remaining()));
     for _ in 0..size {
         let header = tags.read_header(r)?;
         if let Some(class) = header.class_name.clone() {

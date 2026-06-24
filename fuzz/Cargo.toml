@@ -1,0 +1,39 @@
+[package]
+name = "oxiroot-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+oxiroot-io-core = { path = "../crates/oxiroot-io-core" }
+oxiroot-rntuple = { path = "../crates/oxiroot-rntuple" }
+oxiroot-compress = { path = "../crates/oxiroot-compress" }
+
+[[bin]]
+name = "rfile"
+path = "fuzz_targets/rfile.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rntuple"
+path = "fuzz_targets/rntuple.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decompress"
+path = "fuzz_targets/decompress.rs"
+test = false
+doc = false
+bench = false
+
+# Standalone workspace so the main `cargo build --workspace` ignores it (the
+# fuzz targets need the nightly toolchain + cargo-fuzz).
+[workspace]

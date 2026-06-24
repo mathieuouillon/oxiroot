@@ -313,8 +313,9 @@ pub fn update_root_file(
     let file = RFile::from_bytes(existing.to_vec())?;
 
     // Copy existing objects, ordered by ascending cycle so the cycle-by-position
-    // assignment in the rewrite reproduces (or extends) their cycles.
-    let mut keys: Vec<&TKey> = file.keys().iter().collect();
+    // assignment in the rewrite reproduces (or extends) their cycles. Deleted
+    // keys (negative fNbytes) point at freed space and must be skipped.
+    let mut keys: Vec<&TKey> = file.keys().iter().filter(|k| !k.is_deleted()).collect();
     keys.sort_by_key(|k| k.cycle);
 
     let mut objects: Vec<ObjectRecord> = Vec::with_capacity(keys.len() + new_objects.len());
@@ -326,7 +327,14 @@ pub fn update_root_file(
                     .into(),
             ));
         }
-        let payload = &file.data()[key.payload_range()];
+        if key.class_name == "TDirectory" || key.class_name == "TDirectoryFile" {
+            return Err(Error::Format(
+                "updating a file that contains subdirectories is not supported \
+                 (the subdirectory record and its keys are not relocated)"
+                    .into(),
+            ));
+        }
+        let payload = key.payload(file.data())?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing {:?}: {e}", key.name)))?;
         objects.push(ObjectRecord {

@@ -169,7 +169,7 @@ pub(crate) fn object_bytes(file: &RFile, name: &str, class: &str) -> Result<Vec<
             key.class_name
         )));
     }
-    let payload = &file.data()[key.payload_range()];
+    let payload = key.payload(file.data())?;
     oxiroot_compress::decompress(payload, key.obj_len as usize)
         .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))
 }
@@ -180,7 +180,7 @@ pub(crate) fn object_bytes_any(file: &RFile, name: &str) -> Result<(String, Vec<
     let key = file
         .key(name)
         .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
-    let payload = &file.data()[key.payload_range()];
+    let payload = key.payload(file.data())?;
     let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
         .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
     Ok((key.class_name.clone(), object))

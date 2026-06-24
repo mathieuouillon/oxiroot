@@ -37,7 +37,7 @@ impl RNTuple {
             )));
         }
 
-        let anchor_payload = &file.data()[key.payload_range()];
+        let anchor_payload = key.payload(file.data())?;
         let anchor_object = oxiroot_compress::decompress(anchor_payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing anchor: {e}")))?;
         let anchor = RNTupleAnchor::read(&anchor_object)?;
@@ -291,9 +291,11 @@ impl RNTuple {
                     )))
                 }
             };
+            // Offsets are decoded from the file; use wrapping arithmetic (as
+            // delta_decode does) so a corrupt index column cannot panic in debug.
             let cluster_total = local.last().copied().unwrap_or(0);
-            out.extend(local.into_iter().map(|v| v + base));
-            base += cluster_total;
+            out.extend(local.into_iter().map(|v| v.wrapping_add(base)));
+            base = base.wrapping_add(cluster_total);
         }
         Ok(out)
     }

@@ -77,7 +77,12 @@ pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Vec<u8>, Compre
         return Ok(src.to_vec());
     }
 
-    let mut out = Vec::with_capacity(uncompressed_len);
+    // `uncompressed_len` comes from the file (an anchor 48-bit length or a TKey
+    // `fObjLen`), so it is untrusted. Cap the *initial* reservation so a forged
+    // length cannot trigger a multi-GB allocation; the buffer still grows to fit
+    // legitimately larger output, and the final length is checked below.
+    const MAX_PREALLOC: usize = 64 << 20;
+    let mut out = Vec::with_capacity(uncompressed_len.min(MAX_PREALLOC));
     let mut cur = src;
     while out.len() < uncompressed_len {
         let hdr = BlockHeader::parse(cur)?;

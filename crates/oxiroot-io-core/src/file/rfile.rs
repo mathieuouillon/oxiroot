@@ -85,7 +85,7 @@ impl RFile {
             .iter()
             .find(|k| k.name == name && k.class_name == "TDirectory")
             .ok_or_else(|| Error::Format(format!("no subdirectory named {name:?}")))?;
-        Directory::read(&self.data, key.payload_range().start)
+        Directory::read(&self.data, key.payload_start(self.data.len())?)
     }
 
     /// Return the class name and decompressed object bytes for key `name` inside
@@ -98,7 +98,7 @@ impl RFile {
             .filter(|k| k.name == name && !k.is_deleted())
             .max_by_key(|k| k.cycle)
             .ok_or_else(|| Error::Format(format!("no key {name:?} in subdirectory {subdir:?}")))?;
-        let payload = &self.data[key.payload_range()];
+        let payload = key.payload(&self.data)?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
         Ok((key.class_name.clone(), object))
@@ -118,7 +118,7 @@ impl RFile {
         let mut r = RBuffer::new(&self.data);
         r.seek(self.header.seek_info as usize)?;
         let key = TKey::read(&mut r)?;
-        let payload = &self.data[key.payload_range()];
+        let payload = key.payload(&self.data)?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing streamer info: {e}")))?;
         parse_streamer_info(&object, key.key_len as usize)
@@ -134,7 +134,7 @@ impl RFile {
         let mut r = RBuffer::new(&self.data);
         r.seek(self.header.seek_info as usize)?;
         let key = TKey::read(&mut r)?;
-        let payload = &self.data[key.payload_range()];
+        let payload = key.payload(&self.data)?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing streamer info: {e}")))?;
         Ok(Some(object))
