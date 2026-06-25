@@ -122,6 +122,28 @@ self-round-trips and byte-level agreement against committed reference files. CI
 additionally round-trips histograms and RNTuple both ways against official ROOT
 (C++) and uproot — Rust writes files they read, and reads files they write.
 
+### Full local interop check
+
+For a comprehensive cross-language check on your own machine (not CI), run:
+
+```sh
+bash scripts/interop_local.sh            # full run; prints a PASS/FAIL matrix
+bash scripts/interop_local.sh --no-fixtures   # skip the fixture-regen step (fast)
+bash scripts/interop_local.sh --big      # also exercise the >2 GiB (64-bit) read path
+```
+
+It exercises oxiroot's full read+write surface against **both** ROOT C++ and
+uproot, in both directions: the lean canonical round-trip, a manifest-driven
+**matrix** (~38 cases — every histogram precision×dimension, `TProfile`, Sumw2,
+variable bins, multi-object/subdirs/append, every RNTuple scalar+vector type +
+multi-cluster, every `TTree` branch kind + scalar width + split
+`std::vector<Struct>`), `cargo test --workspace`, and a drift check that
+regenerates the committed fixtures from your *local* ROOT/uproot and re-tests.
+Missing tools (no ROOT, or no uproot venv) degrade to `SKIP`, never `FAIL`, so a
+machine with neither still gets a meaningful green from `cargo test` alone.
+Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
+(+`rootcling`) on `PATH` for the ROOT-C++ side.
+
 ## Status & roadmap
 
 Experimental (`0.0.x`) but functional — reading and writing RNTuple and the
