@@ -25,6 +25,8 @@ HIST_BINS = [1.0, 2.0, 3.0, 4.0]
 HIST_EDGES = [0.0, 1.0, 2.0, 3.0, 4.0]
 NTPL_X = [1, 2, 3, 4, 5]
 NTPL_Y = [1.5, 2.5, 3.5, 4.5, 5.5]
+TREE_TV = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0], [13.0, 14.0, 15.0]]
+TREE_TS = ["a", "bb", "ccc", "dddd", "eeeee"]
 
 
 def _fail(msg: str) -> None:
@@ -54,10 +56,16 @@ def read(d: str) -> None:
     ta = tree.arrays(library="np")
     ti = [int(v) for v in ta["ti"]]
     tf = [float(v) for v in ta["tf"]]
+    tv = [[float(x) for x in row] for row in ta["tv"]]
+    ts = [s.decode() if isinstance(s, bytes) else s for s in ta["ts"]]
     if ti != NTPL_X:
         _fail(f"rust tree ti: got {ti}, want {NTPL_X}")
     if tf != NTPL_Y:
         _fail(f"rust tree tf: got {tf}, want {NTPL_Y}")
+    if tv != TREE_TV:
+        _fail(f"rust tree tv: got {tv}, want {TREE_TV}")
+    if ts != TREE_TS:
+        _fail(f"rust tree ts: got {ts}, want {TREE_TS}")
 
     print("uproot read Rust hist + RNTuple + TTree — values match")
 

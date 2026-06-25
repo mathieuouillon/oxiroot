@@ -8,7 +8,8 @@
 //! Canonical dataset (both sides agree):
 //!   - TH1D "h": 4 bins over [0, 4), in-range bin contents [1, 2, 3, 4].
 //!   - RNTuple "ntpl": field x = int32 [1,2,3,4,5], y = double [1.5,2.5,3.5,4.5,5.5].
-//!   - TTree "Tree": branch ti = int32 [1..5], tf = double [1.5..5.5].
+//!   - TTree "Tree": ti = int32 [1..5], tf = double [1.5..5.5], tv = double[3]
+//!     fixed array, ts = string.
 
 use std::path::Path;
 use std::process::exit;
@@ -20,6 +21,15 @@ const HIST_BINS: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
 /// Canonical RNTuple columns.
 const NTPL_X: [i32; 5] = [1, 2, 3, 4, 5];
 const NTPL_Y: [f64; 5] = [1.5, 2.5, 3.5, 4.5, 5.5];
+/// Canonical TTree fixed-array (`tv`) and string (`ts`) columns.
+const TREE_TV: [[f64; 3]; 5] = [
+    [1.0, 2.0, 3.0],
+    [4.0, 5.0, 6.0],
+    [7.0, 8.0, 9.0],
+    [10.0, 11.0, 12.0],
+    [13.0, 14.0, 15.0],
+];
+const TREE_TS: [&str; 5] = ["a", "bb", "ccc", "dddd", "eeeee"];
 
 fn canonical_hist() -> TH1 {
     let mut h = TH1::new("h", "interop", 4, 0.0, 4.0);
@@ -55,6 +65,8 @@ fn write(dir: &Path) -> Result<()> {
         &[
             Branch::i32("ti", NTPL_X.to_vec()),
             Branch::f64("tf", NTPL_Y.to_vec()),
+            Branch::vec_f64("tv", TREE_TV.iter().map(|r| r.to_vec()).collect()),
+            Branch::strings("ts", TREE_TS.iter().map(|s| s.to_string()).collect()),
         ],
         Compression::None,
     )?;

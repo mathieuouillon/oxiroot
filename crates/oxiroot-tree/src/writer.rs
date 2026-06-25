@@ -1,13 +1,16 @@
-//! Writing a flat (scalar-branch) `TTree` into a ROOT file.
+//! Writing a `TTree` into a ROOT file.
 //!
-//! Mirrors the layout ROOT/uproot write (TTree v20, TBranch v13, TLeaf* v1) so
-//! the result reads back in ROOT, uproot, and this crate. One basket per branch.
-//! The embedded `TStreamerInfo` (a baked blob) makes the file self-describing.
+//! Supports scalar, fixed-size array (`x[N]`), and string (`TLeafC`) branches —
+//! the variable-length numeric case (a jagged `x[n]` with a count branch) is not
+//! yet written. Mirrors the layout ROOT/uproot write (TTree v20, TBranch v13,
+//! TLeaf* v1) so the result reads back in ROOT, uproot, and this crate. One
+//! basket per branch. The embedded `TStreamerInfo` (a baked blob) makes the file
+//! self-describing.
 
 use std::path::Path;
 
 use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
-use oxiroot_io_core::error::Result;
+use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
 use oxiroot_io_core::{key_len, key_len_fmt, write_key_header, Compression};
 
@@ -23,11 +26,13 @@ const OBJ_BITS: u32 = 0x0300_0000;
 /// extracted from a uproot-written tree. Embedded so the file is self-describing.
 const TREE_STREAMER_INFO: &[u8] = include_bytes!("tree.streamerinfo.bin");
 
-/// One named branch to write. Use the typed constructors ([`Branch::i32`], …).
+/// One named branch to write. Use the typed constructors: [`Branch::i32`] … for
+/// scalars, [`Branch::vec_f64`] … for fixed-size arrays, [`Branch::strings`] for
+/// strings.
 pub struct Branch {
     /// Branch (and leaf) name.
     pub name: String,
-    /// Branch values (a scalar [`BranchValues`] variant).
+    /// Branch values (a [`BranchValues`] variant — scalar, array, or string).
     pub values: BranchValues,
 }
 
@@ -49,117 +54,183 @@ branch_ctors! {
     f32 => F32(f32), f64 => F64(f64),
 }
 
-/// The on-disk description of one scalar leaf type.
+/// Generate `Branch::vec_<name>` shortcuts for fixed-size array branches (each
+/// inner vector must have the same length `N`, written as `x[N]`).
+macro_rules! vec_ctors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl Branch {
+            $(
+                #[doc = concat!("A fixed-size array branch holding `", stringify!($variant), "` rows.")]
+                pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
+                    Branch { name: name.into(), values: BranchValues::$variant(values) }
+                }
+            )*
+        }
+    };
+}
+vec_ctors! {
+    vec_bool => VecBool(bool), vec_i8 => VecI8(i8), vec_u8 => VecU8(u8),
+    vec_i16 => VecI16(i16), vec_u16 => VecU16(u16), vec_i32 => VecI32(i32),
+    vec_u32 => VecU32(u32), vec_i64 => VecI64(i64), vec_u64 => VecU64(u64),
+    vec_f32 => VecF32(f32), vec_f64 => VecF64(f64),
+}
+
+impl Branch {
+    /// A string branch (`TLeafC`).
+    pub fn strings(name: impl Into<String>, values: Vec<String>) -> Branch {
+        Branch {
+            name: name.into(),
+            values: BranchValues::Str(values),
+        }
+    }
+}
+
+/// Whether a branch is a scalar, a fixed-size array, or a string.
+enum Kind {
+    Scalar,
+    FixedArray(usize),
+    Str,
+}
+
+/// The on-disk description of one leaf type.
 struct LeafInfo {
-    /// `TLeafI`/`TLeafD`/… class name.
+    /// `TLeafI`/`TLeafD`/`TLeafC`/… class name.
     class: &'static str,
-    /// Leaflist type code (`I`/`D`/`O`/…) used in the branch title `"name/CODE"`.
+    /// Leaflist type code (`I`/`D`/`C`/…) used in the branch title.
     code: char,
-    /// `fLenType` — element byte width.
+    /// Element byte width (the data stride; 1 for a `TLeafC` char).
     size: i32,
+    /// `fLenType` (the element width for numerics, 0 for `TLeafC`).
+    len_type: i32,
     /// `fIsUnsigned`.
     unsigned: bool,
 }
 
 impl Branch {
-    /// Number of entries (one element per entry for a scalar branch).
+    /// Number of entries (rows for arrays/strings).
     fn n_entries(&self) -> u32 {
+        use BranchValues::*;
         let n = match &self.values {
-            BranchValues::Bool(v) => v.len(),
-            BranchValues::I8(v) => v.len(),
-            BranchValues::U8(v) => v.len(),
-            BranchValues::I16(v) => v.len(),
-            BranchValues::U16(v) => v.len(),
-            BranchValues::I32(v) => v.len(),
-            BranchValues::U32(v) => v.len(),
-            BranchValues::I64(v) => v.len(),
-            BranchValues::U64(v) => v.len(),
-            BranchValues::F32(v) => v.len(),
-            BranchValues::F64(v) => v.len(),
-            _ => 0,
+            Bool(v) => v.len(),
+            I8(v) => v.len(),
+            U8(v) => v.len(),
+            I16(v) => v.len(),
+            U16(v) => v.len(),
+            I32(v) => v.len(),
+            U32(v) => v.len(),
+            I64(v) => v.len(),
+            U64(v) => v.len(),
+            F32(v) => v.len(),
+            F64(v) => v.len(),
+            VecBool(r) => r.len(),
+            VecI8(r) => r.len(),
+            VecU8(r) => r.len(),
+            VecI16(r) => r.len(),
+            VecU16(r) => r.len(),
+            VecI32(r) => r.len(),
+            VecU32(r) => r.len(),
+            VecI64(r) => r.len(),
+            VecU64(r) => r.len(),
+            VecF32(r) => r.len(),
+            VecF64(r) => r.len(),
+            Str(v) => v.len(),
         };
         n as u32
     }
 
+    /// The element leaf type (the inner type for arrays).
     fn leaf(&self) -> LeafInfo {
-        match &self.values {
-            BranchValues::Bool(_) => LeafInfo {
-                class: "TLeafO",
-                code: 'O',
-                size: 1,
-                unsigned: false,
-            },
-            BranchValues::I8(_) => LeafInfo {
-                class: "TLeafB",
-                code: 'B',
-                size: 1,
-                unsigned: false,
-            },
-            BranchValues::U8(_) => LeafInfo {
-                class: "TLeafB",
-                code: 'b',
-                size: 1,
-                unsigned: true,
-            },
-            BranchValues::I16(_) => LeafInfo {
-                class: "TLeafS",
-                code: 'S',
-                size: 2,
-                unsigned: false,
-            },
-            BranchValues::U16(_) => LeafInfo {
-                class: "TLeafS",
-                code: 's',
-                size: 2,
-                unsigned: true,
-            },
-            BranchValues::I32(_) => LeafInfo {
-                class: "TLeafI",
-                code: 'I',
-                size: 4,
-                unsigned: false,
-            },
-            BranchValues::U32(_) => LeafInfo {
-                class: "TLeafI",
-                code: 'i',
-                size: 4,
-                unsigned: true,
-            },
-            BranchValues::I64(_) => LeafInfo {
-                class: "TLeafL",
-                code: 'L',
-                size: 8,
-                unsigned: false,
-            },
-            BranchValues::U64(_) => LeafInfo {
-                class: "TLeafL",
-                code: 'l',
-                size: 8,
-                unsigned: true,
-            },
-            BranchValues::F32(_) => LeafInfo {
-                class: "TLeafF",
-                code: 'F',
-                size: 4,
-                unsigned: false,
-            },
-            BranchValues::F64(_) => LeafInfo {
-                class: "TLeafD",
-                code: 'D',
-                size: 8,
-                unsigned: false,
-            },
-            _ => LeafInfo {
-                class: "TLeafI",
-                code: 'I',
-                size: 4,
-                unsigned: false,
-            },
+        use BranchValues::*;
+        let (class, code, size, unsigned) = match &self.values {
+            Bool(_) | VecBool(_) => ("TLeafO", 'O', 1, false),
+            I8(_) | VecI8(_) => ("TLeafB", 'B', 1, false),
+            U8(_) | VecU8(_) => ("TLeafB", 'b', 1, true),
+            I16(_) | VecI16(_) => ("TLeafS", 'S', 2, false),
+            U16(_) | VecU16(_) => ("TLeafS", 's', 2, true),
+            I32(_) | VecI32(_) => ("TLeafI", 'I', 4, false),
+            U32(_) | VecU32(_) => ("TLeafI", 'i', 4, true),
+            I64(_) | VecI64(_) => ("TLeafL", 'L', 8, false),
+            U64(_) | VecU64(_) => ("TLeafL", 'l', 8, true),
+            F32(_) | VecF32(_) => ("TLeafF", 'F', 4, false),
+            F64(_) | VecF64(_) => ("TLeafD", 'D', 8, false),
+            Str(_) => ("TLeafC", 'C', 1, false),
+        };
+        let len_type = if matches!(self.values, Str(_)) {
+            0
+        } else {
+            size
+        };
+        LeafInfo {
+            class,
+            code,
+            size,
+            len_type,
+            unsigned,
         }
     }
 
-    /// Big-endian on-disk bytes for the values.
-    fn data(&self) -> Vec<u8> {
+    /// Elements per entry: 1 (scalar/string) or `N` (fixed array, from row 0).
+    fn flen(&self) -> i32 {
+        use BranchValues::*;
+        let n = match &self.values {
+            VecBool(r) => r.first().map_or(0, Vec::len),
+            VecI8(r) => r.first().map_or(0, Vec::len),
+            VecU8(r) => r.first().map_or(0, Vec::len),
+            VecI16(r) => r.first().map_or(0, Vec::len),
+            VecU16(r) => r.first().map_or(0, Vec::len),
+            VecI32(r) => r.first().map_or(0, Vec::len),
+            VecU32(r) => r.first().map_or(0, Vec::len),
+            VecI64(r) => r.first().map_or(0, Vec::len),
+            VecU64(r) => r.first().map_or(0, Vec::len),
+            VecF32(r) => r.first().map_or(0, Vec::len),
+            VecF64(r) => r.first().map_or(0, Vec::len),
+            _ => 1,
+        };
+        n as i32
+    }
+
+    /// Whether this is an array branch whose rows differ in length (not yet
+    /// writable — variable-length numeric arrays need a separate count branch).
+    fn is_jagged(&self) -> bool {
+        use BranchValues::*;
+        macro_rules! jag {
+            ($r:expr) => {{
+                let n = $r.first().map_or(0, Vec::len);
+                $r.iter().any(|x| x.len() != n)
+            }};
+        }
+        match &self.values {
+            VecBool(r) => jag!(r),
+            VecI8(r) => jag!(r),
+            VecU8(r) => jag!(r),
+            VecI16(r) => jag!(r),
+            VecU16(r) => jag!(r),
+            VecI32(r) => jag!(r),
+            VecU32(r) => jag!(r),
+            VecI64(r) => jag!(r),
+            VecU64(r) => jag!(r),
+            VecF32(r) => jag!(r),
+            VecF64(r) => jag!(r),
+            _ => false,
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        use BranchValues::*;
+        match &self.values {
+            Str(_) => Kind::Str,
+            VecBool(_) | VecI8(_) | VecU8(_) | VecI16(_) | VecU16(_) | VecI32(_) | VecU32(_)
+            | VecI64(_) | VecU64(_) | VecF32(_) | VecF64(_) => {
+                Kind::FixedArray(self.flen() as usize)
+            }
+            _ => Kind::Scalar,
+        }
+    }
+
+    /// The basket's uncompressed entry data, plus (for string branches) the
+    /// data-relative `fEntryOffset` array (`n_entries + 1` offsets).
+    fn basket_content(&self) -> (Vec<u8>, Option<Vec<u32>>) {
+        use BranchValues::*;
         macro_rules! be {
             ($v:expr, $w:expr) => {{
                 let mut out = Vec::with_capacity($v.len() * $w);
@@ -169,20 +240,58 @@ impl Branch {
                 out
             }};
         }
-        match &self.values {
-            BranchValues::Bool(v) => v.iter().map(|&b| b as u8).collect(),
-            BranchValues::I8(v) => v.iter().map(|&x| x as u8).collect(),
-            BranchValues::U8(v) => v.clone(),
-            BranchValues::I16(v) => be!(v, 2),
-            BranchValues::U16(v) => be!(v, 2),
-            BranchValues::I32(v) => be!(v, 4),
-            BranchValues::U32(v) => be!(v, 4),
-            BranchValues::I64(v) => be!(v, 8),
-            BranchValues::U64(v) => be!(v, 8),
-            BranchValues::F32(v) => be!(v, 4),
-            BranchValues::F64(v) => be!(v, 8),
-            _ => Vec::new(),
+        macro_rules! be_rows {
+            ($r:expr, $w:expr) => {{
+                let mut out = Vec::new();
+                for row in $r {
+                    for x in row {
+                        out.extend_from_slice(&x.to_be_bytes());
+                    }
+                }
+                out
+            }};
         }
+        let data = match &self.values {
+            Bool(v) => v.iter().map(|&b| b as u8).collect(),
+            I8(v) => v.iter().map(|&x| x as u8).collect(),
+            U8(v) => v.clone(),
+            I16(v) => be!(v, 2),
+            U16(v) => be!(v, 2),
+            I32(v) => be!(v, 4),
+            U32(v) => be!(v, 4),
+            I64(v) => be!(v, 8),
+            U64(v) => be!(v, 8),
+            F32(v) => be!(v, 4),
+            F64(v) => be!(v, 8),
+            VecBool(r) => r.iter().flatten().map(|&b| b as u8).collect(),
+            VecI8(r) => r.iter().flatten().map(|&x| x as u8).collect(),
+            VecU8(r) => r.concat(),
+            VecI16(r) => be_rows!(r, 2),
+            VecU16(r) => be_rows!(r, 2),
+            VecI32(r) => be_rows!(r, 4),
+            VecU32(r) => be_rows!(r, 4),
+            VecI64(r) => be_rows!(r, 8),
+            VecU64(r) => be_rows!(r, 8),
+            VecF32(r) => be_rows!(r, 4),
+            VecF64(r) => be_rows!(r, 8),
+            Str(strings) => {
+                let mut data = Vec::new();
+                let mut offsets = vec![0u32];
+                for s in strings {
+                    let b = s.as_bytes();
+                    if b.len() < 255 {
+                        data.push(b.len() as u8);
+                    } else {
+                        data.push(255);
+                        data.extend_from_slice(&(b.len() as u32).to_be_bytes());
+                    }
+                    data.extend_from_slice(b);
+                    offsets.push(data.len() as u32);
+                }
+                return (data, Some(offsets));
+            }
+        };
+        (data, None)
     }
 }
 
@@ -206,18 +315,30 @@ pub fn write_tree_file(
         .unwrap_or("file.root");
     std::fs::write(
         path,
-        tree_file_bytes(file_name, tree_name, branches, compression),
+        tree_file_bytes(file_name, tree_name, branches, compression)?,
     )?;
     Ok(())
 }
 
 /// Build the bytes of a single-tree ROOT file.
+///
+/// Returns an error if any branch is a jagged (variable-length) numeric array,
+/// which is not yet writable — every row of an array branch must share a length.
 pub fn tree_file_bytes(
     file_name: &str,
     tree_name: &str,
     branches: &[Branch],
     compression: Compression,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
+    for b in branches {
+        if b.is_jagged() {
+            return Err(Error::Format(format!(
+                "branch {:?}: variable-length (jagged) array writing is not supported yet; \
+                 every row must have the same length",
+                b.name
+            )));
+        }
+    }
     let compression = compression.setting();
     let n_entries = branches.first().map(|b| b.n_entries()).unwrap_or(0);
 
@@ -345,7 +466,7 @@ pub fn tree_file_bytes(
     w.patch_be_u32(p_dir_nbytes_keys, keylist_nbytes);
     w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
 
-    w.into_vec()
+    Ok(w.into_vec())
 }
 
 /// On-disk bytes for an object payload: compressed when it helps, else raw.
@@ -362,16 +483,34 @@ fn on_disk(object: &[u8], compression: u32) -> Vec<u8> {
 /// Write a `TBasket` (a big-format `TKey` whose `fKeyLen` includes the 19-byte
 /// extension), returning its location.
 fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: u32) -> BasketRec {
-    let data = branch.data();
-    let payload = on_disk(&data, compression);
+    let (data, offsets) = branch.basket_content();
     let n_entries = branch.n_entries();
-    let nev_buf_size = branch.leaf().size;
+    let leaf = branch.leaf();
+    // `fNevBufSize` is the per-entry buffer size: `flen * elem_size` for a
+    // fixed/scalar branch; ROOT writes a default (1000) for variable baskets.
+    let nev_buf_size = match branch.kind() {
+        Kind::Str => 1000,
+        _ => branch.flen() * leaf.size,
+    };
 
     let seek = w.len() as u64;
     let klen = key_len_fmt("TBasket", &branch.name, tree_name, true) as u32 + 19;
-    let obj_len = data.len() as u32;
+    let border = data.len() as u32;
+
+    // The uncompressed buffer is the entry data, then (for a variable branch)
+    // the `fEntryOffset` array: `int32 count(=n_entries+1)` followed by
+    // basket-relative offsets (the data-relative offsets plus `fKeyLen`).
+    let mut buffer = data;
+    if let Some(offs) = &offsets {
+        buffer.extend_from_slice(&(offs.len() as i32).to_be_bytes());
+        for &o in offs {
+            buffer.extend_from_slice(&((o + klen) as i32).to_be_bytes());
+        }
+    }
+    let obj_len = buffer.len() as u32;
+    let payload = on_disk(&buffer, compression);
     let nbytes = klen + payload.len() as u32;
-    let f_last = klen + obj_len; // border == obj_len for a scalar branch
+    let f_last = klen + border; // entry data ends at the border
 
     // Big-format TKey header.
     w.be_i32(nbytes as i32);
@@ -528,7 +667,18 @@ fn write_branch_array(
 /// Write one `TBranch` (v13).
 fn write_branch(w: &mut WBuffer, branch: &Branch, basket: &BasketRec, n_entries: i64) {
     let leaf = branch.leaf();
-    let title = format!("{}/{}", branch.name, leaf.code);
+    // Branch title encodes the layout: `name/CODE`, `name[N]/CODE`, or `name/C`.
+    let title = match branch.kind() {
+        Kind::Scalar => format!("{}/{}", branch.name, leaf.code),
+        Kind::FixedArray(n) => format!("{}[{}]/{}", branch.name, n, leaf.code),
+        Kind::Str => format!("{}/C", branch.name),
+    };
+    // Variable (string) branches carry an `fEntryOffset` array, flagged by a
+    // non-zero `fEntryOffsetLen`; fixed/scalar branches set it to 0.
+    let entry_offset_len = match branch.kind() {
+        Kind::Str => 1000,
+        _ => 0,
+    };
     let max_baskets = 10i32;
 
     let tok = w.begin_object(13); // TBranch v13
@@ -536,7 +686,7 @@ fn write_branch(w: &mut WBuffer, branch: &Branch, basket: &BasketRec, n_entries:
     write_attfill(w);
     w.be_i32(0); // fCompress
     w.be_i32(32000); // fBasketSize
-    w.be_i32(0); // fEntryOffsetLen
+    w.be_i32(entry_offset_len); // fEntryOffsetLen
     w.be_i32(1); // fWriteBasket
     w.be_i64(n_entries); // fEntryNumber
     write_iofeatures(w);
@@ -598,18 +748,25 @@ fn write_tree_leaf_array(w: &mut WBuffer, branches: &[Branch]) {
 /// Write one `TLeaf*` (v1): the `TLeaf` base then the subclass min/max.
 fn write_leaf(w: &mut WBuffer, branch: &Branch) {
     let leaf = branch.leaf();
+    // The leaf title carries `[N]` for a fixed array, else just the name.
+    let title = match branch.kind() {
+        Kind::FixedArray(n) => format!("{}[{}]", branch.name, n),
+        _ => branch.name.clone(),
+    };
     let outer = w.begin_object(1); // TLeafX v1
     let base = w.begin_object(2); // TLeaf v2
-    write_tnamed(w, OBJ_BITS, &branch.name, &branch.name);
-    w.be_i32(1); // fLen
-    w.be_i32(leaf.size); // fLenType
+    write_tnamed(w, OBJ_BITS, &branch.name, &title);
+    w.be_i32(branch.flen()); // fLen (elements per entry)
+    w.be_i32(leaf.len_type); // fLenType (0 for TLeafC)
     w.be_i32(0); // fOffset
     w.u8(0); // fIsRange
     w.u8(leaf.unsigned as u8); // fIsUnsigned
     w.be_u32(0); // fLeafCount (null)
     w.end_object(base);
-    // fMinimum, fMaximum in the leaf's element width.
-    write_leaf_minmax(w, leaf.size);
+    // fMinimum, fMaximum: TLeafC stores them as 4-byte ints (string lengths);
+    // every other leaf uses its element width.
+    let minmax_size = if leaf.code == 'C' { 4 } else { leaf.size };
+    write_leaf_minmax(w, minmax_size);
     w.end_object(outer);
 }
 

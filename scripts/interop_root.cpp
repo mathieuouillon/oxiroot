@@ -8,6 +8,8 @@
 // Canonical dataset (must match crates/oxiroot/examples/interop.rs):
 //   - TH1D "h": 4 bins over [0, 4), in-range bin contents [1, 2, 3, 4].
 //   - RNTuple "ntpl": x = int32 [1..5], y = double [1.5..5.5].
+//   - TTree "Tree": ti = int32 [1..5], tf = double [1.5..5.5],
+//     tv = double[3] fixed array, ts = string.
 
 #include <cmath>
 #include <cstdint>
@@ -17,8 +19,7 @@
 
 #include <TFile.h>
 #include <TH1D.h>
-#include <TTreeReader.h>
-#include <TTreeReaderValue.h>
+#include <TTree.h>
 
 #include <ROOT/RNTupleModel.hxx>
 #include <ROOT/RNTupleReader.hxx>
@@ -27,6 +28,9 @@
 static const double HIST_BINS[4] = {1, 2, 3, 4};
 static const std::int32_t NTPL_X[5] = {1, 2, 3, 4, 5};
 static const double NTPL_Y[5] = {1.5, 2.5, 3.5, 4.5, 5.5};
+static const double TREE_TV[5][3] = {
+    {1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}, {13, 14, 15}};
+static const char *TREE_TS[5] = {"a", "bb", "ccc", "dddd", "eeeee"};
 
 static void fail(const std::string &msg) {
     std::fprintf(stderr, "interop MISMATCH: %s\n", msg.c_str());
@@ -95,24 +99,36 @@ static void read_rust(const char *dir) {
                 fail("rust ntuple y at " + std::to_string(i));
         }
     }
-    // TTree written by Rust.
+    // TTree written by Rust: scalar (ti/tf), fixed array (tv[3]), string (ts).
     {
         TFile *f = TFile::Open(join(dir, "rust_tree.root").c_str());
         if (!f || f->IsZombie())
             fail("cannot open rust_tree.root");
-        TTreeReader r("Tree", f);
-        TTreeReaderValue<std::int32_t> ti(r, "ti");
-        TTreeReaderValue<double> tf(r, "tf");
-        int i = 0;
-        while (r.Next()) {
-            if (i >= 5 || *ti != NTPL_X[i])
-                fail("rust tree ti at " + std::to_string(i));
-            if (std::fabs(*tf - NTPL_Y[i]) > 1e-9)
-                fail("rust tree tf at " + std::to_string(i));
-            ++i;
-        }
-        if (i != 5)
+        TTree *tree = dynamic_cast<TTree *>(f->Get("Tree"));
+        if (!tree)
+            fail("rust_tree.root has no TTree 'Tree'");
+        std::int32_t ti = 0;
+        double tf = 0.0;
+        double tv[3] = {0, 0, 0};
+        char ts[64] = {0};
+        tree->SetBranchAddress("ti", &ti);
+        tree->SetBranchAddress("tf", &tf);
+        tree->SetBranchAddress("tv", tv);
+        tree->SetBranchAddress("ts", ts);
+        if (tree->GetEntries() != 5)
             fail("rust tree entry count");
+        for (Long64_t i = 0; i < 5; ++i) {
+            tree->GetEntry(i);
+            if (ti != NTPL_X[i])
+                fail("rust tree ti at " + std::to_string(i));
+            if (std::fabs(tf - NTPL_Y[i]) > 1e-9)
+                fail("rust tree tf at " + std::to_string(i));
+            for (int j = 0; j < 3; ++j)
+                if (std::fabs(tv[j] - TREE_TV[i][j]) > 1e-9)
+                    fail("rust tree tv at " + std::to_string(i));
+            if (std::string(ts) != TREE_TS[i])
+                fail("rust tree ts at " + std::to_string(i));
+        }
         f->Close();
     }
     std::printf("ROOT C++ read Rust hist + RNTuple + TTree — values match\n");

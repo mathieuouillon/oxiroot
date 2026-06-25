@@ -128,14 +128,16 @@ classic histogram family both work and interoperate with ROOT and uproot.
 
 **Done:** `TFile` read/write · histogram family read + create/fill/ops/write ·
 RNTuple read + write · **`TTree`** — read (scalar, fixed/variable array, and
-string branches) and write (flat scalar branches; ROOT/uproot-verified) · Zstd
+string branches) and write (scalar, fixed-size array, and string branches;
+ROOT/uproot-verified) · Zstd
 compression · self-describing `TStreamerInfo` · nested directories · `update`
 (append) mode · streaming multi-cluster RNTuple · 64-bit (`> 2 GiB`) files —
 read, plus RNTuple write (the one-shot writer auto-switches past 2 GiB; the
 streaming writer via `create_large`) · ergonomic facade with a `prelude`.
 
-**Not yet:** split / `std::vector` (`TBranchElement`) `TTree` branches, and
-float-precision histogram *write* (`TH1F`/…).
+**Not yet:** split / `std::vector` (`TBranchElement`) `TTree` branches,
+variable-length (jagged) numeric `TTree` array *write* (the read path handles
+them), and float-precision histogram *write* (`TH1F`/…).
 
 > ROOT 7 `RHist` is intentionally out of scope — it has no persistable on-disk
 > format (its `Streamer` throws).
