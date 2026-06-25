@@ -66,9 +66,40 @@ fn write_then_read_arrays_and_strings() {
 }
 
 #[test]
-fn jagged_arrays_are_rejected() {
+fn write_then_read_jagged() {
+    let out = std::path::PathBuf::from("/tmp/oxiroot_written_jagged.root");
+    let ys = vec![vec![1.0, 2.0, 3.0], vec![], vec![4.0], vec![5.0, 6.0]];
+    let ns = vec![vec![10i32, 11], vec![20, 21, 22], vec![], vec![30]];
+    let branches = vec![
+        Branch::f64("e", vec![0.5, 1.5, 2.5, 3.5]),
+        Branch::jagged_f64("y", ys.clone()),
+        Branch::jagged_i32("n", ns.clone()),
+    ];
+    write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
+
+    let f = RFile::open(&out).expect("reopen");
+    let t = TTree::open(&f, "Events").expect("open tree");
+    assert_eq!(t.num_entries(), 4);
+    // The writer inserts the count branch (ny / nn) before each jagged branch.
+    assert_eq!(t.branch_names(), ["e", "ny", "y", "nn", "n"]);
+    assert_eq!(t.read_branch(&f, "y").unwrap(), BranchValues::VecF64(ys));
+    assert_eq!(t.read_branch(&f, "n").unwrap(), BranchValues::VecI32(ns));
+    // The auto count branches hold the per-row lengths.
+    assert_eq!(
+        t.read_branch(&f, "ny").unwrap(),
+        BranchValues::I32(vec![3, 0, 1, 2])
+    );
+    assert_eq!(
+        t.read_branch(&f, "nn").unwrap(),
+        BranchValues::I32(vec![2, 3, 0, 1])
+    );
+}
+
+#[test]
+fn ragged_fixed_arrays_are_rejected() {
     use oxiroot_tree::tree_file_bytes;
+    // A *fixed*-array constructor given unequal rows is an error (use jagged_*).
     let branches = vec![Branch::vec_i32("j", vec![vec![1, 2], vec![3]])];
     let err = tree_file_bytes("f.root", "T", &branches, Compression::None).unwrap_err();
-    assert!(format!("{err}").contains("jagged"), "got: {err}");
+    assert!(format!("{err}").contains("differ in length"), "got: {err}");
 }

@@ -9,7 +9,7 @@
 //   - TH1D "h": 4 bins over [0, 4), in-range bin contents [1, 2, 3, 4].
 //   - RNTuple "ntpl": x = int32 [1..5], y = double [1.5..5.5].
 //   - TTree "Tree": ti = int32 [1..5], tf = double [1.5..5.5],
-//     tv = double[3] fixed array, ts = string.
+//     tv = double[3] fixed array, ts = string, tj = jagged double.
 
 #include <cmath>
 #include <cstdint>
@@ -31,6 +31,9 @@ static const double NTPL_Y[5] = {1.5, 2.5, 3.5, 4.5, 5.5};
 static const double TREE_TV[5][3] = {
     {1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}, {13, 14, 15}};
 static const char *TREE_TS[5] = {"a", "bb", "ccc", "dddd", "eeeee"};
+// Jagged column tj = [[1],[2,3],[],[4,5,6],[7]] as per-entry lengths + flattened.
+static const int TREE_TJ_LEN[5] = {1, 2, 0, 3, 1};
+static const double TREE_TJ_FLAT[7] = {1, 2, 3, 4, 5, 6, 7};
 
 static void fail(const std::string &msg) {
     std::fprintf(stderr, "interop MISMATCH: %s\n", msg.c_str());
@@ -111,12 +114,17 @@ static void read_rust(const char *dir) {
         double tf = 0.0;
         double tv[3] = {0, 0, 0};
         char ts[64] = {0};
+        std::int32_t ntj = 0; // jagged count (read before tj each entry)
+        double tj[16] = {0};
         tree->SetBranchAddress("ti", &ti);
         tree->SetBranchAddress("tf", &tf);
         tree->SetBranchAddress("tv", tv);
         tree->SetBranchAddress("ts", ts);
+        tree->SetBranchAddress("ntj", &ntj);
+        tree->SetBranchAddress("tj", tj);
         if (tree->GetEntries() != 5)
             fail("rust tree entry count");
+        int off = 0; // running offset into the flattened jagged data
         for (Long64_t i = 0; i < 5; ++i) {
             tree->GetEntry(i);
             if (ti != NTPL_X[i])
@@ -128,6 +136,14 @@ static void read_rust(const char *dir) {
                     fail("rust tree tv at " + std::to_string(i));
             if (std::string(ts) != TREE_TS[i])
                 fail("rust tree ts at " + std::to_string(i));
+            // tj is variable-length: ROOT sizes it from the tj leaf's fLeafCount
+            // (the ntj leaf), exercising the object reference the writer emits.
+            if (ntj != TREE_TJ_LEN[i])
+                fail("rust tree ntj at " + std::to_string(i));
+            for (int j = 0; j < ntj; ++j)
+                if (std::fabs(tj[j] - TREE_TJ_FLAT[off + j]) > 1e-9)
+                    fail("rust tree tj at " + std::to_string(i));
+            off += ntj;
         }
         f->Close();
     }

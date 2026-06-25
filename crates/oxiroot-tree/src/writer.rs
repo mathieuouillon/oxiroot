@@ -1,12 +1,13 @@
 //! Writing a `TTree` into a ROOT file.
 //!
-//! Supports scalar, fixed-size array (`x[N]`), and string (`TLeafC`) branches —
-//! the variable-length numeric case (a jagged `x[n]` with a count branch) is not
-//! yet written. Mirrors the layout ROOT/uproot write (TTree v20, TBranch v13,
-//! TLeaf* v1) so the result reads back in ROOT, uproot, and this crate. One
-//! basket per branch. The embedded `TStreamerInfo` (a baked blob) makes the file
-//! self-describing.
+//! Supports scalar, fixed-size array (`x[N]`), variable-length / jagged
+//! (`x[n<name>]`, with an auto-generated count branch and an `fLeafCount`
+//! reference), and string (`TLeafC`) branches. Mirrors the layout ROOT/uproot
+//! write (TTree v20, TBranch v13, TLeaf* v1) so the result reads back in ROOT,
+//! uproot, and this crate. One basket per branch. The embedded `TStreamerInfo`
+//! (a baked blob) makes the file self-describing.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
@@ -22,18 +23,31 @@ const DATIME: u32 = 0x7d7a_79ca;
 const FILE_VERSION: u32 = 62400;
 /// `fBits` ROOT writes for embedded `TObject`s.
 const OBJ_BITS: u32 = 0x0300_0000;
+/// ROOT's object-map displacement (`kMapOffset`): a referenced object is keyed
+/// at `byte_count_position + keylen + 2`. Used to point a jagged leaf's
+/// `fLeafCount` at the already-written count leaf.
+const K_MAP_OFFSET: u32 = 2;
+
+/// Maps a leaf name to the object-reference value (`pos + keylen + kMapOffset`)
+/// of the first place that leaf was written, so a later `fLeafCount` can point
+/// back to it the way ROOT does.
+type LeafRefs = HashMap<String, u32>;
 /// The baked `TStreamerInfo` for the TTree hierarchy (TTree/TBranch/TLeaf*/…),
 /// extracted from a uproot-written tree. Embedded so the file is self-describing.
 const TREE_STREAMER_INFO: &[u8] = include_bytes!("tree.streamerinfo.bin");
 
 /// One named branch to write. Use the typed constructors: [`Branch::i32`] … for
-/// scalars, [`Branch::vec_f64`] … for fixed-size arrays, [`Branch::strings`] for
-/// strings.
+/// scalars, [`Branch::vec_f64`] … for fixed-size arrays, [`Branch::jagged_f64`] …
+/// for variable-length arrays, [`Branch::strings`] for strings.
 pub struct Branch {
     /// Branch (and leaf) name.
     pub name: String,
     /// Branch values (a [`BranchValues`] variant — scalar, array, or string).
     pub values: BranchValues,
+    /// True for a variable-length (jagged) array branch: rows may differ in
+    /// length, and the writer emits a paired `n<name>` count branch plus an
+    /// `fLeafCount` reference. False for scalar/fixed-array/string branches.
+    jagged: bool,
 }
 
 macro_rules! branch_ctors {
@@ -42,7 +56,7 @@ macro_rules! branch_ctors {
             $(
                 #[doc = concat!("A branch holding `", stringify!($variant), "` values.")]
                 pub fn $method(name: impl Into<String>, values: Vec<$elem>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values) }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false }
                 }
             )*
         }
@@ -62,7 +76,7 @@ macro_rules! vec_ctors {
             $(
                 #[doc = concat!("A fixed-size array branch holding `", stringify!($variant), "` rows.")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values) }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false }
                 }
             )*
         }
@@ -75,20 +89,45 @@ vec_ctors! {
     vec_f32 => VecF32(f32), vec_f64 => VecF64(f64),
 }
 
+/// Generate `Branch::jagged_<name>` shortcuts for variable-length array branches
+/// (rows may differ in length; written as `y[n<name>]` with a paired count
+/// branch). Same backing variants as the fixed-array constructors.
+macro_rules! jagged_ctors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl Branch {
+            $(
+                #[doc = concat!("A variable-length array branch holding `", stringify!($variant), "` rows.")]
+                pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: true }
+                }
+            )*
+        }
+    };
+}
+jagged_ctors! {
+    jagged_bool => VecBool(bool), jagged_i8 => VecI8(i8), jagged_u8 => VecU8(u8),
+    jagged_i16 => VecI16(i16), jagged_u16 => VecU16(u16), jagged_i32 => VecI32(i32),
+    jagged_u32 => VecU32(u32), jagged_i64 => VecI64(i64), jagged_u64 => VecU64(u64),
+    jagged_f32 => VecF32(f32), jagged_f64 => VecF64(f64),
+}
+
 impl Branch {
     /// A string branch (`TLeafC`).
     pub fn strings(name: impl Into<String>, values: Vec<String>) -> Branch {
         Branch {
             name: name.into(),
             values: BranchValues::Str(values),
+            jagged: false,
         }
     }
 }
 
-/// Whether a branch is a scalar, a fixed-size array, or a string.
+/// Whether a branch is a scalar, a fixed-size array, a variable-length (jagged)
+/// array, or a string.
 enum Kind {
     Scalar,
     FixedArray(usize),
+    Jagged,
     Str,
 }
 
@@ -169,9 +208,13 @@ impl Branch {
         }
     }
 
-    /// Elements per entry: 1 (scalar/string) or `N` (fixed array, from row 0).
+    /// Elements per entry: `N` for a fixed array (from row 0), else 1 (scalar,
+    /// string, and the jagged leaf — whose per-entry length is dynamic).
     fn flen(&self) -> i32 {
         use BranchValues::*;
+        if self.jagged {
+            return 1;
+        }
         let n = match &self.values {
             VecBool(r) => r.first().map_or(0, Vec::len),
             VecI8(r) => r.first().map_or(0, Vec::len),
@@ -217,6 +260,9 @@ impl Branch {
 
     fn kind(&self) -> Kind {
         use BranchValues::*;
+        if self.jagged {
+            return Kind::Jagged;
+        }
         match &self.values {
             Str(_) => Kind::Str,
             VecBool(_) | VecI8(_) | VecU8(_) | VecI16(_) | VecU16(_) | VecI32(_) | VecU32(_)
@@ -225,6 +271,47 @@ impl Branch {
             }
             _ => Kind::Scalar,
         }
+    }
+
+    /// The name of the auto-generated count branch for a jagged branch (`y` →
+    /// `ny`), matching uproot's convention.
+    fn count_name(&self) -> String {
+        format!("n{}", self.name)
+    }
+
+    /// Per-row element counts (for a jagged branch's count branch); empty for
+    /// non-array branches.
+    fn row_lengths(&self) -> Vec<i32> {
+        use BranchValues::*;
+        macro_rules! lens {
+            ($r:expr) => {
+                $r.iter().map(|x| x.len() as i32).collect()
+            };
+        }
+        match &self.values {
+            VecBool(r) => lens!(r),
+            VecI8(r) => lens!(r),
+            VecU8(r) => lens!(r),
+            VecI16(r) => lens!(r),
+            VecU16(r) => lens!(r),
+            VecI32(r) => lens!(r),
+            VecU32(r) => lens!(r),
+            VecI64(r) => lens!(r),
+            VecU64(r) => lens!(r),
+            VecF32(r) => lens!(r),
+            VecF64(r) => lens!(r),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The paired count branch (`n<name>`, a scalar `i32` of row lengths) for a
+    /// jagged branch; `None` for any other branch.
+    fn count_branch(&self) -> Option<Branch> {
+        self.jagged.then(|| Branch {
+            name: self.count_name(),
+            values: BranchValues::I32(self.row_lengths()),
+            jagged: false,
+        })
     }
 
     /// The basket's uncompressed entry data, plus (for string branches) the
@@ -291,6 +378,19 @@ impl Branch {
                 return (data, Some(offsets));
             }
         };
+        // A jagged numeric branch is variable-length too: emit the byte offset
+        // after each row (element count × element width).
+        if self.jagged {
+            let elem = self.leaf().size as u32;
+            let mut offsets = Vec::with_capacity(self.n_entries() as usize + 1);
+            let mut acc = 0u32;
+            offsets.push(0);
+            for len in self.row_lengths() {
+                acc += len as u32 * elem;
+                offsets.push(acc);
+            }
+            return (data, Some(offsets));
+        }
         (data, None)
     }
 }
@@ -322,8 +422,8 @@ pub fn write_tree_file(
 
 /// Build the bytes of a single-tree ROOT file.
 ///
-/// Returns an error if any branch is a jagged (variable-length) numeric array,
-/// which is not yet writable — every row of an array branch must share a length.
+/// Returns an error if a fixed-array branch ([`Branch::vec_f64`] …) was given
+/// rows of differing length — use [`Branch::jagged_f64`] … for that.
 pub fn tree_file_bytes(
     file_name: &str,
     tree_name: &str,
@@ -331,16 +431,30 @@ pub fn tree_file_bytes(
     compression: Compression,
 ) -> Result<Vec<u8>> {
     for b in branches {
-        if b.is_jagged() {
+        if !b.jagged && b.is_jagged() {
             return Err(Error::Format(format!(
-                "branch {:?}: variable-length (jagged) array writing is not supported yet; \
-                 every row must have the same length",
+                "branch {:?}: rows differ in length; use Branch::jagged_* for variable-length \
+                 arrays (Branch::vec_* requires every row to have the same length)",
                 b.name
             )));
         }
     }
     let compression = compression.setting();
-    let n_entries = branches.first().map(|b| b.n_entries()).unwrap_or(0);
+
+    // Expand each jagged branch into [count branch, jagged branch], matching
+    // ROOT/uproot. `counts` owns the synthetic count branches so the effective
+    // list `eff` can borrow them alongside the caller's branches.
+    let counts: Vec<Branch> = branches.iter().filter_map(Branch::count_branch).collect();
+    let mut eff: Vec<&Branch> = Vec::with_capacity(branches.len() + counts.len());
+    let mut ci = 0;
+    for b in branches {
+        if b.jagged {
+            eff.push(&counts[ci]);
+            ci += 1;
+        }
+        eff.push(b);
+    }
+    let n_entries = eff.first().map(|b| b.n_entries()).unwrap_or(0);
 
     let mut w = WBuffer::new();
 
@@ -392,14 +506,14 @@ pub fn tree_file_bytes(
     w.bytes(&[0u8; 16]);
 
     // --- One basket per branch (TBasket TKeys, not directory keys). ---
-    let baskets: Vec<BasketRec> = branches
+    let baskets: Vec<BasketRec> = eff
         .iter()
-        .map(|b| write_basket(&mut w, b, tree_name, compression))
+        .map(|&b| write_basket(&mut w, b, tree_name, compression))
         .collect();
     let tot_bytes: i64 = baskets.iter().map(|r| r.nbytes as i64).sum();
 
     // --- TTree object key + object. ---
-    let tree_obj = build_tree_object(tree_name, branches, &baskets, n_entries as i64, tot_bytes);
+    let tree_obj = build_tree_object(tree_name, &eff, &baskets, n_entries as i64, tot_bytes);
     let tree_payload = on_disk(&tree_obj, compression);
     let tree_seek = w.len();
     write_key_header(
@@ -489,7 +603,7 @@ fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: 
     // `fNevBufSize` is the per-entry buffer size: `flen * elem_size` for a
     // fixed/scalar branch; ROOT writes a default (1000) for variable baskets.
     let nev_buf_size = match branch.kind() {
-        Kind::Str => 1000,
+        Kind::Str | Kind::Jagged => 1000,
         _ => branch.flen() * leaf.size,
     };
 
@@ -588,11 +702,17 @@ fn end_object_any(w: &mut WBuffer, bc: Patch) {
 /// Build the `TObjArray` of branches, then the tree-level `TObjArray` of leaves.
 fn build_tree_object(
     tree_name: &str,
-    branches: &[Branch],
+    branches: &[&Branch],
     baskets: &[BasketRec],
     n_entries: i64,
     tot_bytes: i64,
 ) -> Vec<u8> {
+    // ROOT resolves object references relative to `-keylen` of the TTree key; we
+    // must use the same keylen so a jagged leaf's `fLeafCount` reference lands on
+    // the count leaf. (This is the keylen `write_key_header` writes for the key.)
+    let keylen = key_len("TTree", tree_name, "") as u32;
+    let mut refs: LeafRefs = HashMap::new();
+
     let mut w = WBuffer::new();
     let tree = w.begin_object(20); // TTree v20
     write_tnamed(&mut w, OBJ_BITS, tree_name, "");
@@ -621,8 +741,8 @@ fn build_tree_object(
     w.u8(0); // fClusterSize (empty array marker)
     write_iofeatures(&mut w);
 
-    write_branch_array(&mut w, tree_name, branches, baskets, n_entries);
-    write_tree_leaf_array(&mut w, branches);
+    write_branch_array(&mut w, branches, baskets, n_entries, keylen, &mut refs);
+    write_tree_leaf_array(&mut w, branches, keylen, &mut refs);
 
     w.be_u32(0); // fAliases (null TList*)
     w.be_i32(0); // fIndexValues (TArrayD, empty)
@@ -649,34 +769,43 @@ fn obj_array_header(w: &mut WBuffer, size: usize) -> CountToken {
 /// Write `fBranches`: a `TObjArray<TBranch>`.
 fn write_branch_array(
     w: &mut WBuffer,
-    tree_name: &str,
-    branches: &[Branch],
+    branches: &[&Branch],
     baskets: &[BasketRec],
     n_entries: i64,
+    keylen: u32,
+    refs: &mut LeafRefs,
 ) {
-    let _ = tree_name;
     let tok = obj_array_header(w, branches.len());
-    for (b, basket) in branches.iter().zip(baskets) {
+    for (&b, basket) in branches.iter().zip(baskets) {
         let bc = begin_object_any(w, "TBranch");
-        write_branch(w, b, basket, n_entries);
+        write_branch(w, b, basket, n_entries, keylen, refs);
         end_object_any(w, bc);
     }
     w.end_object(tok);
 }
 
 /// Write one `TBranch` (v13).
-fn write_branch(w: &mut WBuffer, branch: &Branch, basket: &BasketRec, n_entries: i64) {
+fn write_branch(
+    w: &mut WBuffer,
+    branch: &Branch,
+    basket: &BasketRec,
+    n_entries: i64,
+    keylen: u32,
+    refs: &mut LeafRefs,
+) {
     let leaf = branch.leaf();
-    // Branch title encodes the layout: `name/CODE`, `name[N]/CODE`, or `name/C`.
+    // Branch title encodes the layout: `name/CODE`, `name[N]/CODE` (fixed),
+    // `name[count]/CODE` (jagged), or `name/C` (string).
     let title = match branch.kind() {
         Kind::Scalar => format!("{}/{}", branch.name, leaf.code),
         Kind::FixedArray(n) => format!("{}[{}]/{}", branch.name, n, leaf.code),
+        Kind::Jagged => format!("{}[{}]/{}", branch.name, branch.count_name(), leaf.code),
         Kind::Str => format!("{}/C", branch.name),
     };
-    // Variable (string) branches carry an `fEntryOffset` array, flagged by a
-    // non-zero `fEntryOffsetLen`; fixed/scalar branches set it to 0.
+    // Variable (string/jagged) branches carry an `fEntryOffset` array, flagged by
+    // a non-zero `fEntryOffsetLen`; fixed/scalar branches set it to 0.
     let entry_offset_len = match branch.kind() {
-        Kind::Str => 1000,
+        Kind::Str | Kind::Jagged => 1000,
         _ => 0,
     };
     let max_baskets = 10i32;
@@ -701,7 +830,7 @@ fn write_branch(w: &mut WBuffer, branch: &Branch, basket: &BasketRec, n_entries:
     // fBranches (empty), fLeaves (one leaf), fBaskets (empty TObjArrays).
     let e = obj_array_header(w, 0);
     w.end_object(e);
-    write_leaf_array(w, std::slice::from_ref(branch));
+    write_leaf_array(w, &[branch], keylen, refs);
     let e = obj_array_header(w, 0);
     w.end_object(e);
 
@@ -729,29 +858,41 @@ fn write_branch(w: &mut WBuffer, branch: &Branch, basket: &BasketRec, n_entries:
     w.end_object(tok);
 }
 
-/// Write a `TObjArray<TLeaf>` for `branches` (one leaf each).
-fn write_leaf_array(w: &mut WBuffer, branches: &[Branch]) {
+/// Write a `TObjArray<TLeaf>` for `branches` (one leaf each), recording each
+/// leaf's object-reference position (first occurrence) so a later jagged leaf's
+/// `fLeafCount` can point back to its count leaf.
+fn write_leaf_array(w: &mut WBuffer, branches: &[&Branch], keylen: u32, refs: &mut LeafRefs) {
     let tok = obj_array_header(w, branches.len());
-    for b in branches {
+    for &b in branches {
+        let bc_pos = w.len() as u32; // the byte-count word position (object-relative)
         let bc = begin_object_any(w, b.leaf().class);
-        write_leaf(w, b);
+        write_leaf(w, b, refs);
         end_object_any(w, bc);
+        refs.entry(b.name.clone())
+            .or_insert(bc_pos + keylen + K_MAP_OFFSET);
     }
     w.end_object(tok);
 }
 
 /// The tree-level `fLeaves` lists every branch's leaf.
-fn write_tree_leaf_array(w: &mut WBuffer, branches: &[Branch]) {
-    write_leaf_array(w, branches);
+fn write_tree_leaf_array(w: &mut WBuffer, branches: &[&Branch], keylen: u32, refs: &mut LeafRefs) {
+    write_leaf_array(w, branches, keylen, refs);
 }
 
 /// Write one `TLeaf*` (v1): the `TLeaf` base then the subclass min/max.
-fn write_leaf(w: &mut WBuffer, branch: &Branch) {
+fn write_leaf(w: &mut WBuffer, branch: &Branch, refs: &LeafRefs) {
     let leaf = branch.leaf();
-    // The leaf title carries `[N]` for a fixed array, else just the name.
+    // The leaf title carries `[N]` (fixed) or `[count]` (jagged), else the name.
     let title = match branch.kind() {
         Kind::FixedArray(n) => format!("{}[{}]", branch.name, n),
+        Kind::Jagged => format!("{}[{}]", branch.name, branch.count_name()),
         _ => branch.name.clone(),
+    };
+    // A jagged leaf's `fLeafCount` is an object reference to its count leaf
+    // (already written and recorded); everything else has a null `fLeafCount`.
+    let f_leaf_count = match branch.kind() {
+        Kind::Jagged => refs.get(&branch.count_name()).copied().unwrap_or(0),
+        _ => 0,
     };
     let outer = w.begin_object(1); // TLeafX v1
     let base = w.begin_object(2); // TLeaf v2
@@ -761,7 +902,7 @@ fn write_leaf(w: &mut WBuffer, branch: &Branch) {
     w.be_i32(0); // fOffset
     w.u8(0); // fIsRange
     w.u8(leaf.unsigned as u8); // fIsUnsigned
-    w.be_u32(0); // fLeafCount (null)
+    w.be_u32(f_leaf_count); // fLeafCount (object ref to the count leaf, or null)
     w.end_object(base);
     // fMinimum, fMaximum: TLeafC stores them as 4-byte ints (string lengths);
     // every other leaf uses its element width.
