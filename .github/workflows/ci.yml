@@ -100,8 +100,15 @@ jobs:
     # The container runs as root; align HOME with root's actual home so rustup
     # doesn't mistake the GitHub-set HOME for a sudo invocation, and so the
     # toolchain it installs is found by later steps. Applies to every step.
+    #
+    # That HOME also reaches the host-side `docker exec` the runner uses to run
+    # each step, so its docker CLI tries to read root's ~/.docker/config.json
+    # (unreadable by the runner user) and prints a benign "permission denied"
+    # warning. Point DOCKER_CONFIG at an empty dir so docker finds no config and
+    # stays quiet — it doesn't need one here (the image is already pulled).
     env:
       HOME: /root
+      DOCKER_CONFIG: /tmp
     steps:
       - uses: actions/checkout@v5
 
