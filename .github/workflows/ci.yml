@@ -50,3 +50,71 @@ jobs:
         # Compile-only: a real campaign runs out of band, but this keeps the
         # harness from rotting against API changes.
         run: cargo +nightly fuzz build
+
+  interop-uproot:
+    name: interop (uproot)
+    # Round-trip against uproot (the Python ROOT-IO library): Rust writes a
+    # histogram + RNTuple that uproot reads, and uproot writes a histogram that
+    # Rust reads.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uproot
+        run: pip install uproot numpy awkward
+
+      - name: Build interop driver
+        run: cargo build -p oxiroot --example interop
+
+      - name: Rust writes → uproot reads
+        run: |
+          mkdir -p /tmp/interop
+          cargo run -q -p oxiroot --example interop -- write /tmp/interop
+          python scripts/interop_uproot.py read /tmp/interop
+
+      - name: uproot writes → Rust reads
+        run: |
+          python scripts/interop_uproot.py write /tmp/interop
+          cargo run -q -p oxiroot --example interop -- read /tmp/interop
+
+  interop-root:
+    name: interop (ROOT C++)
+    # Round-trip against an official ROOT build: ROOT C++ writes a histogram +
+    # RNTuple that Rust reads, and Rust writes a histogram + RNTuple that ROOT
+    # C++ reads. Pin the image tag if upstream RNTuple format drift is a concern.
+    runs-on: ubuntu-latest
+    container: rootproject/root:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build interop driver
+        run: cargo build -p oxiroot --example interop
+
+      - name: Build ROOT C++ oracle
+        run: c++ $(root-config --cflags) scripts/interop_root.cpp $(root-config --libs) -lROOTNTuple -o /tmp/interop_root
+
+      - name: ROOT C++ writes → Rust reads
+        run: |
+          mkdir -p /tmp/interop
+          /tmp/interop_root write /tmp/interop
+          cargo run -q -p oxiroot --example interop -- read /tmp/interop
+
+      - name: Rust writes → ROOT C++ reads
+        run: |
+          cargo run -q -p oxiroot --example interop -- write /tmp/interop
+          /tmp/interop_root read /tmp/interop
