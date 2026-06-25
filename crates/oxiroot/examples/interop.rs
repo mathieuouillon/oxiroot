@@ -8,6 +8,7 @@
 //! Canonical dataset (both sides agree):
 //!   - TH1D "h": 4 bins over [0, 4), in-range bin contents [1, 2, 3, 4].
 //!   - RNTuple "ntpl": field x = int32 [1,2,3,4,5], y = double [1.5,2.5,3.5,4.5,5.5].
+//!   - TTree "Tree": branch ti = int32 [1..5], tf = double [1.5..5.5].
 
 use std::path::Path;
 use std::process::exit;
@@ -47,8 +48,18 @@ fn write(dir: &Path) -> Result<()> {
         &fields,
         Compression::None,
     )?;
+
+    write_tree_file(
+        dir.join("rust_tree.root"),
+        "Tree",
+        &[
+            Branch::i32("ti", NTPL_X.to_vec()),
+            Branch::f64("tf", NTPL_Y.to_vec()),
+        ],
+        Compression::None,
+    )?;
     println!(
-        "wrote rust_hist.root + rust_ntuple.root to {}",
+        "wrote rust_hist.root + rust_ntuple.root + rust_tree.root to {}",
         dir.display()
     );
     Ok(())

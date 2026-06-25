@@ -17,6 +17,8 @@
 
 #include <TFile.h>
 #include <TH1D.h>
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
 
 #include <ROOT/RNTupleModel.hxx>
 #include <ROOT/RNTupleReader.hxx>
@@ -93,7 +95,27 @@ static void read_rust(const char *dir) {
                 fail("rust ntuple y at " + std::to_string(i));
         }
     }
-    std::printf("ROOT C++ read Rust hist + RNTuple — values match\n");
+    // TTree written by Rust.
+    {
+        TFile *f = TFile::Open(join(dir, "rust_tree.root").c_str());
+        if (!f || f->IsZombie())
+            fail("cannot open rust_tree.root");
+        TTreeReader r("Tree", f);
+        TTreeReaderValue<std::int32_t> ti(r, "ti");
+        TTreeReaderValue<double> tf(r, "tf");
+        int i = 0;
+        while (r.Next()) {
+            if (i >= 5 || *ti != NTPL_X[i])
+                fail("rust tree ti at " + std::to_string(i));
+            if (std::fabs(*tf - NTPL_Y[i]) > 1e-9)
+                fail("rust tree tf at " + std::to_string(i));
+            ++i;
+        }
+        if (i != 5)
+            fail("rust tree entry count");
+        f->Close();
+    }
+    std::printf("ROOT C++ read Rust hist + RNTuple + TTree — values match\n");
 }
 
 int main(int argc, char **argv) {

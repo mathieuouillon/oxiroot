@@ -49,7 +49,17 @@ def read(d: str) -> None:
     if y != NTPL_Y:
         _fail(f"rust ntuple y: got {y}, want {NTPL_Y}")
 
-    print("uproot read Rust hist + RNTuple — values match")
+    # TTree written by Rust.
+    tree = uproot.open(os.path.join(d, "rust_tree.root"))["Tree"]
+    ta = tree.arrays(library="np")
+    ti = [int(v) for v in ta["ti"]]
+    tf = [float(v) for v in ta["tf"]]
+    if ti != NTPL_X:
+        _fail(f"rust tree ti: got {ti}, want {NTPL_X}")
+    if tf != NTPL_Y:
+        _fail(f"rust tree tf: got {tf}, want {NTPL_Y}")
+
+    print("uproot read Rust hist + RNTuple + TTree — values match")
 
 
 def write(d: str) -> None:
