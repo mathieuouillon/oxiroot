@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -73,7 +74,39 @@ static void write_oracle(const char *dir) {
             writer->Fill();
         }
     }
-    std::printf("ROOT C++ wrote oracle_hist.root + oracle_ntuple.root\n");
+    // TTree "otree": scalar oi, jagged oj, string os, std::vector<double> ov.
+    {
+        TFile f(join(dir, "oracle_tree.root").c_str(), "RECREATE");
+        TTree t("otree", "otree");
+        std::int32_t oi = 0;
+        int noj = 0;
+        double oj[16] = {0};
+        char os[64] = {0};
+        std::vector<double> ov;
+        t.Branch("oi", &oi, "oi/I");
+        t.Branch("noj", &noj, "noj/I");
+        t.Branch("oj", oj, "oj[noj]/D");
+        t.Branch("os", os, "os/C");
+        t.Branch("ov", &ov);
+        const int OI[3] = {10, 11, 12};
+        const int NOJ[3] = {2, 0, 1};
+        const double OJ[3][2] = {{1, 2}, {}, {3}};
+        const char *OS[3] = {"x", "yy", "zzz"};
+        const std::vector<std::vector<double>> OV = {{1}, {2, 3}, {}};
+        for (int i = 0; i < 3; ++i) {
+            oi = OI[i];
+            noj = NOJ[i];
+            for (int j = 0; j < noj; ++j)
+                oj[j] = OJ[i][j];
+            std::strcpy(os, OS[i]);
+            ov = OV[i];
+            t.Fill();
+        }
+        t.Write();
+        f.Close();
+    }
+    std::printf("ROOT C++ wrote oracle_hist.root + oracle_ntuple.root + "
+                "oracle_tree.root\n");
 }
 
 static void read_rust(const char *dir) {

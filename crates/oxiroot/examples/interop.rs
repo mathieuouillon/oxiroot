@@ -41,6 +41,14 @@ const TREE_TW: [&[f64]; 5] = [
     &[40.0, 50.0],
     &[60.0, 70.0, 80.0],
 ];
+/// Canonical oracle-written TTree "otree" (ROOT/uproot → Rust): a scalar (`oi`),
+/// a jagged double (`oj`), a string (`os`), and a `std::vector<double>` (`ov`).
+/// uproot cannot write `std::vector`, so `ov` is present only in the ROOT C++
+/// oracle and is read back only when the branch exists.
+const OTREE_OI: [i32; 3] = [10, 11, 12];
+const OTREE_OJ: [&[f64]; 3] = [&[1.0, 2.0], &[], &[3.0]];
+const OTREE_OS: [&str; 3] = ["x", "yy", "zzz"];
+const OTREE_OV: [&[f64]; 3] = [&[1.0], &[2.0, 3.0], &[]];
 
 fn canonical_hist() -> TH1 {
     let mut h = TH1::new("h", "interop", 4, 0.0, 4.0);
@@ -97,6 +105,9 @@ fn read(dir: &Path) -> Result<()> {
     assert_close("hist bin contents", h.values(), &HIST_BINS);
     println!("read oracle_hist.root — bin contents match");
 
+    // TTree written by the oracle (both ROOT C++ and uproot produce it).
+    read_oracle_tree(dir)?;
+
     // RNTuple written by the ROOT oracle. uproot's RNTuple writer is
     // experimental, so the uproot job omits this file; only the ROOT C++ job
     // produces it. Skip the check when it is absent.
@@ -119,8 +130,48 @@ fn read(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn read_oracle_tree(dir: &Path) -> Result<()> {
+    let f = RFile::open(dir.join("oracle_tree.root"))?;
+    let t = TTree::open(&f, "otree")?;
+    match t.read_branch(&f, "oi")? {
+        BranchValues::I32(v) => assert_eq_or_die("otree oi", &v, &OTREE_OI),
+        other => die(&format!("otree oi: expected I32, got {other:?}")),
+    }
+    match t.read_branch(&f, "oj")? {
+        BranchValues::VecF64(v) => assert_nested("otree oj", &v, &OTREE_OJ),
+        other => die(&format!("otree oj: expected VecF64, got {other:?}")),
+    }
+    match t.read_branch(&f, "os")? {
+        BranchValues::Str(v) => {
+            let got: Vec<&str> = v.iter().map(String::as_str).collect();
+            assert_eq_or_die("otree os", &got, &OTREE_OS);
+        }
+        other => die(&format!("otree os: expected Str, got {other:?}")),
+    }
+    // The std::vector<double> branch is written only by the ROOT C++ oracle.
+    if t.branch_names().contains(&"ov") {
+        match t.read_branch(&f, "ov")? {
+            BranchValues::VecF64(v) => assert_nested("otree ov", &v, &OTREE_OV),
+            other => die(&format!("otree ov: expected VecF64, got {other:?}")),
+        }
+    }
+    println!("read oracle_tree.root — values match");
+    Ok(())
+}
+
 fn assert_close(what: &str, got: &[f64], want: &[f64]) {
     if got.len() != want.len() || got.iter().zip(want).any(|(a, b)| (a - b).abs() > 1e-9) {
+        die(&format!("{what}: got {got:?}, want {want:?}"));
+    }
+}
+
+/// Assert a nested `Vec<Vec<f64>>` matches the canonical jagged/vector rows.
+fn assert_nested(what: &str, got: &[Vec<f64>], want: &[&[f64]]) {
+    let ok = got.len() == want.len()
+        && got.iter().zip(want).all(|(g, w)| {
+            g.len() == w.len() && g.iter().zip(w.iter()).all(|(a, b)| (a - b).abs() < 1e-9)
+        });
+    if !ok {
         die(&format!("{what}: got {got:?}, want {want:?}"));
     }
 }

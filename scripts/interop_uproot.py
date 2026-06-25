@@ -29,6 +29,11 @@ TREE_TV = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]
 TREE_TS = ["a", "bb", "ccc", "dddd", "eeeee"]
 TREE_TJ = [[1.0], [2.0, 3.0], [], [4.0, 5.0, 6.0], [7.0]]
 TREE_TW = [[10.0, 20.0], [], [30.0], [40.0, 50.0], [60.0, 70.0, 80.0]]
+# Oracle-written TTree "otree" (uproot → Rust); uproot cannot write std::vector,
+# so it omits the `ov` branch that the ROOT C++ oracle adds.
+OTREE_OI = [10, 11, 12]
+OTREE_OJ = [[1.0, 2.0], [], [3.0]]
+OTREE_OS = ["x", "yy", "zzz"]
 
 
 def _fail(msg: str) -> None:
@@ -82,7 +87,21 @@ def write(d: str) -> None:
     # A TH1D with the canonical in-range bin contents.
     with uproot.recreate(os.path.join(d, "oracle_hist.root")) as f:
         f["h"] = (np.array(HIST_BINS, dtype=np.float64), np.array(HIST_EDGES, dtype=np.float64))
-    print("uproot wrote oracle_hist.root")
+
+    # A TTree "otree": scalar oi, jagged oj, string os. (uproot's TTree writer
+    # cannot emit std::vector/TBranchElement, so the ROOT C++ oracle adds `ov`.)
+    import awkward as ak
+
+    with uproot.recreate(os.path.join(d, "oracle_tree.root")) as f:
+        f.mktree("otree", {"oi": np.int32, "oj": "var * float64", "os": str})
+        f["otree"].extend(
+            {
+                "oi": np.array(OTREE_OI, dtype=np.int32),
+                "oj": ak.Array(OTREE_OJ),
+                "os": OTREE_OS,
+            }
+        )
+    print("uproot wrote oracle_hist.root + oracle_tree.root")
 
 
 def main() -> None:
