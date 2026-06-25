@@ -117,9 +117,9 @@ cargo fmt    --all --check
 ```
 
 The committed tests are pure Rust (no ROOT or Python needed): they check
-self-round-trips and byte-level agreement against committed reference files.
-Interop is additionally cross-checked against official ROOT and uproot during
-development.
+self-round-trips and byte-level agreement against committed reference files. CI
+additionally round-trips histograms and RNTuple both ways against official ROOT
+(C++) and uproot — Rust writes files they read, and reads files they write.
 
 ## Status & roadmap
 
@@ -129,10 +129,12 @@ classic histogram family both work and interoperate with ROOT and uproot.
 **Done:** `TFile` read/write · histogram family read + create/fill/ops/write ·
 RNTuple read + write · Zstd compression · self-describing `TStreamerInfo` ·
 nested directories · `update` (append) mode · streaming multi-cluster RNTuple ·
-ergonomic facade with a `prelude`.
+64-bit (`> 2 GiB`) files — read, plus RNTuple write (the one-shot writer
+auto-switches past 2 GiB; the streaming writer via `create_large`) · ergonomic
+facade with a `prelude`.
 
-**Not yet:** **`TTree`** read (most existing data is still in TTrees),
-float-precision histogram *write* (`TH1F`/…), and `> 2 GiB` (64-bit) files.
+**Not yet:** **`TTree`** read (most existing data is still in TTrees) and
+float-precision histogram *write* (`TH1F`/…).
 
 > ROOT 7 `RHist` is intentionally out of scope — it has no persistable on-disk
 > format (its `Streamer` throws).
