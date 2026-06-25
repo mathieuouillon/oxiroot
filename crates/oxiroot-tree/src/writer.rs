@@ -56,6 +56,42 @@ pub struct Branch {
     /// True for a `std::vector<T>` branch, written as a `TBranchElement` (each
     /// basket entry carries a 10-byte streamer header instead of a count branch).
     stl_vector: bool,
+    /// `Some` for a split `std::vector<MyStruct>` branch — a parent
+    /// `TBranchElement` whose per-member data lives in sub-branches. When set,
+    /// `values` is unused.
+    split: Option<SplitSpec>,
+}
+
+/// A split `std::vector<MyStruct>` branch: the struct's class name and one
+/// member per sub-branch.
+struct SplitSpec {
+    class_name: String,
+    members: Vec<SplitMember>,
+}
+
+/// One member of a split `std::vector<MyStruct>` branch: its name and the
+/// per-entry jagged values (`Vec<Vec<T>>` via a `VecXxx` [`BranchValues`]).
+pub struct SplitMember {
+    name: String,
+    values: BranchValues,
+}
+
+macro_rules! split_member_ctors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl SplitMember {
+            $(
+                #[doc = concat!("A `", stringify!($elem), "` member of a split struct branch.")]
+                pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> SplitMember {
+                    SplitMember { name: name.into(), values: BranchValues::$variant(values) }
+                }
+            )*
+        }
+    };
+}
+split_member_ctors! {
+    i8 => VecI8(i8), u8 => VecU8(u8), i16 => VecI16(i16), u16 => VecU16(u16),
+    i32 => VecI32(i32), u32 => VecU32(u32), i64 => VecI64(i64), u64 => VecU64(u64),
+    f32 => VecF32(f32), f64 => VecF64(f64),
 }
 
 macro_rules! branch_ctors {
@@ -64,7 +100,7 @@ macro_rules! branch_ctors {
             $(
                 #[doc = concat!("A branch holding `", stringify!($variant), "` values.")]
                 pub fn $method(name: impl Into<String>, values: Vec<$elem>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: false }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: false, split: None }
                 }
             )*
         }
@@ -84,7 +120,7 @@ macro_rules! vec_ctors {
             $(
                 #[doc = concat!("A fixed-size array branch holding `", stringify!($variant), "` rows.")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: false }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: false, split: None }
                 }
             )*
         }
@@ -106,7 +142,7 @@ macro_rules! jagged_ctors {
             $(
                 #[doc = concat!("A variable-length array branch holding `", stringify!($variant), "` rows.")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: true, stl_vector: false }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: true, stl_vector: false, split: None }
                 }
             )*
         }
@@ -127,7 +163,7 @@ macro_rules! vector_ctors {
             $(
                 #[doc = concat!("A `std::vector<", stringify!($elem), ">` branch (a `TBranchElement`).")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: true }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: true, split: None }
                 }
             )*
         }
@@ -148,8 +184,161 @@ impl Branch {
             values: BranchValues::Str(values),
             jagged: false,
             stl_vector: false,
+            split: None,
         }
     }
+
+    /// A split `std::vector<MyStruct>` branch: `class_name` is the struct's C++
+    /// class name and `members` its fields (each a jagged sub-branch, all sharing
+    /// per-entry lengths). Written as a parent `TBranchElement` (`fSplitLevel>0`)
+    /// with one sub-branch per member and the struct's generated `TStreamerInfo`.
+    pub fn split_vector(
+        name: impl Into<String>,
+        class_name: impl Into<String>,
+        members: Vec<SplitMember>,
+    ) -> Branch {
+        Branch {
+            name: name.into(),
+            values: BranchValues::I32(Vec::new()),
+            jagged: false,
+            stl_vector: false,
+            split: Some(SplitSpec {
+                class_name: class_name.into(),
+                members,
+            }),
+        }
+    }
+}
+
+/// `(fStreamerType code, C++ type name, element byte size)` for a split-vector
+/// member, from its jagged `BranchValues` variant.
+fn member_type_info(values: &BranchValues) -> (i32, &'static str, i32) {
+    use BranchValues::*;
+    match values {
+        VecBool(_) => (18, "bool", 1),
+        VecI8(_) => (1, "char", 1),
+        VecU8(_) => (11, "unsigned char", 1),
+        VecI16(_) => (2, "short", 2),
+        VecU16(_) => (12, "unsigned short", 2),
+        VecI32(_) => (3, "int", 4),
+        VecU32(_) => (13, "unsigned int", 4),
+        VecI64(_) => (16, "Long64_t", 8),
+        VecU64(_) => (17, "ULong64_t", 8),
+        VecF32(_) => (5, "float", 4),
+        VecF64(_) => (8, "double", 8),
+        _ => (0, "", 0),
+    }
+}
+
+/// Per-entry row counts of a jagged `BranchValues` (the element count per entry).
+fn vec_row_lengths(values: &BranchValues) -> Vec<i32> {
+    use BranchValues::*;
+    macro_rules! lens {
+        ($r:expr) => {
+            $r.iter().map(|x| x.len() as i32).collect()
+        };
+    }
+    match values {
+        VecBool(r) => lens!(r),
+        VecI8(r) => lens!(r),
+        VecU8(r) => lens!(r),
+        VecI16(r) => lens!(r),
+        VecU16(r) => lens!(r),
+        VecI32(r) => lens!(r),
+        VecU32(r) => lens!(r),
+        VecI64(r) => lens!(r),
+        VecU64(r) => lens!(r),
+        VecF32(r) => lens!(r),
+        VecF64(r) => lens!(r),
+        _ => Vec::new(),
+    }
+}
+
+/// ROOT's class checksum: `id = id*3 + ch` over the class name, then each
+/// member's name and type-name characters. Matches `TClass::GetCheckSum` for a
+/// struct of plain members. (ROOT's split reader ignores it, but we match it.)
+fn class_checksum(class_name: &str, members: &[SplitMember]) -> u32 {
+    let mut id: u32 = 0;
+    let mut feed = |s: &str| {
+        for ch in s.bytes() {
+            id = id.wrapping_mul(3).wrapping_add(u32::from(ch));
+        }
+    };
+    feed(class_name);
+    for m in members {
+        feed(&m.name);
+        feed(member_type_info(&m.values).1);
+    }
+    id
+}
+
+/// Serialize a `TStreamerInfo` for a struct of primitive members (every object
+/// written with `kNewClassTag`). Layout confirmed against ROOT: `TStreamerInfo`
+/// v10 → `TObjArray` v3 of `TStreamerBasicType` v2 (a `TStreamerElement` v4 each).
+fn write_class_streamer_info(class_name: &str, members: &[SplitMember]) -> Vec<u8> {
+    let checksum = class_checksum(class_name, members);
+    let mut w = WBuffer::new();
+    let bc = begin_object_any(&mut w, "TStreamerInfo");
+    let si = w.begin_object(10); // TStreamerInfo v10
+    write_tnamed(&mut w, 0x0001_0000, class_name, "");
+    w.be_u32(checksum);
+    w.be_i32(1); // fClassVersion
+    let oa_bc = begin_object_any(&mut w, "TObjArray");
+    let oa = w.begin_object(3); // TObjArray v3
+    write_tobject(&mut w, 0);
+    w.string(""); // fName
+    w.be_i32(members.len() as i32);
+    w.be_i32(0); // fLowerBound
+    for m in members {
+        let (f_type, type_name, size) = member_type_info(&m.values);
+        let e_bc = begin_object_any(&mut w, "TStreamerBasicType");
+        let bt = w.begin_object(2); // TStreamerBasicType v2
+        let se = w.begin_object(4); // TStreamerElement v4 (base)
+        write_tnamed(&mut w, 0, &m.name, "");
+        w.be_i32(f_type);
+        w.be_i32(size);
+        w.be_i32(0); // fArrayLength
+        w.be_i32(0); // fArrayDim
+        for _ in 0..5 {
+            w.be_i32(0); // fMaxIndex[5]
+        }
+        w.string(type_name); // fTypeName
+        w.end_object(se);
+        w.end_object(bt);
+        end_object_any(&mut w, e_bc);
+    }
+    w.end_object(oa);
+    end_object_any(&mut w, oa_bc);
+    w.end_object(si);
+    end_object_any(&mut w, bc);
+    w.into_vec()
+}
+
+/// Append a `TStreamerInfo` object to a baked `TList<TStreamerInfo>` blob (body
+/// `{bcnt}{ver}{TObject}{fName}{nobjects}{(obj + option-TString)*}`, no trailer):
+/// bump the outer byte count and `nobjects`, then append the object + empty option.
+fn append_streamer_info(blob: &[u8], info: &[u8]) -> Vec<u8> {
+    let mut out = blob.to_vec();
+    let added = info.len() + 1; // object + empty option TString (0x00)
+
+    let bcnt = u32::from_be_bytes([out[0], out[1], out[2], out[3]]);
+    let new_bcnt = ((bcnt & !K_BYTE_COUNT_MASK) + added as u32) | K_BYTE_COUNT_MASK;
+    out[0..4].copy_from_slice(&new_bcnt.to_be_bytes());
+
+    // bcnt(4) ver(2) TObject{ver(2) uid(4) bits(4)} fName(TString) -> nobjects(i32)
+    let mut p = 4 + 2 + 2 + 4 + 4;
+    let n = out[p] as usize;
+    p += 1 + if n == 255 {
+        4 + u32::from_be_bytes([out[p + 1], out[p + 2], out[p + 3], out[p + 4]]) as usize
+    } else {
+        n
+    };
+    let nobjects = i32::from_be_bytes([out[p], out[p + 1], out[p + 2], out[p + 3]]);
+    out[p..p + 4].copy_from_slice(&(nobjects + 1).to_be_bytes());
+
+    out.extend_from_slice(info);
+    out.push(0); // empty option TString
+    out
 }
 
 /// Whether a branch is a scalar, a fixed-size array, a variable-length (jagged)
@@ -180,6 +369,12 @@ impl Branch {
     /// Number of entries (rows for arrays/strings).
     fn n_entries(&self) -> u32 {
         use BranchValues::*;
+        if let Some(spec) = &self.split {
+            return spec
+                .members
+                .first()
+                .map_or(0, |m| vec_row_lengths(&m.values).len()) as u32;
+        }
         let n = match &self.values {
             Bool(v) => v.len(),
             I8(v) => v.len(),
@@ -380,6 +575,7 @@ impl Branch {
             values: BranchValues::I32(self.row_lengths()),
             jagged: false,
             stl_vector: false,
+            split: None,
         })
     }
 
@@ -636,15 +832,20 @@ pub fn tree_file_bytes(
     w.be_u16(1);
     w.bytes(&[0u8; 16]);
 
-    // --- One basket per branch (TBasket TKeys, not directory keys). ---
-    let baskets: Vec<BasketRec> = eff
+    // --- Baskets per branch (TBasket TKeys). A leaf branch has one; a split
+    // branch has a count basket plus one per member sub-branch. ---
+    let basket_groups: Vec<Vec<BasketRec>> = eff
         .iter()
-        .map(|&b| write_basket(&mut w, b, tree_name, compression))
+        .map(|&b| write_branch_baskets(&mut w, b, tree_name, compression))
         .collect();
-    let tot_bytes: i64 = baskets.iter().map(|r| r.nbytes as i64).sum();
+    let tot_bytes: i64 = basket_groups
+        .iter()
+        .flatten()
+        .map(|r| r.nbytes as i64)
+        .sum();
 
     // --- TTree object key + object. ---
-    let tree_obj = build_tree_object(tree_name, &eff, &baskets, n_entries as i64, tot_bytes);
+    let tree_obj = build_tree_object(tree_name, &eff, &basket_groups, n_entries as i64, tot_bytes);
     let tree_payload = on_disk(&tree_obj, compression);
     let tree_seek = w.len();
     write_key_header(
@@ -660,13 +861,21 @@ pub fn tree_file_bytes(
     w.bytes(&tree_payload);
 
     // --- Streamer-info record (referenced by fSeekInfo only). A tree with any
-    // std::vector branch needs the TBranchElement/TLeafElement streamers. ---
-    let streamer_info = if branches.iter().any(|b| b.stl_vector) {
-        TREE_VECTOR_STREAMER_INFO
+    // std::vector branch needs the TBranchElement/TLeafElement streamers; a split
+    // branch additionally needs its struct's generated TStreamerInfo appended. ---
+    let needs_vector = branches.iter().any(|b| b.stl_vector || b.split.is_some());
+    let mut streamer_info = if needs_vector {
+        TREE_VECTOR_STREAMER_INFO.to_vec()
     } else {
-        TREE_STREAMER_INFO
+        TREE_STREAMER_INFO.to_vec()
     };
-    let si_payload = on_disk(streamer_info, compression);
+    for b in branches {
+        if let Some(spec) = &b.split {
+            let info = write_class_streamer_info(&spec.class_name, &spec.members);
+            streamer_info = append_streamer_info(&streamer_info, &info);
+        }
+    }
+    let si_payload = on_disk(&streamer_info, compression);
     let seek_info = w.len() as u32;
     write_key_header(
         &mut w,
@@ -787,6 +996,44 @@ fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: 
     BasketRec { seek, nbytes }
 }
 
+/// Write the basket(s) backing one branch. A leaf branch has exactly one. A
+/// split `std::vector<MyStruct>` branch has a *count* basket (the parent's
+/// per-entry element counts, as a variable `i32`) followed by one jagged basket
+/// per member sub-branch; `basket_groups[i][0]` is the count basket and `[1..]`
+/// the members, matching the order [`write_split_parent`] reads them back.
+fn write_branch_baskets(
+    w: &mut WBuffer,
+    branch: &Branch,
+    tree_name: &str,
+    compression: u32,
+) -> Vec<BasketRec> {
+    let Some(spec) = &branch.split else {
+        return vec![write_basket(w, branch, tree_name, compression)];
+    };
+    // Count basket: per-entry element counts as single-element jagged `i32`
+    // rows, so it carries the same `fEntryOffset` ROOT writes for the parent.
+    let counts = vec_row_lengths(&spec.members[0].values);
+    let count_branch = Branch {
+        name: branch.name.clone(),
+        values: BranchValues::VecI32(counts.into_iter().map(|n| vec![n]).collect()),
+        jagged: true,
+        stl_vector: false,
+        split: None,
+    };
+    let mut recs = vec![write_basket(w, &count_branch, tree_name, compression)];
+    for m in &spec.members {
+        let sub = Branch {
+            name: format!("{}.{}", branch.name, m.name),
+            values: m.values.clone(),
+            jagged: true,
+            stl_vector: false,
+            split: None,
+        };
+        recs.push(write_basket(w, &sub, tree_name, compression));
+    }
+    recs
+}
+
 /// Write a byte-counted att base (`TAttLine`/`Fill`/`Marker`).
 fn write_attline(w: &mut WBuffer) {
     let t = w.begin_object(2);
@@ -840,7 +1087,7 @@ fn end_object_any(w: &mut WBuffer, bc: Patch) {
 fn build_tree_object(
     tree_name: &str,
     branches: &[&Branch],
-    baskets: &[BasketRec],
+    baskets: &[Vec<BasketRec>],
     n_entries: i64,
     tot_bytes: i64,
 ) -> Vec<u8> {
@@ -907,20 +1154,27 @@ fn obj_array_header(w: &mut WBuffer, size: usize) -> CountToken {
 fn write_branch_array(
     w: &mut WBuffer,
     branches: &[&Branch],
-    baskets: &[BasketRec],
+    baskets: &[Vec<BasketRec>],
     n_entries: i64,
     keylen: u32,
     refs: &mut LeafRefs,
 ) {
     let tok = obj_array_header(w, branches.len());
-    for (&b, basket) in branches.iter().zip(baskets) {
-        if b.stl_vector {
+    for (&b, group) in branches.iter().zip(baskets) {
+        if b.split.is_some() {
+            // The parent's object-map position: its sub-branches reference it
+            // (`fBranchCount`) so ROOT can find the collection they belong to.
+            let parent_ref = w.len() as u32 + keylen + K_MAP_OFFSET;
             let bc = begin_object_any(w, "TBranchElement");
-            write_branch_element(w, b, basket, n_entries, keylen, refs);
+            write_split_parent(w, b, group, n_entries, keylen, parent_ref, refs);
+            end_object_any(w, bc);
+        } else if b.stl_vector {
+            let bc = begin_object_any(w, "TBranchElement");
+            write_branch_element(w, b, &group[0], n_entries, keylen, refs);
             end_object_any(w, bc);
         } else {
             let bc = begin_object_any(w, "TBranch");
-            write_branch(w, b, basket, n_entries, keylen, refs);
+            write_branch(w, b, &group[0], n_entries, keylen, refs);
             end_object_any(w, bc);
         }
     }
@@ -952,6 +1206,251 @@ fn write_branch_element(
     w.be_u32(0); // fBranchCount (null)
     w.be_u32(0); // fBranchCount2 (null)
     w.end_object(tok);
+}
+
+/// Write `fBasketBytes`/`fBasketEntry`/`fBasketSeek` (each `int[fMaxBaskets]` or
+/// `i64[]`, preceded by a marker byte): only basket 0 is populated.
+fn write_basket_arrays(w: &mut WBuffer, basket: &BasketRec, n_entries: i64, max_baskets: i32) {
+    w.u8(1);
+    for i in 0..max_baskets {
+        w.be_i32(if i == 0 { basket.nbytes as i32 } else { 0 });
+    }
+    w.u8(1);
+    for i in 0..max_baskets {
+        w.be_i64(if i == 0 {
+            0
+        } else if i == 1 {
+            n_entries
+        } else {
+            0
+        });
+    }
+    w.u8(1);
+    for i in 0..max_baskets {
+        w.be_i64(if i == 0 { basket.seek as i64 } else { 0 });
+    }
+}
+
+/// Write a `TLeafElement` (v1): the `TLeaf` base (`fLen`/`fLenType`/…/`fLeafCount`)
+/// then the element extras `fID`/`fType`. `f_leaf_count` is written verbatim — a
+/// null (`0`) or an object back-reference to the counter leaf.
+fn write_leaf_element(
+    w: &mut WBuffer,
+    name: &str,
+    title: &str,
+    len_type: i32,
+    f_id: i32,
+    f_type: i32,
+    f_leaf_count: u32,
+) {
+    let outer = w.begin_object(1); // TLeafElement v1
+    let base = w.begin_object(2); // TLeaf v2
+    write_tnamed(w, OBJ_BITS, name, title);
+    w.be_i32(1); // fLen
+    w.be_i32(len_type); // fLenType
+    w.be_i32(0); // fOffset
+    w.u8(0); // fIsRange
+    w.u8(0); // fIsUnsigned
+    w.be_u32(f_leaf_count); // fLeafCount
+    w.end_object(base);
+    w.be_i32(f_id); // fID
+    w.be_i32(f_type); // fType
+    w.end_object(outer);
+}
+
+/// Write the parent `TBranchElement` (`fType=4`) of a split
+/// `std::vector<MyStruct>`: the `TBranch` base (count basket + the `name_`
+/// counter leaf), the member sub-branches in `fBranches`, then the element
+/// members (`fClassName="vector<MyStruct>"`, `fType=4`, `fMaximum=max count`).
+///
+/// The counter leaf (`name_`) is written *inline* the first time it is needed —
+/// inside the first sub-branch's leaf `fLeafCount` — and back-referenced here and
+/// by the other sub-branches, so all four references resolve to one object (ROOT
+/// relies on this when wiring `leaf->GetBranch()`/`GetLeafCount()`).
+fn write_split_parent(
+    w: &mut WBuffer,
+    branch: &Branch,
+    group: &[BasketRec],
+    n_entries: i64,
+    keylen: u32,
+    parent_ref: u32,
+    refs: &mut LeafRefs,
+) {
+    let spec = branch.split.as_ref().expect("split spec");
+    let counter = format!("{}_", branch.name);
+    let count_basket = &group[0];
+    let checksum = class_checksum(&spec.class_name, &spec.members);
+    let max_count = vec_row_lengths(&spec.members[0].values)
+        .into_iter()
+        .max()
+        .unwrap_or(0);
+    let max_baskets = 10i32;
+
+    let te = w.begin_object(10); // TBranchElement v10
+    let tb = w.begin_object(13); // TBranch v13
+    write_tnamed(w, OBJ_BITS, &branch.name, &counter);
+    write_attfill(w);
+    w.be_i32(0); // fCompress
+    w.be_i32(32000); // fBasketSize
+    w.be_i32(1000); // fEntryOffsetLen
+    w.be_i32(1); // fWriteBasket
+    w.be_i64(n_entries); // fEntryNumber
+    write_iofeatures(w);
+    w.be_i32(0); // fOffset
+    w.be_i32(max_baskets); // fMaxBaskets
+    w.be_i32(99); // fSplitLevel
+    w.be_i64(n_entries); // fEntries
+    w.be_i64(0); // fFirstEntry
+    w.be_i64(count_basket.nbytes as i64); // fTotBytes
+    w.be_i64(count_basket.nbytes as i64); // fZipBytes
+
+    // fBranches: the member sub-branches. The first writes `counter` inline.
+    let sub_tok = obj_array_header(w, spec.members.len());
+    for (i, m) in spec.members.iter().enumerate() {
+        let bc = begin_object_any(w, "TBranchElement");
+        write_split_sub(
+            w,
+            &branch.name,
+            &counter,
+            &spec.class_name,
+            checksum,
+            m,
+            i as i32,
+            &group[i + 1],
+            n_entries,
+            keylen,
+            parent_ref,
+            refs,
+            i == 0,
+        );
+        end_object_any(w, bc);
+    }
+    w.end_object(sub_tok);
+
+    // fLeaves: one entry, an object back-reference to the inline `counter` leaf.
+    let leaf_tok = obj_array_header(w, 1);
+    w.be_u32(refs.get(&counter).copied().unwrap_or(0));
+    w.end_object(leaf_tok);
+
+    let baskets = obj_array_header(w, 0); // fBaskets (empty)
+    w.end_object(baskets);
+    write_basket_arrays(w, count_basket, n_entries, max_baskets);
+    w.string(""); // fFileName
+    w.end_object(tb);
+
+    // TBranchElement members for the collection itself.
+    w.string(&format!("vector<{}>", spec.class_name)); // fClassName
+    w.string(""); // fParentName
+    w.string(&spec.class_name); // fClonesName
+    w.be_u32(0); // fCheckSum (ROOT does not validate the STL parent's checksum)
+    w.be_u16(6); // fClassVersion (std::vector)
+    w.be_i32(-1); // fID
+    w.be_i32(4); // fType (split STL collection)
+    w.be_i32(-1); // fStreamerType
+    w.be_i32(max_count); // fMaximum (largest per-entry element count)
+    w.be_u32(0); // fBranchCount (null)
+    w.be_u32(0); // fBranchCount2 (null)
+    w.end_object(te);
+}
+
+/// Write one member sub-branch (`fType=41`) of a split collection: a jagged
+/// array of the member type, counted by the parent's `counter` leaf. When
+/// `write_counter_inline` is set (the first member), the `counter` leaf is
+/// emitted in full as this leaf's `fLeafCount` and its position recorded in
+/// `refs`; otherwise `fLeafCount` is a back-reference to that recorded object.
+#[allow(clippy::too_many_arguments)]
+fn write_split_sub(
+    w: &mut WBuffer,
+    parent: &str,
+    counter: &str,
+    class_name: &str,
+    checksum: u32,
+    member: &SplitMember,
+    index: i32,
+    basket: &BasketRec,
+    n_entries: i64,
+    keylen: u32,
+    parent_ref: u32,
+    refs: &mut LeafRefs,
+    write_counter_inline: bool,
+) {
+    let (type_code, _typename, size) = member_type_info(&member.values);
+    let name = format!("{parent}.{}", member.name);
+    let title = format!("{}[{counter}]", member.name);
+    let max_baskets = 10i32;
+
+    let te = w.begin_object(10); // TBranchElement v10
+    let tb = w.begin_object(13); // TBranch v13
+    write_tnamed(w, OBJ_BITS, &name, &title);
+    write_attfill(w);
+    w.be_i32(0); // fCompress
+    w.be_i32(32000); // fBasketSize
+    w.be_i32(1000); // fEntryOffsetLen
+    w.be_i32(1); // fWriteBasket
+    w.be_i64(n_entries); // fEntryNumber
+    write_iofeatures(w);
+    w.be_i32(0); // fOffset
+    w.be_i32(max_baskets); // fMaxBaskets
+    w.be_i32(0); // fSplitLevel
+    w.be_i64(n_entries); // fEntries
+    w.be_i64(0); // fFirstEntry
+    w.be_i64(basket.nbytes as i64); // fTotBytes
+    w.be_i64(basket.nbytes as i64); // fZipBytes
+
+    let sub = obj_array_header(w, 0); // fBranches (empty)
+    w.end_object(sub);
+
+    // fLeaves: this member's TLeafElement. Its fLeafCount references `counter`.
+    let leaf_tok = obj_array_header(w, 1);
+    let leaf_pos = w.len() as u32;
+    let lbc = begin_object_any(w, "TLeafElement");
+    let outer = w.begin_object(1); // TLeafElement v1
+    let base = w.begin_object(2); // TLeaf v2
+    write_tnamed(w, OBJ_BITS, &name, &title);
+    w.be_i32(1); // fLen
+    w.be_i32(size); // fLenType (element width in bytes)
+    w.be_i32(0); // fOffset
+    w.u8(0); // fIsRange
+    w.u8(0); // fIsUnsigned
+    if write_counter_inline {
+        // First occurrence of the counter leaf: write it in full, record it.
+        let cpos = w.len() as u32;
+        let cbc = begin_object_any(w, "TLeafElement");
+        write_leaf_element(w, counter, counter, 0, -1, -1, 0);
+        end_object_any(w, cbc);
+        refs.entry(counter.to_string())
+            .or_insert(cpos + keylen + K_MAP_OFFSET);
+    } else {
+        w.be_u32(refs.get(counter).copied().unwrap_or(0)); // fLeafCount back-ref
+    }
+    w.end_object(base);
+    w.be_i32(index); // fID
+    w.be_i32(type_code); // fType (basic-type code)
+    w.end_object(outer);
+    end_object_any(w, lbc);
+    refs.entry(name.clone())
+        .or_insert(leaf_pos + keylen + K_MAP_OFFSET);
+    w.end_object(leaf_tok);
+
+    let baskets = obj_array_header(w, 0); // fBaskets (empty)
+    w.end_object(baskets);
+    write_basket_arrays(w, basket, n_entries, max_baskets);
+    w.string(""); // fFileName
+    w.end_object(tb);
+
+    // TBranchElement members for the member element.
+    w.string(class_name); // fClassName (the struct, e.g. "Hit")
+    w.string(class_name); // fParentName
+    w.string(""); // fClonesName
+    w.be_u32(checksum); // fCheckSum (the struct's class checksum)
+    w.be_u16(1); // fClassVersion
+    w.be_i32(index); // fID (member index within the struct)
+    w.be_i32(41); // fType (split STL member)
+    w.be_i32(type_code); // fStreamerType
+    w.be_i32(0); // fMaximum
+    w.be_u32(parent_ref); // fBranchCount (object ref to the parent collection)
+    w.be_u32(0); // fBranchCount2 (null)
+    w.end_object(te);
 }
 
 /// Write one `TBranch` (v13).
@@ -1060,12 +1559,32 @@ fn write_leaf_array(w: &mut WBuffer, branches: &[&Branch], keylen: u32, refs: &m
 /// the tree); duplicating them leaves the tree-level copies with a null branch
 /// and crashes ROOT's `TTreeCache` on the first read.
 fn write_tree_leaf_array(w: &mut WBuffer, branches: &[&Branch], refs: &LeafRefs) {
-    let tok = obj_array_header(w, branches.len());
-    for &b in branches {
-        let objref = refs.get(&b.name).copied().unwrap_or(0);
+    let names: Vec<String> = branches
+        .iter()
+        .flat_map(|&b| branch_leaf_names(b))
+        .collect();
+    let tok = obj_array_header(w, names.len());
+    for name in &names {
+        let objref = refs.get(name).copied().unwrap_or(0);
         w.be_u32(objref); // object reference to the branch-level leaf
     }
     w.end_object(tok);
+}
+
+/// The leaf names a branch contributes to the tree-level `fLeaves`, in order. A
+/// leaf branch contributes one (its own name); a split branch contributes the
+/// parent counter leaf (`name_`) followed by each member leaf (`name.member`).
+fn branch_leaf_names(b: &Branch) -> Vec<String> {
+    match &b.split {
+        Some(spec) => std::iter::once(format!("{}_", b.name))
+            .chain(
+                spec.members
+                    .iter()
+                    .map(|m| format!("{}.{}", b.name, m.name)),
+            )
+            .collect(),
+        None => vec![b.name.clone()],
+    }
 }
 
 /// Write one `TLeaf*` (v1): the `TLeaf` base then the subclass min/max. A

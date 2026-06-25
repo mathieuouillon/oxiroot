@@ -10,7 +10,8 @@
 //   - RNTuple "ntpl": x = int32 [1..5], y = double [1.5..5.5].
 //   - TTree "Tree": ti = int32 [1..5], tf = double [1.5..5.5],
 //     tv = double[3] fixed array, ts = string, tj = jagged double,
-//     tw = std::vector<double> (TBranchElement).
+//     tw = std::vector<double> (TBranchElement), th = split std::vector<Hit>
+//     (Hit = {float x; float y; int id;}) read as th.x/th.y/th.id.
 
 #include <cmath>
 #include <cstdint>
@@ -23,6 +24,8 @@
 #include <TFile.h>
 #include <TH1D.h>
 #include <TTree.h>
+#include <TTreeReader.h>
+#include <TTreeReaderArray.h>
 
 #include <ROOT/RNTupleModel.hxx>
 #include <ROOT/RNTupleReader.hxx>
@@ -40,6 +43,14 @@ static const double TREE_TJ_FLAT[7] = {1, 2, 3, 4, 5, 6, 7};
 // std::vector column tw = [[10,20],[],[30],[40,50],[60,70,80]].
 static const std::vector<std::vector<double>> TREE_TW = {
     {10, 20}, {}, {30}, {40, 50}, {60, 70, 80}};
+// Split std::vector<Hit> column th: Hit = {float x; float y; int id;}, read back
+// as the per-member sub-branches th.x/th.y/th.id (counts [1,0,2,1,3]).
+static const std::vector<std::vector<float>> TREE_TH_X = {
+    {1}, {}, {2, 3}, {4}, {5, 6, 7}};
+static const std::vector<std::vector<float>> TREE_TH_Y = {
+    {1.5}, {}, {2.5, 3.5}, {4.5}, {5.5, 6.5, 7.5}};
+static const std::vector<std::vector<int>> TREE_TH_ID = {
+    {1}, {}, {2, 3}, {4}, {5, 6, 7}};
 
 static void fail(const std::string &msg) {
     std::fprintf(stderr, "interop MISMATCH: %s\n", msg.c_str());
@@ -193,7 +204,41 @@ static void read_rust(const char *dir) {
         }
         f->Close();
     }
-    std::printf("ROOT C++ read Rust hist + RNTuple + TTree — values match\n");
+    // Split std::vector<Hit> branch `th`: read the per-member sub-branches via
+    // TTreeReaderArray. No Hit dictionary is linked — the Rust-written file is
+    // self-describing (it embeds Hit's TStreamerInfo), so ROOT builds the class
+    // and the leaf-count linkage on its own. This is the strict check that the
+    // generated streamer + fBranchCount/fLeafCount references are correct.
+    {
+        TFile *f = TFile::Open(join(dir, "rust_tree.root").c_str());
+        if (!f || f->IsZombie())
+            fail("cannot open rust_tree.root (th)");
+        TTreeReader reader("Tree", f);
+        TTreeReaderArray<float> hx(reader, "th.x");
+        TTreeReaderArray<float> hy(reader, "th.y");
+        TTreeReaderArray<int> hid(reader, "th.id");
+        Long64_t i = 0;
+        while (reader.Next()) {
+            if (i >= 5)
+                fail("rust tree th too many entries");
+            if (hx.GetSize() != TREE_TH_X[i].size())
+                fail("rust tree th size at " + std::to_string(i));
+            for (size_t j = 0; j < hx.GetSize(); ++j) {
+                if (std::fabs(hx[j] - TREE_TH_X[i][j]) > 1e-6)
+                    fail("rust tree th.x at " + std::to_string(i));
+                if (std::fabs(hy[j] - TREE_TH_Y[i][j]) > 1e-6)
+                    fail("rust tree th.y at " + std::to_string(i));
+                if (hid[j] != TREE_TH_ID[i][j])
+                    fail("rust tree th.id at " + std::to_string(i));
+            }
+            ++i;
+        }
+        if (i != 5)
+            fail("rust tree th entry count");
+        f->Close();
+    }
+    std::printf("ROOT C++ read Rust hist + RNTuple + TTree (incl. split "
+                "std::vector<Hit>) — values match\n");
 }
 
 int main(int argc, char **argv) {

@@ -29,6 +29,11 @@ TREE_TV = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]
 TREE_TS = ["a", "bb", "ccc", "dddd", "eeeee"]
 TREE_TJ = [[1.0], [2.0, 3.0], [], [4.0, 5.0, 6.0], [7.0]]
 TREE_TW = [[10.0, 20.0], [], [30.0], [40.0, 50.0], [60.0, 70.0, 80.0]]
+# Split std::vector<Hit> branch `th` (Hit = {float x; float y; int id;}),
+# exposed as the per-member sub-branches th.x/th.y/th.id (counts [1,0,2,1,3]).
+TREE_TH_X = [[1.0], [], [2.0, 3.0], [4.0], [5.0, 6.0, 7.0]]
+TREE_TH_Y = [[1.5], [], [2.5, 3.5], [4.5], [5.5, 6.5, 7.5]]
+TREE_TH_ID = [[1], [], [2, 3], [4], [5, 6, 7]]
 # Oracle-written TTree "otree" (uproot → Rust); uproot cannot write std::vector,
 # so it omits the `ov` branch that the ROOT C++ oracle adds.
 OTREE_OI = [10, 11, 12]
@@ -67,6 +72,10 @@ def read(d: str) -> None:
     ts = [s.decode() if isinstance(s, bytes) else s for s in ta["ts"]]
     tj = [[float(x) for x in row] for row in ta["tj"]]
     tw = [[float(x) for x in row] for row in ta["tw"]]
+    # Split std::vector<Hit> branch `th`, exposed as th.x/th.y/th.id.
+    thx = [[float(x) for x in row] for row in ta["th.x"]]
+    thy = [[float(x) for x in row] for row in ta["th.y"]]
+    thid = [[int(x) for x in row] for row in ta["th.id"]]
     if ti != NTPL_X:
         _fail(f"rust tree ti: got {ti}, want {NTPL_X}")
     if tf != NTPL_Y:
@@ -79,8 +88,14 @@ def read(d: str) -> None:
         _fail(f"rust tree tj: got {tj}, want {TREE_TJ}")
     if tw != TREE_TW:
         _fail(f"rust tree tw: got {tw}, want {TREE_TW}")
+    if thx != TREE_TH_X:
+        _fail(f"rust tree th.x: got {thx}, want {TREE_TH_X}")
+    if thy != TREE_TH_Y:
+        _fail(f"rust tree th.y: got {thy}, want {TREE_TH_Y}")
+    if thid != TREE_TH_ID:
+        _fail(f"rust tree th.id: got {thid}, want {TREE_TH_ID}")
 
-    print("uproot read Rust hist + RNTuple + TTree — values match")
+    print("uproot read Rust hist + RNTuple + TTree (incl. split vector<Hit>) — values match")
 
 
 def write(d: str) -> None:

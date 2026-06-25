@@ -10,7 +10,8 @@
 //!   - RNTuple "ntpl": field x = int32 [1,2,3,4,5], y = double [1.5,2.5,3.5,4.5,5.5].
 //!   - TTree "Tree": ti = int32 [1..5], tf = double [1.5..5.5], tv = double[3]
 //!     fixed array, ts = string, tj = jagged double (auto count ntj),
-//!     tw = std::vector<double> (TBranchElement).
+//!     tw = std::vector<double> (TBranchElement), th = split std::vector<Hit>
+//!     (Hit = {float x; float y; int id;}) read back as th.x/th.y/th.id.
 
 use std::path::Path;
 use std::process::exit;
@@ -41,6 +42,12 @@ const TREE_TW: [&[f64]; 5] = [
     &[40.0, 50.0],
     &[60.0, 70.0, 80.0],
 ];
+/// Canonical split `std::vector<Hit>` branch `th` (Hit = {float x; float y; int
+/// id;}), exposed by ROOT as the per-member sub-branches `th.x`/`th.y`/`th.id`.
+/// Per-entry element counts [1, 0, 2, 1, 3] (includes an empty entry).
+const TREE_TH_X: [&[f32]; 5] = [&[1.0], &[], &[2.0, 3.0], &[4.0], &[5.0, 6.0, 7.0]];
+const TREE_TH_Y: [&[f32]; 5] = [&[1.5], &[], &[2.5, 3.5], &[4.5], &[5.5, 6.5, 7.5]];
+const TREE_TH_ID: [&[i32]; 5] = [&[1], &[], &[2, 3], &[4], &[5, 6, 7]];
 /// Canonical oracle-written TTree "otree" (ROOT/uproot → Rust): a scalar (`oi`),
 /// a jagged double (`oj`), a string (`os`), and a `std::vector<double>` (`ov`).
 /// uproot cannot write `std::vector`, so `ov` is present only in the ROOT C++
@@ -88,6 +95,15 @@ fn write(dir: &Path) -> Result<()> {
             Branch::strings("ts", TREE_TS.iter().map(|s| s.to_string()).collect()),
             Branch::jagged_f64("tj", TREE_TJ.iter().map(|r| r.to_vec()).collect()),
             Branch::vector_f64("tw", TREE_TW.iter().map(|r| r.to_vec()).collect()),
+            Branch::split_vector(
+                "th",
+                "Hit",
+                vec![
+                    SplitMember::f32("x", TREE_TH_X.iter().map(|r| r.to_vec()).collect()),
+                    SplitMember::f32("y", TREE_TH_Y.iter().map(|r| r.to_vec()).collect()),
+                    SplitMember::i32("id", TREE_TH_ID.iter().map(|r| r.to_vec()).collect()),
+                ],
+            ),
         ],
         Compression::None,
     )?;
