@@ -9,13 +9,15 @@
 //   - TH1D "h": 4 bins over [0, 4), in-range bin contents [1, 2, 3, 4].
 //   - RNTuple "ntpl": x = int32 [1..5], y = double [1.5..5.5].
 //   - TTree "Tree": ti = int32 [1..5], tf = double [1.5..5.5],
-//     tv = double[3] fixed array, ts = string, tj = jagged double.
+//     tv = double[3] fixed array, ts = string, tj = jagged double,
+//     tw = std::vector<double> (TBranchElement).
 
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 #include <TFile.h>
 #include <TH1D.h>
@@ -34,6 +36,9 @@ static const char *TREE_TS[5] = {"a", "bb", "ccc", "dddd", "eeeee"};
 // Jagged column tj = [[1],[2,3],[],[4,5,6],[7]] as per-entry lengths + flattened.
 static const int TREE_TJ_LEN[5] = {1, 2, 0, 3, 1};
 static const double TREE_TJ_FLAT[7] = {1, 2, 3, 4, 5, 6, 7};
+// std::vector column tw = [[10,20],[],[30],[40,50],[60,70,80]].
+static const std::vector<std::vector<double>> TREE_TW = {
+    {10, 20}, {}, {30}, {40, 50}, {60, 70, 80}};
 
 static void fail(const std::string &msg) {
     std::fprintf(stderr, "interop MISMATCH: %s\n", msg.c_str());
@@ -116,12 +121,14 @@ static void read_rust(const char *dir) {
         char ts[64] = {0};
         std::int32_t ntj = 0; // jagged count (read before tj each entry)
         double tj[16] = {0};
+        std::vector<double> *tw = nullptr; // std::vector branch (TBranchElement)
         tree->SetBranchAddress("ti", &ti);
         tree->SetBranchAddress("tf", &tf);
         tree->SetBranchAddress("tv", tv);
         tree->SetBranchAddress("ts", ts);
         tree->SetBranchAddress("ntj", &ntj);
         tree->SetBranchAddress("tj", tj);
+        tree->SetBranchAddress("tw", &tw);
         if (tree->GetEntries() != 5)
             fail("rust tree entry count");
         int off = 0; // running offset into the flattened jagged data
@@ -144,6 +151,12 @@ static void read_rust(const char *dir) {
                 if (std::fabs(tj[j] - TREE_TJ_FLAT[off + j]) > 1e-9)
                     fail("rust tree tj at " + std::to_string(i));
             off += ntj;
+            // tw is a std::vector<double> TBranchElement.
+            if (tw->size() != TREE_TW[i].size())
+                fail("rust tree tw size at " + std::to_string(i));
+            for (size_t j = 0; j < tw->size(); ++j)
+                if (std::fabs((*tw)[j] - TREE_TW[i][j]) > 1e-9)
+                    fail("rust tree tw at " + std::to_string(i));
         }
         f->Close();
     }

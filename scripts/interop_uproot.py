@@ -28,6 +28,7 @@ NTPL_Y = [1.5, 2.5, 3.5, 4.5, 5.5]
 TREE_TV = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0], [13.0, 14.0, 15.0]]
 TREE_TS = ["a", "bb", "ccc", "dddd", "eeeee"]
 TREE_TJ = [[1.0], [2.0, 3.0], [], [4.0, 5.0, 6.0], [7.0]]
+TREE_TW = [[10.0, 20.0], [], [30.0], [40.0, 50.0], [60.0, 70.0, 80.0]]
 
 
 def _fail(msg: str) -> None:
@@ -60,6 +61,7 @@ def read(d: str) -> None:
     tv = [[float(x) for x in row] for row in ta["tv"]]
     ts = [s.decode() if isinstance(s, bytes) else s for s in ta["ts"]]
     tj = [[float(x) for x in row] for row in ta["tj"]]
+    tw = [[float(x) for x in row] for row in ta["tw"]]
     if ti != NTPL_X:
         _fail(f"rust tree ti: got {ti}, want {NTPL_X}")
     if tf != NTPL_Y:
@@ -70,6 +72,8 @@ def read(d: str) -> None:
         _fail(f"rust tree ts: got {ts}, want {TREE_TS}")
     if tj != TREE_TJ:
         _fail(f"rust tree tj: got {tj}, want {TREE_TJ}")
+    if tw != TREE_TW:
+        _fail(f"rust tree tw: got {tw}, want {TREE_TW}")
 
     print("uproot read Rust hist + RNTuple + TTree — values match")
 

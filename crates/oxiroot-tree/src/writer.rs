@@ -2,10 +2,11 @@
 //!
 //! Supports scalar, fixed-size array (`x[N]`), variable-length / jagged
 //! (`x[n<name>]`, with an auto-generated count branch and an `fLeafCount`
-//! reference), and string (`TLeafC`) branches. Mirrors the layout ROOT/uproot
-//! write (TTree v20, TBranch v13, TLeaf* v1) so the result reads back in ROOT,
-//! uproot, and this crate. One basket per branch. The embedded `TStreamerInfo`
-//! (a baked blob) makes the file self-describing.
+//! reference), string (`TLeafC`), and `std::vector<T>` (`TBranchElement`)
+//! branches. Mirrors the layout ROOT/uproot write (TTree v20, TBranch v13,
+//! TLeaf* v1, TBranchElement v10) so the result reads back in ROOT, uproot, and
+//! this crate. One basket per branch. The embedded `TStreamerInfo` (a baked
+//! blob) makes the file self-describing.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -35,6 +36,10 @@ type LeafRefs = HashMap<String, u32>;
 /// The baked `TStreamerInfo` for the TTree hierarchy (TTree/TBranch/TLeaf*/…),
 /// extracted from a uproot-written tree. Embedded so the file is self-describing.
 const TREE_STREAMER_INFO: &[u8] = include_bytes!("tree.streamerinfo.bin");
+/// The baked `TStreamerInfo` for a tree that also uses `TBranchElement` /
+/// `TLeafElement` (`std::vector<T>` branches), extracted from a ROOT C++ file.
+/// A superset of [`TREE_STREAMER_INFO`]; used when any branch is a `std::vector`.
+const TREE_VECTOR_STREAMER_INFO: &[u8] = include_bytes!("tree_vector.streamerinfo.bin");
 
 /// One named branch to write. Use the typed constructors: [`Branch::i32`] … for
 /// scalars, [`Branch::vec_f64`] … for fixed-size arrays, [`Branch::jagged_f64`] …
@@ -48,6 +53,9 @@ pub struct Branch {
     /// length, and the writer emits a paired `n<name>` count branch plus an
     /// `fLeafCount` reference. False for scalar/fixed-array/string branches.
     jagged: bool,
+    /// True for a `std::vector<T>` branch, written as a `TBranchElement` (each
+    /// basket entry carries a 10-byte streamer header instead of a count branch).
+    stl_vector: bool,
 }
 
 macro_rules! branch_ctors {
@@ -56,7 +64,7 @@ macro_rules! branch_ctors {
             $(
                 #[doc = concat!("A branch holding `", stringify!($variant), "` values.")]
                 pub fn $method(name: impl Into<String>, values: Vec<$elem>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: false }
                 }
             )*
         }
@@ -76,7 +84,7 @@ macro_rules! vec_ctors {
             $(
                 #[doc = concat!("A fixed-size array branch holding `", stringify!($variant), "` rows.")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: false }
                 }
             )*
         }
@@ -98,7 +106,7 @@ macro_rules! jagged_ctors {
             $(
                 #[doc = concat!("A variable-length array branch holding `", stringify!($variant), "` rows.")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: true }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: true, stl_vector: false }
                 }
             )*
         }
@@ -111,6 +119,27 @@ jagged_ctors! {
     jagged_f32 => VecF32(f32), jagged_f64 => VecF64(f64),
 }
 
+/// Generate `Branch::vector_<name>` shortcuts for `std::vector<T>` branches,
+/// written as `TBranchElement`s (one per inner vector, variable length).
+macro_rules! vector_ctors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl Branch {
+            $(
+                #[doc = concat!("A `std::vector<", stringify!($elem), ">` branch (a `TBranchElement`).")]
+                pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
+                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: true }
+                }
+            )*
+        }
+    };
+}
+vector_ctors! {
+    vector_i8 => VecI8(i8), vector_u8 => VecU8(u8), vector_i16 => VecI16(i16),
+    vector_u16 => VecU16(u16), vector_i32 => VecI32(i32), vector_u32 => VecU32(u32),
+    vector_i64 => VecI64(i64), vector_u64 => VecU64(u64),
+    vector_f32 => VecF32(f32), vector_f64 => VecF64(f64),
+}
+
 impl Branch {
     /// A string branch (`TLeafC`).
     pub fn strings(name: impl Into<String>, values: Vec<String>) -> Branch {
@@ -118,16 +147,18 @@ impl Branch {
             name: name.into(),
             values: BranchValues::Str(values),
             jagged: false,
+            stl_vector: false,
         }
     }
 }
 
 /// Whether a branch is a scalar, a fixed-size array, a variable-length (jagged)
-/// array, or a string.
+/// array, a `std::vector<T>` (`TBranchElement`), or a string.
 enum Kind {
     Scalar,
     FixedArray(usize),
     Jagged,
+    StlVector,
     Str,
 }
 
@@ -177,10 +208,11 @@ impl Branch {
         n as u32
     }
 
-    /// The element leaf type (the inner type for arrays).
+    /// The element leaf type (the inner type for arrays). A `std::vector<T>`
+    /// branch keeps the element width/sign but its leaf class is `TLeafElement`.
     fn leaf(&self) -> LeafInfo {
         use BranchValues::*;
-        let (class, code, size, unsigned) = match &self.values {
+        let (mut class, code, size, unsigned) = match &self.values {
             Bool(_) | VecBool(_) => ("TLeafO", 'O', 1, false),
             I8(_) | VecI8(_) => ("TLeafB", 'B', 1, false),
             U8(_) | VecU8(_) => ("TLeafB", 'b', 1, true),
@@ -194,11 +226,14 @@ impl Branch {
             F64(_) | VecF64(_) => ("TLeafD", 'D', 8, false),
             Str(_) => ("TLeafC", 'C', 1, false),
         };
-        let len_type = if matches!(self.values, Str(_)) {
+        let len_type = if matches!(self.values, Str(_)) || self.stl_vector {
             0
         } else {
             size
         };
+        if self.stl_vector {
+            class = "TLeafElement";
+        }
         LeafInfo {
             class,
             code,
@@ -208,11 +243,41 @@ impl Branch {
         }
     }
 
+    /// The maximum value among integer scalar leaves — ROOT's `fMaximum`, which
+    /// it uses to size the buffer when this leaf is a leaf count. 0 for
+    /// non-integer leaves (where `fMaximum` is unused for reading).
+    fn leaf_max(&self) -> i64 {
+        use BranchValues::*;
+        match &self.values {
+            Bool(v) => i64::from(v.iter().any(|&b| b)),
+            I8(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            U8(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            I16(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            U16(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            I32(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            U32(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            I64(v) => v.iter().copied().max().unwrap_or(0),
+            U64(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            // A TLeafC's fMaximum is the longest string length + 1 (the buffer
+            // size); ROOT uses it to size fValue and reallocates if it is 0.
+            Str(v) => v.iter().map(|s| s.len() as i64).max().unwrap_or(0) + 1,
+            _ => 0,
+        }
+    }
+
+    /// The TLeafC `fLen` (longest string length + 1) for a string branch.
+    fn str_len(&self) -> i32 {
+        match &self.values {
+            BranchValues::Str(v) => v.iter().map(|s| s.len()).max().unwrap_or(0) as i32 + 1,
+            _ => 1,
+        }
+    }
+
     /// Elements per entry: `N` for a fixed array (from row 0), else 1 (scalar,
     /// string, and the jagged leaf — whose per-entry length is dynamic).
     fn flen(&self) -> i32 {
         use BranchValues::*;
-        if self.jagged {
+        if self.jagged || self.stl_vector {
             return 1;
         }
         let n = match &self.values {
@@ -260,6 +325,9 @@ impl Branch {
 
     fn kind(&self) -> Kind {
         use BranchValues::*;
+        if self.stl_vector {
+            return Kind::StlVector;
+        }
         if self.jagged {
             return Kind::Jagged;
         }
@@ -311,13 +379,76 @@ impl Branch {
             name: self.count_name(),
             values: BranchValues::I32(self.row_lengths()),
             jagged: false,
+            stl_vector: false,
         })
     }
 
-    /// The basket's uncompressed entry data, plus (for string branches) the
+    /// The `std::vector<T>` class name and `fCheckSum` ROOT writes for the
+    /// element type (used when this is a `TBranchElement`). Checksums are the
+    /// fixed values ROOT computes for each `vector<T>` specialization.
+    fn stl_info(&self) -> (&'static str, u32) {
+        use BranchValues::*;
+        match &self.values {
+            VecI8(_) => ("vector<char>", 2107423027),
+            VecU8(_) => ("vector<unsigned char>", 3193843768),
+            VecI16(_) => ("vector<short>", 2609783071),
+            VecU16(_) => ("vector<unsigned short>", 2240785856),
+            VecI32(_) => ("vector<int>", 1796663354),
+            VecU32(_) => ("vector<unsigned int>", 2269658365),
+            VecI64(_) => ("vector<Long64_t>", 1788137638),
+            VecU64(_) => ("vector<ULong64_t>", 3999597035),
+            VecF32(_) => ("vector<float>", 1727547419),
+            VecF64(_) => ("vector<double>", 3894200540),
+            _ => ("vector<float>", 0),
+        }
+    }
+
+    /// Entry data + `fEntryOffset` for a `std::vector<T>` branch: each row is a
+    /// streamed collection — `[byte count | mask](4) [0x000a](2) [size n](4)`
+    /// then `n` big-endian elements.
+    fn stl_basket_content(&self) -> (Vec<u8>, Vec<u32>) {
+        use BranchValues::*;
+        let mut data = Vec::new();
+        let mut offsets = vec![0u32];
+        macro_rules! emit {
+            ($rows:expr, $w:expr, $conv:expr) => {{
+                for row in $rows {
+                    let n = row.len() as u32;
+                    let bc = (6 + n * $w) | 0x4000_0000;
+                    data.extend_from_slice(&bc.to_be_bytes());
+                    data.extend_from_slice(&0x000a_u16.to_be_bytes());
+                    data.extend_from_slice(&n.to_be_bytes());
+                    for x in row {
+                        data.extend_from_slice(&$conv(x));
+                    }
+                    offsets.push(data.len() as u32);
+                }
+            }};
+        }
+        match &self.values {
+            VecI8(r) => emit!(r, 1, |x: &i8| [*x as u8]),
+            VecU8(r) => emit!(r, 1, |x: &u8| [*x]),
+            VecI16(r) => emit!(r, 2, |x: &i16| x.to_be_bytes()),
+            VecU16(r) => emit!(r, 2, |x: &u16| x.to_be_bytes()),
+            VecI32(r) => emit!(r, 4, |x: &i32| x.to_be_bytes()),
+            VecU32(r) => emit!(r, 4, |x: &u32| x.to_be_bytes()),
+            VecI64(r) => emit!(r, 8, |x: &i64| x.to_be_bytes()),
+            VecU64(r) => emit!(r, 8, |x: &u64| x.to_be_bytes()),
+            VecF32(r) => emit!(r, 4, |x: &f32| x.to_be_bytes()),
+            VecF64(r) => emit!(r, 8, |x: &f64| x.to_be_bytes()),
+            _ => {}
+        }
+        (data, offsets)
+    }
+
+    /// The basket's uncompressed entry data, plus (for variable branches) the
     /// data-relative `fEntryOffset` array (`n_entries + 1` offsets).
     fn basket_content(&self) -> (Vec<u8>, Option<Vec<u32>>) {
         use BranchValues::*;
+        if self.stl_vector {
+            let (data, offsets) = self.stl_basket_content();
+            return (data, Some(offsets));
+        }
         macro_rules! be {
             ($v:expr, $w:expr) => {{
                 let mut out = Vec::with_capacity($v.len() * $w);
@@ -431,10 +562,10 @@ pub fn tree_file_bytes(
     compression: Compression,
 ) -> Result<Vec<u8>> {
     for b in branches {
-        if !b.jagged && b.is_jagged() {
+        if !b.jagged && !b.stl_vector && b.is_jagged() {
             return Err(Error::Format(format!(
-                "branch {:?}: rows differ in length; use Branch::jagged_* for variable-length \
-                 arrays (Branch::vec_* requires every row to have the same length)",
+                "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_* for \
+                 variable-length arrays (Branch::vec_* requires every row to have the same length)",
                 b.name
             )));
         }
@@ -528,15 +659,21 @@ pub fn tree_file_bytes(
     );
     w.bytes(&tree_payload);
 
-    // --- Streamer-info record (referenced by fSeekInfo only). ---
-    let si_payload = on_disk(TREE_STREAMER_INFO, compression);
+    // --- Streamer-info record (referenced by fSeekInfo only). A tree with any
+    // std::vector branch needs the TBranchElement/TLeafElement streamers. ---
+    let streamer_info = if branches.iter().any(|b| b.stl_vector) {
+        TREE_VECTOR_STREAMER_INFO
+    } else {
+        TREE_STREAMER_INFO
+    };
+    let si_payload = on_disk(streamer_info, compression);
     let seek_info = w.len() as u32;
     write_key_header(
         &mut w,
         "TList",
         "StreamerInfo",
         "Doubly linked list",
-        TREE_STREAMER_INFO.len() as u32,
+        streamer_info.len() as u32,
         si_payload.len() as u32,
         seek_info as u64,
         100,
@@ -603,7 +740,7 @@ fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: 
     // `fNevBufSize` is the per-entry buffer size: `flen * elem_size` for a
     // fixed/scalar branch; ROOT writes a default (1000) for variable baskets.
     let nev_buf_size = match branch.kind() {
-        Kind::Str | Kind::Jagged => 1000,
+        Kind::Str | Kind::Jagged | Kind::StlVector => 1000,
         _ => branch.flen() * leaf.size,
     };
 
@@ -742,7 +879,7 @@ fn build_tree_object(
     write_iofeatures(&mut w);
 
     write_branch_array(&mut w, branches, baskets, n_entries, keylen, &mut refs);
-    write_tree_leaf_array(&mut w, branches, keylen, &mut refs);
+    write_tree_leaf_array(&mut w, branches, &refs);
 
     w.be_u32(0); // fAliases (null TList*)
     w.be_i32(0); // fIndexValues (TArrayD, empty)
@@ -777,10 +914,43 @@ fn write_branch_array(
 ) {
     let tok = obj_array_header(w, branches.len());
     for (&b, basket) in branches.iter().zip(baskets) {
-        let bc = begin_object_any(w, "TBranch");
-        write_branch(w, b, basket, n_entries, keylen, refs);
-        end_object_any(w, bc);
+        if b.stl_vector {
+            let bc = begin_object_any(w, "TBranchElement");
+            write_branch_element(w, b, basket, n_entries, keylen, refs);
+            end_object_any(w, bc);
+        } else {
+            let bc = begin_object_any(w, "TBranch");
+            write_branch(w, b, basket, n_entries, keylen, refs);
+            end_object_any(w, bc);
+        }
     }
+    w.end_object(tok);
+}
+
+/// Write one `TBranchElement` (v10): the `TBranch` base, then the element
+/// members (`fClassName`, `fCheckSum`, …) describing the `std::vector<T>`.
+fn write_branch_element(
+    w: &mut WBuffer,
+    branch: &Branch,
+    basket: &BasketRec,
+    n_entries: i64,
+    keylen: u32,
+    refs: &mut LeafRefs,
+) {
+    let tok = w.begin_object(10); // TBranchElement v10
+    write_branch(w, branch, basket, n_entries, keylen, refs); // the TBranch base
+    let (class_name, checksum) = branch.stl_info();
+    w.string(class_name); // fClassName, e.g. "vector<float>"
+    w.string(""); // fParentName
+    w.string(""); // fClonesName
+    w.be_u32(checksum); // fCheckSum
+    w.be_u16(6); // fClassVersion (std::vector)
+    w.be_i32(-1); // fID
+    w.be_i32(0); // fType
+    w.be_i32(-1); // fStreamerType
+    w.be_i32(0); // fMaximum
+    w.be_u32(0); // fBranchCount (null)
+    w.be_u32(0); // fBranchCount2 (null)
     w.end_object(tok);
 }
 
@@ -800,13 +970,23 @@ fn write_branch(
         Kind::Scalar => format!("{}/{}", branch.name, leaf.code),
         Kind::FixedArray(n) => format!("{}[{}]/{}", branch.name, n, leaf.code),
         Kind::Jagged => format!("{}[{}]/{}", branch.name, branch.count_name(), leaf.code),
+        // A std::vector branch's title is just its name (the type lives in
+        // the TBranchElement's fClassName).
+        Kind::StlVector => branch.name.clone(),
         Kind::Str => format!("{}/C", branch.name),
     };
-    // Variable (string/jagged) branches carry an `fEntryOffset` array, flagged by
-    // a non-zero `fEntryOffsetLen`; fixed/scalar branches set it to 0.
+    // Variable (string/jagged/vector) branches carry an `fEntryOffset` array,
+    // flagged by a non-zero `fEntryOffsetLen`; fixed/scalar branches set it to 0.
     let entry_offset_len = match branch.kind() {
-        Kind::Str | Kind::Jagged => 1000,
+        Kind::Str | Kind::Jagged | Kind::StlVector => 1000,
         _ => 0,
+    };
+    // ROOT writes fSplitLevel = 99 for a (top-level, unsplit) std::vector
+    // TBranchElement; that is the value its reader/cache expects.
+    let split_level = if matches!(branch.kind(), Kind::StlVector) {
+        99
+    } else {
+        0
     };
     let max_baskets = 10i32;
 
@@ -821,7 +1001,7 @@ fn write_branch(
     write_iofeatures(w);
     w.be_i32(0); // fOffset
     w.be_i32(max_baskets); // fMaxBaskets
-    w.be_i32(0); // fSplitLevel
+    w.be_i32(split_level); // fSplitLevel
     w.be_i64(n_entries); // fEntries
     w.be_i64(0); // fFirstEntry
     w.be_i64(basket.nbytes as i64); // fTotBytes
@@ -874,14 +1054,41 @@ fn write_leaf_array(w: &mut WBuffer, branches: &[&Branch], keylen: u32, refs: &m
     w.end_object(tok);
 }
 
-/// The tree-level `fLeaves` lists every branch's leaf.
-fn write_tree_leaf_array(w: &mut WBuffer, branches: &[&Branch], keylen: u32, refs: &mut LeafRefs) {
-    write_leaf_array(w, branches, keylen, refs);
+/// The tree-level `fLeaves` references each branch's already-written leaf via an
+/// object back-reference, rather than re-emitting it. ROOT relies on these being
+/// the *same* leaf objects (so `leaf->GetBranch()` is set when it reconstructs
+/// the tree); duplicating them leaves the tree-level copies with a null branch
+/// and crashes ROOT's `TTreeCache` on the first read.
+fn write_tree_leaf_array(w: &mut WBuffer, branches: &[&Branch], refs: &LeafRefs) {
+    let tok = obj_array_header(w, branches.len());
+    for &b in branches {
+        let objref = refs.get(&b.name).copied().unwrap_or(0);
+        w.be_u32(objref); // object reference to the branch-level leaf
+    }
+    w.end_object(tok);
 }
 
-/// Write one `TLeaf*` (v1): the `TLeaf` base then the subclass min/max.
+/// Write one `TLeaf*` (v1): the `TLeaf` base then the subclass min/max. A
+/// `std::vector` branch instead writes a `TLeafElement` (the `TLeaf` base then
+/// `fID`/`fType`).
 fn write_leaf(w: &mut WBuffer, branch: &Branch, refs: &LeafRefs) {
     let leaf = branch.leaf();
+    if branch.stl_vector {
+        let outer = w.begin_object(1); // TLeafElement v1
+        let base = w.begin_object(2); // TLeaf v2
+        write_tnamed(w, OBJ_BITS, &branch.name, &branch.name);
+        w.be_i32(1); // fLen
+        w.be_i32(0); // fLenType
+        w.be_i32(0); // fOffset
+        w.u8(0); // fIsRange
+        w.u8(0); // fIsUnsigned
+        w.be_u32(0); // fLeafCount (null)
+        w.end_object(base);
+        w.be_i32(-1); // fID
+        w.be_i32(-1); // fType
+        w.end_object(outer);
+        return;
+    }
     // The leaf title carries `[N]` (fixed) or `[count]` (jagged), else the name.
     let title = match branch.kind() {
         Kind::FixedArray(n) => format!("{}[{}]", branch.name, n),
@@ -894,41 +1101,51 @@ fn write_leaf(w: &mut WBuffer, branch: &Branch, refs: &LeafRefs) {
         Kind::Jagged => refs.get(&branch.count_name()).copied().unwrap_or(0),
         _ => 0,
     };
+    // A TLeafC carries fLen = longest-string + 1 and fLenType = 1 (one char);
+    // every other leaf uses its element count/width.
+    let is_str = leaf.code == 'C';
+    let f_len = if is_str {
+        branch.str_len()
+    } else {
+        branch.flen()
+    };
+    let f_len_type = if is_str { 1 } else { leaf.len_type };
     let outer = w.begin_object(1); // TLeafX v1
     let base = w.begin_object(2); // TLeaf v2
     write_tnamed(w, OBJ_BITS, &branch.name, &title);
-    w.be_i32(branch.flen()); // fLen (elements per entry)
-    w.be_i32(leaf.len_type); // fLenType (0 for TLeafC)
+    w.be_i32(f_len); // fLen
+    w.be_i32(f_len_type); // fLenType
     w.be_i32(0); // fOffset
     w.u8(0); // fIsRange
     w.u8(leaf.unsigned as u8); // fIsUnsigned
     w.be_u32(f_leaf_count); // fLeafCount (object ref to the count leaf, or null)
     w.end_object(base);
-    // fMinimum, fMaximum: TLeafC stores them as 4-byte ints (string lengths);
-    // every other leaf uses its element width.
+    // fMinimum (0), fMaximum (the leaf's max value, so ROOT can size a buffer
+    // when this leaf is a leaf count). TLeafC stores them as 4-byte ints (string
+    // lengths); every other leaf uses its element width.
     let minmax_size = if leaf.code == 'C' { 4 } else { leaf.size };
-    write_leaf_minmax(w, minmax_size);
+    write_leaf_minmax(w, minmax_size, branch.leaf_max());
     w.end_object(outer);
 }
 
-/// Write a leaf's `fMinimum`/`fMaximum` (both 0) in the element width.
-fn write_leaf_minmax(w: &mut WBuffer, size: i32) {
+/// Write a leaf's `fMinimum` (0) and `fMaximum` (`max`) in the element width.
+fn write_leaf_minmax(w: &mut WBuffer, size: i32, max: i64) {
     match size {
         1 => {
             w.u8(0);
-            w.u8(0);
+            w.u8(max as u8);
         }
         2 => {
             w.be_i16(0);
-            w.be_i16(0);
+            w.be_i16(max as i16);
         }
         8 => {
             w.be_i64(0);
-            w.be_i64(0);
+            w.be_i64(max);
         }
         _ => {
             w.be_i32(0);
-            w.be_i32(0);
+            w.be_i32(max as i32);
         }
     }
 }

@@ -124,6 +124,30 @@ fn write_then_read_zstd() {
 }
 
 #[test]
+fn write_then_read_std_vector() {
+    let out = std::path::PathBuf::from("/tmp/oxiroot_written_vector.root");
+    let vf = vec![vec![1.0f32, 2.0, 3.0], vec![], vec![4.0], vec![5.0, 6.0]];
+    let vi = vec![vec![10i32, 20], vec![30], vec![], vec![40, 50, 60]];
+    let branches = vec![
+        Branch::i32("n", vec![0, 1, 2, 3]),
+        Branch::vector_f32("vf", vf.clone()),
+        Branch::vector_i32("vi", vi.clone()),
+    ];
+    write_tree_file(&out, "T", &branches, Compression::None).expect("write");
+
+    let f = RFile::open(&out).expect("reopen");
+    let t = TTree::open(&f, "T").expect("open tree");
+    assert_eq!(t.num_entries(), 4);
+    assert_eq!(t.branch_names(), ["n", "vf", "vi"]);
+    assert_eq!(
+        t.read_branch(&f, "n").unwrap(),
+        BranchValues::I32(vec![0, 1, 2, 3])
+    );
+    assert_eq!(t.read_branch(&f, "vf").unwrap(), BranchValues::VecF32(vf));
+    assert_eq!(t.read_branch(&f, "vi").unwrap(), BranchValues::VecI32(vi));
+}
+
+#[test]
 fn ragged_fixed_arrays_are_rejected() {
     use oxiroot_tree::tree_file_bytes;
     // A *fixed*-array constructor given unequal rows is an error (use jagged_*).
