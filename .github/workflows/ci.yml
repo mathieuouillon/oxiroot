@@ -14,7 +14,7 @@ jobs:
     name: test / lint / fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -37,7 +37,7 @@ jobs:
     name: fuzz targets build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -58,7 +58,7 @@ jobs:
     # Rust reads.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -94,8 +94,13 @@ jobs:
     # C++ reads. Pin the image tag if upstream RNTuple format drift is a concern.
     runs-on: ubuntu-latest
     container: rootproject/root:latest
+    # The container runs as root; align HOME with root's actual home so rustup
+    # doesn't mistake the GitHub-set HOME for a sudo invocation, and so the
+    # toolchain it installs is found by later steps. Applies to every step.
+    env:
+      HOME: /root
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust
         run: |
