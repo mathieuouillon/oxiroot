@@ -4,7 +4,9 @@
 //! version-aware and hardcoded (as uproot does), targeting the layout written by
 //! current ROOT/uproot (TTree v20, TBranch v13, TLeaf v2, TLeaf* v1). The branch
 //! data itself lives in [`crate::basket`]s. Handles single-leaf branches:
-//! scalars, fixed (`x[N]`) and variable (`x[n]`) arrays, and `TLeafC` strings.
+//! scalars, fixed (`x[N]`) and variable (`x[n]`) arrays, and `TLeafC` strings,
+//! plus unsplit `std::vector<T>` `TBranchElement` branches (the element type
+//! comes from `fClassName`, and each entry carries a 10-byte streamer header).
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
@@ -34,6 +36,10 @@ struct Branch {
     n_baskets: usize,
     /// File offset of each basket (`fBasketSeek`).
     basket_seek: Vec<u64>,
+    /// Per-entry streamer-header bytes to skip before the element data — `0` for
+    /// `TLeaf`-based branches, `10` for an unsplit `std::vector<T>`
+    /// `TBranchElement` (byte count + version + size).
+    elem_header: usize,
 }
 
 impl TTree {
@@ -93,7 +99,15 @@ impl TTree {
             return decode_strings(&baskets);
         }
         if variable {
-            return decode_array(branch.leaf_type, &entry_regions_variable(&baskets)?);
+            let mut regions = entry_regions_variable(&baskets)?;
+            // A `std::vector` `TBranchElement` prefixes each entry with a
+            // streamer header; strip it so only the element bytes remain.
+            if branch.elem_header > 0 {
+                for r in &mut regions {
+                    *r = &r[branch.elem_header.min(r.len())..];
+                }
+            }
+            return decode_array(branch.leaf_type, &regions);
         }
         if branch.leaf_len > 1 {
             let stride = branch.leaf_len as usize * branch.leaf_type.size();
@@ -208,10 +222,18 @@ fn read_branch_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Branch
     let mut branches = Vec::new();
     for _ in 0..size {
         let header = tags.read_header(r)?;
-        if header.class_name.as_deref() == Some("TBranch") {
-            if let Some(b) = read_branch(r, tags)? {
-                branches.push(b);
+        match header.class_name.as_deref() {
+            Some("TBranch") => {
+                if let Some(b) = read_branch(r, tags)? {
+                    branches.push(b);
+                }
             }
+            Some("TBranchElement") => {
+                if let Some(b) = read_branch_element(r, tags)? {
+                    branches.push(b);
+                }
+            }
+            _ => {}
         }
         if let Some(end) = header.end {
             r.seek(end)?;
@@ -270,7 +292,86 @@ fn read_branch(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> 
         leaf_len,
         n_baskets: write_basket,
         basket_seek,
+        elem_header: 0,
     }))
+}
+
+/// Read one `TBranchElement` (v10) body, after its object header. Handles the
+/// unsplit `std::vector<T>` case (the element type comes from `fClassName`);
+/// returns `None` for split branches or unsupported element types.
+fn read_branch_element(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> {
+    r.read_version()?; // TBranchElement (v10) — the object's own version
+                       // Then the TBranch base — same layout as a standalone TBranch body.
+    r.read_version()?; // TBranch base (v13)
+    let named = read_tnamed(r)?; // fName, fTitle
+    skip_versioned(r)?; // TAttFill
+    r.be_i32()?; // fCompress
+    r.be_i32()?; // fBasketSize
+    r.be_i32()?; // fEntryOffsetLen
+    let write_basket = r.be_i32()?.max(0) as usize; // fWriteBasket
+    r.be_i64()?; // fEntryNumber
+    skip_object(r)?; // fIOFeatures
+    r.be_i32()?; // fOffset
+    let max_baskets = r.be_i32()?.max(0); // fMaxBaskets
+    r.be_i32()?; // fSplitLevel
+    r.be_i64()?; // fEntries
+    r.be_i64()?; // fFirstEntry
+    r.be_i64()?; // fTotBytes
+    r.be_i64()?; // fZipBytes
+    let sub = read_branch_array(r, tags)?; // fBranches (sub-branches if split)
+    read_leaf_array(r, tags)?; // fLeaves (a TLeafElement; skipped)
+    read_skip_array(r, tags)?; // fBaskets (empty on disk)
+    let _basket_bytes = read_marked_array(r, max_baskets, |r| r.be_i32().map(|v| v as i64))?;
+    let _basket_entry = read_marked_array(r, max_baskets, |r| r.be_i64())?;
+    let basket_seek = read_marked_array(r, max_baskets, |r| r.be_i64())?;
+    r.string()?; // fFileName (end of the TBranch base)
+
+    // TBranchElement members: we only need fClassName (the collection type); the
+    // rest are skipped via the object byte count by the caller.
+    let class_name = r.string()?; // fClassName, e.g. "vector<float>"
+
+    let leaf_type = match parse_vector_elem(&class_name) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    // We only read the unsplit form (the values live in this branch's baskets);
+    // a split branch keeps its data in sub-branches.
+    if !sub.is_empty() {
+        return Ok(None);
+    }
+    let basket_seek = basket_seek.into_iter().map(|s| s.max(0) as u64).collect();
+    Ok(Some(Branch {
+        name: named.name,
+        leaf_type,
+        leaf_len: 1,
+        n_baskets: write_basket,
+        basket_seek,
+        elem_header: 10, // byte count (4) + version (2) + size (4)
+    }))
+}
+
+/// Map a `std::vector<T>` class name to its element [`LeafType`], or `None` for
+/// an unsupported element type.
+fn parse_vector_elem(class_name: &str) -> Option<LeafType> {
+    let inner = class_name
+        .strip_prefix("vector<")
+        .or_else(|| class_name.strip_prefix("std::vector<"))?
+        .strip_suffix('>')?
+        .trim();
+    Some(match inner {
+        "float" => LeafType::F32,
+        "double" => LeafType::F64,
+        "int" | "Int_t" => LeafType::I32,
+        "unsigned int" | "UInt_t" => LeafType::U32,
+        "short" | "Short_t" => LeafType::I16,
+        "unsigned short" | "UShort_t" => LeafType::U16,
+        "char" | "Char_t" | "int8_t" => LeafType::I8,
+        "unsigned char" | "UChar_t" | "uint8_t" => LeafType::U8,
+        "bool" | "Bool_t" => LeafType::Bool,
+        "long" | "long long" | "Long64_t" | "Long_t" => LeafType::I64,
+        "unsigned long" | "unsigned long long" | "ULong64_t" | "ULong_t" => LeafType::U64,
+        _ => return None,
+    })
 }
 
 /// Read a `TObjArray` of `TLeaf`s, returning `(type, fLen)` for each supported

@@ -85,8 +85,11 @@ impl Basket {
         let border = last.saturating_sub(key_len).min(data.len());
 
         // A variable-length branch appends its `fEntryOffset` array after the
-        // entry data: `int32 count` then `count` basket-relative offsets. Make
-        // them relative to the data buffer (subtract the key length).
+        // entry data: `int32 count` then `count` basket-relative offsets (made
+        // relative to the data buffer by subtracting the key length). ROOT stores
+        // `n_entries + 1` values, but the final one is a sentinel — `0` in ROOT
+        // C++, the border in uproot — so the last entry always ends at `border`.
+        // Keep the `n_entries` start offsets and append `border` as the end.
         let entry_offsets = if border < data.len() {
             let mut o = RBuffer::new(&data[border..]);
             let count = o.be_i32()?.max(0) as usize;
@@ -95,6 +98,8 @@ impl Basket {
                 let raw = o.be_i32()? as i64 - key_len as i64;
                 offs.push(raw.clamp(0, border as i64) as usize);
             }
+            offs.truncate(n_entries as usize);
+            offs.push(border);
             Some(offs)
         } else {
             None
