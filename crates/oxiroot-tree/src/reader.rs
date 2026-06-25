@@ -3,8 +3,8 @@
 //! `TTree`/`TBranch`/`TLeaf` are "core" classes whose member layout is read
 //! version-aware and hardcoded (as uproot does), targeting the layout written by
 //! current ROOT/uproot (TTree v20, TBranch v13, TLeaf v2, TLeaf* v1). The branch
-//! data itself lives in [`crate::basket`]s. Tier 1: flat branches with a single
-//! primitive leaf.
+//! data itself lives in [`crate::basket`]s. Handles single-leaf branches:
+//! scalars, fixed (`x[N]`) and variable (`x[n]`) arrays, and `TLeafC` strings.
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
@@ -70,31 +70,42 @@ impl TTree {
     }
 
     /// Read all values of branch `name` across every basket.
+    ///
+    /// Scalar branches yield a flat [`BranchValues`]; fixed (`x[N]`) and
+    /// variable (`x[n]`) branches yield a nested one; `TLeafC` yields strings.
     pub fn read_branch(&self, file: &RFile, name: &str) -> Result<BranchValues> {
         let branch = self
             .branches
             .iter()
             .find(|b| b.name == name)
             .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
-        if branch.leaf_len != 1 {
-            return Err(Error::Format(format!(
-                "branch {name:?}: fixed-array leaves (fLen={}) are not supported yet",
-                branch.leaf_len
-            )));
-        }
 
-        // Concatenate every basket's entry data, then decode the column once.
-        let mut bytes = Vec::new();
-        let mut total = 0u64;
+        let mut baskets = Vec::with_capacity(branch.n_baskets);
         for i in 0..branch.n_baskets {
             let seek = *branch.basket_seek.get(i).ok_or_else(|| {
                 Error::Format(format!("branch {name:?}: missing basket {i} seek"))
             })?;
-            let basket = Basket::read(file.data(), seek)?;
-            bytes.extend_from_slice(basket.entry_data());
-            total += basket.n_entries as u64;
+            baskets.push(Basket::read(file.data(), seek)?);
         }
-        // The concatenated entry bytes must be exactly one element per entry.
+
+        let variable = baskets.iter().any(|b| b.entry_offsets.is_some());
+        if branch.leaf_type == LeafType::Str {
+            return decode_strings(&baskets);
+        }
+        if variable {
+            return decode_array(branch.leaf_type, &entry_regions_variable(&baskets)?);
+        }
+        if branch.leaf_len > 1 {
+            let stride = branch.leaf_len as usize * branch.leaf_type.size();
+            return decode_array(branch.leaf_type, &chunk_regions(&baskets, stride));
+        }
+        // Scalar: concatenate every basket's entry data, decode once.
+        let mut bytes = Vec::new();
+        let mut total = 0u64;
+        for b in &baskets {
+            bytes.extend_from_slice(b.entry_data());
+            total += b.n_entries as u64;
+        }
         if bytes.len() != total as usize * branch.leaf_type.size() {
             return Err(Error::Format(format!(
                 "branch {name:?}: {} basket bytes for {total} {:?} entries",
@@ -102,8 +113,43 @@ impl TTree {
                 branch.leaf_type
             )));
         }
-        decode(branch.leaf_type, &bytes)
+        decode_scalar(branch.leaf_type, &bytes)
     }
+}
+
+/// Per-entry byte regions of a variable-length branch, from each basket's
+/// `fEntryOffset` array.
+fn entry_regions_variable(baskets: &[Basket]) -> Result<Vec<&[u8]>> {
+    let mut regions = Vec::new();
+    for b in baskets {
+        let offs = b
+            .entry_offsets
+            .as_ref()
+            .ok_or_else(|| Error::Format("variable branch basket missing fEntryOffset".into()))?;
+        for i in 0..b.n_entries as usize {
+            let (a, c) = (
+                *offs.get(i).unwrap_or(&b.border),
+                *offs.get(i + 1).unwrap_or(&b.border),
+            );
+            regions.push(b.data.get(a..c).unwrap_or(&[]));
+        }
+    }
+    Ok(regions)
+}
+
+/// Per-entry byte regions of a fixed-size array branch: each basket's entry data
+/// split into `stride`-byte chunks.
+fn chunk_regions(baskets: &[Basket], stride: usize) -> Vec<&[u8]> {
+    let mut regions = Vec::new();
+    for b in baskets {
+        if stride == 0 {
+            continue;
+        }
+        for chunk in b.entry_data().chunks_exact(stride) {
+            regions.push(chunk);
+        }
+    }
+    regions
 }
 
 /// Parse a decompressed `TTree` object (`keylen` is its key's header length).
@@ -314,8 +360,8 @@ fn skip_object(r: &mut RBuffer) -> Result<()> {
     Ok(())
 }
 
-/// Decode `bytes` as a contiguous big-endian array of `leaf`-typed values.
-fn decode(leaf: LeafType, bytes: &[u8]) -> Result<BranchValues> {
+/// Decode `bytes` as a contiguous big-endian array of `leaf`-typed scalars.
+fn decode_scalar(leaf: LeafType, bytes: &[u8]) -> Result<BranchValues> {
     macro_rules! be {
         ($variant:ident, $ty:ty, $w:expr) => {{
             let mut v = Vec::with_capacity(bytes.len() / $w);
@@ -337,5 +383,61 @@ fn decode(leaf: LeafType, bytes: &[u8]) -> Result<BranchValues> {
         LeafType::U64 => be!(U64, u64, 8),
         LeafType::F32 => be!(F32, f32, 4),
         LeafType::F64 => be!(F64, f64, 8),
+        LeafType::Str => return Err(Error::Format("string branch decoded as scalar".into())),
     })
+}
+
+/// Decode each per-entry `region` into a vector of `leaf`-typed values, yielding
+/// one inner vector per entry.
+fn decode_array(leaf: LeafType, regions: &[&[u8]]) -> Result<BranchValues> {
+    macro_rules! be {
+        ($variant:ident, $ty:ty, $w:expr) => {{
+            let mut out = Vec::with_capacity(regions.len());
+            for r in regions {
+                let mut g = Vec::with_capacity(r.len() / $w);
+                for c in r.chunks_exact($w) {
+                    g.push(<$ty>::from_be_bytes(c.try_into().unwrap()));
+                }
+                out.push(g);
+            }
+            BranchValues::$variant(out)
+        }};
+    }
+    Ok(match leaf {
+        LeafType::Bool => BranchValues::VecBool(
+            regions
+                .iter()
+                .map(|r| r.iter().map(|&b| b != 0).collect())
+                .collect(),
+        ),
+        LeafType::I8 => BranchValues::VecI8(
+            regions
+                .iter()
+                .map(|r| r.iter().map(|&b| b as i8).collect())
+                .collect(),
+        ),
+        LeafType::U8 => BranchValues::VecU8(regions.iter().map(|r| r.to_vec()).collect()),
+        LeafType::I16 => be!(VecI16, i16, 2),
+        LeafType::U16 => be!(VecU16, u16, 2),
+        LeafType::I32 => be!(VecI32, i32, 4),
+        LeafType::U32 => be!(VecU32, u32, 4),
+        LeafType::I64 => be!(VecI64, i64, 8),
+        LeafType::U64 => be!(VecU64, u64, 8),
+        LeafType::F32 => be!(VecF32, f32, 4),
+        LeafType::F64 => be!(VecF64, f64, 8),
+        LeafType::Str => return Err(Error::Format("string branch decoded as array".into())),
+    })
+}
+
+/// Decode `TLeafC` baskets: each entry is one ROOT-encoded (length-prefixed)
+/// string, read sequentially from the entry data.
+fn decode_strings(baskets: &[Basket]) -> Result<BranchValues> {
+    let mut out = Vec::new();
+    for b in baskets {
+        let mut r = RBuffer::new(b.entry_data());
+        for _ in 0..b.n_entries {
+            out.push(r.string()?);
+        }
+    }
+    Ok(BranchValues::Str(out))
 }

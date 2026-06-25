@@ -23,6 +23,10 @@ pub(crate) struct Basket {
     pub border: usize,
     /// The uncompressed basket buffer (`fObjLen` bytes).
     pub data: Vec<u8>,
+    /// For variable-length branches, the per-entry byte offsets into the entry
+    /// region (`fEntryOffset`, `n_entries + 1` of them, made relative to the
+    /// data buffer). `None` for fixed/scalar branches.
+    pub entry_offsets: Option<Vec<usize>>,
 }
 
 impl Basket {
@@ -79,10 +83,28 @@ impl Basket {
         // `fLast` is measured from the key start; the boundary within the data
         // buffer is `fLast − fKeyLen`, clamped to the buffer.
         let border = last.saturating_sub(key_len).min(data.len());
+
+        // A variable-length branch appends its `fEntryOffset` array after the
+        // entry data: `int32 count` then `count` basket-relative offsets. Make
+        // them relative to the data buffer (subtract the key length).
+        let entry_offsets = if border < data.len() {
+            let mut o = RBuffer::new(&data[border..]);
+            let count = o.be_i32()?.max(0) as usize;
+            let mut offs = Vec::with_capacity(count.min(o.remaining()));
+            for _ in 0..count {
+                let raw = o.be_i32()? as i64 - key_len as i64;
+                offs.push(raw.clamp(0, border as i64) as usize);
+            }
+            Some(offs)
+        } else {
+            None
+        };
+
         Ok(Basket {
             n_entries,
             border,
             data,
+            entry_offsets,
         })
     }
 

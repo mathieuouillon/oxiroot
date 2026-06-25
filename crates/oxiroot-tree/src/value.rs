@@ -1,7 +1,7 @@
 //! Branch value types.
 
-/// The primitive element type of a branch's leaf, derived from the leaf class
-/// and its `fIsUnsigned` flag.
+/// The element type of a branch's leaf, derived from the leaf class and its
+/// `fIsUnsigned` flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeafType {
     /// `TLeafO` — `bool`.
@@ -26,6 +26,8 @@ pub enum LeafType {
     F32,
     /// `TLeafD` — `double`.
     F64,
+    /// `TLeafC` — `char*` / `std::string` (length-prefixed, variable length).
+    Str,
 }
 
 impl LeafType {
@@ -43,14 +45,15 @@ impl LeafType {
             ("TLeafL", true) => LeafType::U64,
             ("TLeafF", _) => LeafType::F32,
             ("TLeafD", _) => LeafType::F64,
+            ("TLeafC", _) => LeafType::Str,
             _ => return None,
         })
     }
 
-    /// On-disk byte width of one element.
+    /// On-disk byte width of one numeric element (1 for the string placeholder).
     pub(crate) fn size(self) -> usize {
         match self {
-            LeafType::Bool | LeafType::I8 | LeafType::U8 => 1,
+            LeafType::Bool | LeafType::I8 | LeafType::U8 | LeafType::Str => 1,
             LeafType::I16 | LeafType::U16 => 2,
             LeafType::I32 | LeafType::U32 | LeafType::F32 => 4,
             LeafType::I64 | LeafType::U64 | LeafType::F64 => 8,
@@ -58,8 +61,11 @@ impl LeafType {
     }
 }
 
-/// A branch's values across all entries, one element per entry (for scalar
-/// branches). The variant mirrors the leaf's element type.
+/// A branch's values across all entries.
+///
+/// Scalar branches yield a flat vector; fixed-size array (`x[N]`) and
+/// variable-length (`x[n]`) branches yield a nested vector (one inner vector per
+/// entry); `TLeafC` branches yield strings.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BranchValues {
     /// `bool` branch.
@@ -84,4 +90,28 @@ pub enum BranchValues {
     F32(Vec<f32>),
     /// `double` branch.
     F64(Vec<f64>),
+    /// Per-entry `bool` array.
+    VecBool(Vec<Vec<bool>>),
+    /// Per-entry `int8_t` array.
+    VecI8(Vec<Vec<i8>>),
+    /// Per-entry `uint8_t` array.
+    VecU8(Vec<Vec<u8>>),
+    /// Per-entry `int16_t` array.
+    VecI16(Vec<Vec<i16>>),
+    /// Per-entry `uint16_t` array.
+    VecU16(Vec<Vec<u16>>),
+    /// Per-entry `int32_t` array.
+    VecI32(Vec<Vec<i32>>),
+    /// Per-entry `uint32_t` array.
+    VecU32(Vec<Vec<u32>>),
+    /// Per-entry `int64_t` array.
+    VecI64(Vec<Vec<i64>>),
+    /// Per-entry `uint64_t` array.
+    VecU64(Vec<Vec<u64>>),
+    /// Per-entry `float` array.
+    VecF32(Vec<Vec<f32>>),
+    /// Per-entry `double` array.
+    VecF64(Vec<Vec<f64>>),
+    /// Per-entry string (`TLeafC`).
+    Str(Vec<String>),
 }

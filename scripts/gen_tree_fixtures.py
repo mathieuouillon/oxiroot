@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 
+import awkward as ak
 import numpy as np
 import uproot
 
@@ -40,10 +41,27 @@ def write(name: str, compression, splits) -> None:
     print("wrote", path)
 
 
+def write_arrays(name: str) -> None:
+    """Fixed array x[3], variable/jagged y (with auto count ny), and a string s."""
+    path = os.path.join(FIXTURES, name)
+    jag = ak.Array([[1.0, 2.0], [], [3.0, 4.0, 5.0]])
+    with uproot.recreate(path, compression=None) as f:
+        f.mktree("T", {"x": ("float64", (3,)), "y": jag.type, "s": str})
+        f["T"].extend(
+            {
+                "x": np.array([[0.0, 1.0, 2.0], [10.0, 11.0, 12.0], [20.0, 21.0, 22.0]]),
+                "y": jag,
+                "s": ["a", "bb", "ccc"],
+            }
+        )
+    print("wrote", path)
+
+
 def main() -> None:
     write("tree_flat.root", None, [(0, 5)])
     write("tree_zstd.root", uproot.ZSTD(5), [(0, 5)])
     write("tree_multibasket.root", None, [(0, 3), (3, 5)])
+    write_arrays("tree_arrays.root")
 
 
 if __name__ == "__main__":
