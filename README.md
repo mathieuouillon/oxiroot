@@ -76,7 +76,8 @@ cargo run -p oxiroot --example analysis
   (`bin_error`).
 - Arithmetic with `Sumw2` error propagation: `scale`, `add` (the bin-by-bin
   merge used to combine job outputs), `multiply`, `divide`, `integral`.
-- Write `TH1D`/`TH2D`/`TH3D`/`TProfile` — one per file, several per file
+- Write `TH1D`/`TH2D`/`TH3D` and their float `TH1F`/`TH2F`/`TH3F` variants, plus
+  `TProfile` — one per file, several per file
   (`write_histograms_file`), or organized into subdirectories
   (`write_histograms_dirs`); append to an existing file with
   `append_histograms_file`. Written files embed a `TStreamerInfo` list, so they
@@ -136,7 +137,7 @@ read, plus RNTuple write (the one-shot writer auto-switches past 2 GiB; the
 streaming writer via `create_large`) · ergonomic facade with a `prelude`.
 
 **Not yet:** split (`fSplitLevel > 0`) `TBranchElement` branches (e.g.
-`std::vector<MyClass>`), and float-precision histogram *write* (`TH1F`/…).
+`std::vector<MyClass>`).
 
 > ROOT 7 `RHist` is intentionally out of scope — it has no persistable on-disk
 > format (its `Streamer` throws).

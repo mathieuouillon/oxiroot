@@ -62,8 +62,9 @@ pub mod prelude {
     pub use oxiroot_hist::{
         append_histograms_file, read_th1, read_th1d, read_th1d_in, read_th1f, read_th2, read_th2d,
         read_th2f, read_th3, read_th3d, read_th3f, read_tprofile, write_histograms_dirs,
-        write_histograms_file, write_th1d_file, write_th2d_file, write_th3d_file,
-        write_tprofile_file, Hist, TAxis, TProfile, TH1, TH2, TH3,
+        write_histograms_file, write_th1d_file, write_th1f_file, write_th2d_file, write_th2f_file,
+        write_th3d_file, write_th3f_file, write_tprofile_file, Hist, TAxis, TProfile, TH1, TH2,
+        TH3,
     };
 
     pub use oxiroot_rntuple::{
