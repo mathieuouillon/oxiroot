@@ -78,10 +78,11 @@ cargo run -p oxiroot --example analysis
   merge used to combine job outputs), `multiply`, `divide`, `integral`.
 - Statistics & shape accessors: `mean`/`std_dev`/`rms`, `maximum`/`minimum`/
   `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,
-  `effective_entries`, `reset`; derived histograms `rebin`, `cumulative`,
-  `projection_x`/`projection_y` (`TH2`→`TH1`), and `profile_x`/`profile_y`
-  (`TH2`→`TProfile`) — all carrying the statistical moment sums so the results'
-  `mean`/`std_dev` stay correct.
+  `effective_entries`, `reset`; derived histograms `rebin`/`rebin2d`/`rebin3d`,
+  `cumulative`, projections (`TH2`→`TH1` via `projection_x`/`_y`; `TH3`→`TH1`/`TH2`
+  via `projection_x`/`_y`/`_z` and `projection_xy`/`_xz`/`_yz`), and
+  `profile_x`/`profile_y` (`TH2`→`TProfile`) — all carrying the statistical moment
+  sums so the results' `mean`/`std_dev` stay correct.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
   `TThreadedObject<TH1>`: each worker fills a private clone (lock-free), then
   `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
