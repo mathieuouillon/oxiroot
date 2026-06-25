@@ -13,9 +13,12 @@ mod base;
 mod ops;
 
 pub mod axis;
+mod derive;
+mod stats;
 pub mod th1;
 pub mod th2;
 pub mod th3;
+pub mod threaded;
 pub mod tprofile;
 pub mod write;
 
@@ -25,6 +28,9 @@ pub use axis::TAxis;
 pub use th1::{read_th1, read_th1d, read_th1d_in, read_th1f, TH1};
 pub use th2::{read_th2, read_th2d, read_th2f, TH2};
 pub use th3::{read_th3, read_th3d, read_th3f, TH3};
+#[cfg(feature = "rayon")]
+pub use threaded::fill_par;
+pub use threaded::{merge_all, Merge, ThreadedHist};
 pub use tprofile::{read_tprofile, TProfile};
 pub use write::{
     append_histograms_file, th1c_to_bytes, th1d_to_bytes, th1f_to_bytes, th1i_to_bytes,

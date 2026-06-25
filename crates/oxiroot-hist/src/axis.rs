@@ -136,4 +136,31 @@ impl TAxis {
         let step = (self.xmax - self.xmin) / n as f64;
         (0..=n).map(|i| self.xmin + step * i as f64).collect()
     }
+
+    /// Low edge of bin `bin` (1-based; bin 1 starts at `xmin`). Out-of-range bins
+    /// clamp to the nearest edge.
+    pub fn bin_low_edge(&self, bin: usize) -> f64 {
+        let e = self.edges();
+        e[bin.clamp(1, e.len().max(1)) - 1]
+    }
+
+    /// Width of bin `bin` (1-based). `0.0` for an out-of-range bin index.
+    pub fn bin_width(&self, bin: usize) -> f64 {
+        let e = self.edges();
+        if (1..e.len()).contains(&bin) {
+            e[bin] - e[bin - 1]
+        } else {
+            0.0
+        }
+    }
+
+    /// Center of bin `bin` (1-based). `0.0` for an out-of-range bin index.
+    pub fn bin_center(&self, bin: usize) -> f64 {
+        let e = self.edges();
+        if (1..e.len()).contains(&bin) {
+            0.5 * (e[bin - 1] + e[bin])
+        } else {
+            0.0
+        }
+    }
 }

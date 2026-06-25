@@ -39,6 +39,33 @@ fn main() -> Result<()> {
         pt.bin_error(2),
     );
 
+    // --- Multithreaded fill, ROOT's TThreadedObject pattern. -------------------
+    // Each worker fills a private clone (no locking), then `merge` combines them
+    // exactly. The result is identical to a serial fill.
+    let samples: Vec<f64> = (0..100_000).map(|i| (i as f64 * 0.618) % 100.0).collect();
+    let acc = ThreadedHist::new(TH1::new("mass", "toy mass", 100, 0.0, 100.0));
+    std::thread::scope(|s| {
+        for chunk in samples.chunks(samples.len().div_ceil(4)) {
+            let acc = &acc;
+            s.spawn(move || {
+                let mut h = acc.local();
+                for &x in chunk {
+                    h.fill(x);
+                }
+                acc.push(h);
+            });
+        }
+    });
+    let mass = acc.merge()?;
+    println!(
+        "mass (parallel fill): {} entries, mean {:.3}, std {:.3}, max bin {} = {}",
+        mass.entries,
+        mass.mean(),
+        mass.std_dev(),
+        mass.maximum_bin(),
+        mass.maximum(),
+    );
+
     // --- Combine and normalize, as when merging samples. -----------------------
     let mut signal = pt.clone();
     let mut background = pt.clone();

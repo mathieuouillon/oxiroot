@@ -17,3 +17,5 @@ oxiroot-tree = { workspace = true }
 [features]
 # Enable the memory-mapped read path (`RFile::open_mmap`).
 mmap = ["oxiroot-io-core/mmap"]
+# Enable the data-parallel histogram fill helper (`hist::fill_par`).
+rayon = ["oxiroot-hist/rayon"]

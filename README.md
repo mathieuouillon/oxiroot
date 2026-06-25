@@ -76,6 +76,17 @@ cargo run -p oxiroot --example analysis
   (`bin_error`).
 - Arithmetic with `Sumw2` error propagation: `scale`, `add` (the bin-by-bin
   merge used to combine job outputs), `multiply`, `divide`, `integral`.
+- Statistics & shape accessors: `mean`/`std_dev`/`rms`, `maximum`/`minimum`/
+  `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,
+  `effective_entries`, `reset`; derived histograms `rebin`, `cumulative`,
+  `projection_x`/`projection_y` (`TH2`→`TH1`), and `profile_x`/`profile_y`
+  (`TH2`→`TProfile`) — all carrying the statistical moment sums so the results'
+  `mean`/`std_dev` stay correct.
+- **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
+  `TThreadedObject<TH1>`: each worker fills a private clone (lock-free), then
+  `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
+  with `std::thread::scope` and needs no dependency; the optional `rayon` feature
+  adds a one-call `fill_par(&template, &data, |h, x| h.fill(*x))`.
 - Write `TH1`/`TH2`/`TH3` in every precision — `D`/`F` (double/float) and
   `C`/`S`/`I`/`L` (char/short/int/long64) — plus `TProfile`; one per file,
   several per file (`write_histograms_file`), or organized into subdirectories

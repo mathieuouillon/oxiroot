@@ -10,3 +10,10 @@ description = "Classic ROOT histograms (TH1/TH2/TH3/TProfile) read/write"
 [dependencies]
 oxiroot-io-core = { workspace = true }
 oxiroot-compress = { workspace = true }
+rayon = { version = "1", optional = true }
+
+[features]
+# Opt-in data-parallel fill helper (`fill_par`). Off by default so the default
+# build stays pure std with no extra dependencies; the `ThreadedHist`
+# accumulator (std::thread based) is always available.
+rayon = ["dep:rayon"]
