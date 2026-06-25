@@ -96,6 +96,34 @@ fn write_then_read_jagged() {
 }
 
 #[test]
+fn write_then_read_zstd() {
+    let out = std::path::PathBuf::from("/tmp/oxiroot_written_zstd.root");
+    let xs = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
+    let ys = vec![vec![7.0], vec![8.0, 9.0], vec![]];
+    let branches = vec![
+        Branch::i32("a", vec![1, 2, 3]),
+        Branch::vec_f64("x", xs.clone()),
+        Branch::strings("s", vec!["p".into(), "qq".into(), "rrr".into()]),
+        Branch::jagged_f64("y", ys.clone()),
+    ];
+    write_tree_file(&out, "Events", &branches, Compression::Zstd(5)).expect("write");
+
+    let f = RFile::open(&out).expect("reopen");
+    let t = TTree::open(&f, "Events").expect("open tree");
+    assert_eq!(t.num_entries(), 3);
+    assert_eq!(
+        t.read_branch(&f, "a").unwrap(),
+        BranchValues::I32(vec![1, 2, 3])
+    );
+    assert_eq!(t.read_branch(&f, "x").unwrap(), BranchValues::VecF64(xs));
+    assert_eq!(
+        t.read_branch(&f, "s").unwrap(),
+        BranchValues::Str(vec!["p".into(), "qq".into(), "rrr".into()])
+    );
+    assert_eq!(t.read_branch(&f, "y").unwrap(), BranchValues::VecF64(ys));
+}
+
+#[test]
 fn ragged_fixed_arrays_are_rejected() {
     use oxiroot_tree::tree_file_bytes;
     // A *fixed*-array constructor given unequal rows is an error (use jagged_*).
