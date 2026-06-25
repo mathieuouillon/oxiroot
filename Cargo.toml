@@ -14,6 +14,7 @@ oxiroot-io-core = { path = "crates/oxiroot-io-core" }
 oxiroot-compress = { path = "crates/oxiroot-compress" }
 oxiroot-rntuple = { path = "crates/oxiroot-rntuple" }
 oxiroot-hist = { path = "crates/oxiroot-hist" }
+oxiroot-tree = { path = "crates/oxiroot-tree" }
 proptest = "1"
 
 [profile.release]

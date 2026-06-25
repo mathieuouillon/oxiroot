@@ -8,15 +8,10 @@
 //! references are keyed by the object's buffer offset **plus the key length**
 //! (ROOT reads key objects with `origin = -fKeylen`).
 
-use std::collections::HashMap;
-
-use crate::buffer::{RBuffer, K_BYTE_COUNT_MASK};
-use crate::error::{Error, Result};
+use crate::buffer::RBuffer;
+use crate::error::Result;
+use crate::object::TagReader;
 use crate::streamer::{read_tnamed, read_tobject};
-
-const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
-const K_CLASS_MASK: u32 = 0x8000_0000;
-const K_MAP_OFFSET: i64 = 2;
 
 /// One member (or base class) entry within a [`StreamerInfo`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,101 +67,6 @@ impl StreamerRegistry {
     /// The names of all described classes.
     pub fn class_names(&self) -> Vec<&str> {
         self.infos.iter().map(|i| i.class_name.as_str()).collect()
-    }
-}
-
-/// Read a NUL-terminated class name (used by the `kNewClassTag` path).
-fn read_cstring(r: &mut RBuffer) -> Result<String> {
-    let mut bytes = Vec::new();
-    loop {
-        let b = r.u8()?;
-        if b == 0 {
-            break;
-        }
-        bytes.push(b);
-    }
-    String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)
-}
-
-/// Resolves the generic object protocol's class tags, tracking back-references.
-struct TagReader {
-    refs: HashMap<i64, String>,
-    seq: i64,
-    keylen: i64,
-}
-
-/// The outcome of reading an object's `{byte-count, class-tag}` header.
-struct ObjHeader {
-    class_name: Option<String>,
-    /// Absolute buffer offset one past the object, when a byte count was present.
-    end: Option<usize>,
-}
-
-impl TagReader {
-    fn new(keylen: usize) -> Self {
-        TagReader {
-            refs: HashMap::new(),
-            seq: 0,
-            keylen: keylen as i64,
-        }
-    }
-
-    /// Read a `ReadObjectAny`-style header, resolving the class name and the
-    /// object's end offset. Leaves the cursor at the object body.
-    fn read_header(&mut self, r: &mut RBuffer) -> Result<ObjHeader> {
-        let beg = r.pos();
-        let bcnt_raw = r.be_u32()?;
-
-        let (versioned, tag, bcnt) =
-            if (bcnt_raw & K_BYTE_COUNT_MASK) == 0 || bcnt_raw == K_NEW_CLASS_TAG {
-                (false, bcnt_raw, 0u32)
-            } else {
-                let tag = r.be_u32()?;
-                (true, tag, bcnt_raw & !K_BYTE_COUNT_MASK)
-            };
-        let end = if versioned {
-            Some(beg + 4 + bcnt as usize)
-        } else {
-            None
-        };
-
-        if tag & K_CLASS_MASK == 0 {
-            // Null (0), parent (1), or an object back-reference (unsupported here).
-            if tag == 0 || tag == 1 {
-                return Ok(ObjHeader {
-                    class_name: None,
-                    end,
-                });
-            }
-            Err(Error::Format(format!(
-                "object back-reference (tag {tag}) is unsupported in streamer info"
-            )))
-        } else if tag == K_NEW_CLASS_TAG {
-            let classname = read_cstring(r)?;
-            // The class is registered at the tag's displacement (+ keylen + offset).
-            if versioned {
-                let start_disp = (beg + 4) as i64 + self.keylen;
-                self.refs
-                    .insert(start_disp + K_MAP_OFFSET, classname.clone());
-            } else {
-                self.seq += 1;
-                self.refs.insert(self.seq, classname.clone());
-            }
-            Ok(ObjHeader {
-                class_name: Some(classname),
-                end,
-            })
-        } else {
-            let refpos = (tag & !K_CLASS_MASK) as i64;
-            let classname =
-                self.refs.get(&refpos).cloned().ok_or_else(|| {
-                    Error::Format(format!("unknown class-tag reference {refpos}"))
-                })?;
-            Ok(ObjHeader {
-                class_name: Some(classname),
-                end,
-            })
-        }
     }
 }
 

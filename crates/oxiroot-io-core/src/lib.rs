@@ -17,6 +17,7 @@ pub mod buffer;
 pub mod compression;
 pub mod error;
 pub mod file;
+pub mod object;
 pub mod streamer;
 pub mod streamer_info;
 
@@ -28,6 +29,7 @@ pub use file::{
     write_root_file_with_streamers, Directory, FileHeader, FreeSegment, ObjectRecord, RFile,
     Subdir, TDatime, TKey, TUuid, KSTART_BIG_FILE,
 };
+pub use object::{ObjHeader, TagReader};
 pub use streamer::{
     read_tnamed, read_tobject, skip_versioned, write_tnamed, write_tobject, TNamed, TObjectHeader,
 };

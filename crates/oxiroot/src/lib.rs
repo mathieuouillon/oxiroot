@@ -46,6 +46,11 @@ pub mod ntuple {
     pub use oxiroot_rntuple::*;
 }
 
+/// Classic `TTree` columnar storage (from `oxiroot-tree`).
+pub mod tree {
+    pub use oxiroot_tree::*;
+}
+
 /// The common types and functions for reading and writing ROOT files.
 ///
 /// `use oxiroot::prelude::*;` brings in the container ([`RFile`],
@@ -64,4 +69,6 @@ pub mod prelude {
     pub use oxiroot_rntuple::{
         write_rntuple_file, Column, Field, FieldValues, RNTuple, RNTupleWriter,
     };
+
+    pub use oxiroot_tree::{BranchValues, TTree};
 }

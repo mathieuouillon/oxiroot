@@ -12,6 +12,7 @@ oxiroot-io-core = { workspace = true }
 oxiroot-compress = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }
+oxiroot-tree = { workspace = true }
 
 [features]
 # Enable the memory-mapped read path (`RFile::open_mmap`).
