@@ -3,8 +3,8 @@
 //! uproot/ROOT C++ when run by hand.
 
 use oxiroot_hist::{
-    read_th1, read_th2, read_th3, write_th1c_file, write_th1i_file, write_th1s_file,
-    write_th2i_file, write_th3i_file, TH1, TH2, TH3,
+    read_th1, read_th2, read_th3, write_th1c_file, write_th1i_file, write_th1l_file,
+    write_th1s_file, write_th2i_file, write_th3i_file, TH1, TH2, TH3,
 };
 use oxiroot_io_core::{Compression, RFile};
 
@@ -33,6 +33,8 @@ fn th1_integer_variants_round_trip() {
     check_th1("/tmp/oxiroot_th1s.root", "TH1S", &h);
     write_th1i_file("/tmp/oxiroot_th1i.root", &h, Compression::None).expect("write I");
     check_th1("/tmp/oxiroot_th1i.root", "TH1I", &h);
+    write_th1l_file("/tmp/oxiroot_th1l.root", &h, Compression::None).expect("write L");
+    check_th1("/tmp/oxiroot_th1l.root", "TH1L", &h);
 }
 
 #[test]

@@ -53,10 +53,10 @@ pub fn write_th1d_file(path: impl AsRef<Path>, h: &TH1, compression: Compression
 }
 
 /// Streamer info (`TList<TStreamerInfo>`) describing the writable histogram
-/// hierarchy — `TH1/2/3{C,S,I,F,D}`, `TProfile`, and every base/member class — at
-/// the exact class versions this module emits. Embedded in every written file so
-/// it is self-describing. Sourced from a ROOT-written file containing one of each
-/// type (every `TArray{C,S,I,F,D}` precision), kept uncompressed.
+/// hierarchy — `TH1/2/3{C,S,I,L,F,D}`, `TProfile`, and every base/member class —
+/// at the exact class versions this module emits (the `L` types are version 0).
+/// Embedded in every written file so it is self-describing. Sourced from a
+/// ROOT-written file with one of each type, kept uncompressed.
 const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
 
 // `fBits` values ROOT writes for the embedded TObjects in a fresh histogram.
@@ -65,28 +65,30 @@ const AXIS_BITS: u32 = 0x0300_0000;
 const TLIST_BITS: u32 = 0x0301_0000;
 
 /// How a histogram's data `TArray` base is serialized — one of `write_tarray{c,
-/// s,i,f,d}`, picking the precision (`TArray{C,S,I,F,D}`). Everything else in the
-/// object is identical across precisions, so a `TH*X` reuses its `TH*D` layout.
+/// s,i,l,f,d}`, picking the precision (`TArray{C,S,I,L64,F,D}`). Everything else
+/// in the object is identical across precisions, so a `TH*X` reuses the `TH*D`
+/// layout (only the outer class version differs: 0 for the Long64 `L` types).
 type ArrayWriter = fn(&mut WBuffer, &[f64]);
 
-/// Serialize a `TH1D`/`TH1F` object (with its byte-count/version header) into
-/// `w`, byte-for-byte as ROOT writes it; `write_array` picks the precision.
-fn write_th1_obj(w: &mut WBuffer, h: &TH1, write_array: ArrayWriter) {
-    let outer = w.begin_object(3); // TH1{D,F} version 3
+/// Serialize a `TH1{D,F,C,S,I,L}` object (with its byte-count/version header)
+/// into `w`, byte-for-byte as ROOT writes it. `version` is the class version
+/// (3 for C/S/I/F/D, 0 for L) and `write_array` picks the precision.
+fn write_th1_obj(w: &mut WBuffer, h: &TH1, version: u16, write_array: ArrayWriter) {
+    let outer = w.begin_object(version);
     write_th1_base(w, h);
-    write_array(w, &h.contents); // TArray{D,F} base: bin contents, inline
+    write_array(w, &h.contents); // TArray{…} base: bin contents, inline
     w.end_object(outer);
 }
 
 /// Serialize a `TH1D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
 pub fn write_th1d(w: &mut WBuffer, h: &TH1) {
-    write_th1_obj(w, h, write_tarrayd);
+    write_th1_obj(w, h, 3, write_tarrayd);
 }
 
 /// Serialize a `TH1F` object (the float-precision `TH1`) into `w`.
 pub fn write_th1f(w: &mut WBuffer, h: &TH1) {
-    write_th1_obj(w, h, write_tarrayf);
+    write_th1_obj(w, h, 3, write_tarrayf);
 }
 
 /// Serialize a `TH1D` object to a fresh byte vector.
@@ -143,8 +145,8 @@ pub fn write_th2d_file(path: impl AsRef<Path>, h: &TH2, compression: Compression
 /// Serialize a `TH2D`/`TH2F` object (with its byte-count/version header) into
 /// `w`, byte-for-byte as ROOT writes it. Layout: `TH2{D,F}{ TH2{ TH1{…},
 /// fScalefactor, fTsumwy, fTsumwy2, fTsumwxy }, TArray{D,F} }`.
-fn write_th2_obj(w: &mut WBuffer, h: &TH2, write_array: ArrayWriter) {
-    let outer = w.begin_object(4); // TH2{D,F} version 4
+fn write_th2_obj(w: &mut WBuffer, h: &TH2, version: u16, write_array: ArrayWriter) {
+    let outer = w.begin_object(version); // TH2{D,F,C,S,I}=4, TH2L=0
     let th2 = w.begin_object(5); // TH2 version 5
     write_th1_core(
         w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
@@ -162,12 +164,12 @@ fn write_th2_obj(w: &mut WBuffer, h: &TH2, write_array: ArrayWriter) {
 /// Serialize a `TH2D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
 pub fn write_th2d(w: &mut WBuffer, h: &TH2) {
-    write_th2_obj(w, h, write_tarrayd);
+    write_th2_obj(w, h, 4, write_tarrayd);
 }
 
 /// Serialize a `TH2F` object (the float-precision `TH2`) into `w`.
 pub fn write_th2f(w: &mut WBuffer, h: &TH2) {
-    write_th2_obj(w, h, write_tarrayf);
+    write_th2_obj(w, h, 4, write_tarrayf);
 }
 
 /// Serialize a `TH2D` object to a fresh byte vector.
@@ -225,8 +227,8 @@ pub fn write_th3d_file(path: impl AsRef<Path>, h: &TH3, compression: Compression
 /// `w`, byte-for-byte as ROOT writes it. Layout: `TH3{D,F}{ TH3{ TH1{…}, TAtt3D,
 /// fTsumwy, fTsumwy2, fTsumwxy, fTsumwz, fTsumwz2, fTsumwxz, fTsumwyz },
 /// TArray{D,F} }`.
-fn write_th3_obj(w: &mut WBuffer, h: &TH3, write_array: ArrayWriter) {
-    let outer = w.begin_object(4); // TH3{D,F} version 4
+fn write_th3_obj(w: &mut WBuffer, h: &TH3, version: u16, write_array: ArrayWriter) {
+    let outer = w.begin_object(version); // TH3{D,F,C,S,I}=4, TH3L=0
     let th3 = w.begin_object(6); // TH3 version 6
     write_th1_core(
         w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
@@ -249,12 +251,12 @@ fn write_th3_obj(w: &mut WBuffer, h: &TH3, write_array: ArrayWriter) {
 /// Serialize a `TH3D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
 pub fn write_th3d(w: &mut WBuffer, h: &TH3) {
-    write_th3_obj(w, h, write_tarrayd);
+    write_th3_obj(w, h, 4, write_tarrayd);
 }
 
 /// Serialize a `TH3F` object (the float-precision `TH3`) into `w`.
 pub fn write_th3f(w: &mut WBuffer, h: &TH3) {
-    write_th3_obj(w, h, write_tarrayf);
+    write_th3_obj(w, h, 4, write_tarrayf);
 }
 
 /// Serialize a `TH3D` object to a fresh byte vector.
@@ -290,14 +292,15 @@ pub fn write_th3f_file(path: impl AsRef<Path>, h: &TH3, compression: Compression
 }
 
 /// Generate the `write_*`/`*_to_bytes`/`write_*_file` trio for one integer
-/// histogram precision (`TH1C`/`TH2S`/`TH3I`/…). The object layout is identical
-/// to the same-dimension `TH*D`/`TH*F`; only the data `TArray` differs, picked by
-/// `$array`. The in-memory `f64` bin contents are narrowed to the integer type.
+/// histogram precision (`TH1C`/`TH2S`/`TH3I`/`TH1L`/…). The object layout is
+/// identical to the same-dimension `TH*D`/`TH*F` apart from the class version
+/// `$ver` (3/4 for C/S/I, 0 for the Long64 `L`) and the data `TArray` (`$array`).
+/// The in-memory `f64` bin contents are narrowed to the integer type.
 macro_rules! int_hist {
-    ($write:ident, $bytes:ident, $file:ident, $class:literal, $htype:ty, $obj:ident, $array:ident) => {
+    ($write:ident, $bytes:ident, $file:ident, $class:literal, $htype:ty, $obj:ident, $ver:literal, $array:ident) => {
         #[doc = concat!("Serialize a `", $class, "` object (with its byte-count/version header) into `w`.")]
         pub fn $write(w: &mut WBuffer, h: &$htype) {
-            $obj(w, h, $array);
+            $obj(w, h, $ver, $array);
         }
         #[doc = concat!("Serialize a `", $class, "` object to a fresh byte vector.")]
         pub fn $bytes(h: &$htype) -> Vec<u8> {
@@ -332,6 +335,7 @@ int_hist!(
     "TH1C",
     TH1,
     write_th1_obj,
+    3,
     write_tarrayc
 );
 int_hist!(
@@ -341,6 +345,7 @@ int_hist!(
     "TH1S",
     TH1,
     write_th1_obj,
+    3,
     write_tarrays
 );
 int_hist!(
@@ -350,7 +355,18 @@ int_hist!(
     "TH1I",
     TH1,
     write_th1_obj,
+    3,
     write_tarrayi
+);
+int_hist!(
+    write_th1l,
+    th1l_to_bytes,
+    write_th1l_file,
+    "TH1L",
+    TH1,
+    write_th1_obj,
+    0,
+    write_tarrayl
 );
 int_hist!(
     write_th2c,
@@ -359,6 +375,7 @@ int_hist!(
     "TH2C",
     TH2,
     write_th2_obj,
+    4,
     write_tarrayc
 );
 int_hist!(
@@ -368,6 +385,7 @@ int_hist!(
     "TH2S",
     TH2,
     write_th2_obj,
+    4,
     write_tarrays
 );
 int_hist!(
@@ -377,7 +395,18 @@ int_hist!(
     "TH2I",
     TH2,
     write_th2_obj,
+    4,
     write_tarrayi
+);
+int_hist!(
+    write_th2l,
+    th2l_to_bytes,
+    write_th2l_file,
+    "TH2L",
+    TH2,
+    write_th2_obj,
+    0,
+    write_tarrayl
 );
 int_hist!(
     write_th3c,
@@ -386,6 +415,7 @@ int_hist!(
     "TH3C",
     TH3,
     write_th3_obj,
+    4,
     write_tarrayc
 );
 int_hist!(
@@ -395,6 +425,7 @@ int_hist!(
     "TH3S",
     TH3,
     write_th3_obj,
+    4,
     write_tarrays
 );
 int_hist!(
@@ -404,7 +435,18 @@ int_hist!(
     "TH3I",
     TH3,
     write_th3_obj,
+    4,
     write_tarrayi
+);
+int_hist!(
+    write_th3l,
+    th3l_to_bytes,
+    write_th3l_file,
+    "TH3L",
+    TH3,
+    write_th3_obj,
+    0,
+    write_tarrayl
 );
 
 /// Write a single `TProfile` into a new ROOT file at `path`. `compression`
@@ -733,5 +775,13 @@ fn write_tarrayi(w: &mut WBuffer, data: &[f64]) {
     w.be_i32(data.len() as i32);
     for &d in data {
         w.be_i32(d as i32);
+    }
+}
+
+/// Write a `TArrayL64` base inline (`Long64_t`/`i64` bin contents; `TH*L`).
+fn write_tarrayl(w: &mut WBuffer, data: &[f64]) {
+    w.be_i32(data.len() as i32);
+    for &d in data {
+        w.be_i64(d as i64);
     }
 }
