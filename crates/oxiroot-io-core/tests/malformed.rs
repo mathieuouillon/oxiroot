@@ -4,7 +4,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{RFile, TDatime, TKey};
+use oxiroot_io_core::buffer::WBuffer;
+use oxiroot_io_core::{write_key_header_fmt, RFile, TDatime, TKey};
 
 fn fixture(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -116,4 +117,100 @@ fn decompress_huge_declared_length_errors_without_ooming() {
     // Crafted block headers with absurd sizes also error rather than panic/OOM.
     let crafted = b"ZS\x01\x03\x00\x00\xff\xff\xff".to_vec();
     assert!(oxiroot_compress::decompress(&crafted, 1usize << 40).is_err());
+}
+
+/// A minimal, parseable TFile whose root directory holds a single big-format
+/// (version 1004, 64-bit seeks) `TDirectory` key named "d" with `fSeekKey` near
+/// `u64::MAX`. `RFile::from_bytes` accepts it; navigating into "d" must reject
+/// the offset rather than overflow.
+fn file_with_hostile_big_directory_key() -> Vec<u8> {
+    let mut w = WBuffer::new();
+
+    // File header (100 bytes, small format). fNbytesName = 0 puts the root
+    // directory record at fBEGIN (100); the fields not on the parse path are 0.
+    w.bytes(b"root");
+    w.be_u32(62400); // fVersion (small, < 1_000_000)
+    w.be_u32(100); // fBEGIN
+    w.be_u32(0); // fEND
+    w.be_u32(0); // fSeekFree
+    w.be_u32(0); // fNbytesFree
+    w.be_u32(0); // nfree
+    w.be_u32(0); // fNbytesName -> dir record at 100 + 0
+    w.u8(4); // fUnits
+    w.be_u32(0); // fCompress
+    w.be_u32(0); // fSeekInfo
+    w.be_u32(0); // fNbytesInfo
+    w.be_u16(1); // fUUID version
+    w.bytes(&[0u8; 16]);
+    while w.len() < 100 {
+        w.u8(0);
+    }
+
+    // Root TDirectory record at offset 100 (small format).
+    w.be_i16(5); // version (small, <= 1000)
+    w.be_u32(0); // fDatimeC
+    w.be_u32(0); // fDatimeM
+    w.be_i32(0); // fNbytesKeys
+    w.be_i32(0); // fNbytesName
+    w.be_u32(100); // fSeekDir
+    w.be_u32(0); // fSeekParent
+    let p_seek_keys = w.reserve(4); // fSeekKeys (patched below)
+
+    // Key list: a wrapper key, the count, then the one hostile entry.
+    let keylist = w.len() as u32;
+    w.patch_be_u32(p_seek_keys, keylist);
+    write_key_header_fmt(
+        &mut w,
+        "TFile",
+        "f",
+        "",
+        0,
+        0,
+        keylist as u64,
+        100,
+        1,
+        false,
+    );
+    w.be_i32(1); // nkeys
+
+    // The hostile key: a big-format TDirectory whose fSeekKey is near u64::MAX,
+    // so `fSeekKey + fKeyLen` overflows usize.
+    write_key_header_fmt(
+        &mut w,
+        "TDirectory",
+        "d",
+        "",
+        0,
+        0,
+        u64::MAX - 8,
+        100,
+        1,
+        true,
+    );
+
+    w.into_vec()
+}
+
+#[test]
+fn subdir_rejects_overflowing_big_directory_key() {
+    let f = RFile::from_bytes(file_with_hostile_big_directory_key())
+        .expect("the crafted container parses");
+
+    // Sanity: the key we parse back really is the hostile big-format one.
+    let k = f
+        .keys()
+        .iter()
+        .find(|k| k.name == "d")
+        .expect("dir key present");
+    assert_eq!(k.class_name, "TDirectory");
+    assert!(k.seek_key > u64::MAX - 16, "fSeekKey near u64::MAX");
+
+    // Navigating into it must Err — not overflow-panic (debug) or wrap to a
+    // bogus small offset (release) in RFile::subdir -> TKey::payload_start.
+    assert!(
+        f.subdir("d").is_err(),
+        "subdir must reject the overflowing directory key"
+    );
+    // object_in() reaches the same offset computation via subdir().
+    assert!(f.object_in("d", "x").is_err());
 }
