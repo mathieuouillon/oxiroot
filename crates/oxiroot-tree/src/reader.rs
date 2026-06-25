@@ -5,8 +5,10 @@
 //! current ROOT/uproot (TTree v20, TBranch v13, TLeaf v2, TLeaf* v1). The branch
 //! data itself lives in [`crate::basket`]s. Handles single-leaf branches:
 //! scalars, fixed (`x[N]`) and variable (`x[n]`) arrays, and `TLeafC` strings,
-//! plus unsplit `std::vector<T>` `TBranchElement` branches (the element type
-//! comes from `fClassName`, and each entry carries a 10-byte streamer header).
+//! unsplit `std::vector<T>` `TBranchElement` branches (the element type comes
+//! from `fClassName`, and each entry carries a 10-byte streamer header), and
+//! *split* (`fSplitLevel > 0`) `std::vector<MyStruct>` branches, which are
+//! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
@@ -229,9 +231,7 @@ fn read_branch_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Branch
                 }
             }
             Some("TBranchElement") => {
-                if let Some(b) = read_branch_element(r, tags)? {
-                    branches.push(b);
-                }
+                branches.extend(read_branch_element(r, tags)?);
             }
             _ => {}
         }
@@ -296,10 +296,17 @@ fn read_branch(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> 
     }))
 }
 
-/// Read one `TBranchElement` (v10) body, after its object header. Handles the
-/// unsplit `std::vector<T>` case (the element type comes from `fClassName`);
-/// returns `None` for split branches or unsupported element types.
-fn read_branch_element(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> {
+/// Read one `TBranchElement` (v10) body, after its object header. Returns the
+/// readable branches it contributes:
+/// - an unsplit `std::vector<T>` (`fType` 0) → one branch (element type from
+///   `fClassName`, each entry prefixed by a 10-byte streamer header);
+/// - a split STL/clones collection (`fType` 3/4) → its member sub-branches (the
+///   parent holds no data of its own);
+/// - a split member sub-branch (`fType` 41/31) → one jagged branch (element type
+///   from `fStreamerType`, no per-entry header).
+///
+/// Unsupported element types contribute nothing.
+fn read_branch_element(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Branch>> {
     r.read_version()?; // TBranchElement (v10) — the object's own version
                        // Then the TBranch base — same layout as a standalone TBranch body.
     r.read_version()?; // TBranch base (v13)
@@ -326,28 +333,63 @@ fn read_branch_element(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<B
     let basket_seek = read_marked_array(r, max_baskets, |r| r.be_i64())?;
     r.string()?; // fFileName (end of the TBranch base)
 
-    // TBranchElement members: we only need fClassName (the collection type); the
-    // rest are skipped via the object byte count by the caller.
-    let class_name = r.string()?; // fClassName, e.g. "vector<float>"
+    // TBranchElement members. fType/fStreamerType decide how this branch is read.
+    let class_name = r.string()?; // fClassName, e.g. "vector<float>" or "Hit"
+    r.string()?; // fParentName
+    r.string()?; // fClonesName
+    r.be_u32()?; // fCheckSum
+    r.be_i16()?; // fClassVersion
+    r.be_i32()?; // fID
+    let f_type = r.be_i32()?; // fType
+    let f_streamer_type = r.be_i32()?; // fStreamerType
+                                       // (fMaximum, fBranchCount, fBranchCount2 follow; skipped via the byte count.)
 
-    let leaf_type = match parse_vector_elem(&class_name) {
-        Some(t) => t,
-        None => return Ok(None),
-    };
-    // We only read the unsplit form (the values live in this branch's baskets);
-    // a split branch keeps its data in sub-branches.
-    if !sub.is_empty() {
-        return Ok(None);
+    // A split collection (STL `4`, TClonesArray `3`) holds no data itself — its
+    // member sub-branches do, and they were just parsed into `sub`.
+    if f_type == 3 || f_type == 4 {
+        return Ok(sub);
     }
+
+    // A member sub-branch (STL `41`, TClonesArray `31`) is a jagged array typed
+    // by fStreamerType, with no per-entry header. An unsplit branch (`0`) is the
+    // whole `std::vector<T>` typed by fClassName, with the 10-byte header.
+    let member = f_type == 41 || f_type == 31;
+    let leaf_type = if member {
+        streamer_type_to_leaf(f_streamer_type)
+    } else {
+        parse_vector_elem(&class_name)
+    };
+    let Some(leaf_type) = leaf_type else {
+        return Ok(Vec::new());
+    };
     let basket_seek = basket_seek.into_iter().map(|s| s.max(0) as u64).collect();
-    Ok(Some(Branch {
+    Ok(vec![Branch {
         name: named.name,
         leaf_type,
         leaf_len: 1,
         n_baskets: write_basket,
         basket_seek,
-        elem_header: 10, // byte count (4) + version (2) + size (4)
-    }))
+        elem_header: if member { 0 } else { 10 },
+    }])
+}
+
+/// Map a `TStreamerInfo` basic-type code (`fStreamerType`, ROOT's `EDataType`)
+/// to its [`LeafType`], for split member sub-branches. `None` for unsupported.
+fn streamer_type_to_leaf(st: i32) -> Option<LeafType> {
+    Some(match st {
+        1 => LeafType::I8,        // kChar
+        2 => LeafType::I16,       // kShort
+        3 => LeafType::I32,       // kInt
+        4 | 16 => LeafType::I64,  // kLong / kLong64
+        5 => LeafType::F32,       // kFloat
+        8 => LeafType::F64,       // kDouble
+        11 => LeafType::U8,       // kUChar
+        12 => LeafType::U16,      // kUShort
+        13 => LeafType::U32,      // kUInt
+        14 | 17 => LeafType::U64, // kULong / kULong64
+        18 => LeafType::Bool,     // kBool
+        _ => return None,
+    })
 }
 
 /// Map a `std::vector<T>` class name to its element [`LeafType`], or `None` for

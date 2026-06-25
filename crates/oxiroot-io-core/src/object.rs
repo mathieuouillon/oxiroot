@@ -77,16 +77,15 @@ impl TagReader {
         };
 
         if tag & K_CLASS_MASK == 0 {
-            // Null (0), parent (1), or an object back-reference (unsupported).
-            if tag == 0 || tag == 1 {
-                return Ok(ObjHeader {
-                    class_name: None,
-                    end,
-                });
-            }
-            Err(Error::Format(format!(
-                "object back-reference (tag {tag}) is unsupported"
-            )))
+            // Null (0), parent (1), or an object back-reference (a pointer to an
+            // already-streamed object — e.g. a split TBranchElement's fLeaves
+            // references its sub-branches' leaves). We don't resolve the pointer;
+            // the slot reads as "no object" and the caller skips it (the bare tag
+            // was already consumed, and any byte count drives the seek to `end`).
+            Ok(ObjHeader {
+                class_name: None,
+                end,
+            })
         } else if tag == K_NEW_CLASS_TAG {
             let classname = read_cstring(r)?;
             // Register the class at the tag's displacement (+ keylen + offset).
