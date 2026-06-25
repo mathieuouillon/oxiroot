@@ -76,8 +76,8 @@ cargo run -p oxiroot --example analysis
   (`bin_error`).
 - Arithmetic with `Sumw2` error propagation: `scale`, `add` (the bin-by-bin
   merge used to combine job outputs), `multiply`, `divide`, `integral`.
-- Write `TH1D`/`TH2D`/`TH3D` and their float `TH1F`/`TH2F`/`TH3F` variants, plus
-  `TProfile` — one per file, several per file
+- Write `TH1`/`TH2`/`TH3` in every precision — `D`/`F` (double/float) and
+  `C`/`S`/`I` (char/short/int) — plus `TProfile`; one per file, several per file
   (`write_histograms_file`), or organized into subdirectories
   (`write_histograms_dirs`); append to an existing file with
   `append_histograms_file`. Written files embed a `TStreamerInfo` list, so they

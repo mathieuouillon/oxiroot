@@ -53,10 +53,10 @@ pub fn write_th1d_file(path: impl AsRef<Path>, h: &TH1, compression: Compression
 }
 
 /// Streamer info (`TList<TStreamerInfo>`) describing the writable histogram
-/// hierarchy — `TH1/2/3{D,F}`, `TProfile`, and every base/member class — at the
-/// exact class versions this module emits. Embedded in every written file so it
-/// is self-describing. Sourced from a ROOT-written file containing one of each
-/// type (`TArrayD` and `TArrayF` variants), kept uncompressed.
+/// hierarchy — `TH1/2/3{C,S,I,F,D}`, `TProfile`, and every base/member class — at
+/// the exact class versions this module emits. Embedded in every written file so
+/// it is self-describing. Sourced from a ROOT-written file containing one of each
+/// type (every `TArray{C,S,I,F,D}` precision), kept uncompressed.
 const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
 
 // `fBits` values ROOT writes for the embedded TObjects in a fresh histogram.
@@ -64,9 +64,9 @@ const HIST_BITS: u32 = 0x0300_0008;
 const AXIS_BITS: u32 = 0x0300_0000;
 const TLIST_BITS: u32 = 0x0301_0000;
 
-/// How a histogram's data `TArray` base is serialized — `write_tarrayd`
-/// (`TArrayD`, the `D` classes) or `write_tarrayf` (`TArrayF`, the `F` classes).
-/// Everything else in the object is identical between the two precisions.
+/// How a histogram's data `TArray` base is serialized — one of `write_tarray{c,
+/// s,i,f,d}`, picking the precision (`TArray{C,S,I,F,D}`). Everything else in the
+/// object is identical across precisions, so a `TH*X` reuses its `TH*D` layout.
 type ArrayWriter = fn(&mut WBuffer, &[f64]);
 
 /// Serialize a `TH1D`/`TH1F` object (with its byte-count/version header) into
@@ -288,6 +288,124 @@ pub fn write_th3f_file(path: impl AsRef<Path>, h: &TH3, compression: Compression
         )
     })
 }
+
+/// Generate the `write_*`/`*_to_bytes`/`write_*_file` trio for one integer
+/// histogram precision (`TH1C`/`TH2S`/`TH3I`/…). The object layout is identical
+/// to the same-dimension `TH*D`/`TH*F`; only the data `TArray` differs, picked by
+/// `$array`. The in-memory `f64` bin contents are narrowed to the integer type.
+macro_rules! int_hist {
+    ($write:ident, $bytes:ident, $file:ident, $class:literal, $htype:ty, $obj:ident, $array:ident) => {
+        #[doc = concat!("Serialize a `", $class, "` object (with its byte-count/version header) into `w`.")]
+        pub fn $write(w: &mut WBuffer, h: &$htype) {
+            $obj(w, h, $array);
+        }
+        #[doc = concat!("Serialize a `", $class, "` object to a fresh byte vector.")]
+        pub fn $bytes(h: &$htype) -> Vec<u8> {
+            let mut w = WBuffer::new();
+            $write(&mut w, h);
+            w.into_vec()
+        }
+        #[doc = concat!("Write a single `", $class, "` (integer-precision histogram) into a new ROOT file.")]
+        pub fn $file(path: impl AsRef<Path>, h: &$htype, compression: Compression) -> Result<()> {
+            write_named(path, |file_name| {
+                let record = ObjectRecord {
+                    class_name: $class.to_string(),
+                    name: h.name.clone(),
+                    title: h.title.clone(),
+                    object: $bytes(h),
+                };
+                write_root_file_with_streamers(
+                    file_name,
+                    &[record],
+                    compression.setting(),
+                    Some(HIST_STREAMER_INFO),
+                )
+            })
+        }
+    };
+}
+
+int_hist!(
+    write_th1c,
+    th1c_to_bytes,
+    write_th1c_file,
+    "TH1C",
+    TH1,
+    write_th1_obj,
+    write_tarrayc
+);
+int_hist!(
+    write_th1s,
+    th1s_to_bytes,
+    write_th1s_file,
+    "TH1S",
+    TH1,
+    write_th1_obj,
+    write_tarrays
+);
+int_hist!(
+    write_th1i,
+    th1i_to_bytes,
+    write_th1i_file,
+    "TH1I",
+    TH1,
+    write_th1_obj,
+    write_tarrayi
+);
+int_hist!(
+    write_th2c,
+    th2c_to_bytes,
+    write_th2c_file,
+    "TH2C",
+    TH2,
+    write_th2_obj,
+    write_tarrayc
+);
+int_hist!(
+    write_th2s,
+    th2s_to_bytes,
+    write_th2s_file,
+    "TH2S",
+    TH2,
+    write_th2_obj,
+    write_tarrays
+);
+int_hist!(
+    write_th2i,
+    th2i_to_bytes,
+    write_th2i_file,
+    "TH2I",
+    TH2,
+    write_th2_obj,
+    write_tarrayi
+);
+int_hist!(
+    write_th3c,
+    th3c_to_bytes,
+    write_th3c_file,
+    "TH3C",
+    TH3,
+    write_th3_obj,
+    write_tarrayc
+);
+int_hist!(
+    write_th3s,
+    th3s_to_bytes,
+    write_th3s_file,
+    "TH3S",
+    TH3,
+    write_th3_obj,
+    write_tarrays
+);
+int_hist!(
+    write_th3i,
+    th3i_to_bytes,
+    write_th3i_file,
+    "TH3I",
+    TH3,
+    write_th3_obj,
+    write_tarrayi
+);
 
 /// Write a single `TProfile` into a new ROOT file at `path`. `compression`
 /// is e.g. `Compression::None` or `Compression::Zstd(5)`.
@@ -591,5 +709,29 @@ fn write_tarrayf(w: &mut WBuffer, data: &[f64]) {
     w.be_i32(data.len() as i32);
     for &d in data {
         w.be_f32(d as f32);
+    }
+}
+
+/// Write a `TArrayC` base inline (`Char_t`/`i8` bin contents; `TH*C`).
+fn write_tarrayc(w: &mut WBuffer, data: &[f64]) {
+    w.be_i32(data.len() as i32);
+    for &d in data {
+        w.u8(d as i8 as u8);
+    }
+}
+
+/// Write a `TArrayS` base inline (`Short_t`/`i16` bin contents; `TH*S`).
+fn write_tarrays(w: &mut WBuffer, data: &[f64]) {
+    w.be_i32(data.len() as i32);
+    for &d in data {
+        w.be_i16(d as i16);
+    }
+}
+
+/// Write a `TArrayI` base inline (`Int_t`/`i32` bin contents; `TH*I`).
+fn write_tarrayi(w: &mut WBuffer, data: &[f64]) {
+    w.be_i32(data.len() as i32);
+    for &d in data {
+        w.be_i32(d as i32);
     }
 }
