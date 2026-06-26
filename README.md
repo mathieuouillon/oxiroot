@@ -70,7 +70,7 @@ cargo run -p oxiroot --example analysis
 ### Histograms (`oxiroot::hist`)
 
 - Read `TH1`/`TH2`/`TH3` in every precision (`D`/`F`/`I`/`S`/`C`/`L`) and
-  `TProfile`/`TProfile2D`/`TProfile3D`.
+  `TProfile`/`TProfile2D`/`TProfile3D`, and `TEfficiency`.
 - Create and `fill`/`fill_weight` with ROOT's exact `Fill` semantics; uniform or
   variable (`new_variable`) bins; `sumw2()` for weighted per-bin errors
   (`bin_error`).

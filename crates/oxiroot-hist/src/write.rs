@@ -28,6 +28,7 @@ fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Vec<u8>) -> R
 }
 
 use crate::axis::TAxis;
+use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
 use crate::th2::TH2;
 use crate::th3::TH3;
@@ -628,6 +629,83 @@ pub fn write_tprofile3d(w: &mut WBuffer, h: &TProfile3D) {
 pub fn tprofile3d_to_bytes(h: &TProfile3D) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile3d(&mut w, h);
+    w.into_vec()
+}
+
+/// An empty `fBeta_bin_params` (`vector<pair<double,double>>`), byte-for-byte as
+/// ROOT writes it (its memberwise framing is awkward to synthesize; per-bin beta
+/// parameters are rarely set, so the empty form is baked).
+const EFF_BETA_BIN_PARAMS_EMPTY: [u8; 16] = [
+    0x40, 0x00, 0x00, 0x0c, 0x40, 0x0a, 0x00, 0x00, 0x00, 0xd7, 0xbe, 0xd2, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// An empty `fFunctions` (`TList*`), byte-for-byte as ROOT writes it.
+const EFF_FUNCTIONS_EMPTY: [u8; 21] = [
+    0x40, 0x00, 0x00, 0x11, 0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// Write an embedded `TH1*` object pointer: `{byte count}{kNewClassTag}{"TH1D\0"}
+/// {TH1D object}`. ROOT shares the class via a back-reference for the second
+/// histogram; a fresh `kNewClassTag` for both is read identically.
+fn write_th1d_ptr(w: &mut WBuffer, h: &TH1) {
+    let bc = w.reserve(4);
+    let start = w.len();
+    w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
+    w.bytes(b"TH1D\0");
+    write_th1d(w, h);
+    let len = (w.len() - start) as u32;
+    w.patch_be_u32(bc, 0x4000_0000 | len);
+}
+
+/// Write a single `TEfficiency` into a new ROOT file at `path`.
+pub fn write_tefficiency_file(
+    path: impl AsRef<Path>,
+    h: &TEfficiency,
+    compression: Compression,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "TEfficiency".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: tefficiency_to_bytes(h),
+        };
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        )
+    })
+}
+
+/// Serialize a `TEfficiency` object (with its byte-count/version header) into `w`.
+/// Layout: `TEfficiency{ TNamed, TAttLine, TAttFill, TAttMarker, fBeta_alpha,
+/// fBeta_beta, fBeta_bin_params, fConfLevel, fFunctions, fPassedHistogram(TH1D*),
+/// fStatisticOption, fTotalHistogram(TH1D*), fWeight }`.
+pub fn write_tefficiency(w: &mut WBuffer, h: &TEfficiency) {
+    let te = w.begin_object(2); // TEfficiency version 2
+    write_tnamed(w, HIST_BITS, &h.name, &h.title);
+    write_attline(w);
+    write_attfill(w);
+    write_attmarker(w);
+    w.be_f64(h.beta_alpha);
+    w.be_f64(h.beta_beta);
+    w.bytes(&EFF_BETA_BIN_PARAMS_EMPTY);
+    w.be_f64(h.conf_level);
+    w.bytes(&EFF_FUNCTIONS_EMPTY);
+    write_th1d_ptr(w, &h.passed); // fPassedHistogram
+    w.be_i32(h.statistic_option);
+    write_th1d_ptr(w, &h.total); // fTotalHistogram
+    w.be_f64(h.weight);
+    w.end_object(te);
+}
+
+/// Serialize a `TEfficiency` object to a fresh byte vector.
+pub fn tefficiency_to_bytes(h: &TEfficiency) -> Vec<u8> {
+    let mut w = WBuffer::new();
+    write_tefficiency(&mut w, h);
     w.into_vec()
 }
 
