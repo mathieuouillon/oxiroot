@@ -1296,9 +1296,44 @@ fn write_taxis(w: &mut WBuffer, ax: &TAxis) {
     w.be_u16(0); // fBits2
     w.u8(0); // fTimeDisplay
     w.string(""); // fTimeFormat
-    w.be_u32(0); // fLabels (null THashList*)
+    if ax.labels.iter().any(|l| !l.is_empty()) {
+        write_labels(w, &ax.labels); // fLabels (THashList*)
+    } else {
+        w.be_u32(0); // fLabels (null THashList*)
+    }
     w.be_u32(0); // fModLabs (null TList*)
     w.end_object(t);
+}
+
+/// Write `fLabels`: a `THashList*` of `TObjString`, one per labelled bin, with
+/// the 1-based bin number in each `TObjString`'s `fUniqueID` — the layout ROOT
+/// writes for an alphanumeric axis. (Each entry names its class with
+/// `kNewClassTag`; ROOT and uproot read that as well as ROOT's own back-refs.)
+fn write_labels(w: &mut WBuffer, labels: &[String]) {
+    write_object_ptr(w, "THashList", |w| {
+        let hl = w.begin_object(5); // THashList (a TList, version 5)
+        write_tobject(w, 0);
+        w.string(""); // fName
+        let present: Vec<(usize, &String)> = labels
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| !l.is_empty())
+            .map(|(i, l)| (i + 1, l)) // 1-based bin number
+            .collect();
+        w.be_i32(present.len() as i32); // fSize
+        for (bin, label) in present {
+            write_object_ptr(w, "TObjString", |w| {
+                let ts = w.begin_object(1); // TObjString version 1
+                w.be_u16(1); // TObject version
+                w.be_u32(bin as u32); // fUniqueID = bin number
+                w.be_u32(0); // fBits
+                w.string(label); // fString
+                w.end_object(ts);
+            });
+            w.string(""); // per-element option string
+        }
+        w.end_object(hl);
+    });
 }
 
 fn write_empty_tlist(w: &mut WBuffer) {

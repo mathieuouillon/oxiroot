@@ -37,3 +37,28 @@ fn numeric_axis_has_no_labels() {
     assert!(h.xaxis.labels.is_empty());
     assert_eq!(h.xaxis.bin_label(1), None);
 }
+
+#[test]
+fn writes_and_round_trips_labels() {
+    use oxiroot_hist::{write_th1d_file, TH1};
+    use oxiroot_io_core::Compression;
+
+    // Round-trip the fixture's labelled histogram through the write path.
+    let f = RFile::open(fixture("analysis.root")).expect("open");
+    let src = read_th1d(&f, "hl").expect("read");
+    let out = std::env::temp_dir().join("oxiroot_labels_rt.root");
+    write_th1d_file(&out, &src, Compression::None).expect("write");
+    let back = read_th1d(&RFile::open(&out).unwrap(), "hl").unwrap();
+    assert_eq!(back.xaxis.labels, src.xaxis.labels);
+
+    // Build a labelled histogram from scratch.
+    let mut h = TH1::new("cuts", "selection", 3, 0.0, 3.0);
+    h.xaxis.set_label(1, "trigger");
+    h.xaxis.set_label(2, "vertex");
+    h.xaxis.set_label(3, "isolation");
+    let out = std::env::temp_dir().join("oxiroot_labels_scratch.root");
+    write_th1d_file(&out, &h, Compression::None).expect("write");
+    let r = read_th1d(&RFile::open(&out).unwrap(), "cuts").unwrap();
+    assert_eq!(r.xaxis.labels, ["trigger", "vertex", "isolation"]);
+    assert_eq!(r.xaxis.bin_label(2), Some("vertex"));
+}

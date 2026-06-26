@@ -159,6 +159,19 @@ impl TAxis {
         self.labels.iter().any(|l| !l.is_empty())
     }
 
+    /// Set the alphanumeric label for bin `bin` (1-based), growing the label
+    /// vector to `nbins` as needed. A no-op for an out-of-range bin.
+    pub fn set_label(&mut self, bin: usize, label: &str) {
+        let n = self.nbins.max(0) as usize;
+        if bin < 1 || bin > n {
+            return;
+        }
+        if self.labels.len() < n {
+            self.labels.resize(n, String::new());
+        }
+        self.labels[bin - 1] = label.to_string();
+    }
+
     /// The `nbins + 1` bin edges, low to high (uniform when `xbins` is empty).
     pub fn edges(&self) -> Vec<f64> {
         if !self.xbins.is_empty() {
