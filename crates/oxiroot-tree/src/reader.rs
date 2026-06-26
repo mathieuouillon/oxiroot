@@ -47,6 +47,18 @@ struct Branch {
     /// `TLeaf`-based branches, `10` for an unsplit `std::vector<T>`
     /// `TBranchElement` (byte count + version + size).
     elem_header: usize,
+    /// For one leaf of a multi-leaf (leaflist) branch: `(byte offset of this leaf
+    /// within an entry, total entry stride)`. `None` for a single-leaf branch.
+    leaflist: Option<(usize, usize)>,
+}
+
+/// One `TLeaf` of a branch: its name, element type, fixed length, and byte offset
+/// within an entry (`fOffset`, non-zero only inside a leaflist).
+struct Leaf {
+    name: String,
+    leaf_type: LeafType,
+    len: i32,
+    offset: usize,
 }
 
 impl TTree {
@@ -133,6 +145,27 @@ impl TTree {
                 Error::Format(format!("branch {name:?}: missing basket {i} seek"))
             })?;
             baskets.push(Basket::read(file.data(), seek)?);
+        }
+
+        // A leaflist leaf: take this leaf's bytes out of each entry's fixed
+        // stride at its offset, then decode like a scalar / fixed array.
+        if let Some((offset, stride)) = branch.leaflist {
+            if stride == 0 {
+                return decode_scalar(branch.leaf_type, &[]);
+            }
+            let width = branch.leaf_len.max(1) as usize * branch.leaf_type.size();
+            let mut regions: Vec<&[u8]> = Vec::new();
+            for b in &baskets {
+                for chunk in b.entry_data().chunks_exact(stride) {
+                    let end = (offset + width).min(chunk.len());
+                    regions.push(chunk.get(offset..end).unwrap_or(&[]));
+                }
+            }
+            if branch.leaf_len > 1 {
+                return decode_array(branch.leaf_type, &regions);
+            }
+            let bytes: Vec<u8> = regions.concat();
+            return decode_scalar(branch.leaf_type, &bytes);
         }
 
         let variable = baskets.iter().any(|b| b.entry_offsets.is_some());
@@ -286,9 +319,7 @@ fn read_branch_array(
         let header = tags.read_header(r)?;
         match header.class_name.as_deref() {
             Some("TBranch") => {
-                if let Some(b) = read_branch(r, tags, diag)? {
-                    branches.push(b);
-                }
+                branches.extend(read_branch(r, tags, diag)?);
             }
             Some("TBranchElement") => {
                 branches.extend(read_branch_element(r, tags, diag)?);
@@ -309,7 +340,7 @@ fn read_branch(
     r: &mut RBuffer,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
-) -> Result<Option<Branch>> {
+) -> Result<Vec<Branch>> {
     let vh = r.read_version()?; // TBranch (v13)
     require_version("TBranch", vh.version, 13)?;
     let named = read_tnamed(r)?; // fName, fTitle
@@ -342,42 +373,65 @@ fn read_branch(
     // (fFileName TString follows; ignored — we jump to the object end via the
     // caller's byte count.)
 
-    // We handle a branch with no sub-branches and exactly one leaf; anything else
-    // is recorded as unsupported (rather than silently vanishing).
+    // A branch with its own sub-branches (other than the split-element path) is
+    // not handled here.
     if !sub.is_empty() {
         diag.push((
             named.name,
             "branch with sub-branches is not supported".to_string(),
         ));
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    if leaves.len() != 1 {
-        let reason = if leaves.is_empty() {
-            "no supported leaf type".to_string()
-        } else {
-            format!(
-                "multi-leaf (leaflist) branch with {} leaves is not yet supported",
-                leaves.len()
-            )
-        };
-        diag.push((named.name, reason));
-        return Ok(None);
+    if leaves.is_empty() {
+        diag.push((named.name, "no supported leaf type".to_string()));
+        return Ok(Vec::new());
     }
-    let (leaf_type, leaf_len) = leaves[0];
-    let basket_seek = basket_seek
-        .into_iter()
-        .map(|s| s.max(0) as u64)
-        .collect::<Vec<_>>();
+    if leaves.len() > 1 && leaves.iter().any(|l| l.leaf_type == LeafType::Str) {
+        diag.push((
+            named.name,
+            "leaflist containing a string leaf is not supported".to_string(),
+        ));
+        return Ok(Vec::new());
+    }
 
-    Ok(Some(Branch {
-        name: named.name,
-        title: named.title,
-        leaf_type,
-        leaf_len,
-        n_baskets: write_basket,
-        basket_seek,
-        elem_header: 0,
-    }))
+    let basket_seek: Vec<u64> = basket_seek.into_iter().map(|s| s.max(0) as u64).collect();
+
+    // Single-leaf branch: the branch *is* the leaf.
+    if leaves.len() == 1 {
+        let leaf = &leaves[0];
+        return Ok(vec![Branch {
+            name: named.name,
+            title: named.title,
+            leaf_type: leaf.leaf_type,
+            leaf_len: leaf.len,
+            n_baskets: write_basket,
+            basket_seek,
+            elem_header: 0,
+            leaflist: None,
+        }]);
+    }
+
+    // Leaflist branch: each entry packs the fixed-size leaves at their offsets;
+    // expose each as a `branch.leaf` sub-branch sliced from the per-entry stride.
+    let stride = leaves
+        .iter()
+        .map(|l| l.offset + l.len.max(1) as usize * l.leaf_type.size())
+        .max()
+        .unwrap_or(0);
+    let out = leaves
+        .iter()
+        .map(|leaf| Branch {
+            name: format!("{}.{}", named.name, leaf.name),
+            title: named.title.clone(),
+            leaf_type: leaf.leaf_type,
+            leaf_len: leaf.len,
+            n_baskets: write_basket,
+            basket_seek: basket_seek.clone(),
+            elem_header: 0,
+            leaflist: Some((leaf.offset, stride)),
+        })
+        .collect();
+    Ok(out)
 }
 
 /// Read one `TBranchElement` (v10) body, after its object header. Returns the
@@ -465,6 +519,7 @@ fn read_branch_element(
         n_baskets: write_basket,
         basket_seek,
         elem_header: if member { 0 } else { 10 },
+        leaflist: None,
     }])
 }
 
@@ -513,7 +568,7 @@ fn parse_vector_elem(class_name: &str) -> Option<LeafType> {
 
 /// Read a `TObjArray` of `TLeaf`s, returning `(type, fLen)` for each supported
 /// leaf (unsupported leaves are skipped).
-fn read_leaf_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<(LeafType, i32)>> {
+fn read_leaf_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Leaf>> {
     read_version_tobject_header(r)?;
     let size = r.be_i32()?.max(0);
     let _lower = r.be_i32()?;
@@ -533,19 +588,25 @@ fn read_leaf_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<(LeafTyp
     Ok(leaves)
 }
 
-/// Read one `TLeaf*` (v1) body enough to recover its element type and `fLen`.
-fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<(LeafType, i32)>> {
+/// Read one `TLeaf*` (v1) body enough to recover its name, element type, `fLen`,
+/// and `fOffset` (its byte position within an entry, for leaflist branches).
+fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<Leaf>> {
     r.read_version()?; // TLeafX (v1) — the leaf subclass wrapper
     r.read_version()?; // TLeaf base (v2)
-    read_tnamed(r)?; // fName, fTitle
+    let named = read_tnamed(r)?; // fName, fTitle
     let len = r.be_i32()?; // fLen
     r.be_i32()?; // fLenType
-    r.be_i32()?; // fOffset
+    let offset = r.be_i32()?; // fOffset
     r.u8()?; // fIsRange
     let unsigned = r.u8()? != 0; // fIsUnsigned
                                  // fLeafCount, fMinimum, fMaximum follow; we skip to the leaf's end via the
                                  // caller's byte count.
-    Ok(LeafType::from_leaf(class, unsigned).map(|t| (t, len)))
+    Ok(LeafType::from_leaf(class, unsigned).map(|leaf_type| Leaf {
+        name: named.name,
+        leaf_type,
+        len,
+        offset: offset.max(0) as usize,
+    }))
 }
 
 /// Read a `TObjArray` and discard it (used for `fBaskets`, always empty here).
