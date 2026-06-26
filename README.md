@@ -188,14 +188,20 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
 
 ### TTree (`oxiroot::tree`)
 
-- **Read & write** scalar, fixed-size array (`x[N]`), variable-length / jagged
-  (`x[n]`), string, and `std::vector<T>` branches.
+- **Read & write** scalar, fixed-size array (`x[N]`, incl. multidimensional
+  `x[N][M]`), variable-length / jagged (`x[n]`), string, multi-leaf (leaflist
+  `a/F:b/I`), and `std::vector<T>` branches.
 - **Split `std::vector<MyStruct>`** branches written as per-member sub-branches
   (`TBranchElement`), with a generated `TStreamerInfo` for the element class —
   ROOT-C++- and uproot-verified, both directions.
 - `Branch::{i32, f64, bools, strings, …}` for scalars, `Branch::vec_*` for
   fixed arrays, `Branch::jagged_*` for variable arrays, `Branch::vector_*` for
   `std::vector<T>`, and `Branch::split_vector` for split structs.
+- `TTree::read_branch` reads a whole branch; `read_branch_range(start, stop)`
+  reads only the baskets covering a window (optional `rayon` decodes baskets in
+  parallel). Introspect with `branch_type`/`branch_shape`/`branch_title`, and see
+  what was skipped via `unsupported_branches()`. Worked example:
+  `cargo run -p oxiroot --example tree`.
 
 ### RNTuple (`oxiroot::ntuple`)
 
