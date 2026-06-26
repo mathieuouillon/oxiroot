@@ -86,5 +86,7 @@ pub mod prelude {
         write_rntuple_file, Column, Field, FieldValues, RNTuple, RNTupleWriter,
     };
 
-    pub use oxiroot_tree::{write_tree_file, Branch, BranchValues, LeafType, SplitMember, TTree};
+    pub use oxiroot_tree::{
+        write_tree_file, Branch, BranchValues, Jagged, LeafType, SplitMember, TTree,
+    };
 }

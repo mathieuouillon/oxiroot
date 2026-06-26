@@ -17,7 +17,7 @@ use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
 use oxiroot_io_core::RFile;
 
 use crate::basket::Basket;
-use crate::value::{BranchValues, LeafType};
+use crate::value::{BranchValues, Jagged, LeafType};
 
 /// A `TTree` read from a file: its name, entry count, and branches.
 #[derive(Debug, Clone)]
@@ -207,6 +207,70 @@ impl TTree {
         let len = (stop - start) as usize;
         Ok(slice_values(values, off, len))
     }
+
+    /// Read branch `name` as a [`Jagged`] view — cumulative `offsets` over one
+    /// flat scalar [`BranchValues`] — without allocating a `Vec` per entry. Works
+    /// for scalar (one element per entry), fixed `x[N]`, multidimensional, and
+    /// variable/jagged numeric branches; string branches are not supported (use
+    /// [`read_branch`](Self::read_branch)).
+    pub fn read_branch_flat(&self, file: &RFile, name: &str) -> Result<Jagged> {
+        let branch = self
+            .branch(name)
+            .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
+        if branch.leaf_type == LeafType::Str {
+            return Err(Error::Format(format!(
+                "branch {name:?} is a string branch; use read_branch"
+            )));
+        }
+        let baskets = read_baskets(file, branch, 0..branch.n_baskets)?;
+        let regions = entry_regions(branch, &baskets);
+        let size = branch.leaf_type.size().max(1);
+
+        let mut offsets = Vec::with_capacity(regions.len() + 1);
+        offsets.push(0u64);
+        let mut bytes = Vec::new();
+        let mut acc = 0u64;
+        for r in &regions {
+            bytes.extend_from_slice(r);
+            acc += (r.len() / size) as u64;
+            offsets.push(acc);
+        }
+        Ok(Jagged {
+            offsets,
+            values: decode_scalar(branch.leaf_type, &bytes)?,
+        })
+    }
+}
+
+/// Per-entry byte regions of a numeric branch (the shared shape behind the
+/// jagged/array/scalar read paths), for the flat [`TTree::read_branch_flat`].
+fn entry_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Vec<&'a [u8]> {
+    if let Some((offset, stride)) = branch.leaflist {
+        if stride == 0 {
+            return Vec::new();
+        }
+        let width = branch.leaf_len.max(1) as usize * branch.leaf_type.size();
+        let mut regions = Vec::new();
+        for b in baskets {
+            for chunk in b.entry_data().chunks_exact(stride) {
+                let end = (offset + width).min(chunk.len());
+                regions.push(chunk.get(offset..end).unwrap_or(&[]));
+            }
+        }
+        return regions;
+    }
+    if baskets.iter().any(|b| b.entry_offsets.is_some()) {
+        let mut regions = entry_regions_variable(baskets).unwrap_or_default();
+        if branch.elem_header > 0 {
+            for r in &mut regions {
+                *r = &r[branch.elem_header.min(r.len())..];
+            }
+        }
+        return regions;
+    }
+    // Fixed array or scalar: one chunk of `leaf_len` elements per entry.
+    let stride = branch.leaf_len.max(1) as usize * branch.leaf_type.size();
+    chunk_regions(baskets, stride)
 }
 
 /// Read the requested baskets of `branch` (by index) and decompress them, in

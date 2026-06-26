@@ -15,5 +15,5 @@ mod value;
 mod writer;
 
 pub use reader::TTree;
-pub use value::{BranchValues, LeafType};
+pub use value::{BranchValues, Jagged, LeafType};
 pub use writer::{tree_file_bytes, write_tree_file, Branch, SplitMember};

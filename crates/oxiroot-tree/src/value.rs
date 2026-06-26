@@ -118,6 +118,35 @@ pub enum BranchValues {
     Str(Vec<String>),
 }
 
+/// A jagged (or array) branch viewed as cumulative `offsets` over one flat
+/// [`BranchValues`], instead of the per-entry-allocated `Vec<Vec<_>>` form.
+///
+/// `offsets` has `num_entries + 1` values with `offsets[0] == 0`; entry `i`'s
+/// elements are `values[offsets[i] .. offsets[i+1]]`. Built by
+/// [`TTree::read_branch_flat`](crate::TTree::read_branch_flat). `values` is
+/// always a *scalar* variant (e.g. `F64`), never a `Vec*`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Jagged {
+    /// Cumulative element boundaries, one per entry plus a leading `0`.
+    pub offsets: Vec<u64>,
+    /// The flattened element values (a scalar [`BranchValues`] variant).
+    pub values: BranchValues,
+}
+
+impl Jagged {
+    /// The number of entries.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.offsets.len().saturating_sub(1)
+    }
+
+    /// Whether there are no entries.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 impl BranchValues {
     /// The number of entries (top-level rows).
     #[must_use]
