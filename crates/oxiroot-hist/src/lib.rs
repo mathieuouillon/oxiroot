@@ -10,6 +10,7 @@
 //! precision; the exact class is preserved in `class_name`.
 
 mod base;
+mod compare;
 mod ops;
 
 pub mod axis;
@@ -31,6 +32,7 @@ pub mod write;
 pub use oxiroot_io_core::Compression;
 
 pub use axis::TAxis;
+pub use compare::{Chi2TestResult, KsTestResult};
 pub use graph::{read_tgraph, GraphErrors, TGraph};
 pub use tefficiency::{read_tefficiency, TEfficiency};
 pub use th1::{read_th1, read_th1d, read_th1d_in, read_th1f, TH1};
