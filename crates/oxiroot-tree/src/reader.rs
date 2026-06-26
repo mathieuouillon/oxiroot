@@ -14,6 +14,7 @@ use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
+use oxiroot_io_core::streamer_info::StreamerRegistry;
 use oxiroot_io_core::RFile;
 
 use crate::basket::Basket;
@@ -28,6 +29,10 @@ pub struct TTree {
     /// Branches present in the file that this crate cannot (yet) read, as
     /// `(name, reason)` — surfaced via [`TTree::unsupported_branches`].
     unsupported: Vec<(String, String)>,
+    /// The classes (and versions) declared in the file's `TStreamerInfo` — the
+    /// schema this tree was written against; surfaced via
+    /// [`TTree::streamer_classes`]. Empty if the file has no streamer info.
+    streamer_classes: Vec<(String, i32)>,
 }
 
 /// One branch's metadata: its leaf type and the location of its baskets.
@@ -81,10 +86,22 @@ impl TTree {
                 key.class_name
             )));
         }
+        // The file's TStreamerInfo is the authoritative schema: require the
+        // classes we parse to be declared at a version whose member layout we
+        // know, failing on skew before attempting to parse.
+        let registry = file.streamer_registry()?;
+        validate_schema(&registry)?;
+
         let payload = key.payload(file.data())?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing TTree: {e}")))?;
-        read_tree(&object, key.key_len as usize)
+        let mut tree = read_tree(&object, key.key_len as usize)?;
+        tree.streamer_classes = registry
+            .infos()
+            .iter()
+            .map(|i| (i.class_name.clone(), i.class_version))
+            .collect();
+        Ok(tree)
     }
 
     /// Total number of entries in the tree (`fEntries`).
@@ -138,6 +155,18 @@ impl TTree {
         self.unsupported
             .iter()
             .map(|(n, r)| (n.as_str(), r.as_str()))
+            .collect()
+    }
+
+    /// The classes (and their versions) declared in the file's `TStreamerInfo` —
+    /// the schema this tree was written against (e.g. `("TTree", 20)`,
+    /// `("TBranch", 13)`). Empty if the file carries no streamer info. Validated
+    /// on [`open`](Self::open): a class whose declared version this reader does
+    /// not know is rejected up front.
+    pub fn streamer_classes(&self) -> Vec<(&str, i32)> {
+        self.streamer_classes
+            .iter()
+            .map(|(n, v)| (n.as_str(), *v))
             .collect()
     }
 
@@ -515,7 +544,33 @@ fn read_tree(object: &[u8], keylen: usize) -> Result<TTree> {
         entries: entries.max(0) as u64,
         branches,
         unsupported,
+        streamer_classes: Vec::new(),
     })
+}
+
+/// Class versions the reader's pinned member layouts target. The file's own
+/// `TStreamerInfo` must agree, or the layout would not match.
+const SUPPORTED: &[(&str, i32)] = &[
+    ("TTree", 20),
+    ("TBranch", 13),
+    ("TBranchElement", 10),
+    ("TLeaf", 2),
+];
+
+/// Validate the file's declared schema: every class we parse that appears in the
+/// `TStreamerInfo` must be at a version we know, else fail with the declared one.
+fn validate_schema(registry: &StreamerRegistry) -> Result<()> {
+    for &(class, want) in SUPPORTED {
+        if let Some(info) = registry.get(class) {
+            if info.class_version != want {
+                return Err(Error::UnsupportedVersion {
+                    class,
+                    version: info.class_version.max(0) as u16,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Read a `TObjArray` of `TBranch`es. Branch classes we don't yet handle
