@@ -20,6 +20,9 @@
 #include <TEfficiency.h>
 #include <THnSparse.h>
 #include <TH2Poly.h>
+#include <TGraph.h>
+#include <TGraphErrors.h>
+#include <TGraphAsymmErrors.h>
 
 int main() {
   TFile f("/tmp/alltypes.root", "RECREATE");
@@ -50,6 +53,10 @@ int main() {
   Int_t nb[2] = {2,2}; Double_t lo[2] = {0,0}, hi[2] = {2,2};
   THnSparseD hs("hs","",2,nb,lo,hi); hs.Write();
   TH2Poly hp("hp","",0,2,0,2); hp.AddBin(0,0,1,1); hp.AddBin(1,1,2,2); hp.Write();
+  Double_t gx[2] = {0,1}, gy[2] = {0,1}, ge[2] = {0,0};
+  TGraph gr(2,gx,gy); gr.SetName("gr"); gr.Write();
+  TGraphErrors gre(2,gx,gy,ge,ge); gre.SetName("gre"); gre.Write();
+  TGraphAsymmErrors grae(2,gx,gy,ge,ge,ge,ge); grae.SetName("grae"); grae.Write();
 
   f.Close();
   return 0;

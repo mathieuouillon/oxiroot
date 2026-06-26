@@ -28,6 +28,7 @@ fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Vec<u8>) -> R
 }
 
 use crate::axis::TAxis;
+use crate::graph::{GraphErrors, TGraph};
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
 use crate::th2::TH2;
@@ -945,7 +946,9 @@ fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
     write_tobject(w, 0);
     w.u8(1); // fChanged
     w.be_i32(b.number);
-    write_object_ptr(w, "TGraph", |w| write_tgraph(w, &b.x, &b.y)); // fPoly
+    write_object_ptr(w, "TGraph", |w| {
+        write_tgraph_base(w, "Graph", "Graph", &b.x, &b.y)
+    }); // fPoly
     w.be_f64(b.area);
     w.be_f64(b.content);
     w.be_f64(b.xmin);
@@ -955,10 +958,14 @@ fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
     w.end_object(bin);
 }
 
-/// Serialize a `TGraph` (version 5) holding a bin's polygon vertices.
-fn write_tgraph(w: &mut WBuffer, x: &[f64], y: &[f64]) {
+/// Serialize a `TGraph` base object (version 5): `TNamed`, the three `TAtt`
+/// bases, `fNpoints`/`fX`/`fY`, and the trailer ROOT writes for a freshly
+/// created graph (an empty `fFunctions`, a null `fHistogram`, `fMinimum`/
+/// `fMaximum` of `-1111`, and an empty `fOption`). Shared by the standalone
+/// graph writer and `TH2Poly`'s polygon `fPoly`.
+fn write_tgraph_base(w: &mut WBuffer, name: &str, title: &str, x: &[f64], y: &[f64]) {
     let g = w.begin_object(5); // TGraph version 5
-    write_tnamed(w, GRAPH_BITS, "Graph", "Graph");
+    write_tnamed(w, GRAPH_BITS, name, title);
 
     let line = w.begin_object(2); // TAttLine
     w.be_i16(1); // fLineColor
@@ -998,6 +1005,76 @@ pub fn th2poly_to_bytes(h: &TH2Poly) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_th2poly(&mut w, h);
     w.into_vec()
+}
+
+/// Write a `Double_t* //[n]` member: a presence marker byte then exactly `n`
+/// doubles, taking them from `data` and zero-padding if it is shorter.
+fn write_basic_array(w: &mut WBuffer, data: &[f64], n: usize) {
+    w.u8(1); // present
+    for i in 0..n {
+        w.be_f64(data.get(i).copied().unwrap_or(0.0));
+    }
+}
+
+/// Serialize a [`TGraph`] (or its `TGraphErrors`/`TGraphAsymmErrors` variant,
+/// chosen by [`TGraph::errors`]) with its byte-count/version header.
+pub fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
+    let n = g.len();
+    let x = &g.x[..n];
+    let y = &g.y[..n];
+    match &g.errors {
+        GraphErrors::None => write_tgraph_base(w, &g.name, &g.title, x, y),
+        GraphErrors::Symmetric { ex, ey } => {
+            let t = w.begin_object(3); // TGraphErrors version 3
+            write_tgraph_base(w, &g.name, &g.title, x, y);
+            write_basic_array(w, ex, n);
+            write_basic_array(w, ey, n);
+            w.end_object(t);
+        }
+        GraphErrors::Asymmetric {
+            ex_low,
+            ex_high,
+            ey_low,
+            ey_high,
+        } => {
+            let t = w.begin_object(3); // TGraphAsymmErrors version 3
+            write_tgraph_base(w, &g.name, &g.title, x, y);
+            write_basic_array(w, ex_low, n);
+            write_basic_array(w, ex_high, n);
+            write_basic_array(w, ey_low, n);
+            write_basic_array(w, ey_high, n);
+            w.end_object(t);
+        }
+    }
+}
+
+/// Serialize a [`TGraph`] object to a fresh byte vector.
+pub fn tgraph_to_bytes(g: &TGraph) -> Vec<u8> {
+    let mut w = WBuffer::new();
+    write_tgraph(&mut w, g);
+    w.into_vec()
+}
+
+/// Write a single [`TGraph`] (or error-bar variant) into a new ROOT file.
+pub fn write_tgraph_file(
+    path: impl AsRef<Path>,
+    g: &TGraph,
+    compression: Compression,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: g.class_name().to_string(),
+            name: g.name.clone(),
+            title: g.title.clone(),
+            object: tgraph_to_bytes(g),
+        };
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        )
+    })
 }
 
 /// A histogram to store in a multi-object file via [`write_histograms_file`].
