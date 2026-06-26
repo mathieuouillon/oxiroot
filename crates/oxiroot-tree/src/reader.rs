@@ -1,9 +1,11 @@
 //! Reading a `TTree` and its branches.
 //!
-//! `TTree`/`TBranch`/`TLeaf` are "core" classes whose member layout is read
-//! version-aware and hardcoded (as uproot does), targeting the layout written by
-//! current ROOT/uproot (TTree v20, TBranch v13, TLeaf v2, TLeaf* v1). The branch
-//! data itself lives in [`crate::basket`]s. Handles single-leaf branches:
+//! `TTree`/`TBranch`/`TBranchElement` are parsed by walking the member list in
+//! the file's own `TStreamerInfo` (see [`walk_members`]) rather than at fixed
+//! offsets, so the reader follows whatever schema the file declares; an unknown
+//! member type is reported instead of parsed at a guessed offset. (`TLeaf*` are
+//! still read by their compact, byte-count-bounded layout.) The branch data
+//! itself lives in [`crate::basket`]s. Handles single-leaf branches:
 //! scalars, fixed (`x[N]`) and variable (`x[n]`) arrays, and `TLeafC` strings,
 //! unsplit `std::vector<T>` `TBranchElement` branches (the element type comes
 //! from `fClassName`, and each entry carries a 10-byte streamer header), and
@@ -14,7 +16,7 @@ use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
-use oxiroot_io_core::streamer_info::StreamerRegistry;
+use oxiroot_io_core::streamer_info::{StreamerElement, StreamerRegistry};
 use oxiroot_io_core::RFile;
 
 use crate::basket::Basket;
@@ -86,16 +88,15 @@ impl TTree {
                 key.class_name
             )));
         }
-        // The file's TStreamerInfo is the authoritative schema: require the
-        // classes we parse to be declared at a version whose member layout we
-        // know, failing on skew before attempting to parse.
+        // The file's TStreamerInfo is the authoritative schema: the reader walks
+        // each class's declared member list rather than assuming a fixed layout,
+        // so it adapts to the version the file was written with.
         let registry = file.streamer_registry()?;
-        validate_schema(&registry)?;
 
         let payload = key.payload(file.data())?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing TTree: {e}")))?;
-        let mut tree = read_tree(&object, key.key_len as usize)?;
+        let mut tree = read_tree(&object, key.key_len as usize, &registry)?;
         tree.streamer_classes = registry
             .infos()
             .iter()
@@ -160,9 +161,8 @@ impl TTree {
 
     /// The classes (and their versions) declared in the file's `TStreamerInfo` —
     /// the schema this tree was written against (e.g. `("TTree", 20)`,
-    /// `("TBranch", 13)`). Empty if the file carries no streamer info. Validated
-    /// on [`open`](Self::open): a class whose declared version this reader does
-    /// not know is rejected up front.
+    /// `("TBranch", 13)`). Empty if the file carries no streamer info. This is the
+    /// member layout the reader walks on [`open`](Self::open) to parse the tree.
     pub fn streamer_classes(&self) -> Vec<(&str, i32)> {
         self.streamer_classes
             .iter()
@@ -484,101 +484,233 @@ fn chunk_regions(baskets: &[Basket], stride: usize) -> Vec<&[u8]> {
     regions
 }
 
-/// Require a class version to match the layout this crate parses, failing with a
-/// clear [`Error::UnsupportedVersion`] rather than silently misparsing. The
-/// member layouts below are pinned to these versions (as written by current
-/// ROOT/uproot); a different version needs streamer-info-driven parsing.
-fn require_version(class: &'static str, got: u16, want: u16) -> Result<()> {
-    if got != want {
-        return Err(Error::UnsupportedVersion {
-            class,
-            version: got,
-        });
+/// A scalar or array member captured while walking a class's streamer elements.
+/// Integers (any width) are widened to `i64`; arrays keep their element values.
+enum MemberVal {
+    Int(i64),
+    /// A floating member (e.g. `fWeight`). Captured for completeness so the walk
+    /// stays generic; no member the tree reader consumes is a float yet.
+    Float(#[allow(dead_code)] f64),
+    IntArray(Vec<i64>),
+    Str(String),
+}
+
+impl MemberVal {
+    fn int(&self) -> i64 {
+        match self {
+            MemberVal::Int(v) => *v,
+            _ => 0,
+        }
+    }
+    fn ints(&self) -> &[i64] {
+        match self {
+            MemberVal::IntArray(v) => v,
+            _ => &[],
+        }
+    }
+    fn str(&self) -> &str {
+        match self {
+            MemberVal::Str(s) => s,
+            _ => "",
+        }
+    }
+}
+
+/// Members captured from one object, keyed by streamer-element name.
+type Members = std::collections::HashMap<String, MemberVal>;
+
+fn member_int(m: &Members, name: &str) -> i64 {
+    m.get(name).map_or(0, MemberVal::int)
+}
+fn member_str(m: &Members, name: &str) -> String {
+    m.get(name).map_or(String::new(), |v| v.str().to_string())
+}
+
+/// The on-disk width (bytes) and float-ness of a basic streamer type code
+/// (`fType` < 20). `None` for codes whose on-disk encoding we don't handle
+/// (e.g. `Double32`/`Float16`), so the walker errors rather than misparsing.
+fn basic_kind(t: i32) -> Option<(usize, bool)> {
+    Some(match t {
+        1 | 11 | 18 => (1, false),      // Char / UChar / Bool
+        2 | 12 => (2, false),           // Short / UShort
+        3 | 13 | 6 | 15 => (4, false),  // Int / UInt / Counter / Bits
+        4 | 14 | 16 | 17 => (8, false), // Long / ULong / Long64 / ULong64
+        5 => (4, true),                 // Float
+        8 => (8, true),                 // Double
+        _ => return None,
+    })
+}
+
+/// Read one basic value of the given width, widening integers to `i64`.
+fn read_basic(r: &mut RBuffer, width: usize, is_float: bool) -> Result<MemberVal> {
+    Ok(match (width, is_float) {
+        (1, false) => MemberVal::Int(i64::from(r.u8()? as i8)),
+        (2, false) => MemberVal::Int(i64::from(r.be_i16()?)),
+        (4, false) => MemberVal::Int(i64::from(r.be_i32()?)),
+        (8, false) => MemberVal::Int(r.be_i64()?),
+        (4, true) => MemberVal::Float(f64::from(r.be_f32()?)),
+        (_, true) => MemberVal::Float(r.be_f64()?),
+        _ => MemberVal::Int(0),
+    })
+}
+
+fn unsupported_element(el: &StreamerElement) -> Error {
+    Error::Format(format!(
+        "streamer element {:?} has unsupported type code {} ({})",
+        el.name, el.el_type, el.type_name
+    ))
+}
+
+/// Walk a class's streamer `elements`, reading each member from `r`. Scalar and
+/// array members are captured into `out` by name (counted pointer arrays use the
+/// already-read counter named by `fCountName`); base classes are read in place
+/// (recursing through their own streamer info); object members are handed to
+/// `on_object`. Reading stops after the element named `stop_after` (the caller
+/// then seeks to the object end), so a long trailing tail of unread members is
+/// skipped via the enclosing byte count. This is the adaptive replacement for
+/// fixed-offset parsing: layout comes from the file's `TStreamerInfo`, not pins.
+fn walk_members(
+    r: &mut RBuffer,
+    reg: &StreamerRegistry,
+    elements: &[StreamerElement],
+    out: &mut Members,
+    on_object: &mut dyn FnMut(&str, &mut RBuffer) -> Result<()>,
+    stop_after: &str,
+) -> Result<()> {
+    for el in elements {
+        let t = el.el_type;
+        if el.element_class == "TStreamerBase" {
+            read_base(r, reg, &el.name, out, on_object, stop_after)?;
+        } else if t == 65 {
+            // kTString
+            out.insert(el.name.clone(), MemberVal::Str(r.string()?));
+        } else if (61..=71).contains(&t) || (300..=365).contains(&t) || t == 500 || t == 501 {
+            // Object / object-pointer / STL / streamer member: the caller reads
+            // the ones it needs (e.g. fBranches/fLeaves) and skips the rest.
+            on_object(&el.name, r)?;
+        } else if (40..61).contains(&t) {
+            // kOffsetP + basic: a `T* //[fCount]` variable-length array.
+            let (width, is_float) = basic_kind(t - 40).ok_or_else(|| unsupported_element(el))?;
+            let count = el
+                .count_name
+                .as_deref()
+                .map_or(0, |c| member_int(out, c))
+                .max(0) as usize;
+            r.u8()?; // is-array marker
+            let mut vals = Vec::with_capacity(count.min(r.remaining()));
+            for _ in 0..count {
+                vals.push(read_basic(r, width, is_float)?.int());
+            }
+            out.insert(el.name.clone(), MemberVal::IntArray(vals));
+        } else if (20..40).contains(&t) {
+            // kOffsetL + basic: a fixed `T[fArrayLength]` member (read, not kept).
+            let (width, is_float) = basic_kind(t - 20).ok_or_else(|| unsupported_element(el))?;
+            for _ in 0..el.array_length.max(0) {
+                read_basic(r, width, is_float)?;
+            }
+        } else {
+            let (width, is_float) = basic_kind(t).ok_or_else(|| unsupported_element(el))?;
+            out.insert(el.name.clone(), read_basic(r, width, is_float)?);
+        }
+        if el.name == stop_after {
+            break;
+        }
     }
     Ok(())
 }
 
-/// Parse a decompressed `TTree` object (`keylen` is its key's header length).
-fn read_tree(object: &[u8], keylen: usize) -> Result<TTree> {
+/// Read a base-class slot named `class`. `TObject`/`TNamed` are read with their
+/// dedicated readers (the latter captures `fName`/`fTitle`); any other base is
+/// walked through its own streamer info when present, else skipped via its
+/// version byte count.
+fn read_base(
+    r: &mut RBuffer,
+    reg: &StreamerRegistry,
+    class: &str,
+    out: &mut Members,
+    on_object: &mut dyn FnMut(&str, &mut RBuffer) -> Result<()>,
+    stop_after: &str,
+) -> Result<()> {
+    match class {
+        "TObject" => {
+            read_tobject(r)?;
+        }
+        "TNamed" => {
+            let named = read_tnamed(r)?;
+            out.insert("fName".to_string(), MemberVal::Str(named.name));
+            out.insert("fTitle".to_string(), MemberVal::Str(named.title));
+        }
+        _ => match reg.get(class) {
+            Some(info) => {
+                let vh = r.read_version()?;
+                walk_members(r, reg, &info.elements, out, on_object, stop_after)?;
+                if let Some(end) = vh.end {
+                    r.seek(end)?;
+                }
+            }
+            None => {
+                skip_versioned(r)?;
+            }
+        },
+    }
+    Ok(())
+}
+
+/// Parse a decompressed `TTree` object (`keylen` is its key's header length),
+/// driving the member layout from the file's `TStreamerInfo`.
+fn read_tree(object: &[u8], keylen: usize, reg: &StreamerRegistry) -> Result<TTree> {
+    let info = reg.get("TTree").ok_or_else(|| {
+        Error::Format("file has no TStreamerInfo for TTree; cannot parse the tree".to_string())
+    })?;
     let mut r = RBuffer::new(object);
     let mut tags = TagReader::new(keylen);
 
-    let tree_hdr = r.read_version()?; // TTree (v20)
-    require_version("TTree", tree_hdr.version, 20)?;
-    let named = read_tnamed(&mut r)?; // TNamed: fName, fTitle
-    skip_versioned(&mut r)?; // TAttLine
-    skip_versioned(&mut r)?; // TAttFill
-    skip_versioned(&mut r)?; // TAttMarker
-
-    let entries = r.be_i64()?; // fEntries
-    for _ in 0..4 {
-        r.be_i64()?; // fTotBytes, fZipBytes, fSavedBytes, fFlushedBytes
-    }
-    r.be_f64()?; // fWeight
-    for _ in 0..4 {
-        r.be_i32()?; // fTimerInterval, fScanField, fUpdate, fDefaultEntryOffsetLen
-    }
-    let n_cluster_range = r.be_i32()?.max(0); // fNClusterRange
-    for _ in 0..6 {
-        r.be_i64()?; // fMaxEntries..fEstimate
-    }
-    // fClusterRangeEnd, fClusterSize: each a marker byte then fNClusterRange i64.
-    for _ in 0..2 {
-        r.u8()?; // is-array marker
-        for _ in 0..n_cluster_range {
-            r.be_i64()?;
-        }
-    }
-    skip_object(&mut r)?; // fIOFeatures (ROOT::TIOFeatures)
-
+    let tree_hdr = r.read_version()?; // TTree
+    let mut out = Members::new();
+    let mut branches = Vec::new();
     let mut unsupported = Vec::new();
-    let branches = read_branch_array(&mut r, &mut tags, &mut unsupported)?;
+    {
+        let mut on_object = |name: &str, rb: &mut RBuffer| -> Result<()> {
+            // fBranches holds the tree's branches; fLeaves (not reached — we stop
+            // after fBranches) and every other object member are skipped.
+            if name == "fBranches" {
+                branches = read_branch_array(rb, &mut tags, &mut unsupported, reg)?;
+            } else {
+                skip_object(rb)?;
+            }
+            Ok(())
+        };
+        walk_members(
+            &mut r,
+            reg,
+            &info.elements,
+            &mut out,
+            &mut on_object,
+            "fBranches",
+        )?;
+    }
 
-    // fLeaves and everything after it is not needed; jump to the tree's end.
+    // Everything after fBranches is unneeded; jump to the tree's end.
     if let Some(end) = tree_hdr.end {
         r.seek(end)?;
     }
 
     Ok(TTree {
-        name: named.name,
-        entries: entries.max(0) as u64,
+        name: member_str(&out, "fName"),
+        entries: member_int(&out, "fEntries").max(0) as u64,
         branches,
         unsupported,
         streamer_classes: Vec::new(),
     })
 }
 
-/// Class versions the reader's pinned member layouts target. The file's own
-/// `TStreamerInfo` must agree, or the layout would not match.
-const SUPPORTED: &[(&str, i32)] = &[
-    ("TTree", 20),
-    ("TBranch", 13),
-    ("TBranchElement", 10),
-    ("TLeaf", 2),
-];
-
-/// Validate the file's declared schema: every class we parse that appears in the
-/// `TStreamerInfo` must be at a version we know, else fail with the declared one.
-fn validate_schema(registry: &StreamerRegistry) -> Result<()> {
-    for &(class, want) in SUPPORTED {
-        if let Some(info) = registry.get(class) {
-            if info.class_version != want {
-                return Err(Error::UnsupportedVersion {
-                    class,
-                    version: info.class_version.max(0) as u16,
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Read a `TObjArray` of `TBranch`es. Branch classes we don't yet handle
-/// (e.g. `TBranchElement`) are skipped via the object byte count.
+/// Read a `TObjArray` of `TBranch`es. Branch classes we don't yet handle are
+/// skipped via the object byte count.
 fn read_branch_array(
     r: &mut RBuffer,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
+    reg: &StreamerRegistry,
 ) -> Result<Vec<Branch>> {
     read_version_tobject_header(r)?;
     let size = r.be_i32()?.max(0);
@@ -589,10 +721,10 @@ fn read_branch_array(
         let header = tags.read_header(r)?;
         match header.class_name.as_deref() {
             Some("TBranch") => {
-                branches.extend(read_branch(r, tags, diag)?);
+                branches.extend(read_branch(r, tags, diag, reg)?);
             }
             Some("TBranchElement") => {
-                branches.extend(read_branch_element(r, tags, diag)?);
+                branches.extend(read_branch_element(r, tags, diag, reg)?);
             }
             Some(other) => diag.push((other.to_string(), "unsupported branch class".to_string())),
             None => {}
@@ -604,75 +736,100 @@ fn read_branch_array(
     Ok(branches)
 }
 
-/// Read one `TBranch` (v13) body, after its object header. Returns `None` if its
-/// single leaf has an unsupported type.
+/// Read a `TBranch`'s scalar members (`fName`, `fWriteBasket`, `fBasketSeek`, …)
+/// by walking `reg`'s `TBranch` streamer elements, dispatching the object
+/// members (`fBranches`/`fLeaves`/`fBaskets`) to the readers that consume them.
+/// Shared by [`read_branch`] and (as the `TBranch` base) [`read_branch_element`].
+/// Returns the captured members, the sub-branches, and the leaves.
+fn read_tbranch_base(
+    r: &mut RBuffer,
+    tags: &mut TagReader,
+    diag: &mut Vec<(String, String)>,
+    reg: &StreamerRegistry,
+    elements: &[StreamerElement],
+    stop_after: &str,
+) -> Result<(Members, Vec<Branch>, Vec<Leaf>)> {
+    let mut out = Members::new();
+    let mut sub = Vec::new();
+    let mut leaves = Vec::new();
+    {
+        let mut on_object = |name: &str, rb: &mut RBuffer| -> Result<()> {
+            match name {
+                "fBranches" => sub = read_branch_array(rb, tags, diag, reg)?,
+                "fLeaves" => leaves = read_leaf_array(rb, tags)?,
+                "fBaskets" => read_skip_array(rb, tags)?,
+                _ => skip_object(rb)?, // fIOFeatures, and any other object member
+            }
+            Ok(())
+        };
+        walk_members(r, reg, elements, &mut out, &mut on_object, stop_after)?;
+    }
+    Ok((out, sub, leaves))
+}
+
+/// Assemble `(write_basket, basket_entry, basket_seek)` from a branch's captured
+/// members: `fBasketEntry` is truncated to `fWriteBasket` (the live baskets) and
+/// `fBasketSeek` clamped to non-negative file offsets.
+fn basket_locators(out: &Members) -> (usize, Vec<i64>, Vec<u64>) {
+    let write_basket = member_int(out, "fWriteBasket").max(0) as usize;
+    let basket_entry = out
+        .get("fBasketEntry")
+        .map(|m| m.ints().iter().copied().take(write_basket).collect())
+        .unwrap_or_default();
+    let basket_seek = out
+        .get("fBasketSeek")
+        .map(|m| m.ints().iter().map(|&s| s.max(0) as u64).collect())
+        .unwrap_or_default();
+    (write_basket, basket_entry, basket_seek)
+}
+
+/// Read one `TBranch` body (after its object header) by walking the file's
+/// `TBranch` streamer elements. Yields one [`Branch`] for a single-leaf branch,
+/// several for a leaflist branch, or none (recorded in `diag`) when the branch
+/// has sub-branches or an unsupported leaf type.
 fn read_branch(
     r: &mut RBuffer,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
+    reg: &StreamerRegistry,
 ) -> Result<Vec<Branch>> {
-    let vh = r.read_version()?; // TBranch (v13)
-    require_version("TBranch", vh.version, 13)?;
-    let named = read_tnamed(r)?; // fName, fTitle
-    skip_versioned(r)?; // TAttFill
+    let info = reg
+        .get("TBranch")
+        .ok_or_else(|| Error::Format("file has no TStreamerInfo for TBranch".to_string()))?;
+    let _vh = r.read_version()?; // TBranch
+    let (out, sub, leaves) = read_tbranch_base(r, tags, diag, reg, &info.elements, "")?;
 
-    r.be_i32()?; // fCompress
-    r.be_i32()?; // fBasketSize
-    r.be_i32()?; // fEntryOffsetLen
-    let write_basket = r.be_i32()?.max(0) as usize; // fWriteBasket
-    r.be_i64()?; // fEntryNumber
-    skip_object(r)?; // fIOFeatures
-    r.be_i32()?; // fOffset
-    let max_baskets = r.be_i32()?.max(0); // fMaxBaskets
-    r.be_i32()?; // fSplitLevel
-    r.be_i64()?; // fEntries
-    r.be_i64()?; // fFirstEntry
-    r.be_i64()?; // fTotBytes
-    r.be_i64()?; // fZipBytes
-
-    let sub = read_branch_array(r, tags, diag)?; // fBranches (sub-branches)
-    let leaves = read_leaf_array(r, tags)?; // fLeaves
-    read_skip_array(r, tags)?; // fBaskets (empty on disk)
-
-    // fBasketBytes (int[fMaxBaskets]), fBasketEntry (i64[]), fBasketSeek (i64[]):
-    // each preceded by a marker byte.
-    let _basket_bytes = read_marked_array(r, max_baskets, |r| r.be_i32().map(|v| v as i64))?;
-    let basket_entry = read_marked_array(r, max_baskets, |r| r.be_i64())?;
-    let basket_seek = read_marked_array(r, max_baskets, |r| r.be_i64())?;
-    let basket_entry: Vec<i64> = basket_entry.into_iter().take(write_basket).collect();
-
-    // (fFileName TString follows; ignored — we jump to the object end via the
-    // caller's byte count.)
+    let name = member_str(&out, "fName");
+    let title = member_str(&out, "fTitle");
+    let (write_basket, basket_entry, basket_seek) = basket_locators(&out);
 
     // A branch with its own sub-branches (other than the split-element path) is
     // not handled here.
     if !sub.is_empty() {
         diag.push((
-            named.name,
+            name,
             "branch with sub-branches is not supported".to_string(),
         ));
         return Ok(Vec::new());
     }
     if leaves.is_empty() {
-        diag.push((named.name, "no supported leaf type".to_string()));
+        diag.push((name, "no supported leaf type".to_string()));
         return Ok(Vec::new());
     }
     if leaves.len() > 1 && leaves.iter().any(|l| l.leaf_type == LeafType::Str) {
         diag.push((
-            named.name,
+            name,
             "leaflist containing a string leaf is not supported".to_string(),
         ));
         return Ok(Vec::new());
     }
 
-    let basket_seek: Vec<u64> = basket_seek.into_iter().map(|s| s.max(0) as u64).collect();
-
     // Single-leaf branch: the branch *is* the leaf.
     if leaves.len() == 1 {
         let leaf = &leaves[0];
         return Ok(vec![Branch {
-            name: named.name,
-            title: named.title,
+            name,
+            title,
             leaf_type: leaf.leaf_type,
             leaf_len: leaf.len,
             n_baskets: write_basket,
@@ -694,8 +851,8 @@ fn read_branch(
     let out = leaves
         .iter()
         .map(|leaf| Branch {
-            name: format!("{}.{}", named.name, leaf.name),
-            title: named.title.clone(),
+            name: format!("{}.{}", name, leaf.name),
+            title: title.clone(),
             leaf_type: leaf.leaf_type,
             leaf_len: leaf.len,
             n_baskets: write_basket,
@@ -723,46 +880,25 @@ fn read_branch_element(
     r: &mut RBuffer,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
+    reg: &StreamerRegistry,
 ) -> Result<Vec<Branch>> {
-    let vh = r.read_version()?; // TBranchElement (v10) — the object's own version
-    require_version("TBranchElement", vh.version, 10)?;
-    // Then the TBranch base — same layout as a standalone TBranch body.
-    let base = r.read_version()?; // TBranch base (v13)
-    require_version("TBranch", base.version, 13)?;
-    let named = read_tnamed(r)?; // fName, fTitle
-    skip_versioned(r)?; // TAttFill
-    r.be_i32()?; // fCompress
-    r.be_i32()?; // fBasketSize
-    r.be_i32()?; // fEntryOffsetLen
-    let write_basket = r.be_i32()?.max(0) as usize; // fWriteBasket
-    r.be_i64()?; // fEntryNumber
-    skip_object(r)?; // fIOFeatures
-    r.be_i32()?; // fOffset
-    let max_baskets = r.be_i32()?.max(0); // fMaxBaskets
-    r.be_i32()?; // fSplitLevel
-    r.be_i64()?; // fEntries
-    r.be_i64()?; // fFirstEntry
-    r.be_i64()?; // fTotBytes
-    r.be_i64()?; // fZipBytes
-    let sub = read_branch_array(r, tags, diag)?; // fBranches (sub-branches if split)
-    read_leaf_array(r, tags)?; // fLeaves (a TLeafElement; skipped)
-    read_skip_array(r, tags)?; // fBaskets (empty on disk)
-    let _basket_bytes = read_marked_array(r, max_baskets, |r| r.be_i32().map(|v| v as i64))?;
-    let basket_entry = read_marked_array(r, max_baskets, |r| r.be_i64())?;
-    let basket_seek = read_marked_array(r, max_baskets, |r| r.be_i64())?;
-    let basket_entry: Vec<i64> = basket_entry.into_iter().take(write_basket).collect();
-    r.string()?; // fFileName (end of the TBranch base)
+    let info = reg
+        .get("TBranchElement")
+        .ok_or_else(|| Error::Format("file has no TStreamerInfo for TBranchElement".to_string()))?;
+    let _vh = r.read_version()?; // TBranchElement — the object's own version
+                                 // Walk the TBranchElement elements: the first is the `TBranch` base (read
+                                 // in place via its own streamer info, capturing the basket locators and the
+                                 // sub-branches), then fClassName/fType/fStreamerType. We stop after
+                                 // fStreamerType — fMaximum/fBranchCount* are not needed and would mean
+                                 // streaming object pointers.
+    let (out, sub, _leaves) =
+        read_tbranch_base(r, tags, diag, reg, &info.elements, "fStreamerType")?;
 
-    // TBranchElement members. fType/fStreamerType decide how this branch is read.
-    let class_name = r.string()?; // fClassName, e.g. "vector<float>" or "Hit"
-    r.string()?; // fParentName
-    r.string()?; // fClonesName
-    r.be_u32()?; // fCheckSum
-    r.be_i16()?; // fClassVersion
-    r.be_i32()?; // fID
-    let f_type = r.be_i32()?; // fType
-    let f_streamer_type = r.be_i32()?; // fStreamerType
-                                       // (fMaximum, fBranchCount, fBranchCount2 follow; skipped via the byte count.)
+    let name = member_str(&out, "fName");
+    let class_name = member_str(&out, "fClassName");
+    let f_type = member_int(&out, "fType") as i32;
+    let f_streamer_type = member_int(&out, "fStreamerType") as i32;
+    let (write_basket, basket_entry, basket_seek) = basket_locators(&out);
 
     // A split collection (STL `4`, TClonesArray `3`) holds no data itself — its
     // member sub-branches do, and they were just parsed into `sub`.
@@ -781,15 +917,14 @@ fn read_branch_element(
     };
     let Some(leaf_type) = leaf_type else {
         diag.push((
-            named.name,
+            name,
             format!("unsupported TBranchElement (fType={f_type}, class {class_name:?})"),
         ));
         return Ok(Vec::new());
     };
-    let basket_seek = basket_seek.into_iter().map(|s| s.max(0) as u64).collect();
     Ok(vec![Branch {
-        name: named.name,
-        title: named.title,
+        name,
+        title: member_str(&out, "fTitle"),
         leaf_type,
         leaf_len: 1,
         n_baskets: write_basket,
@@ -928,21 +1063,6 @@ fn read_version_tobject_header(r: &mut RBuffer) -> Result<()> {
     Ok(())
 }
 
-/// Read a `[fN]`-style member array: a single marker byte then `n` elements.
-fn read_marked_array<T>(
-    r: &mut RBuffer,
-    n: i32,
-    mut read: impl FnMut(&mut RBuffer) -> Result<T>,
-) -> Result<Vec<T>> {
-    r.u8()?; // is-array marker
-    let n = n.max(0) as usize;
-    let mut out = Vec::with_capacity(n.min(r.remaining()));
-    for _ in 0..n {
-        out.push(read(r)?);
-    }
-    Ok(out)
-}
-
 /// Skip an inline object member, using its version-header byte count when
 /// present, else assuming a single trailing byte (e.g. `TIOFeatures`).
 fn skip_object(r: &mut RBuffer) -> Result<()> {
@@ -1062,18 +1182,92 @@ fn decode_strings(baskets: &[Basket]) -> Result<BranchValues> {
 
 #[cfg(test)]
 mod tests {
-    use super::require_version;
-    use oxiroot_io_core::error::Error;
+    use super::{member_int, walk_members, MemberVal, Members};
+    use oxiroot_io_core::buffer::RBuffer;
+    use oxiroot_io_core::error::Result;
+    use oxiroot_io_core::streamer_info::{StreamerElement, StreamerRegistry};
 
-    #[test]
-    fn version_guard_rejects_skew() {
-        assert!(require_version("TTree", 20, 20).is_ok());
-        match require_version("TTree", 19, 20) {
-            Err(Error::UnsupportedVersion { class, version }) => {
-                assert_eq!(class, "TTree");
-                assert_eq!(version, 19);
-            }
-            other => panic!("expected UnsupportedVersion, got {other:?}"),
+    fn elem(class: &str, name: &str, el_type: i32, count: Option<&str>) -> StreamerElement {
+        StreamerElement {
+            element_class: class.to_string(),
+            name: name.to_string(),
+            title: String::new(),
+            el_type,
+            size: 0,
+            array_length: 0,
+            type_name: String::new(),
+            base_version: None,
+            count_name: count.map(str::to_string),
         }
+    }
+
+    /// The walker reads members by the streamer element list, so it adapts to a
+    /// member order this reader was never compiled against, picks up an extra
+    /// member ROOT might add in a future version, and sizes a `//[fCount]` array
+    /// from the named counter — none of which a fixed-offset reader could do.
+    #[test]
+    fn walker_reads_by_element_list_not_fixed_offsets() {
+        // Layout: a:int, b:Long64, c:int (a hypothetical *new* member), n:counter,
+        // arr:Long64*[n]. A pinned reader keyed to "a,b" would misread c and arr.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&7i32.to_be_bytes()); // a
+        bytes.extend_from_slice(&100i64.to_be_bytes()); // b
+        bytes.extend_from_slice(&42i32.to_be_bytes()); // c (the evolved member)
+        bytes.extend_from_slice(&2i32.to_be_bytes()); // n = 2
+        bytes.push(1); // is-array marker
+        bytes.extend_from_slice(&555i64.to_be_bytes()); // arr[0]
+        bytes.extend_from_slice(&666i64.to_be_bytes()); // arr[1]
+
+        let elements = vec![
+            elem("TStreamerBasicType", "a", 3, None),            // kInt
+            elem("TStreamerBasicType", "b", 16, None),           // kLong64
+            elem("TStreamerBasicType", "c", 3, None),            // kInt
+            elem("TStreamerBasicType", "n", 6, None),            // kCounter
+            elem("TStreamerBasicPointer", "arr", 56, Some("n")), // kOffsetP + kLong64
+        ];
+
+        let reg = StreamerRegistry::default();
+        let mut out = Members::new();
+        let mut r = RBuffer::new(&bytes);
+        let mut on_object = |_: &str, _: &mut RBuffer| -> Result<()> { Ok(()) };
+        walk_members(&mut r, &reg, &elements, &mut out, &mut on_object, "").unwrap();
+
+        assert_eq!(member_int(&out, "a"), 7);
+        assert_eq!(member_int(&out, "b"), 100);
+        assert_eq!(member_int(&out, "c"), 42); // read purely by its element name
+        assert_eq!(member_int(&out, "n"), 2);
+        match out.get("arr") {
+            Some(MemberVal::IntArray(v)) => assert_eq!(v, &[555, 666]),
+            other => panic!("arr not a counted array: {:?}", other.map(|_| ())),
+        }
+        assert_eq!(r.remaining(), 0, "the whole record was consumed");
+    }
+
+    /// `stop_after` ends the walk early (the caller then seeks past the rest via
+    /// the object byte count), the way the tree reader stops after `fBranches`.
+    #[test]
+    fn walker_stops_after_named_member() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1i32.to_be_bytes()); // a
+        bytes.extend_from_slice(&2i32.to_be_bytes()); // b
+        bytes.extend_from_slice(&3i32.to_be_bytes()); // c (must remain unread)
+        let elements = vec![
+            elem("TStreamerBasicType", "a", 3, None),
+            elem("TStreamerBasicType", "b", 3, None),
+            elem("TStreamerBasicType", "c", 3, None),
+        ];
+        let reg = StreamerRegistry::default();
+        let mut out = Members::new();
+        let mut r = RBuffer::new(&bytes);
+        let mut on_object = |_: &str, _: &mut RBuffer| -> Result<()> { Ok(()) };
+        walk_members(&mut r, &reg, &elements, &mut out, &mut on_object, "b").unwrap();
+        assert_eq!(member_int(&out, "a"), 1);
+        assert_eq!(member_int(&out, "b"), 2);
+        assert!(!out.contains_key("c"), "stopped before reading c");
+        assert_eq!(
+            r.remaining(),
+            4,
+            "c's 4 bytes are left for the caller to skip"
+        );
     }
 }

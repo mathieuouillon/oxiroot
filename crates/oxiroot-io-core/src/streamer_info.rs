@@ -32,6 +32,10 @@ pub struct StreamerElement {
     pub type_name: String,
     /// Base-class version, for `TStreamerBase` elements only (`fBaseVersion`).
     pub base_version: Option<i32>,
+    /// The counter member's name (`fCountName`), for a `TStreamerBasicPointer`
+    /// (a `T* member; //[fCount]` variable-length array) — the member whose value
+    /// gives this array's length. `None` for every other element.
+    pub count_name: Option<String>,
 }
 
 /// The streamer description of a single class.
@@ -169,12 +173,20 @@ fn parse_one_element(r: &mut RBuffer, element_class: &str) -> Result<StreamerEle
         r.seek(end)?;
     }
 
-    // Subclass-specific tail we care about: TStreamerBase carries fBaseVersion.
-    let base_version = if element_class == "TStreamerBase" {
-        Some(r.be_i32()?)
-    } else {
-        None
-    };
+    // Subclass-specific tail we care about: TStreamerBase carries fBaseVersion;
+    // TStreamerBasicPointer (a `//[fCount]` array) carries the counter member's
+    // name, needed to size the array when reading.
+    let mut base_version = None;
+    let mut count_name = None;
+    match element_class {
+        "TStreamerBase" => base_version = Some(r.be_i32()?),
+        "TStreamerBasicPointer" => {
+            let _count_version = r.be_i32()?; // fCountVersion
+            count_name = Some(r.string()?); // fCountName
+            let _count_class = r.string()?; // fCountClass
+        }
+        _ => {}
+    }
 
     Ok(StreamerElement {
         element_class: element_class.to_string(),
@@ -185,5 +197,6 @@ fn parse_one_element(r: &mut RBuffer, element_class: &str) -> Result<StreamerEle
         array_length,
         type_name,
         base_version,
+        count_name,
     })
 }

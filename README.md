@@ -209,6 +209,10 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
   files (optional `rayon` decodes baskets in parallel). Introspect with
   `branch_type`/`branch_shape`/`branch_title`, and see what was skipped via
   `unsupported_branches()`. Worked example: `cargo run -p oxiroot --example tree`.
+- The reader is **streamer-info-driven**: it parses `TTree`/`TBranch`/
+  `TBranchElement` by walking the member list in the file's own `TStreamerInfo`
+  (`TTree::streamer_classes` exposes it), so a schema change is absorbed instead
+  of misread; an unknown member type is reported, never parsed at a guessed offset.
 
 ### RNTuple (`oxiroot::ntuple`)
 
@@ -335,14 +339,13 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
     `TStreamerInfo` interpretation of the page bytes.
   - Write support for the fixed-size (`std::array`/`std::bitset`) and user-class
     field types (read is done).
-- **`TTree`** — fuller streamer-info-driven parsing: the reader now reads and
-  validates the file's `TStreamerInfo` (see `TTree::streamer_classes`), but still
-  parses members at pinned offsets — an adaptive *generic member reader* (parse by
-  the streamer element list, not fixed layout) and a *write-side generator* (emit
-  the streamer info instead of baked blobs) remain. Plus richer object/STL
-  branches beyond split `std::vector<MyStruct>` and `std::vector<std::string>`
-  (nested structs, `std::vector<std::vector<T>>`, `TClonesArray`). A
-  bounded-memory streaming writer (`TTreeWriter`) already ships.
+- **`TTree`** — the reader now parses `TTree`/`TBranch`/`TBranchElement` by
+  walking the file's `TStreamerInfo` member list (not fixed offsets), so it
+  adapts to the schema the file declares; a *write-side generator* (emit that
+  streamer info instead of the baked blobs) is the remaining streamer-info piece.
+  Plus richer object/STL branches beyond split `std::vector<MyStruct>` and
+  `std::vector<std::string>` (nested structs, `std::vector<std::vector<T>>`,
+  `TClonesArray`). A bounded-memory streaming writer (`TTreeWriter`) already ships.
 - **Append mode** — `update` into files that contain subdirectories or an
   RNTuple (currently rejected).
 - **Plotting** — render histograms and graphs to static images (SVG / PNG) from
