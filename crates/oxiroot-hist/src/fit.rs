@@ -10,7 +10,7 @@
 //! println!("mean = {} ± {}", fit.params[1], fit.errors[1]);
 //! ```
 
-use minuit2::MnMigrad;
+use minuit2::{MnMigrad, MnMinos};
 
 use crate::th1::TH1;
 
@@ -197,6 +197,10 @@ pub struct FitOptions {
     pub method: FitMethod,
     /// Restrict the fit to bins whose center lies in `[lo, hi]`.
     pub range: Option<(f64, f64)>,
+    /// Also compute asymmetric [MINOS](https://root.cern/doc/master/classTMinuit.html)
+    /// errors for each free parameter (a likelihood scan — more accurate than the
+    /// parabolic errors near a non-quadratic minimum, but extra work).
+    pub minos: bool,
 }
 
 impl FitOptions {
@@ -217,6 +221,12 @@ impl FitOptions {
         self.range = Some((lo, hi));
         self
     }
+    /// Also compute asymmetric MINOS errors (see [`minos`](Self::minos) field).
+    #[must_use]
+    pub fn with_minos(mut self, on: bool) -> FitOptions {
+        self.minos = on;
+        self
+    }
 }
 
 /// The outcome of [`TH1::fit`].
@@ -226,6 +236,14 @@ pub struct FitResult {
     pub params: Vec<f64>,
     /// Parabolic (Minuit2) uncertainties on each parameter.
     pub errors: Vec<f64>,
+    /// Asymmetric MINOS errors `(lower, upper)` per parameter (`lower ≤ 0 ≤ upper`),
+    /// when requested via [`FitOptions::minos`]; `None` otherwise. A fixed
+    /// parameter reports `(0.0, 0.0)`.
+    pub minos: Option<Vec<(f64, f64)>>,
+    /// Covariance matrix of the *free* (non-fixed) parameters, in their parameter
+    /// order (row-major), when Minuit2 produced one; `None` otherwise. With no
+    /// fixed parameters this is the full parameter covariance.
+    pub covariance: Option<Vec<Vec<f64>>>,
     /// Chi-square at the minimum.
     pub chi2: f64,
     /// Degrees of freedom: fitted bins − free parameters.
@@ -319,6 +337,8 @@ impl TH1 {
             return FitResult {
                 params: model.params.clone(),
                 errors: vec![f64::NAN; np],
+                minos: None,
+                covariance: None,
                 chi2: f64::NAN,
                 ndf: 0,
                 valid: false,
@@ -382,9 +402,36 @@ impl TH1 {
         let params = min.params();
         let errors = min.user_state().errors();
 
+        // Covariance of the free parameters (row-major), when Minuit2 has one.
+        let covariance = min.user_state().covariance().map(|cov| {
+            let m = cov.nrow();
+            (0..m)
+                .map(|i| (0..m).map(|j| cov.get(i, j)).collect())
+                .collect()
+        });
+
+        // Asymmetric MINOS errors per parameter, on request and only at a valid
+        // minimum. A fixed parameter is pinned, so its error is (0, 0); a free one
+        // gets a likelihood scan (`lower_error` is ≤ 0, `upper_error` is ≥ 0).
+        let minos = (opts.minos && min.is_valid()).then(|| {
+            let scan = MnMinos::new(&cost, &min);
+            (0..np)
+                .map(|par| {
+                    if model.constraints.get(par).map(|c| c.fixed).unwrap_or(false) {
+                        (0.0, 0.0)
+                    } else {
+                        let e = scan.minos(par);
+                        (e.lower_error(), e.upper_error())
+                    }
+                })
+                .collect()
+        });
+
         FitResult {
             params,
             errors,
+            minos,
+            covariance,
             chi2: min.fval(),
             ndf: points.len() - n_free,
             valid: min.is_valid(),

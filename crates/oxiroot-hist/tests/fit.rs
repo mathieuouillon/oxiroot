@@ -246,3 +246,52 @@ fn fit_range_pearson_and_p_value() {
     let p = full.p_value();
     assert!((0.0..=1.0).contains(&p) && p > 0.01, "p = {p}");
 }
+
+#[test]
+fn minos_errors_and_covariance() {
+    use oxiroot_hist::FitOptions;
+    let hg = read("hg"); // gaussian const≈1000, mean≈0.5, sigma≈1.3
+    let n = hg.xaxis.nbins.max(0) as usize;
+    let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
+    let mean: f64 = (1..=n)
+        .map(|i| hg.bin_center(i) * hg.contents[i])
+        .sum::<f64>()
+        / total;
+    let model = TF1::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
+    let r = hg.fit_opts(&model, &FitOptions::new().with_minos(true));
+    assert!(r.valid);
+
+    // MINOS errors: one (lower ≤ 0 ≤ upper) pair per parameter. Near this almost
+    // quadratic minimum they bracket — and roughly match — the parabolic errors.
+    let minos = r.minos.as_ref().expect("minos requested");
+    assert_eq!(minos.len(), 3);
+    for (i, &(lo, up)) in minos.iter().enumerate() {
+        assert!(lo <= 0.0 && up >= 0.0, "param {i}: ({lo}, {up})");
+        assert!(
+            rel_close(up, r.errors[i], 0.3) && rel_close(-lo, r.errors[i], 0.3),
+            "param {i}: minos ({lo}, {up}) vs parabolic {}",
+            r.errors[i]
+        );
+    }
+
+    // Covariance: a 3×3 matrix whose diagonal square-roots are the parabolic
+    // errors, and which is symmetric.
+    let cov = r.covariance.as_ref().expect("covariance available");
+    assert_eq!(cov.len(), 3);
+    for (i, row) in cov.iter().enumerate() {
+        assert_eq!(row.len(), 3);
+        assert!(
+            rel_close(cov[i][i].sqrt(), r.errors[i], 1e-2),
+            "sqrt(cov[{i}][{i}]) = {} vs error {}",
+            cov[i][i].sqrt(),
+            r.errors[i]
+        );
+        for (j, &cij) in row.iter().enumerate() {
+            assert!(rel_close(cij, cov[j][i], 1e-9), "cov not symmetric");
+        }
+    }
+
+    // Without the flag, both stay None (no wasted likelihood scan).
+    let plain = hg.fit(&model);
+    assert!(plain.minos.is_none());
+}
