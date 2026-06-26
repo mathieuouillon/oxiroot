@@ -157,6 +157,12 @@ impl TTree {
         decode_baskets(branch, &baskets)
     }
 
+    /// Read several branches at once, in the requested order — a columnar
+    /// `tree.arrays`-style read. Each is read with [`read_branch`](Self::read_branch).
+    pub fn read_branches(&self, file: &RFile, names: &[&str]) -> Result<Vec<BranchValues>> {
+        names.iter().map(|n| self.read_branch(file, n)).collect()
+    }
+
     /// Read only entries `[start, stop)` of branch `name`, fetching just the
     /// baskets that cover the range rather than the whole branch. `stop` is
     /// clamped to the entry count and `start` to `stop`, so an out-of-range

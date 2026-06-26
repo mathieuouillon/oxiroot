@@ -10,10 +10,12 @@
 //! `TStreamerInfo` for the element struct so the file is self-describing.
 
 mod basket;
+mod chain;
 mod reader;
 mod value;
 mod writer;
 
+pub use chain::TChain;
 pub use reader::TTree;
 pub use value::{BranchValues, Jagged, LeafType};
 pub use writer::{tree_file_bytes, write_tree_file, Branch, SplitMember};

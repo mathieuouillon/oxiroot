@@ -87,6 +87,6 @@ pub mod prelude {
     };
 
     pub use oxiroot_tree::{
-        write_tree_file, Branch, BranchValues, Jagged, LeafType, SplitMember, TTree,
+        write_tree_file, Branch, BranchValues, Jagged, LeafType, SplitMember, TChain, TTree,
     };
 }
