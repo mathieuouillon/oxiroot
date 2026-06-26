@@ -87,6 +87,73 @@ impl TH1 {
     pub fn effective_entries(&self) -> f64 {
         eff_entries(self.tsumw, self.tsumw2)
     }
+
+    /// Linearly interpolate the bin content at `x` between adjacent bin centers
+    /// (ROOT `TH1::Interpolate`). Returns the first/last bin content when `x` is
+    /// at or beyond the first/last bin center.
+    #[must_use]
+    pub fn interpolate(&self, x: f64) -> f64 {
+        let n = self.xaxis.nbins.max(0) as usize;
+        if n == 0 {
+            return 0.0;
+        }
+        let content = |bin: usize| self.contents.get(bin).copied().unwrap_or(0.0);
+        if x <= self.bin_center(1) {
+            return content(1);
+        }
+        if x >= self.bin_center(n) {
+            return content(n);
+        }
+        let xbin = self.find_bin(x).clamp(1, n);
+        let (lo, hi) = if x <= self.bin_center(xbin) {
+            (xbin - 1, xbin)
+        } else {
+            (xbin, xbin + 1)
+        };
+        let (x0, x1) = (self.bin_center(lo), self.bin_center(hi));
+        let (y0, y1) = (content(lo), content(hi));
+        y0 + (x - x0) * (y1 - y0) / (x1 - x0)
+    }
+
+    /// The `x` values where the cumulative bin-content distribution reaches each
+    /// probability in `probs` (ROOT `TH1::GetQuantiles`); `probs` should lie in
+    /// `[0, 1]`. Within a bin the inverse CDF is interpolated linearly across the
+    /// bin's edges; a probability landing exactly on a cumulative bin boundary
+    /// returns that bin's center, matching ROOT.
+    #[must_use]
+    pub fn quantiles(&self, probs: &[f64]) -> Vec<f64> {
+        let n = self.xaxis.nbins.max(0) as usize;
+        // Cumulative (normalized) in-range contents: integral[i] = Σ_{1..i} / total.
+        let mut integral = vec![0.0; n + 1];
+        for i in 1..=n {
+            integral[i] = integral[i - 1] + self.contents.get(i).copied().unwrap_or(0.0);
+        }
+        let total = integral[n];
+        if total <= 0.0 {
+            return vec![self.xaxis.xmin; probs.len()];
+        }
+        for v in &mut integral {
+            *v /= total;
+        }
+        probs
+            .iter()
+            .map(|&p| {
+                // Largest `ibin` in `0..n` with integral[ibin] <= p (ROOT's
+                // TMath::BinarySearch searches the first `n` cumulative values).
+                let ibin = integral[..n].iter().rposition(|&c| c <= p).unwrap_or(0);
+                if integral[ibin] == p {
+                    return self.bin_center(ibin); // exact cumulative tie → bin center
+                }
+                let dint = integral[ibin + 1] - integral[ibin];
+                if dint > 0.0 {
+                    self.bin_low_edge(ibin + 1)
+                        + (p - integral[ibin]) / dint * self.bin_width(ibin + 1)
+                } else {
+                    self.bin_low_edge(ibin + 1)
+                }
+            })
+            .collect()
+    }
     /// Clear all bin contents, errors, entries, and moment sums (ROOT `Reset`),
     /// keeping the binning.
     pub fn reset(&mut self) {
