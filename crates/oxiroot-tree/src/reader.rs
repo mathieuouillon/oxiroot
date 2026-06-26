@@ -43,6 +43,9 @@ struct Branch {
     n_baskets: usize,
     /// File offset of each basket (`fBasketSeek`).
     basket_seek: Vec<u64>,
+    /// First entry number of each basket (`fBasketEntry`, `n_baskets` values),
+    /// for selecting the baskets that cover an entry range.
+    basket_entry: Vec<i64>,
     /// Per-entry streamer-header bytes to skip before the element data — `0` for
     /// `TLeaf`-based branches, `10` for an unsplit `std::vector<T>`
     /// `TBranchElement` (byte count + version + size).
@@ -148,74 +151,177 @@ impl TTree {
     /// variable (`x[n]`) branches yield a nested one; `TLeafC` yields strings.
     pub fn read_branch(&self, file: &RFile, name: &str) -> Result<BranchValues> {
         let branch = self
-            .branches
-            .iter()
-            .find(|b| b.name == name)
+            .branch(name)
             .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
+        let baskets = read_baskets(file, branch, 0..branch.n_baskets)?;
+        decode_baskets(branch, &baskets)
+    }
 
-        let mut baskets = Vec::with_capacity(branch.n_baskets);
+    /// Read only entries `[start, stop)` of branch `name`, fetching just the
+    /// baskets that cover the range rather than the whole branch. `stop` is
+    /// clamped to the entry count and `start` to `stop`, so an out-of-range
+    /// window yields fewer (or no) entries instead of an error.
+    pub fn read_branch_range(
+        &self,
+        file: &RFile,
+        name: &str,
+        start: u64,
+        stop: u64,
+    ) -> Result<BranchValues> {
+        let branch = self
+            .branch(name)
+            .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
+        let stop = stop.min(self.entries);
+        let start = start.min(stop);
+
+        // Per-basket entry boundaries: basket i covers [start_i, start_{i+1}),
+        // the last basket ending at the tree's entry count.
+        let have_bounds = branch.basket_entry.len() == branch.n_baskets;
+        let basket_start = |i: usize| branch.basket_entry.get(i).map_or(0, |&e| e.max(0) as u64);
+        let basket_stop = |i: usize| {
+            if i + 1 < branch.basket_entry.len() {
+                basket_start(i + 1)
+            } else {
+                self.entries
+            }
+        };
+
+        // Select the baskets overlapping [start, stop). Without boundaries we
+        // can't tell, so read them all (still correct after slicing).
+        let mut indices = Vec::new();
+        let mut first_entry = 0u64;
         for i in 0..branch.n_baskets {
-            let seek = *branch.basket_seek.get(i).ok_or_else(|| {
-                Error::Format(format!("branch {name:?}: missing basket {i} seek"))
-            })?;
-            baskets.push(Basket::read(file.data(), seek)?);
+            let keep = !have_bounds || (basket_start(i) < stop && basket_stop(i) > start);
+            if keep {
+                if indices.is_empty() {
+                    first_entry = if have_bounds { basket_start(i) } else { 0 };
+                }
+                indices.push(i);
+            }
         }
 
-        // A leaflist leaf: take this leaf's bytes out of each entry's fixed
-        // stride at its offset, then decode like a scalar / fixed array.
-        if let Some((offset, stride)) = branch.leaflist {
-            if stride == 0 {
-                return decode_scalar(branch.leaf_type, &[]);
-            }
-            let width = branch.leaf_len.max(1) as usize * branch.leaf_type.size();
-            let mut regions: Vec<&[u8]> = Vec::new();
-            for b in &baskets {
-                for chunk in b.entry_data().chunks_exact(stride) {
-                    let end = (offset + width).min(chunk.len());
-                    regions.push(chunk.get(offset..end).unwrap_or(&[]));
-                }
-            }
-            if branch.leaf_len > 1 {
-                return decode_array(branch.leaf_type, &regions);
-            }
-            let bytes: Vec<u8> = regions.concat();
-            return decode_scalar(branch.leaf_type, &bytes);
-        }
+        let baskets = read_baskets(file, branch, indices.iter().copied())?;
+        let values = decode_baskets(branch, &baskets)?;
+        // `values` covers [first_entry, ..); slice out [start, stop).
+        let off = start.saturating_sub(first_entry) as usize;
+        let len = (stop - start) as usize;
+        Ok(slice_values(values, off, len))
+    }
+}
 
-        let variable = baskets.iter().any(|b| b.entry_offsets.is_some());
-        if branch.leaf_type == LeafType::Str {
-            return decode_strings(&baskets);
+/// Read the requested baskets of `branch` (by index) and decompress them.
+fn read_baskets(
+    file: &RFile,
+    branch: &Branch,
+    indices: impl Iterator<Item = usize>,
+) -> Result<Vec<Basket>> {
+    let mut out = Vec::new();
+    for i in indices {
+        let seek = *branch.basket_seek.get(i).ok_or_else(|| {
+            Error::Format(format!("branch {:?}: missing basket {i} seek", branch.name))
+        })?;
+        out.push(Basket::read(file.data(), seek)?);
+    }
+    Ok(out)
+}
+
+/// Decode the given (contiguous, in-order) baskets of `branch` into per-entry
+/// [`BranchValues`] — the shared body of [`TTree::read_branch`] and
+/// [`TTree::read_branch_range`].
+fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<BranchValues> {
+    // A leaflist leaf: take this leaf's bytes out of each entry's fixed stride
+    // at its offset, then decode like a scalar / fixed array.
+    if let Some((offset, stride)) = branch.leaflist {
+        if stride == 0 {
+            return decode_scalar(branch.leaf_type, &[]);
         }
-        if variable {
-            let mut regions = entry_regions_variable(&baskets)?;
-            // A `std::vector` `TBranchElement` prefixes each entry with a
-            // streamer header; strip it so only the element bytes remain.
-            if branch.elem_header > 0 {
-                for r in &mut regions {
-                    *r = &r[branch.elem_header.min(r.len())..];
-                }
+        let width = branch.leaf_len.max(1) as usize * branch.leaf_type.size();
+        let mut regions: Vec<&[u8]> = Vec::new();
+        for b in baskets {
+            for chunk in b.entry_data().chunks_exact(stride) {
+                let end = (offset + width).min(chunk.len());
+                regions.push(chunk.get(offset..end).unwrap_or(&[]));
             }
-            return decode_array(branch.leaf_type, &regions);
         }
         if branch.leaf_len > 1 {
-            let stride = branch.leaf_len as usize * branch.leaf_type.size();
-            return decode_array(branch.leaf_type, &chunk_regions(&baskets, stride));
+            return decode_array(branch.leaf_type, &regions);
         }
-        // Scalar: concatenate every basket's entry data, decode once.
-        let mut bytes = Vec::new();
-        let mut total = 0u64;
-        for b in &baskets {
-            bytes.extend_from_slice(b.entry_data());
-            total += b.n_entries as u64;
+        let bytes: Vec<u8> = regions.concat();
+        return decode_scalar(branch.leaf_type, &bytes);
+    }
+
+    let variable = baskets.iter().any(|b| b.entry_offsets.is_some());
+    if branch.leaf_type == LeafType::Str {
+        return decode_strings(baskets);
+    }
+    if variable {
+        let mut regions = entry_regions_variable(baskets)?;
+        // A `std::vector` `TBranchElement` prefixes each entry with a streamer
+        // header; strip it so only the element bytes remain.
+        if branch.elem_header > 0 {
+            for r in &mut regions {
+                *r = &r[branch.elem_header.min(r.len())..];
+            }
         }
-        if bytes.len() != total as usize * branch.leaf_type.size() {
-            return Err(Error::Format(format!(
-                "branch {name:?}: {} basket bytes for {total} {:?} entries",
-                bytes.len(),
-                branch.leaf_type
-            )));
-        }
-        decode_scalar(branch.leaf_type, &bytes)
+        return decode_array(branch.leaf_type, &regions);
+    }
+    if branch.leaf_len > 1 {
+        let stride = branch.leaf_len as usize * branch.leaf_type.size();
+        return decode_array(branch.leaf_type, &chunk_regions(baskets, stride));
+    }
+    // Scalar: concatenate every basket's entry data, decode once.
+    let mut bytes = Vec::new();
+    let mut total = 0u64;
+    for b in baskets {
+        bytes.extend_from_slice(b.entry_data());
+        total += b.n_entries as u64;
+    }
+    if bytes.len() != total as usize * branch.leaf_type.size() {
+        return Err(Error::Format(format!(
+            "branch {:?}: {} basket bytes for {total} {:?} entries",
+            branch.name,
+            bytes.len(),
+            branch.leaf_type
+        )));
+    }
+    decode_scalar(branch.leaf_type, &bytes)
+}
+
+/// Slice a decoded branch's values to the sub-range `[offset, offset + len)`
+/// (clamped), preserving the variant.
+fn slice_values(bv: BranchValues, offset: usize, len: usize) -> BranchValues {
+    use BranchValues::*;
+    macro_rules! sl {
+        ($variant:ident, $v:ident) => {{
+            let end = offset.saturating_add(len).min($v.len());
+            let start = offset.min(end);
+            $variant($v[start..end].to_vec())
+        }};
+    }
+    match bv {
+        Bool(v) => sl!(Bool, v),
+        I8(v) => sl!(I8, v),
+        U8(v) => sl!(U8, v),
+        I16(v) => sl!(I16, v),
+        U16(v) => sl!(U16, v),
+        I32(v) => sl!(I32, v),
+        U32(v) => sl!(U32, v),
+        I64(v) => sl!(I64, v),
+        U64(v) => sl!(U64, v),
+        F32(v) => sl!(F32, v),
+        F64(v) => sl!(F64, v),
+        VecBool(v) => sl!(VecBool, v),
+        VecI8(v) => sl!(VecI8, v),
+        VecU8(v) => sl!(VecU8, v),
+        VecI16(v) => sl!(VecI16, v),
+        VecU16(v) => sl!(VecU16, v),
+        VecI32(v) => sl!(VecI32, v),
+        VecU32(v) => sl!(VecU32, v),
+        VecI64(v) => sl!(VecI64, v),
+        VecU64(v) => sl!(VecU64, v),
+        VecF32(v) => sl!(VecF32, v),
+        VecF64(v) => sl!(VecF64, v),
+        Str(v) => sl!(Str, v),
     }
 }
 
@@ -381,8 +487,9 @@ fn read_branch(
     // fBasketBytes (int[fMaxBaskets]), fBasketEntry (i64[]), fBasketSeek (i64[]):
     // each preceded by a marker byte.
     let _basket_bytes = read_marked_array(r, max_baskets, |r| r.be_i32().map(|v| v as i64))?;
-    let _basket_entry = read_marked_array(r, max_baskets, |r| r.be_i64())?;
+    let basket_entry = read_marked_array(r, max_baskets, |r| r.be_i64())?;
     let basket_seek = read_marked_array(r, max_baskets, |r| r.be_i64())?;
+    let basket_entry: Vec<i64> = basket_entry.into_iter().take(write_basket).collect();
 
     // (fFileName TString follows; ignored — we jump to the object end via the
     // caller's byte count.)
@@ -420,6 +527,7 @@ fn read_branch(
             leaf_len: leaf.len,
             n_baskets: write_basket,
             basket_seek,
+            basket_entry,
             elem_header: 0,
             leaflist: None,
             dims: parse_dims(&leaf.title),
@@ -442,6 +550,7 @@ fn read_branch(
             leaf_len: leaf.len,
             n_baskets: write_basket,
             basket_seek: basket_seek.clone(),
+            basket_entry: basket_entry.clone(),
             elem_header: 0,
             leaflist: Some((leaf.offset, stride)),
             dims: parse_dims(&leaf.title),
@@ -489,8 +598,9 @@ fn read_branch_element(
     read_leaf_array(r, tags)?; // fLeaves (a TLeafElement; skipped)
     read_skip_array(r, tags)?; // fBaskets (empty on disk)
     let _basket_bytes = read_marked_array(r, max_baskets, |r| r.be_i32().map(|v| v as i64))?;
-    let _basket_entry = read_marked_array(r, max_baskets, |r| r.be_i64())?;
+    let basket_entry = read_marked_array(r, max_baskets, |r| r.be_i64())?;
     let basket_seek = read_marked_array(r, max_baskets, |r| r.be_i64())?;
+    let basket_entry: Vec<i64> = basket_entry.into_iter().take(write_basket).collect();
     r.string()?; // fFileName (end of the TBranch base)
 
     // TBranchElement members. fType/fStreamerType decide how this branch is read.
@@ -534,6 +644,7 @@ fn read_branch_element(
         leaf_len: 1,
         n_baskets: write_basket,
         basket_seek,
+        basket_entry,
         elem_header: if member { 0 } else { 10 },
         leaflist: None,
         dims: Vec::new(),
