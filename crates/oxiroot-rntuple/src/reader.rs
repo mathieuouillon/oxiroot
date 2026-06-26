@@ -213,6 +213,25 @@ impl RNTuple {
             .ok_or_else(|| Error::Format(format!("no field {field_idx}")))?;
         let columns = self.field_columns(field_idx);
 
+        // A fixed-size array field (`std::array<T, n>` / `std::bitset<n>`) carries
+        // `n` elements per entry. The values come from its own column (e.g. a
+        // bitset's Bit column) or from its single element child (e.g. an array's
+        // `_0`); group them into one chunk of `n` per entry.
+        if let Some(rep) = fld.array_size {
+            let flat = if let Some(&ci) = columns.first() {
+                field::scalar(self.read_column(file, ci)?)?
+            } else {
+                let child = *self.child_fields(field_idx).first().ok_or_else(|| {
+                    Error::Format(format!(
+                        "array field {:?} has no element column or child",
+                        fld.name
+                    ))
+                })?;
+                self.read_field_tree(file, child)?
+            };
+            return field::chunk(flat, rep as usize);
+        }
+
         match fld.struct_role {
             StructRole::Leaf if fld.type_name == "std::string" => {
                 let index_ci = self.index_column(&columns).ok_or_else(|| {

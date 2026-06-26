@@ -202,6 +202,22 @@ pub(crate) fn collect(offsets: Vec<u64>, items: FieldValues) -> Result<FieldValu
     })
 }
 
+/// Group a fixed-size array field's flattened `items` into one chunk of `n` per
+/// entry (e.g. `std::array<T, n>` or `std::bitset<n>`), reusing [`collect`].
+pub(crate) fn chunk(items: FieldValues, n: usize) -> Result<FieldValues> {
+    let total = items.len();
+    if n == 0 {
+        return Err(Error::Format("array field has zero repetition".into()));
+    }
+    if !total.is_multiple_of(n) {
+        return Err(Error::Format(format!(
+            "array field element count {total} is not a multiple of {n}"
+        )));
+    }
+    let offsets: Vec<u64> = (1..=total / n).map(|k| (k * n) as u64).collect();
+    collect(offsets, items)
+}
+
 fn group<T: Clone>(offsets: &[u64], data: &[T]) -> Result<Vec<Vec<T>>> {
     let mut start = 0usize;
     let mut out = Vec::with_capacity(offsets.len());
