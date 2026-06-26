@@ -188,8 +188,8 @@ impl TH1 {
 
 /// Chi-square survival function `P(X > chi2)` for `X ~ χ²(ndf)` — ROOT's
 /// `TMath::Prob`, i.e. the complemented regularized incomplete gamma
-/// `Q(ndf/2, chi2/2)`.
-fn chi_square_prob(chi2: f64, ndf: usize) -> f64 {
+/// `Q(ndf/2, chi2/2)`. Also the goodness-of-fit p-value behind `FitResult`.
+pub(crate) fn chi_square_prob(chi2: f64, ndf: usize) -> f64 {
     if ndf == 0 {
         return 0.0;
     }

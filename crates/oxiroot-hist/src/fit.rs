@@ -177,11 +177,46 @@ pub enum FitMethod {
     /// being the *observed* `√Sumw2`/`√content` (ROOT's default fit).
     #[default]
     Chi2,
+    /// Pearson chi-square (ROOT's `"P"`): like [`Chi2`](Self::Chi2) but the
+    /// per-bin variance is the *expected* (model) value `Σ (n − f)² / f` over
+    /// every in-range bin — less biased than Neyman at low counts.
+    PearsonChi2,
     /// Binned Poisson maximum likelihood (ROOT's `"L"`): minimize the
     /// likelihood-ratio `2·Σ [f − n + n·ln(n/f)]` over every in-range bin.
     /// Assumes a non-negative model `f`; a model that dips below zero is clamped
     /// to a tiny positive value (so it is heavily penalised, not rejected).
     Likelihood,
+}
+
+/// Options controlling a fit ([`TH1::fit_opts`]). Construct with [`new`](Self::new)
+/// and the chainable setters; the defaults are a full-range chi-square fit.
+#[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
+pub struct FitOptions {
+    /// The cost to minimize.
+    pub method: FitMethod,
+    /// Restrict the fit to bins whose center lies in `[lo, hi]`.
+    pub range: Option<(f64, f64)>,
+}
+
+impl FitOptions {
+    /// Default options: a full-range chi-square fit.
+    #[must_use]
+    pub fn new() -> FitOptions {
+        FitOptions::default()
+    }
+    /// Set the fit cost ([`FitMethod`]).
+    #[must_use]
+    pub fn method(mut self, method: FitMethod) -> FitOptions {
+        self.method = method;
+        self
+    }
+    /// Fit only the bins whose center lies in `[lo, hi]`.
+    #[must_use]
+    pub fn range(mut self, lo: f64, hi: f64) -> FitOptions {
+        self.range = Some((lo, hi));
+        self
+    }
 }
 
 /// The outcome of [`TH1::fit`].
@@ -210,6 +245,19 @@ impl FitResult {
             self.chi2 / self.ndf as f64
         }
     }
+
+    /// Goodness-of-fit p-value: the probability of a chi-square at least this
+    /// large for `ndf` degrees of freedom (a good fit is near 1, a poor one near
+    /// 0). For a likelihood fit this is the asymptotic value via the
+    /// likelihood-ratio (Wilks' theorem). `NaN` for an invalid fit.
+    #[must_use]
+    pub fn p_value(&self) -> f64 {
+        if !self.valid || self.ndf == 0 {
+            f64::NAN
+        } else {
+            crate::compare::chi_square_prob(self.chi2, self.ndf)
+        }
+    }
 }
 
 impl TH1 {
@@ -223,27 +271,40 @@ impl TH1 {
         self.fit_with(model, FitMethod::Chi2)
     }
 
-    /// Fit `model` to this histogram with the chosen [`FitMethod`], seeded from
-    /// `model.params`. Chi-square minimizes `Σ (n − f)² / σ²` over non-empty
-    /// bins; [`FitMethod::Likelihood`] minimizes the binned Poisson
-    /// likelihood-ratio over every in-range bin (handling empty bins, where it
-    /// contributes `2·f`). `FitResult::chi2` is the cost at the minimum — a true
-    /// chi-square or the likelihood-ratio respectively.
+    /// Fit `model` over the full range with the chosen [`FitMethod`]; shorthand
+    /// for [`fit_opts`](Self::fit_opts).
     ///
     /// Requires the `fit` feature.
     #[must_use]
     pub fn fit_with(&self, model: &TF1, method: FitMethod) -> FitResult {
+        self.fit_opts(model, &FitOptions::new().method(method))
+    }
+
+    /// Fit `model` to this histogram with full control over the cost and range
+    /// ([`FitOptions`]), seeded from `model.params` and its per-parameter
+    /// constraints. The bins entering the fit are those whose center is in
+    /// `opts.range` (default: all in-range bins); Neyman chi-square additionally
+    /// drops empty bins. `FitResult::chi2` is the cost at the minimum — a
+    /// chi-square or the likelihood-ratio per the method.
+    ///
+    /// Requires the `fit` feature.
+    #[must_use]
+    pub fn fit_opts(&self, model: &TF1, opts: &FitOptions) -> FitResult {
         let np = model.params.len();
         let n = self.xaxis.nbins.max(0) as usize;
-        // Chi-square uses non-empty bins (error > 0); likelihood uses all of them.
+        // Neyman chi-square uses only non-empty bins; the others use every bin.
+        let drop_empty = matches!(opts.method, FitMethod::Chi2);
         let points: Vec<(f64, f64, f64)> = (1..=n)
             .filter_map(|i| {
+                let x = self.bin_center(i);
+                if let Some((lo, hi)) = opts.range {
+                    if x < lo || x > hi {
+                        return None;
+                    }
+                }
                 let y = self.contents.get(i).copied().unwrap_or(0.0);
                 let err = self.bin_error(i);
-                match method {
-                    FitMethod::Chi2 => (err > 0.0).then(|| (self.bin_center(i), y, err)),
-                    FitMethod::Likelihood => Some((self.bin_center(i), y, err)),
-                }
+                (!drop_empty || err > 0.0).then_some((x, y, err))
             })
             .collect();
 
@@ -265,6 +326,7 @@ impl TH1 {
         }
 
         let func = &model.func;
+        let method = opts.method;
         let cost = |p: &[f64]| -> f64 {
             match method {
                 FitMethod::Chi2 => points
@@ -272,6 +334,13 @@ impl TH1 {
                     .map(|&(x, y, e)| {
                         let d = (y - func(x, p)) / e;
                         d * d
+                    })
+                    .sum(),
+                FitMethod::PearsonChi2 => points
+                    .iter()
+                    .map(|&(x, y, _)| {
+                        let f = func(x, p).max(1e-300); // expected (model) variance
+                        (y - f) * (y - f) / f
                     })
                     .sum(),
                 FitMethod::Likelihood => {

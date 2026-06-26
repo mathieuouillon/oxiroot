@@ -212,3 +212,37 @@ fn bounded_and_fixed_parameters() {
         "fixing frees one degree of freedom"
     );
 }
+
+#[test]
+fn fit_range_pearson_and_p_value() {
+    use oxiroot_hist::{FitMethod, FitOptions};
+    let hg = read("hg"); // gaussian const≈1000, mean≈0.5, sigma≈1.3
+    let n = hg.xaxis.nbins.max(0) as usize;
+    let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
+    let mean: f64 = (1..=n)
+        .map(|i| hg.bin_center(i) * hg.contents[i])
+        .sum::<f64>()
+        / total;
+    let model = || TF1::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
+
+    // (a) Restricting the fit to the core ±2σ still recovers the peak, and uses
+    //     fewer bins (smaller ndf) than the full-range fit.
+    let full = hg.fit(&model());
+    let windowed = hg.fit_opts(&model(), &FitOptions::new().range(-2.0, 3.0));
+    assert!(windowed.valid);
+    assert!(rel_close(windowed.params[1], 0.5, 2e-2));
+    assert!(windowed.ndf < full.ndf, "range fit should use fewer bins");
+
+    // (b) Pearson chi-square recovers the same shape as Neyman on this data.
+    let pearson = hg.fit_opts(&model(), &FitOptions::new().method(FitMethod::PearsonChi2));
+    assert!(pearson.valid);
+    assert!(
+        rel_close(pearson.params[2], 1.297287, 1e-2),
+        "sigma = {}",
+        pearson.params[2]
+    );
+
+    // (c) The goodness-of-fit p-value is well-defined and high for a good fit.
+    let p = full.p_value();
+    assert!((0.0..=1.0).contains(&p) && p > 0.01, "p = {p}");
+}
