@@ -42,6 +42,18 @@ int main() {
   }
   hg.Write();
 
+  // A low-statistics, deterministically-perturbed gaussian (peak ~30): the
+  // imperfect shape makes chi-square and binned-likelihood fits diverge, so it
+  // exercises the likelihood path distinctly.
+  TH1D hgl("hgl", "gauss_lowstat", 30, -5, 5);
+  for (int i = 1; i <= 30; ++i) {
+    double x = hgl.GetBinCenter(i);
+    double v = 30.0 * exp(-0.5 * ((x - 0.5) / 1.3) * ((x - 0.5) / 1.3));
+    long c = (long)(v + 0.5) + ((i * 7 + 3) % 5 - 2); // deterministic ±2 wobble
+    hgl.SetBinContent(i, (double)(c < 0 ? 0 : c));
+  }
+  hgl.Write();
+
   f.Close();
   return 0;
 }

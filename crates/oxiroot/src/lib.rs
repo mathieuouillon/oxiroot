@@ -79,7 +79,7 @@ pub mod prelude {
         TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, ThreadedHist, TH1, TH2, TH3,
     };
     #[cfg(feature = "fit")]
-    pub use oxiroot_hist::{FitResult, TF1};
+    pub use oxiroot_hist::{FitMethod, FitResult, TF1};
 
     pub use oxiroot_rntuple::{
         write_rntuple_file, Column, Field, FieldValues, RNTuple, RNTupleWriter,

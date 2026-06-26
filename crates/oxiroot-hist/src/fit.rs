@@ -90,6 +90,17 @@ impl TF1 {
     }
 }
 
+/// Which cost a fit minimizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FitMethod {
+    /// Neyman chi-square `Σ (n − f)² / σ²` over non-empty bins (ROOT's default).
+    #[default]
+    Chi2,
+    /// Binned Poisson maximum likelihood (ROOT's `"L"`): minimize the
+    /// likelihood-ratio `2·Σ [f − n + n·ln(n/f)]` over every in-range bin.
+    Likelihood,
+}
+
 /// The outcome of [`TH1::fit`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct FitResult {
@@ -119,31 +130,61 @@ impl FitResult {
 
 impl TH1 {
     /// Fit `model` to this histogram by chi-square minimization (ROOT's default
-    /// `Fit`): minimize `Σ (content_i − f(center_i; p))² / error_i²` over the
-    /// in-range bins with non-zero error, seeded from `model.params`.
+    /// `Fit`); shorthand for [`fit_with`](Self::fit_with) with
+    /// [`FitMethod::Chi2`].
     ///
     /// Requires the `fit` feature.
     #[must_use]
     pub fn fit(&self, model: &TF1) -> FitResult {
+        self.fit_with(model, FitMethod::Chi2)
+    }
+
+    /// Fit `model` to this histogram with the chosen [`FitMethod`], seeded from
+    /// `model.params`. Chi-square minimizes `Σ (n − f)² / σ²` over non-empty
+    /// bins; [`FitMethod::Likelihood`] minimizes the binned Poisson
+    /// likelihood-ratio over every in-range bin (handling empty bins, where it
+    /// contributes `2·f`). `FitResult::chi2` is the cost at the minimum — a true
+    /// chi-square or the likelihood-ratio respectively.
+    ///
+    /// Requires the `fit` feature.
+    #[must_use]
+    pub fn fit_with(&self, model: &TF1, method: FitMethod) -> FitResult {
         let n = self.xaxis.nbins.max(0) as usize;
-        // Bins that enter the chi-square: in-range with a non-zero error (ROOT
-        // skips empty bins under the Poisson error convention).
+        // Chi-square uses non-empty bins (error > 0); likelihood uses all of them.
         let points: Vec<(f64, f64, f64)> = (1..=n)
             .filter_map(|i| {
-                let err = self.bin_error(i);
-                (err > 0.0).then(|| (self.bin_center(i), self.contents[i], err))
+                let (y, err) = (self.contents[i], self.bin_error(i));
+                match method {
+                    FitMethod::Chi2 => (err > 0.0).then(|| (self.bin_center(i), y, err)),
+                    FitMethod::Likelihood => Some((self.bin_center(i), y, err)),
+                }
             })
             .collect();
 
         let func = &model.func;
         let cost = |p: &[f64]| -> f64 {
-            points
-                .iter()
-                .map(|&(x, y, e)| {
-                    let d = (y - func(x, p)) / e;
-                    d * d
-                })
-                .sum()
+            match method {
+                FitMethod::Chi2 => points
+                    .iter()
+                    .map(|&(x, y, e)| {
+                        let d = (y - func(x, p)) / e;
+                        d * d
+                    })
+                    .sum(),
+                FitMethod::Likelihood => {
+                    2.0 * points
+                        .iter()
+                        .map(|&(x, y, _)| {
+                            let f = func(x, p).max(1e-300);
+                            if y > 0.0 {
+                                f - y + y * (y / f).ln()
+                            } else {
+                                f
+                            }
+                        })
+                        .sum::<f64>()
+                }
+            }
         };
 
         let mut migrad = MnMigrad::new();
