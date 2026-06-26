@@ -102,13 +102,14 @@ cargo run -p oxiroot --example analysis
   `rebin`/`rebin2d`/`rebin3d`, `cumulative`, projections (`TH2`→`TH1`;
   `TH3`→`TH1`/`TH2`), and `profile_x`/`profile_y` — all carrying the statistical
   moment sums so the results' `mean`/`std_dev` stay correct.
-- Compatibility tests: `chi2_test` (Pearson χ², unweighted) and
-  `kolmogorov_test`, returning ROOT-matched p-values. Alphanumeric (labelled)
-  axes are read into `TAxis::labels`.
-- **Fitting** (optional `fit` feature) — `TH1::fit` minimizes a chi-square
-  against a `TF1` parametric model (built-in `gaussian`/`exponential`/
-  `polynomial`, or a custom closure) via the pure-Rust Minuit2 port, returning
-  parameters, errors, and `chi2`/`ndf`.
+- Compatibility tests: `chi2_test`/`chi2_test_with` (Pearson χ², all three
+  `UU`/`UW`/`WW` weighting schemes) and `kolmogorov_test`, returning ROOT-matched
+  p-values. Alphanumeric (labelled) axes round-trip through `TAxis::labels`
+  (read **and** write, with `set_label`).
+- **Fitting** (optional `fit` feature) — `TH1::fit`/`fit_with` minimizes a
+  chi-square or a binned Poisson likelihood against a `TF1` parametric model
+  (built-in `gaussian`/`exponential`/`polynomial`, or a custom closure) via the
+  pure-Rust Minuit2 port, returning parameters, errors, and `chi2`/`ndf`.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
   `TThreadedObject<TH1>`: each worker fills a private clone (lock-free), then
   `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
@@ -251,9 +252,6 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 Experimental (`0.0.x`). On the list — each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 
-- **Histogram analysis (remaining)** — *writing* alphanumeric axis labels (read
-  is done), the weighted `Chi2Test` variants (`UW`/`WW`), and a binned
-  maximum-likelihood fit option (the chi-square fit ships).
 - **Graphs** — `TGraph2D` and `TGraphMultiErrors`; persisting a graph's fitted
   functions (`fFunctions`) and display frame (`fHistogram`), written empty today.
 - **RNTuple** — richer collection fields: `std::vector<std::string>`, nested
