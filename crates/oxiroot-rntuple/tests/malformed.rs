@@ -68,7 +68,7 @@ fn read_column_rejects_bits_type_mismatch() {
 
     // Int32 declared with 64 bits would slice 8-byte chunks into a 4-byte type
     // (try_into().unwrap() panic) — the guard rejects it first.
-    assert!(read_column(&data, ColumnType::Int32, 64, &pages).is_err());
+    assert!(read_column(&data, ColumnType::Int32, 64, &pages, None).is_err());
 
     // Bit declared with 0 bits would size the page to 0 and index out of range.
     let bit_pages = vec![PageInfo {
@@ -76,8 +76,8 @@ fn read_column_rejects_bits_type_mismatch() {
         has_checksum: false,
         locator: Locator { size: 1, offset: 0 },
     }];
-    assert!(read_column(&data, ColumnType::Bit, 0, &bit_pages).is_err());
+    assert!(read_column(&data, ColumnType::Bit, 0, &bit_pages, None).is_err());
 
     // The matching width still decodes.
-    assert!(read_column(&data, ColumnType::Int32, 32, &pages).is_ok());
+    assert!(read_column(&data, ColumnType::Int32, 32, &pages, None).is_ok());
 }

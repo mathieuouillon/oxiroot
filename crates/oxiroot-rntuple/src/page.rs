@@ -120,6 +120,7 @@ pub fn read_column(
     column_type: ColumnType,
     bits: u16,
     pages: &[PageInfo],
+    value_range: Option<(f64, f64)>,
 ) -> Result<ColumnValues> {
     use ColumnType::*;
     // Reject a header whose declared bit width contradicts the column type
@@ -200,6 +201,45 @@ pub fn read_column(
         Real64 => Ok(ColumnValues::F64(fixed(data, bits, pages, false, le_f64)?)),
         SplitReal64 => Ok(ColumnValues::F64(fixed(data, bits, pages, true, le_f64)?)),
 
+        // Reduced-precision reals all surface as f32.
+        Real16 => {
+            let raw = fixed(data, bits, pages, false, le_u16)?;
+            Ok(ColumnValues::F32(
+                raw.into_iter().map(half_to_f32).collect(),
+            ))
+        }
+        SplitReal16 => {
+            let raw = fixed(data, bits, pages, true, le_u16)?;
+            Ok(ColumnValues::F32(
+                raw.into_iter().map(half_to_f32).collect(),
+            ))
+        }
+        // A 32-bit float with its low (32 − bits) mantissa bits dropped, then the
+        // top `bits` bit-packed. Decode: left-shift back into the float's high bits.
+        Real32Trunc => {
+            let shift = 32 - bits as u32;
+            let raw = packed_uints(data, bits, pages)?;
+            Ok(ColumnValues::F32(
+                raw.into_iter()
+                    .map(|v| f32::from_bits((v as u32) << shift))
+                    .collect(),
+            ))
+        }
+        // A `bits`-wide unsigned integer linearly mapped onto the column's
+        // [min, max] value range.
+        Real32Quant => {
+            let (min, max) = value_range.ok_or_else(|| {
+                Error::Format("Real32Quant column is missing its value range".into())
+            })?;
+            let denom = ((1u64 << bits) - 1) as f64;
+            let raw = packed_uints(data, bits, pages)?;
+            Ok(ColumnValues::F32(
+                raw.into_iter()
+                    .map(|q| (min + (q as f64 / denom) * (max - min)) as f32)
+                    .collect(),
+            ))
+        }
+
         other => Err(Error::Format(format!(
             "decoding column type {other:?} is not implemented yet"
         ))),
@@ -226,6 +266,62 @@ fn fixed<T>(
         }
     }
     Ok(out)
+}
+
+/// Read bit-packed `bits`-wide unsigned values from each page, LSB-first within
+/// little-endian bytes (the convention of the `Bit` column), one page at a time.
+/// Used by the truncated/quantized real columns, whose element width need not be
+/// a whole number of bytes.
+fn packed_uints(data: &[u8], bits: u16, pages: &[PageInfo]) -> Result<Vec<u64>> {
+    let nbits = bits as usize;
+    let mut out = Vec::new();
+    for p in pages {
+        let raw = read_page_bytes(data, p, bits)?;
+        let mut bit = 0usize;
+        for _ in 0..p.num_elements as usize {
+            let mut val = 0u64;
+            for b in 0..nbits {
+                let g = bit + b;
+                let byte = raw
+                    .get(g >> 3)
+                    .copied()
+                    .ok_or_else(|| Error::Format("bit-packed RNTuple page is truncated".into()))?;
+                val |= u64::from((byte >> (g & 7)) & 1) << b;
+            }
+            bit += nbits;
+            out.push(val);
+        }
+    }
+    Ok(out)
+}
+
+/// IEEE-754 half (binary16) to single, including subnormals, infinities and NaN.
+fn half_to_f32(h: u16) -> f32 {
+    let sign = u32::from(h >> 15) << 31;
+    let exp = (h >> 10) & 0x1f;
+    let mant = u32::from(h & 0x3ff);
+    let bits = if exp == 0 {
+        if mant == 0 {
+            sign // ±0
+        } else {
+            // Subnormal half: renormalize into a single-precision normal.
+            let mut e: i32 = -1;
+            let mut m = mant;
+            loop {
+                e += 1;
+                m <<= 1;
+                if m & 0x400 != 0 {
+                    break;
+                }
+            }
+            sign | (((127 - 15 - e) as u32) << 23) | ((m & 0x3ff) << 13)
+        }
+    } else if exp == 0x1f {
+        sign | (0xff << 23) | (mant << 13) // inf / NaN
+    } else {
+        sign | (((i32::from(exp) - 15 + 127) as u32) << 23) | (mant << 13)
+    };
+    f32::from_bits(bits)
 }
 
 fn le_i8(c: &[u8]) -> i8 {

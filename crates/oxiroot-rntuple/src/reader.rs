@@ -161,6 +161,7 @@ impl RNTuple {
             descriptor.column_type,
             descriptor.bits_on_storage,
             &pages,
+            descriptor.value_range,
         )
     }
 
@@ -335,6 +336,7 @@ impl RNTuple {
                 descriptor.column_type,
                 descriptor.bits_on_storage,
                 &column.pages,
+                descriptor.value_range,
             )? {
                 ColumnValues::U64(v) => v,
                 other => {
