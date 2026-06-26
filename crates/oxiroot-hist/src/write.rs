@@ -32,6 +32,7 @@ use crate::th1::TH1;
 use crate::th2::TH2;
 use crate::th3::TH3;
 use crate::tprofile::TProfile;
+use crate::tprofile2d::TProfile2D;
 
 /// Write a single `TH1D` into a new ROOT file at `path`. `compression`
 /// is e.g. `Compression::None` or `Compression::Zstd(5)`.
@@ -502,6 +503,67 @@ pub fn write_tprofile(w: &mut WBuffer, h: &TProfile) {
 pub fn tprofile_to_bytes(h: &TProfile) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile(&mut w, h);
+    w.into_vec()
+}
+
+/// Write a single `TProfile2D` into a new ROOT file at `path`.
+pub fn write_tprofile2d_file(
+    path: impl AsRef<Path>,
+    h: &TProfile2D,
+    compression: Compression,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "TProfile2D".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: tprofile2d_to_bytes(h),
+        };
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        )
+    })
+}
+
+/// Serialize a `TProfile2D` object (with its byte-count/version header) into `w`.
+/// Layout: `TProfile2D{ TH2D{ TH2{ TH1{…, fSumw2=Σwz²}, fScalefactor, fTsumwy,
+/// fTsumwy2, fTsumwxy }, TArrayD=Σwz }, fBinEntries, fErrorMode, fZmin, fZmax,
+/// fTsumwz, fTsumwz2, fBinSumw2 }`.
+pub fn write_tprofile2d(w: &mut WBuffer, h: &TProfile2D) {
+    // A 2-D profile keeps a degenerate z axis, as ROOT's TH2 constructor does.
+    let zaxis = TAxis::new("zaxis", 1, 0.0, 1.0);
+
+    let tp = w.begin_object(8); // TProfile2D version 8
+    let th2d = w.begin_object(4); // TH2D version 4
+    let th2 = w.begin_object(5); // TH2 version 5
+    write_th1_core(
+        w, &h.name, &h.title, &h.xaxis, &h.yaxis, &zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
+        h.tsumwx, h.tsumwx2, &h.sumz2,
+    );
+    w.be_f64(1.0); // fScalefactor (ROOT default)
+    w.be_f64(h.tsumwy);
+    w.be_f64(h.tsumwy2);
+    w.be_f64(h.tsumwxy);
+    w.end_object(th2);
+    write_tarrayd(w, &h.sums); // TH2D TArrayD base: per-cell Σ(w·z)
+    w.end_object(th2d);
+    write_tarrayd(w, &h.bin_entries); // fBinEntries
+    w.be_i32(h.error_mode);
+    w.be_f64(h.zmin);
+    w.be_f64(h.zmax);
+    w.be_f64(h.tsumwz);
+    w.be_f64(h.tsumwz2);
+    write_tarrayd(w, &h.bin_sumw2); // fBinSumw2
+    w.end_object(tp);
+}
+
+/// Serialize a `TProfile2D` object to a fresh byte vector.
+pub fn tprofile2d_to_bytes(h: &TProfile2D) -> Vec<u8> {
+    let mut w = WBuffer::new();
+    write_tprofile2d(&mut w, h);
     w.into_vec()
 }
 
