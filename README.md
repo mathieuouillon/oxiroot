@@ -190,18 +190,20 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
 
 - **Read & write** scalar, fixed-size array (`x[N]`, incl. multidimensional
   `x[N][M]`), variable-length / jagged (`x[n]`), string, multi-leaf (leaflist
-  `a/F:b/I`), and `std::vector<T>` branches.
+  `a/F:b/I`), and `std::vector<T>` branches; **read** `std::vector<std::string>`.
 - **Split `std::vector<MyStruct>`** branches written as per-member sub-branches
   (`TBranchElement`), with a generated `TStreamerInfo` for the element class —
   ROOT-C++- and uproot-verified, both directions.
 - `Branch::{i32, f64, bools, strings, …}` for scalars, `Branch::vec_*` for
   fixed arrays, `Branch::jagged_*` for variable arrays, `Branch::vector_*` for
   `std::vector<T>`, and `Branch::split_vector` for split structs.
-- `TTree::read_branch` reads a whole branch; `read_branch_range(start, stop)`
-  reads only the baskets covering a window (optional `rayon` decodes baskets in
-  parallel). Introspect with `branch_type`/`branch_shape`/`branch_title`, and see
-  what was skipped via `unsupported_branches()`. Worked example:
-  `cargo run -p oxiroot --example tree`.
+  `write_tree_file_baskets` writes several baskets per branch.
+- `read_branch` reads a whole branch, `read_branches` several at once,
+  `read_branch_range(start, stop)` only the baskets covering a window, and
+  `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `TChain` spans many
+  files (optional `rayon` decodes baskets in parallel). Introspect with
+  `branch_type`/`branch_shape`/`branch_title`, and see what was skipped via
+  `unsupported_branches()`. Worked example: `cargo run -p oxiroot --example tree`.
 
 ### RNTuple (`oxiroot::ntuple`)
 
@@ -328,8 +330,12 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
     `TStreamerInfo` interpretation of the page bytes.
   - Write support for the fixed-size (`std::array`/`std::bitset`) and user-class
     field types (read is done).
-- **`TTree`** — object / nested branches beyond split `std::vector<MyStruct>`
-  (nested structs, `std::vector<std::string>`, arrays of objects).
+- **`TTree`** — streamer-info-driven parsing (read class member layouts from the
+  file's `TStreamerInfo` instead of pinned versions, and generate it on write
+  rather than embedding baked blobs); richer object/STL branches beyond split
+  `std::vector<MyStruct>` and `std::vector<std::string>` (nested structs,
+  `std::vector<std::vector<T>>`, `TClonesArray`); a truly incremental
+  fill-to-disk writer.
 - **Append mode** — `update` into files that contain subdirectories or an
   RNTuple (currently rejected).
 - **Plotting** — render histograms and graphs to static images (SVG / PNG) from
