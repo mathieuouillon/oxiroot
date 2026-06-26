@@ -54,6 +54,22 @@ int main() {
   }
   hgl.Write();
 
+  // Two weighted histograms (with Sumw2/per-bin errors) for the weighted
+  // Chi2Test variants UW and WW.
+  TH1D hw1("hw1", "weighted1", 20, 0, 20);
+  TH1D hw2("hw2", "weighted2", 20, 0, 20);
+  hw1.Sumw2();
+  hw2.Sumw2();
+  for (int i = 1; i <= 20; ++i) {
+    double a = i * (21 - i), b = i * (21 - i) + (i % 3 ? 3 : -2);
+    hw1.SetBinContent(i, a);
+    hw1.SetBinError(i, sqrt(a));
+    hw2.SetBinContent(i, b);
+    hw2.SetBinError(i, sqrt(b) + 1.0);
+  }
+  hw1.Write();
+  hw2.Write();
+
   f.Close();
   return 0;
 }

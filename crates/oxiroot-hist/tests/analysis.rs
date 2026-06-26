@@ -72,3 +72,18 @@ fn comparison_tests_reject_mismatched_binning() {
     assert!(a.chi2_test(&other).is_err());
     assert!(a.kolmogorov_test(&other).is_err());
 }
+
+#[test]
+fn weighted_chi2_tests_match_root() {
+    use oxiroot_hist::Chi2TestKind::*;
+    let (a, b) = (h("hw1"), h("hw2")); // weighted histograms (Sumw2 populated)
+                                       // ROOT Chi2TestX reference values.
+    let uu = a.chi2_test_with(&b, UnweightedUnweighted).unwrap();
+    let uw = a.chi2_test_with(&b, UnweightedWeighted).unwrap();
+    let ww = a.chi2_test_with(&b, WeightedWeighted).unwrap();
+    assert_eq!((uu.ndf, uw.ndf, ww.ndf), (19, 19, 19));
+    assert!(close(uu.chi2, 1.011360147), "UU chi2 = {}", uu.chi2);
+    assert!(close(uw.chi2, 0.8701929209), "UW chi2 = {}", uw.chi2);
+    assert!(close(ww.chi2, 0.8722408911), "WW chi2 = {}", ww.chi2);
+    assert!(uw.p_value > 0.99 && ww.p_value > 0.99);
+}
