@@ -70,7 +70,7 @@ cargo run -p oxiroot --example analysis
 ### Histograms (`oxiroot::hist`)
 
 - Read `TH1`/`TH2`/`TH3` in every precision (`D`/`F`/`I`/`S`/`C`/`L`) and
-  `TProfile`.
+  `TProfile`/`TProfile2D`/`TProfile3D`.
 - Create and `fill`/`fill_weight` with ROOT's exact `Fill` semantics; uniform or
   variable (`new_variable`) bins; `sumw2()` for weighted per-bin errors
   (`bin_error`).
@@ -89,7 +89,7 @@ cargo run -p oxiroot --example analysis
   with `std::thread::scope` and needs no dependency; the optional `rayon` feature
   adds a one-call `fill_par(&template, &data, |h, x| h.fill(*x))`.
 - Write `TH1`/`TH2`/`TH3` in every precision — `D`/`F` (double/float) and
-  `C`/`S`/`I`/`L` (char/short/int/long64) — plus `TProfile`; one per file,
+  `C`/`S`/`I`/`L` (char/short/int/long64) — plus `TProfile`/`TProfile2D`/`TProfile3D`; one per file,
   several per file (`write_histograms_file`), or organized into subdirectories
   (`write_histograms_dirs`); append to an existing file with
   `append_histograms_file`. Written files embed a `TStreamerInfo` list, so they

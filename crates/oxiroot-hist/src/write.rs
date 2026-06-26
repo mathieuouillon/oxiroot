@@ -33,6 +33,7 @@ use crate::th2::TH2;
 use crate::th3::TH3;
 use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
+use crate::tprofile3d::TProfile3D;
 
 /// Write a single `TH1D` into a new ROOT file at `path`. `compression`
 /// is e.g. `Compression::None` or `Compression::Zstd(5)`.
@@ -564,6 +565,69 @@ pub fn write_tprofile2d(w: &mut WBuffer, h: &TProfile2D) {
 pub fn tprofile2d_to_bytes(h: &TProfile2D) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile2d(&mut w, h);
+    w.into_vec()
+}
+
+/// Write a single `TProfile3D` into a new ROOT file at `path`.
+pub fn write_tprofile3d_file(
+    path: impl AsRef<Path>,
+    h: &TProfile3D,
+    compression: Compression,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "TProfile3D".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: tprofile3d_to_bytes(h),
+        };
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        )
+    })
+}
+
+/// Serialize a `TProfile3D` object (with its byte-count/version header) into `w`.
+/// Layout: `TProfile3D{ TH3D{ TH3{ TH1{…, fSumw2=Σwt²}, TAtt3D, fTsumwy…fTsumwyz },
+/// TArrayD=Σwt }, fBinEntries, fErrorMode, fTmin, fTmax, fTsumwt, fTsumwt2,
+/// fBinSumw2 }`.
+pub fn write_tprofile3d(w: &mut WBuffer, h: &TProfile3D) {
+    let tp = w.begin_object(8); // TProfile3D version 8
+    let th3d = w.begin_object(4); // TH3D version 4
+    let th3 = w.begin_object(6); // TH3 version 6
+    write_th1_core(
+        w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
+        h.tsumwx, h.tsumwx2, &h.sumt2,
+    );
+    let att3d = w.begin_object(1); // TAtt3D version 1 (empty base)
+    w.end_object(att3d);
+    w.be_f64(h.tsumwy);
+    w.be_f64(h.tsumwy2);
+    w.be_f64(h.tsumwxy);
+    w.be_f64(h.tsumwz);
+    w.be_f64(h.tsumwz2);
+    w.be_f64(h.tsumwxz);
+    w.be_f64(h.tsumwyz);
+    w.end_object(th3);
+    write_tarrayd(w, &h.sums); // TH3D TArrayD base: per-cell Σ(w·t)
+    w.end_object(th3d);
+    write_tarrayd(w, &h.bin_entries); // fBinEntries
+    w.be_i32(h.error_mode);
+    w.be_f64(h.tmin);
+    w.be_f64(h.tmax);
+    w.be_f64(h.tsumwt);
+    w.be_f64(h.tsumwt2);
+    write_tarrayd(w, &h.bin_sumw2); // fBinSumw2
+    w.end_object(tp);
+}
+
+/// Serialize a `TProfile3D` object to a fresh byte vector.
+pub fn tprofile3d_to_bytes(h: &TProfile3D) -> Vec<u8> {
+    let mut w = WBuffer::new();
+    write_tprofile3d(&mut w, h);
     w.into_vec()
 }
 

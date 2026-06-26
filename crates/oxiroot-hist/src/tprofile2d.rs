@@ -62,6 +62,7 @@ pub struct TProfile2D {
 
 impl TProfile2D {
     /// Create an empty `TProfile2D` with uniform x and y bins and no z restriction.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: &str,
         title: &str,
