@@ -176,60 +176,52 @@ impl RNTuple {
     }
 
     /// Read a top-level field by name, reconstructing its per-entry values.
-    /// Supports scalar leaves, `std::string`, and `std::vector<T>`.
+    /// Supports scalar leaves, `std::string`, `std::vector<T>`, and arbitrarily
+    /// nested collections / records — `std::vector<std::string>`,
+    /// `std::vector<std::vector<T>>`, and `std::vector<MyStruct>` — by walking
+    /// the field tree (see [`FieldValues`]).
     pub fn read_field(&self, file: &RFile, name: &str) -> Result<FieldValues> {
-        let (idx, fld) = self
+        let idx = self
             .header
             .fields
             .iter()
             .enumerate()
-            .find(|(i, f)| f.name == name && f.parent_field_id as usize == *i)
+            .position(|(i, f)| f.name == name && f.parent_field_id as usize == i)
             .ok_or_else(|| Error::Format(format!("no top-level field named {name:?}")))?;
 
-        let columns: Vec<usize> = self
+        let values = self.read_field_tree(file, idx)?;
+        // A top-level field carries exactly one element per entry; a mismatch
+        // means a truncated or corrupt index/leaf column.
+        if values.len() as u64 != self.num_entries() {
+            return Err(Error::Format(format!(
+                "field {name:?}: decoded {} entries, expected {}",
+                values.len(),
+                self.num_entries()
+            )));
+        }
+        Ok(values)
+    }
+
+    /// Recursively reconstruct the values of field `field_idx` (a leaf, string,
+    /// collection, or record) as flattened-at-this-level [`FieldValues`].
+    fn read_field_tree(&self, file: &RFile, field_idx: usize) -> Result<FieldValues> {
+        let fld = self
             .header
-            .columns
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| c.field_id as usize == idx)
-            .map(|(ci, _)| ci)
-            .collect();
+            .fields
+            .get(field_idx)
+            .ok_or_else(|| Error::Format(format!("no field {field_idx}")))?;
+        let columns = self.field_columns(field_idx);
 
         match fld.struct_role {
-            StructRole::Collection => {
-                let index_ci = self.index_column(&columns).ok_or_else(|| {
-                    Error::Format(format!("collection field {name:?} has no index column"))
-                })?;
-                let offsets = self.read_offsets(file, index_ci)?;
-
-                let child_idx = self
-                    .header
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .position(|(ci, f)| ci != idx && f.parent_field_id as usize == idx)
-                    .ok_or_else(|| {
-                        Error::Format(format!("collection field {name:?} has no element field"))
-                    })?;
-                let child_ci = self
-                    .header
-                    .columns
-                    .iter()
-                    .position(|c| c.field_id as usize == child_idx)
-                    .ok_or_else(|| {
-                        Error::Format(format!("element field of {name:?} has no column"))
-                    })?;
-                field::collection(&offsets, self.read_column(file, child_ci)?)
-            }
             StructRole::Leaf if fld.type_name == "std::string" => {
                 let index_ci = self.index_column(&columns).ok_or_else(|| {
-                    Error::Format(format!("string field {name:?} has no index column"))
+                    Error::Format(format!("string field {:?} has no index column", fld.name))
                 })?;
                 let char_ci = *columns
                     .iter()
                     .find(|&&ci| !self.header.columns[ci].column_type.is_index())
                     .ok_or_else(|| {
-                        Error::Format(format!("string field {name:?} has no char column"))
+                        Error::Format(format!("string field {:?} has no char column", fld.name))
                     })?;
                 let offsets = self.read_offsets(file, index_ci)?;
                 let bytes = match self.read_column(file, char_ci)? {
@@ -243,13 +235,69 @@ impl RNTuple {
             StructRole::Leaf => {
                 let ci = *columns
                     .first()
-                    .ok_or_else(|| Error::Format(format!("field {name:?} has no column")))?;
+                    .ok_or_else(|| Error::Format(format!("field {:?} has no column", fld.name)))?;
                 field::scalar(self.read_column(file, ci)?)
+            }
+            StructRole::Collection => {
+                let index_ci = self.index_column(&columns).ok_or_else(|| {
+                    Error::Format(format!(
+                        "collection field {:?} has no index column",
+                        fld.name
+                    ))
+                })?;
+                let offsets = self.read_offsets(file, index_ci)?;
+                let child = *self.child_fields(field_idx).first().ok_or_else(|| {
+                    Error::Format(format!(
+                        "collection field {:?} has no element field",
+                        fld.name
+                    ))
+                })?;
+                let items = self.read_field_tree(file, child)?;
+                field::collect(offsets, items)
+            }
+            StructRole::Record => {
+                let children = self.child_fields(field_idx);
+                if children.is_empty() {
+                    return Err(Error::Format(format!(
+                        "record field {:?} has no sub-fields",
+                        fld.name
+                    )));
+                }
+                let mut out = Vec::with_capacity(children.len());
+                for c in children {
+                    let sub_name = self.header.fields[c].name.clone();
+                    out.push((sub_name, self.read_field_tree(file, c)?));
+                }
+                Ok(FieldValues::Record(out))
             }
             other => Err(Error::Format(format!(
                 "field role {other:?} is not supported"
             ))),
         }
+    }
+
+    /// Column indices belonging to field `field_idx`, in column order.
+    fn field_columns(&self, field_idx: usize) -> Vec<usize> {
+        self.header
+            .columns
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.field_id as usize == field_idx)
+            .map(|(ci, _)| ci)
+            .collect()
+    }
+
+    /// Sub-field ids of `field_idx` (children whose parent is `field_idx`),
+    /// excluding the field itself (a top-level field is its own parent), in
+    /// declaration order.
+    fn child_fields(&self, field_idx: usize) -> Vec<usize> {
+        self.header
+            .fields
+            .iter()
+            .enumerate()
+            .filter(|(ci, f)| *ci != field_idx && f.parent_field_id as usize == field_idx)
+            .map(|(ci, _)| ci)
+            .collect()
     }
 
     fn index_column(&self, columns: &[usize]) -> Option<usize> {
@@ -264,6 +312,10 @@ impl RNTuple {
     /// the column one cluster at a time and shift each cluster's values by the
     /// number of elements in all preceding clusters. (This is a no-op for a
     /// single cluster, and matches a flat decode for delta-encoded indices.)
+    ///
+    /// The decoded count is one offset per element of the *enclosing* level —
+    /// the entry count for a top-level collection, but the parent-element count
+    /// for a nested one — so it is validated by the caller, not here.
     fn read_offsets(&self, file: &RFile, column_index: usize) -> Result<Vec<u64>> {
         let descriptor = self
             .header
@@ -296,16 +348,6 @@ impl RNTuple {
             let cluster_total = local.last().copied().unwrap_or(0);
             out.extend(local.into_iter().map(|v| v.wrapping_add(base)));
             base = base.wrapping_add(cluster_total);
-        }
-        // An index column carries exactly one offset per entry. If the decoded
-        // count disagrees with the cluster summaries, the column is truncated or
-        // corrupt — fail rather than hand back misaligned collection boundaries.
-        if out.len() as u64 != self.num_entries() {
-            return Err(Error::Format(format!(
-                "index column {column_index}: {} offsets for {} entries",
-                out.len(),
-                self.num_entries()
-            )));
         }
         Ok(out)
     }

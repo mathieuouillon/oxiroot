@@ -35,10 +35,66 @@ pub enum FieldValues {
     VecI32(Vec<Vec<i32>>),
     /// `std::vector<int64_t>`.
     VecI64(Vec<Vec<i64>>),
+    /// `std::vector<uint32_t>`.
+    VecU32(Vec<Vec<u32>>),
+    /// `std::vector<uint64_t>`.
+    VecU64(Vec<Vec<u64>>),
     /// `std::vector<float>`.
     VecF32(Vec<Vec<f32>>),
     /// `std::vector<double>`.
     VecF64(Vec<Vec<f64>>),
+    /// `std::vector<std::string>` — one inner `Vec<String>` per entry.
+    VecStr(Vec<Vec<String>>),
+    /// A record / struct: its sub-fields in declaration order, each holding one
+    /// value per record instance (a struct-of-arrays). At top level every
+    /// sub-field has one element per entry; inside a [`Nested`](Self::Nested)
+    /// collection they hold the flattened record instances.
+    Record(Vec<(String, FieldValues)>),
+    /// A collection whose element is itself a collection or a record — e.g.
+    /// `std::vector<std::vector<T>>` or `std::vector<MyStruct>`. The cumulative
+    /// `offsets` (one per element of the enclosing level) partition the flattened
+    /// child `items`: element `k` spans `items[offsets[k-1]..offsets[k]]` (with
+    /// `offsets[-1] = 0`).
+    Nested {
+        /// Cumulative element boundaries, one per element of the enclosing level.
+        offsets: Vec<u64>,
+        /// The flattened child values, partitioned by `offsets`.
+        items: Box<FieldValues>,
+    },
+}
+
+impl FieldValues {
+    /// The number of elements at this level — entries, for a top-level field.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        use FieldValues::*;
+        match self {
+            Bool(v) => v.len(),
+            I32(v) => v.len(),
+            I64(v) => v.len(),
+            U32(v) => v.len(),
+            U64(v) => v.len(),
+            F32(v) => v.len(),
+            F64(v) => v.len(),
+            Str(v) => v.len(),
+            VecBool(v) => v.len(),
+            VecI32(v) => v.len(),
+            VecI64(v) => v.len(),
+            VecU32(v) => v.len(),
+            VecU64(v) => v.len(),
+            VecF32(v) => v.len(),
+            VecF64(v) => v.len(),
+            VecStr(v) => v.len(),
+            Record(fields) => fields.first().map_or(0, |(_, f)| f.len()),
+            Nested { offsets, .. } => offsets.len(),
+        }
+    }
+
+    /// Whether there are no elements at this level.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Map a scalar leaf column to per-entry field values.
@@ -74,20 +130,25 @@ pub(crate) fn strings(offsets: &[u64], bytes: &[u8]) -> Result<FieldValues> {
     Ok(FieldValues::Str(out))
 }
 
-/// Reconstruct `std::vector<T>` values from cumulative offsets and flat element
-/// data.
-pub(crate) fn collection(offsets: &[u64], data: ColumnValues) -> Result<FieldValues> {
-    Ok(match data {
-        ColumnValues::Bits(v) => FieldValues::VecBool(group(offsets, &v)?),
-        ColumnValues::I32(v) => FieldValues::VecI32(group(offsets, &v)?),
-        ColumnValues::I64(v) => FieldValues::VecI64(group(offsets, &v)?),
-        ColumnValues::F32(v) => FieldValues::VecF32(group(offsets, &v)?),
-        ColumnValues::F64(v) => FieldValues::VecF64(group(offsets, &v)?),
-        other => {
-            return Err(Error::Format(format!(
-                "collections of {other:?} are not supported yet"
-            )))
-        }
+/// Group a collection's flattened child `items` by its cumulative `offsets`.
+/// Scalar and string children materialize into the ergonomic flat `Vec*`
+/// variants; a collection- or record-valued child is wrapped in
+/// [`FieldValues::Nested`] (so arbitrarily deep nesting stays representable).
+pub(crate) fn collect(offsets: Vec<u64>, items: FieldValues) -> Result<FieldValues> {
+    use FieldValues::*;
+    Ok(match items {
+        Bool(v) => VecBool(group(&offsets, &v)?),
+        I32(v) => VecI32(group(&offsets, &v)?),
+        I64(v) => VecI64(group(&offsets, &v)?),
+        U32(v) => VecU32(group(&offsets, &v)?),
+        U64(v) => VecU64(group(&offsets, &v)?),
+        F32(v) => VecF32(group(&offsets, &v)?),
+        F64(v) => VecF64(group(&offsets, &v)?),
+        Str(v) => VecStr(group(&offsets, &v)?),
+        other => Nested {
+            offsets,
+            items: Box::new(other),
+        },
     })
 }
 
