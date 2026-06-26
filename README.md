@@ -251,9 +251,14 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
   (nested structs, `std::vector<std::string>`, arrays of objects).
 - **Append mode** — `update` into files that contain subdirectories or an
   RNTuple (currently rejected).
+- **Plotting** — render histograms and graphs to static images (SVG / PNG) from
+  pure Rust, behind an optional feature, so a `TH1` / `TH2` / `TGraph` can be
+  visualized without ROOT or matplotlib.
 
 Out of scope: ROOT 7 `RHist` (no persistable on-disk format — its `Streamer`
-throws) and graphics objects (`TCanvas` and friends).
+throws) and reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) —
+the plotting item above renders the data, it does not (de)serialize ROOT
+graphics.
 
 ## License
 
