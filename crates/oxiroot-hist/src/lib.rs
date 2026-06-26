@@ -15,6 +15,8 @@ mod ops;
 
 pub mod axis;
 mod derive;
+#[cfg(feature = "fit")]
+pub mod fit;
 pub mod graph;
 mod stats;
 pub mod tefficiency;
@@ -33,6 +35,8 @@ pub use oxiroot_io_core::Compression;
 
 pub use axis::TAxis;
 pub use compare::{Chi2TestResult, KsTestResult};
+#[cfg(feature = "fit")]
+pub use fit::{FitResult, TF1};
 pub use graph::{read_tgraph, GraphErrors, TGraph};
 pub use tefficiency::{read_tefficiency, TEfficiency};
 pub use th1::{read_th1, read_th1d, read_th1d_in, read_th1f, TH1};
