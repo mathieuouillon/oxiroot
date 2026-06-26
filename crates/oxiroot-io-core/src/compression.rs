@@ -2,9 +2,8 @@
 
 /// How a writer should compress object payloads and RNTuple pages.
 ///
-/// Maps to ROOT's `algorithm*100 + level` setting integer. Only `None` and
-/// `Zstd` are offered because those are the algorithms this crate can *encode*
-/// (zlib and LZ4 are supported for reading only).
+/// Maps to ROOT's `algorithm*100 + level` setting integer. These are the
+/// algorithms this crate can *encode*; LZMA is supported for reading only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Compression {
     /// Store uncompressed.
@@ -12,6 +11,10 @@ pub enum Compression {
     None,
     /// Zstandard at the given level (1–22; ROOT's default is 5).
     Zstd(u32),
+    /// zlib / DEFLATE at the given level (1–9; ROOT's classic default is 1).
+    Zlib(u32),
+    /// LZ4 at the given level (1–9; the pure-Rust backend is fast-only).
+    Lz4(u32),
 }
 
 impl Compression {
@@ -21,6 +24,8 @@ impl Compression {
         match self {
             Compression::None => 0,
             Compression::Zstd(level) => 500 + level,
+            Compression::Zlib(level) => 100 + level,
+            Compression::Lz4(level) => 400 + level,
         }
     }
 

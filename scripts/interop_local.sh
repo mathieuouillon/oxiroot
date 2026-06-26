@@ -149,11 +149,11 @@ regen_fixtures() {
     c++ $RCFLAGS scripts/gen_root_fixtures.cpp    $RLIBS               -o "$WORK/gen_root"
     c++ $RCFLAGS scripts/gen_rntuple_fixtures.cpp $RLIBS -lROOTNTuple  -o "$WORK/gen_rntuple"
     c++ $RCFLAGS scripts/gen_tree_vector.cpp      $RLIBS               -o "$WORK/gen_tree_vector"
-    c++ $RCFLAGS scripts/gen_zlib_fixture.cpp     $RLIBS               -o "$WORK/gen_zlib"
+    c++ $RCFLAGS scripts/gen_compressed_fixtures.cpp $RLIBS            -o "$WORK/gen_compressed"
     "$WORK/gen_root"
     "$WORK/gen_rntuple"
     "$WORK/gen_tree_vector" fixtures/tree_vector.root
-    "$WORK/gen_zlib" fixtures/th1d_zlib.root
+    "$WORK/gen_compressed"
     bash scripts/gen_tree_split.sh
     "$PY" scripts/gen_tree_fixtures.py
     "$PY" scripts/gen_fixtures.py

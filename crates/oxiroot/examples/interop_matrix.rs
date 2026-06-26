@@ -319,6 +319,8 @@ fn comp_str(c: Compression) -> J {
     match c {
         Compression::None => J::Str("none".into()),
         Compression::Zstd(_) => J::Str("zstd".into()),
+        Compression::Zlib(_) => J::Str("zlib".into()),
+        Compression::Lz4(_) => J::Str("lz4".into()),
     }
 }
 

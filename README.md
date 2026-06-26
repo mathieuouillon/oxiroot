@@ -14,8 +14,8 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 ## Highlights
 
 - 🦀 **Pure Rust** — the on-disk format reimplemented from the official specs.
-  No libROOT, no Python; builds and runs anywhere Rust does, and the default
-  build pulls in only three small pure-Rust crates.
+  No libROOT, no Python; builds and runs anywhere Rust does, depending only on a
+  handful of small pure-Rust crates (compression codecs and a hasher).
 - 🔄 **Two-way interop** — every reader and writer is validated against both
   official ROOT (C++) and uproot, in both directions.
 - 📊 **Histograms & profiles** — `TH1`/`TH2`/`TH3` (every precision),
@@ -25,7 +25,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
-  vectors), Zstd-compressed, multi-cluster via a streaming writer.
+  vectors), compressed, multi-cluster via a streaming writer.
+- 🗜 **Compression** — decode Zstd / zlib / LZ4 / LZMA; encode Zstd / zlib /
+  LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
   `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
 - 🛡 **Robust by construction** — readers never panic on malformed input
@@ -150,12 +152,15 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
 
 ### Compression
 
-- **Read:** Zstd and zlib decode (the codecs real ROOT files use in practice).
-  Uncompressed objects pass through directly. (LZ4/LZMA decode are not yet
-  wired up — such a block reports an unavailable-codec error rather than
-  corrupting silently.)
-- **Write:** Zstd, at any level via `Compression::Zstd(level)`, or
-  `Compression::None`.
+- **Read:** Zstd, zlib, LZ4, and LZMA (XZ) decode — every codec ROOT writes
+  except the legacy `CS`. Uncompressed objects pass through directly.
+- **Write:** Zstd, zlib, and LZ4 via `Compression::{Zstd, Zlib, Lz4}(level)`,
+  or `Compression::None`. Files written with `Zlib`/`Lz4` match older ROOT
+  defaults and read back in ROOT and uproot; LZMA is decode-only.
+
+All four codecs are pure Rust (`ruzstd`, `miniz_oxide`, `lz4_flex`, `lzma-rs`),
+so the no-libROOT promise holds. LZ4 blocks carry ROOT's XXH64 integrity check,
+verified on read.
 
 ### Robustness & large files
 
@@ -176,14 +181,16 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
 |-------|---------|
 | `oxiroot` | Facade: `prelude` + re-exports of everything below |
 | `oxiroot-io-core` | `TFile` container, buffer primitives, streamer + object-reference engine, `Error` |
-| `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib codecs |
+| `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
 | `oxiroot-hist` | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
 | `oxiroot-tree` | Classic `TTree` read/write |
 
-Dependencies are pure Rust: [`xxhash-rust`](https://crates.io/crates/xxhash-rust)
-(RNTuple XXH3), [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd encode/decode),
-and [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib decode).
+Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
+[`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib),
+[`lz4_flex`](https://crates.io/crates/lz4_flex) (LZ4),
+[`lzma-rs`](https://crates.io/crates/lzma-rs) (LZMA/XZ decode), and
+[`xxhash-rust`](https://crates.io/crates/xxhash-rust) (RNTuple XXH3 + LZ4 XXH64).
 
 ### Optional features
 
@@ -236,9 +243,6 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 Experimental (`0.0.x`). On the list — each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 
-- **Compression** — LZ4 and LZMA *decode* (today such a block reports an
-  unavailable-codec error); non-Zstd *encode* (zlib / LZ4) for files matching
-  older ROOT defaults.
 - **Histogram analysis** — fitting (`TF1` + a minimizer); `Chi2Test` /
   `KolmogorovTest`; `GetQuantiles` / `Interpolate`; labelled / alphanumeric axes
   (`fLabels` is currently skipped on read).

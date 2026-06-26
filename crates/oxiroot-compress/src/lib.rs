@@ -5,9 +5,9 @@
 //! of the rest of the workspace and owns the (eventually feature-gated) choice
 //! of codec backends.
 //!
-//! Status: block framing, uncompressed passthrough, and Zstd + zlib **decode**
-//! are implemented and validated against real ROOT output. LZ4/LZMA decode and
-//! all encoders arrive in later milestones.
+//! **Decode** is implemented for Zstd, zlib, LZ4, and LZMA (XZ) — every codec
+//! ROOT writes except the legacy `CS`. **Encode** is available for Zstd, zlib,
+//! and LZ4. All backends are pure Rust and validated against real ROOT output.
 
 mod codec;
 mod header;
@@ -123,7 +123,9 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
     let out = match hdr.algorithm() {
         Algorithm::Zstd => codec::zstd_decode(payload, n)?,
         Algorithm::Zlib => codec::zlib_decode(payload)?,
-        // LZ4 (with its xxhash64 prefix) and LZMA decode arrive in a later step.
+        Algorithm::Lz4 => codec::lz4_decode(payload, n)?,
+        Algorithm::Lzma => codec::lzma_decode(payload, n)?,
+        // The legacy `CS` ("old ROOT") codec and unknown tags remain unhandled.
         algo => return Err(CompressError::CodecUnavailable(algo)),
     };
     if out.len() != n {
@@ -139,31 +141,48 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
 ///
 /// `settings == 0` means "store uncompressed": the input is returned unchanged
 /// (the caller stores it without a block header). Otherwise the data is encoded
-/// into ROOT compression blocks. Only Zstd encoding (algorithm 5) is supported;
-/// the level is passed through but the pure-Rust backend does not differentiate
-/// it (the output is always valid Zstd that ROOT reads back correctly).
+/// into ROOT compression blocks. Supported encoders are Zstd (5), zlib (1), and
+/// LZ4 (4); LZMA (2) is decode-only. The level tunes the zlib backend; the
+/// pure-Rust Zstd and LZ4 backends ignore it (the output is always valid and
+/// ROOT reads it back correctly).
 pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
     if settings == 0 {
         return Ok(src.to_vec());
     }
     let (algorithm, level) = split_settings(settings);
-    if algorithm != 5 {
-        return Err(CompressError::Codec(format!(
-            "encoding algorithm {algorithm} is not supported (only Zstd)"
-        )));
-    }
+    // (tag, method byte) for each supported encoder, matching ROOT's framing.
+    let (tag, method): ([u8; 2], u8) = match algorithm {
+        1 => (*b"ZL", 8), // zlib, Z_DEFLATED
+        4 => (*b"L4", 1), // LZ4, version byte 1
+        5 => (*b"ZS", 1), // Zstd
+        2 => {
+            return Err(CompressError::Codec(
+                "LZMA encoding is not supported (decode only)".into(),
+            ))
+        }
+        other => {
+            return Err(CompressError::Codec(format!(
+                "encoding algorithm {other} is not supported"
+            )))
+        }
+    };
 
     let mut out = Vec::new();
     for chunk in src.chunks(MAX_CHUNK_SIZE.max(1)) {
-        let frame = codec::zstd_encode(chunk, level);
+        let frame = match algorithm {
+            1 => codec::zlib_encode(chunk, level),
+            4 => codec::lz4_encode(chunk),
+            5 => codec::zstd_encode(chunk, level),
+            _ => unreachable!("algorithm validated above"),
+        };
         if frame.len() > MAX_CHUNK_SIZE {
             return Err(CompressError::Codec(
                 "compressed block exceeds 24-bit size".into(),
             ));
         }
         BlockHeader {
-            tag: *b"ZS",
-            method: 1,
+            tag,
+            method,
             compressed_size: frame.len() as u32,
             uncompressed_size: chunk.len() as u32,
         }
@@ -211,11 +230,11 @@ mod tests {
 
     #[test]
     fn decompress_reports_unavailable_codec() {
-        // LZ4 decode is not wired up yet, so a block tagged "L4" must report the
-        // codec as unavailable rather than silently mis-decoding.
+        // The legacy "CS" (old-ROOT) codec is still unhandled, so such a block
+        // must report the codec as unavailable rather than silently mis-decoding.
         let mut buf = Vec::new();
         BlockHeader {
-            tag: *b"L4",
+            tag: *b"CS",
             method: 1,
             compressed_size: 4,
             uncompressed_size: 8,
@@ -224,8 +243,38 @@ mod tests {
         buf.extend_from_slice(&[0, 1, 2, 3]);
         assert!(matches!(
             decompress(&buf, 8),
-            Err(CompressError::CodecUnavailable(Algorithm::Lz4))
+            Err(CompressError::CodecUnavailable(Algorithm::OldRoot))
         ));
+    }
+
+    #[test]
+    fn compress_zlib_and_lz4_round_trip() {
+        let data = b"the quick brown fox jumps over the lazy dog. ".repeat(40);
+        for (settings, tag) in [(105u32, b"ZL"), (404, b"L4")] {
+            let compressed = compress(&data, settings).unwrap();
+            assert_eq!(&compressed[0..2], tag, "wrong block tag for {settings}");
+            assert!(compressed.len() < data.len(), "should actually shrink");
+            assert_eq!(decompress(&compressed, data.len()).unwrap(), data);
+        }
+    }
+
+    #[test]
+    fn lz4_block_rejects_a_corrupted_checksum() {
+        // A valid LZ4 block whose stored XXH64 prefix has been flipped must be
+        // rejected, not silently decoded.
+        let data = b"oxiroot oxiroot oxiroot oxiroot".repeat(8);
+        let mut block = compress(&data, 404).unwrap();
+        block[HDR_SIZE] ^= 0xff; // corrupt the first checksum byte
+        assert!(matches!(
+            decompress(&block, data.len()),
+            Err(CompressError::Codec(_))
+        ));
+    }
+
+    #[test]
+    fn lzma_encoding_is_rejected() {
+        // LZMA is decode-only; asking to encode it is an explicit error.
+        assert!(matches!(compress(b"x", 205), Err(CompressError::Codec(_))));
     }
 
     #[test]
