@@ -38,6 +38,7 @@ fn on_disk_page(page: &[u8], compression: u32) -> Vec<u8> {
 
 const ROLE_LEAF: u16 = 0;
 const ROLE_COLLECTION: u16 = 1;
+const ROLE_RECORD: u16 = 2;
 
 /// A column of data for one RNTuple field.
 #[non_exhaustive]
@@ -68,6 +69,22 @@ pub enum Column {
     VecI32(Vec<Vec<i32>>),
     /// `std::vector<int64_t>`.
     VecI64(Vec<Vec<i64>>),
+    /// `std::vector<std::string>`.
+    VecStr(Vec<Vec<String>>),
+    /// A record / struct: named sub-fields (a struct-of-arrays), each with one
+    /// value per record instance. At top level this is a struct field; wrap it
+    /// in [`Nested`](Self::Nested) for a `std::vector<MyStruct>`.
+    Record(Vec<(String, Column)>),
+    /// A collection whose element is itself a collection or record — e.g.
+    /// `std::vector<std::vector<T>>` or `std::vector<MyStruct>`. The cumulative
+    /// `offsets` (one per entry) partition the flattened child `items`. The
+    /// `vec_vec_*` constructors build the common nested-vector cases for you.
+    Nested {
+        /// Cumulative element boundaries, one per entry.
+        offsets: Vec<u64>,
+        /// The flattened child column.
+        items: Box<Column>,
+    },
 }
 
 impl Column {
@@ -87,6 +104,9 @@ impl Column {
             Column::VecF64(v) => v.len(),
             Column::VecI32(v) => v.len(),
             Column::VecI64(v) => v.len(),
+            Column::VecStr(v) => v.len(),
+            Column::Record(subs) => subs.first().map_or(0, |(_, c)| c.len()),
+            Column::Nested { offsets, .. } => offsets.len(),
         }
     }
 }
@@ -137,6 +157,41 @@ field_ctors! {
     vec_i64 => VecI64(Vec<i64>),
     vec_f32 => VecF32(Vec<f32>),
     vec_f64 => VecF64(Vec<f64>),
+    vec_str => VecStr(Vec<String>),
+}
+
+/// Wrap a flattened child column in a `std::vector<...>` by grouping it with
+/// outer (per-entry) offsets — the building block for the `vec_vec_*` shortcuts.
+fn nested_vec<T: Clone>(data: Vec<Vec<Vec<T>>>, wrap: impl Fn(Vec<Vec<T>>) -> Column) -> Column {
+    let (offsets, inner) = flatten(&data);
+    Column::Nested {
+        offsets,
+        items: Box::new(wrap(inner)),
+    }
+}
+
+/// Generate `Field::<name>(name, Vec<Vec<Vec<T>>>)` shortcuts for
+/// `std::vector<std::vector<T>>` fields.
+macro_rules! vec_vec_ctors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl Field {
+            $(
+                #[doc = concat!("A `std::vector<std::vector<", stringify!($elem), ">>` field.")]
+                pub fn $method(name: impl Into<String>, data: Vec<Vec<Vec<$elem>>>) -> Field {
+                    Field::new(name, nested_vec(data, Column::$variant))
+                }
+            )*
+        }
+    };
+}
+
+vec_vec_ctors! {
+    vec_vec_bool => VecBool(bool),
+    vec_vec_i32 => VecI32(i32),
+    vec_vec_i64 => VecI64(i64),
+    vec_vec_f32 => VecF32(f32),
+    vec_vec_f64 => VecF64(f64),
+    vec_vec_str => VecStr(String),
 }
 
 // --- internal lowered model ------------------------------------------------
@@ -185,249 +240,296 @@ fn flatten<T: Clone>(v: &[Vec<T>]) -> (Vec<u64>, Vec<T>) {
     (offsets, data)
 }
 
-/// Lower user fields into field and column plans (children appended after the
-/// top-level fields), returning the top-level entry count.
-fn lower(fields: &[Field]) -> (Vec<FieldPlan>, Vec<ColumnPlan>, u32) {
-    let n_entries = fields.first().map(|f| f.data.len() as u32).unwrap_or(0);
-    let mut field_plans: Vec<FieldPlan> = Vec::new();
-    let mut columns: Vec<ColumnPlan> = Vec::new();
-    let mut children: Vec<(u32, FieldPlan, ColumnPlan)> = Vec::new();
+/// One column's lowered bytes, before its field id is known.
+struct RawCol {
+    column_type: ColumnType,
+    bits: u16,
+    page: Vec<u8>,
+    n: u32,
+}
 
-    let leaf = |name: &str, ty: &str, parent: u32| FieldPlan {
+/// A lowered field subtree — a field, its own columns, and its children —
+/// before field ids are assigned by the depth-first walk in [`flatten_tree`].
+struct Node {
+    name: String,
+    type_name: String,
+    role: u16,
+    cols: Vec<RawCol>,
+    children: Vec<Node>,
+}
+
+fn raw(column_type: ColumnType, bits: u16, page: Vec<u8>, n: usize) -> RawCol {
+    RawCol {
+        column_type,
+        bits,
+        page,
+        n: n as u32,
+    }
+}
+
+/// A scalar leaf: one field, one column, no children.
+fn leaf_node(name: &str, type_name: &str, col: RawCol) -> Node {
+    Node {
         name: name.to_string(),
-        type_name: ty.to_string(),
-        parent_id: parent,
+        type_name: type_name.to_string(),
         role: ROLE_LEAF,
-    };
+        cols: vec![col],
+        children: vec![],
+    }
+}
 
-    for (i, f) in fields.iter().enumerate() {
-        let fid = i as u32;
-        let mut col = |ct, bits, page, n: usize| {
-            columns.push(ColumnPlan {
-                column_type: ct,
-                bits,
-                field_id: fid,
-                page,
-                n: n as u32,
-            })
-        };
-        match &f.data {
-            Column::Bool(v) => {
-                field_plans.push(leaf(&f.name, "bool", fid));
-                col(ColumnType::Bit, 1, pack_bits(v), v.len());
-            }
-            Column::I32(v) => {
-                field_plans.push(leaf(&f.name, "std::int32_t", fid));
-                col(
+/// A `std::string` leaf: an Index64 offset column plus a Char column.
+fn string_node(name: &str, v: &[String]) -> Node {
+    let mut bytes = Vec::new();
+    let mut offsets = Vec::with_capacity(v.len());
+    for s in v {
+        bytes.extend_from_slice(s.as_bytes());
+        offsets.push(bytes.len() as u64);
+    }
+    let n_chars = bytes.len();
+    Node {
+        name: name.to_string(),
+        type_name: "std::string".to_string(),
+        role: ROLE_LEAF,
+        cols: vec![
+            raw(
+                ColumnType::Index64,
+                64,
+                le_bytes(&offsets, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+            raw(ColumnType::Char, 8, bytes, n_chars),
+        ],
+        children: vec![],
+    }
+}
+
+/// A collection field: an Index64 offset column over `offsets` plus the single
+/// element `child`. Its type name is `std::vector<child>`.
+fn collection_node(name: &str, offsets: &[u64], n_outer: usize, child: Node) -> Node {
+    Node {
+        name: name.to_string(),
+        type_name: format!("std::vector<{}>", child.type_name),
+        role: ROLE_COLLECTION,
+        cols: vec![raw(
+            ColumnType::Index64,
+            64,
+            le_bytes(offsets, |x| x.to_le_bytes()),
+            n_outer,
+        )],
+        children: vec![child],
+    }
+}
+
+/// ROOT's anonymous-record type names: a 2-field record serializes as a
+/// `std::pair`, more as a `std::tuple`.
+fn record_type_name(children: &[Node]) -> String {
+    let inner: Vec<&str> = children.iter().map(|c| c.type_name.as_str()).collect();
+    match inner.as_slice() {
+        [a, b] => format!("std::pair<{a},{b}>"),
+        _ => format!("std::tuple<{}>", inner.join(",")),
+    }
+}
+
+/// Lower one field's [`Column`] into a [`Node`] subtree.
+fn lower_column(name: &str, data: &Column) -> Node {
+    match data {
+        Column::Bool(v) => leaf_node(name, "bool", raw(ColumnType::Bit, 1, pack_bits(v), v.len())),
+        Column::I32(v) => leaf_node(
+            name,
+            "std::int32_t",
+            raw(
+                ColumnType::Int32,
+                32,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::I64(v) => leaf_node(
+            name,
+            "std::int64_t",
+            raw(
+                ColumnType::Int64,
+                64,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::U32(v) => leaf_node(
+            name,
+            "std::uint32_t",
+            raw(
+                ColumnType::UInt32,
+                32,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::U64(v) => leaf_node(
+            name,
+            "std::uint64_t",
+            raw(
+                ColumnType::UInt64,
+                64,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::F32(v) => leaf_node(
+            name,
+            "float",
+            raw(
+                ColumnType::Real32,
+                32,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::F64(v) => leaf_node(
+            name,
+            "double",
+            raw(
+                ColumnType::Real64,
+                64,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::Str(v) => string_node(name, v),
+        Column::VecBool(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "bool",
+                raw(ColumnType::Bit, 1, pack_bits(&data), data.len()),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecI32(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "std::int32_t",
+                raw(
                     ColumnType::Int32,
                     32,
-                    le_bytes(v, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-            }
-            Column::I64(v) => {
-                field_plans.push(leaf(&f.name, "std::int64_t", fid));
-                col(
+                    le_bytes(&data, |x| x.to_le_bytes()),
+                    data.len(),
+                ),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecI64(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "std::int64_t",
+                raw(
                     ColumnType::Int64,
                     64,
-                    le_bytes(v, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-            }
-            Column::U32(v) => {
-                field_plans.push(leaf(&f.name, "std::uint32_t", fid));
-                col(
-                    ColumnType::UInt32,
-                    32,
-                    le_bytes(v, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-            }
-            Column::U64(v) => {
-                field_plans.push(leaf(&f.name, "std::uint64_t", fid));
-                col(
-                    ColumnType::UInt64,
-                    64,
-                    le_bytes(v, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-            }
-            Column::F32(v) => {
-                field_plans.push(leaf(&f.name, "float", fid));
-                col(
+                    le_bytes(&data, |x| x.to_le_bytes()),
+                    data.len(),
+                ),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecF32(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "float",
+                raw(
                     ColumnType::Real32,
                     32,
-                    le_bytes(v, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-            }
-            Column::F64(v) => {
-                field_plans.push(leaf(&f.name, "double", fid));
-                col(
+                    le_bytes(&data, |x| x.to_le_bytes()),
+                    data.len(),
+                ),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecF64(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "double",
+                raw(
                     ColumnType::Real64,
                     64,
-                    le_bytes(v, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-            }
-            Column::Str(v) => {
-                field_plans.push(leaf(&f.name, "std::string", fid));
-                let mut bytes = Vec::new();
-                let mut offsets = Vec::with_capacity(v.len());
-                for s in v {
-                    bytes.extend_from_slice(s.as_bytes());
-                    offsets.push(bytes.len() as u64);
-                }
-                let n_chars = bytes.len();
-                col(
-                    ColumnType::Index64,
-                    64,
-                    le_bytes(&offsets, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-                col(ColumnType::Char, 8, bytes, n_chars);
-            }
-            Column::VecF32(v) => {
-                field_plans.push(FieldPlan {
-                    name: f.name.clone(),
-                    type_name: "std::vector<float>".into(),
-                    parent_id: fid,
-                    role: ROLE_COLLECTION,
-                });
-                let (offsets, data) = flatten(v);
-                col(
-                    ColumnType::Index64,
-                    64,
-                    le_bytes(&offsets, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-                children.push((
-                    fid,
-                    leaf("_0", "float", 0),
-                    ColumnPlan {
-                        column_type: ColumnType::Real32,
-                        bits: 32,
-                        field_id: 0,
-                        page: le_bytes(&data, |x| x.to_le_bytes()),
-                        n: data.len() as u32,
-                    },
-                ));
-            }
-            Column::VecF64(v) => {
-                field_plans.push(FieldPlan {
-                    name: f.name.clone(),
-                    type_name: "std::vector<double>".into(),
-                    parent_id: fid,
-                    role: ROLE_COLLECTION,
-                });
-                let (offsets, data) = flatten(v);
-                col(
-                    ColumnType::Index64,
-                    64,
-                    le_bytes(&offsets, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-                children.push((
-                    fid,
-                    leaf("_0", "double", 0),
-                    ColumnPlan {
-                        column_type: ColumnType::Real64,
-                        bits: 64,
-                        field_id: 0,
-                        page: le_bytes(&data, |x| x.to_le_bytes()),
-                        n: data.len() as u32,
-                    },
-                ));
-            }
-            Column::VecI32(v) => {
-                field_plans.push(FieldPlan {
-                    name: f.name.clone(),
-                    type_name: "std::vector<std::int32_t>".into(),
-                    parent_id: fid,
-                    role: ROLE_COLLECTION,
-                });
-                let (offsets, data) = flatten(v);
-                col(
-                    ColumnType::Index64,
-                    64,
-                    le_bytes(&offsets, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-                children.push((
-                    fid,
-                    leaf("_0", "std::int32_t", 0),
-                    ColumnPlan {
-                        column_type: ColumnType::Int32,
-                        bits: 32,
-                        field_id: 0,
-                        page: le_bytes(&data, |x| x.to_le_bytes()),
-                        n: data.len() as u32,
-                    },
-                ));
-            }
-            Column::VecI64(v) => {
-                field_plans.push(FieldPlan {
-                    name: f.name.clone(),
-                    type_name: "std::vector<std::int64_t>".into(),
-                    parent_id: fid,
-                    role: ROLE_COLLECTION,
-                });
-                let (offsets, data) = flatten(v);
-                col(
-                    ColumnType::Index64,
-                    64,
-                    le_bytes(&offsets, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-                children.push((
-                    fid,
-                    leaf("_0", "std::int64_t", 0),
-                    ColumnPlan {
-                        column_type: ColumnType::Int64,
-                        bits: 64,
-                        field_id: 0,
-                        page: le_bytes(&data, |x| x.to_le_bytes()),
-                        n: data.len() as u32,
-                    },
-                ));
-            }
-            Column::VecBool(v) => {
-                field_plans.push(FieldPlan {
-                    name: f.name.clone(),
-                    type_name: "std::vector<bool>".into(),
-                    parent_id: fid,
-                    role: ROLE_COLLECTION,
-                });
-                let (offsets, data) = flatten(v);
-                col(
-                    ColumnType::Index64,
-                    64,
-                    le_bytes(&offsets, |x| x.to_le_bytes()),
-                    v.len(),
-                );
-                children.push((
-                    fid,
-                    leaf("_0", "bool", 0),
-                    ColumnPlan {
-                        column_type: ColumnType::Bit,
-                        bits: 1,
-                        field_id: 0,
-                        page: pack_bits(&data),
-                        n: data.len() as u32,
-                    },
-                ));
+                    le_bytes(&data, |x| x.to_le_bytes()),
+                    data.len(),
+                ),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecStr(v) => {
+            let (offsets, data) = flatten(v);
+            collection_node(name, &offsets, v.len(), string_node("_0", &data))
+        }
+        Column::Nested { offsets, items } => {
+            let child = lower_column("_0", items);
+            collection_node(name, offsets, offsets.len(), child)
+        }
+        Column::Record(subs) => {
+            let children: Vec<Node> = subs.iter().map(|(n, c)| lower_column(n, c)).collect();
+            let type_name = record_type_name(&children);
+            Node {
+                name: name.to_string(),
+                type_name,
+                role: ROLE_RECORD,
+                cols: vec![],
+                children,
             }
         }
     }
+}
 
-    for (parent, mut field, mut column) in children {
-        let child_id = field_plans.len() as u32;
-        field.parent_id = parent;
-        column.field_id = child_id;
-        field_plans.push(field);
-        columns.push(column);
+/// Assign field ids by a depth-first pre-order walk (parents before children,
+/// matching ROOT's field/column ordering) and attach each node's columns.
+fn flatten_tree(roots: Vec<Node>) -> (Vec<FieldPlan>, Vec<ColumnPlan>) {
+    let mut fields = Vec::new();
+    let mut cols = Vec::new();
+    for node in roots {
+        push_node(node, None, &mut fields, &mut cols);
     }
+    (fields, cols)
+}
 
+fn push_node(
+    node: Node,
+    parent: Option<u32>,
+    fields: &mut Vec<FieldPlan>,
+    cols: &mut Vec<ColumnPlan>,
+) {
+    let id = fields.len() as u32;
+    fields.push(FieldPlan {
+        name: node.name,
+        type_name: node.type_name,
+        parent_id: parent.unwrap_or(id), // a top-level field is its own parent
+        role: node.role,
+    });
+    for c in node.cols {
+        cols.push(ColumnPlan {
+            column_type: c.column_type,
+            bits: c.bits,
+            field_id: id,
+            page: c.page,
+            n: c.n,
+        });
+    }
+    for child in node.children {
+        push_node(child, Some(id), fields, cols);
+    }
+}
+
+/// Lower user fields into field and column plans (depth-first, parents before
+/// children), returning the top-level entry count.
+fn lower(fields: &[Field]) -> (Vec<FieldPlan>, Vec<ColumnPlan>, u32) {
+    let n_entries = fields.first().map(|f| f.data.len() as u32).unwrap_or(0);
+    let roots: Vec<Node> = fields
+        .iter()
+        .map(|f| lower_column(&f.name, &f.data))
+        .collect();
+    let (field_plans, columns) = flatten_tree(roots);
     (field_plans, columns, n_entries)
 }
 
