@@ -207,12 +207,27 @@ fn chunk_regions(baskets: &[Basket], stride: usize) -> Vec<&[u8]> {
     regions
 }
 
+/// Require a class version to match the layout this crate parses, failing with a
+/// clear [`Error::UnsupportedVersion`] rather than silently misparsing. The
+/// member layouts below are pinned to these versions (as written by current
+/// ROOT/uproot); a different version needs streamer-info-driven parsing.
+fn require_version(class: &'static str, got: u16, want: u16) -> Result<()> {
+    if got != want {
+        return Err(Error::UnsupportedVersion {
+            class,
+            version: got,
+        });
+    }
+    Ok(())
+}
+
 /// Parse a decompressed `TTree` object (`keylen` is its key's header length).
 fn read_tree(object: &[u8], keylen: usize) -> Result<TTree> {
     let mut r = RBuffer::new(object);
     let mut tags = TagReader::new(keylen);
 
     let tree_hdr = r.read_version()?; // TTree (v20)
+    require_version("TTree", tree_hdr.version, 20)?;
     let named = read_tnamed(&mut r)?; // TNamed: fName, fTitle
     skip_versioned(&mut r)?; // TAttLine
     skip_versioned(&mut r)?; // TAttFill
@@ -295,7 +310,8 @@ fn read_branch(
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
 ) -> Result<Option<Branch>> {
-    r.read_version()?; // TBranch (v13)
+    let vh = r.read_version()?; // TBranch (v13)
+    require_version("TBranch", vh.version, 13)?;
     let named = read_tnamed(r)?; // fName, fTitle
     skip_versioned(r)?; // TAttFill
 
@@ -379,9 +395,11 @@ fn read_branch_element(
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
 ) -> Result<Vec<Branch>> {
-    r.read_version()?; // TBranchElement (v10) — the object's own version
-                       // Then the TBranch base — same layout as a standalone TBranch body.
-    r.read_version()?; // TBranch base (v13)
+    let vh = r.read_version()?; // TBranchElement (v10) — the object's own version
+    require_version("TBranchElement", vh.version, 10)?;
+    // Then the TBranch base — same layout as a standalone TBranch body.
+    let base = r.read_version()?; // TBranch base (v13)
+    require_version("TBranch", base.version, 13)?;
     let named = read_tnamed(r)?; // fName, fTitle
     skip_versioned(r)?; // TAttFill
     r.be_i32()?; // fCompress
@@ -660,4 +678,22 @@ fn decode_strings(baskets: &[Basket]) -> Result<BranchValues> {
         }
     }
     Ok(BranchValues::Str(out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_version;
+    use oxiroot_io_core::error::Error;
+
+    #[test]
+    fn version_guard_rejects_skew() {
+        assert!(require_version("TTree", 20, 20).is_ok());
+        match require_version("TTree", 19, 20) {
+            Err(Error::UnsupportedVersion { class, version }) => {
+                assert_eq!(class, "TTree");
+                assert_eq!(version, 19);
+            }
+            other => panic!("expected UnsupportedVersion, got {other:?}"),
+        }
+    }
 }
