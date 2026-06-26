@@ -341,6 +341,11 @@ fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<BranchValues> {
 
     let variable = baskets.iter().any(|b| b.entry_offsets.is_some());
     if branch.leaf_type == LeafType::Str {
+        // A `std::vector<std::string>` branch carries a 10-byte streamer header
+        // (with the element count); a plain `TLeafC` is one string per entry.
+        if branch.elem_header > 0 {
+            return decode_vec_strings(&entry_regions_variable(baskets)?);
+        }
         return decode_strings(baskets);
     }
     if variable {
@@ -411,6 +416,7 @@ fn slice_values(bv: BranchValues, offset: usize, len: usize) -> BranchValues {
         VecF32(v) => sl!(VecF32, v),
         VecF64(v) => sl!(VecF64, v),
         Str(v) => sl!(Str, v),
+        VecStr(v) => sl!(VecStr, v),
     }
 }
 
@@ -779,6 +785,8 @@ fn parse_vector_elem(class_name: &str) -> Option<LeafType> {
         "bool" | "Bool_t" => LeafType::Bool,
         "long" | "long long" | "Long64_t" | "Long_t" => LeafType::I64,
         "unsigned long" | "unsigned long long" | "ULong64_t" | "ULong_t" => LeafType::U64,
+        // std::vector<std::string>: the element is a string (decoded specially).
+        "string" | "std::string" => LeafType::Str,
         _ => return None,
     })
 }
@@ -960,6 +968,28 @@ fn decode_array(leaf: LeafType, regions: &[&[u8]]) -> Result<BranchValues> {
         LeafType::F64 => be!(VecF64, f64, 8),
         LeafType::Str => return Err(Error::Format("string branch decoded as array".into())),
     })
+}
+
+/// Decode `std::vector<std::string>` entries: each region is a 10-byte streamer
+/// header (byte count + version + `u32` element count) followed by that many
+/// ROOT-encoded strings.
+fn decode_vec_strings(regions: &[&[u8]]) -> Result<BranchValues> {
+    let mut out = Vec::with_capacity(regions.len());
+    for r in regions {
+        let mut buf = RBuffer::new(r);
+        let mut row = Vec::new();
+        if buf.remaining() >= 10 {
+            buf.be_u32()?; // byte count
+            buf.be_u16()?; // version
+            let count = buf.be_u32()? as usize;
+            row.reserve(count);
+            for _ in 0..count {
+                row.push(buf.string()?);
+            }
+        }
+        out.push(row);
+    }
+    Ok(BranchValues::VecStr(out))
 }
 
 /// Decode `TLeafC` baskets: each entry is one ROOT-encoded (length-prefixed)

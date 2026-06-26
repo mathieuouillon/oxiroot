@@ -125,5 +125,6 @@ fn concat_values(parts: Vec<BranchValues>, name: &str) -> Result<BranchValues> {
         VecF32(mut v) => cat!(VecF32, v),
         VecF64(mut v) => cat!(VecF64, v),
         Str(mut v) => cat!(Str, v),
+        VecStr(mut v) => cat!(VecStr, v),
     })
 }

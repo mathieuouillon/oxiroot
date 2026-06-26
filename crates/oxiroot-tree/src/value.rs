@@ -116,6 +116,8 @@ pub enum BranchValues {
     VecF64(Vec<Vec<f64>>),
     /// Per-entry string (`TLeafC`).
     Str(Vec<String>),
+    /// Per-entry `std::vector<std::string>`.
+    VecStr(Vec<Vec<String>>),
 }
 
 /// A jagged (or array) branch viewed as cumulative `offsets` over one flat
@@ -176,6 +178,7 @@ impl BranchValues {
             VecF32(v) => v.len(),
             VecF64(v) => v.len(),
             Str(v) => v.len(),
+            VecStr(v) => v.len(),
         }
     }
 
@@ -201,7 +204,7 @@ impl BranchValues {
             U64(_) | VecU64(_) => LeafType::U64,
             F32(_) | VecF32(_) => LeafType::F32,
             F64(_) | VecF64(_) => LeafType::F64,
-            Str(_) => LeafType::Str,
+            Str(_) | VecStr(_) => LeafType::Str,
         }
     }
 }

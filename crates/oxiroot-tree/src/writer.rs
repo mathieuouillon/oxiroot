@@ -399,6 +399,7 @@ impl Branch {
             VecF32(r) => r.len(),
             VecF64(r) => r.len(),
             Str(v) => v.len(),
+            VecStr(v) => v.len(),
         };
         n as u32
     }
@@ -419,7 +420,8 @@ impl Branch {
             U64(_) | VecU64(_) => ("TLeafL", 'l', 8, true),
             F32(_) | VecF32(_) => ("TLeafF", 'F', 4, false),
             F64(_) | VecF64(_) => ("TLeafD", 'D', 8, false),
-            Str(_) => ("TLeafC", 'C', 1, false),
+            // vector<string> is read-only; it never reaches the writer.
+            Str(_) | VecStr(_) => ("TLeafC", 'C', 1, false),
         };
         let len_type = if matches!(self.values, Str(_)) || self.stl_vector {
             0
@@ -704,6 +706,8 @@ impl Branch {
                 }
                 return (data, Some(offsets));
             }
+            // vector<string> is read-only; the writer never receives one.
+            VecStr(_) => unreachable!("vector<string> branches cannot be written"),
         };
         // A jagged numeric branch is variable-length too: emit the byte offset
         // after each row (element count × element width).
@@ -1093,6 +1097,7 @@ fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> BranchValues {
         VecF32(v) => sl!(VecF32, v),
         VecF64(v) => sl!(VecF64, v),
         Str(v) => sl!(Str, v),
+        VecStr(v) => sl!(VecStr, v),
     }
 }
 
