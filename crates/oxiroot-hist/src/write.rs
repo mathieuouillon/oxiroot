@@ -32,6 +32,7 @@ use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
 use crate::th2::TH2;
 use crate::th3::TH3;
+use crate::thnsparse::THnSparse;
 use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
@@ -706,6 +707,112 @@ pub fn write_tefficiency(w: &mut WBuffer, h: &TEfficiency) {
 pub fn tefficiency_to_bytes(h: &TEfficiency) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tefficiency(&mut w, h);
+    w.into_vec()
+}
+
+/// Write an object-pointer member: `{byte count}{kNewClassTag}{class\0}{body}`,
+/// with `body` written by `f`.
+fn write_object_ptr(w: &mut WBuffer, class: &str, f: impl FnOnce(&mut WBuffer)) {
+    let bc = w.reserve(4);
+    let start = w.len();
+    w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
+    w.bytes(class.as_bytes());
+    w.u8(0);
+    f(w);
+    let len = (w.len() - start) as u32;
+    w.patch_be_u32(bc, 0x4000_0000 | len);
+}
+
+/// Write a `TObjArray` (version 3) of `n` object-pointer elements, each emitted
+/// by `elem(w, i)`.
+fn write_objarray(w: &mut WBuffer, n: usize, mut elem: impl FnMut(&mut WBuffer, usize)) {
+    let oa = w.begin_object(3); // TObjArray version 3
+    write_tobject(w, 0);
+    w.string(""); // fName
+    w.be_i32(n as i32); // fSize
+    w.be_i32(0); // fLowerBound
+    for i in 0..n {
+        elem(w, i);
+    }
+    w.end_object(oa);
+}
+
+/// Write a single `THnSparse` (`THnSparseT<TArrayD>`) into a new ROOT file.
+pub fn write_thnsparse_file(
+    path: impl AsRef<Path>,
+    h: &THnSparse,
+    compression: Compression,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "THnSparseT<TArrayD>".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: thnsparse_to_bytes(h),
+        };
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        )
+    })
+}
+
+/// Serialize a `THnSparse` object. Layout: `THnSparseT{ THnSparse{ THnBase{
+/// TNamed, fNdimensions, fAxes(TObjArray<TAxis>), fEntries, fTsumw, fTsumw2,
+/// fTsumwx, fTsumwx2 }, fChunkSize, fFilledBins, fBinContent(TObjArray<chunk>) }}`.
+/// The single chunk packs every filled bin's compact coordinate and content.
+pub fn write_thnsparse(w: &mut WBuffer, h: &THnSparse) {
+    let bits = h.axis_bits();
+    let total_bits: u32 = bits.iter().sum();
+    let single = total_bits.div_ceil(8).max(1) as usize; // fSingleCoordinateSize
+    let nfilled = h.bins.len();
+
+    let tt = w.begin_object(1); // THnSparseT<TArrayD> version 1
+    let ts = w.begin_object(3); // THnSparse version 3
+    let tb = w.begin_object(1); // THnBase version 1
+    write_tnamed(w, HIST_BITS, &h.name, &h.title);
+    w.be_i32(h.ndim() as i32);
+    write_objarray(w, h.ndim(), |w, i| {
+        write_object_ptr(w, "TAxis", |w| write_taxis(w, &h.axes[i]));
+    });
+    w.be_f64(h.entries);
+    w.be_f64(h.tsumw);
+    w.be_f64(h.tsumw2);
+    write_tarrayd(w, &h.tsumwx);
+    write_tarrayd(w, &h.tsumwx2);
+    w.end_object(tb);
+
+    w.be_i32(nfilled.max(1) as i32); // fChunkSize (one chunk holds them all)
+    w.be_i64(nfilled as i64); // fFilledBins
+    write_objarray(w, 1, |w, _| {
+        write_object_ptr(w, "THnSparseArrayChunk", |w| {
+            let chunk = w.begin_object(1); // THnSparseArrayChunk version 1
+            write_tobject(w, 0);
+            w.be_i32(single as i32); // fSingleCoordinateSize
+            w.be_i32((nfilled * single) as i32); // fCoordinatesSize
+            w.u8(1); // char* presence flag
+            for b in &h.bins {
+                let coord = h.pack(&b.coords, &bits);
+                for k in (0..single).rev() {
+                    w.u8((coord >> (8 * k)) as u8); // big-endian
+                }
+            }
+            let contents: Vec<f64> = h.bins.iter().map(|b| b.content).collect();
+            write_object_ptr(w, "TArrayD", |w| write_tarrayd(w, &contents)); // fContent
+            w.be_i32(0); // fSumw2: null pointer
+            w.end_object(chunk);
+        });
+    });
+    w.end_object(ts);
+    w.end_object(tt);
+}
+
+/// Serialize a `THnSparse` object to a fresh byte vector.
+pub fn thnsparse_to_bytes(h: &THnSparse) -> Vec<u8> {
+    let mut w = WBuffer::new();
+    write_thnsparse(&mut w, h);
     w.into_vec()
 }
 
