@@ -15,8 +15,16 @@ use crate::pagelist::PageInfo;
 pub enum ColumnValues {
     /// `Bit` columns.
     Bits(Vec<bool>),
-    /// `Char`/`Byte`/`Int8`/`UInt8` columns.
+    /// `Char`/`Byte` columns (raw bytes, e.g. string characters).
     Bytes(Vec<u8>),
+    /// 8-bit signed integer columns (`Int8`).
+    I8(Vec<i8>),
+    /// 8-bit unsigned integer columns (`UInt8`).
+    U8(Vec<u8>),
+    /// 16-bit signed integer columns (`Int16`, `SplitInt16`).
+    I16(Vec<i16>),
+    /// 16-bit unsigned integer columns (`UInt16`, `SplitUInt16`).
+    U16(Vec<u16>),
     /// 32-bit signed integer columns (`Int32`, `SplitInt32`).
     I32(Vec<i32>),
     /// 64-bit signed integer columns (`Int64`, `SplitInt64`).
@@ -90,6 +98,10 @@ fn zigzag64(u: u64) -> i64 {
     ((u >> 1) as i64) ^ -((u & 1) as i64)
 }
 
+fn zigzag16(u: u16) -> i16 {
+    ((u >> 1) as i16) ^ -((u & 1) as i16)
+}
+
 /// Delta-decode (cumulative sum) for index/offset columns.
 fn delta_decode(deltas: Vec<u64>) -> Vec<u64> {
     let mut acc = 0u64;
@@ -131,7 +143,7 @@ pub fn read_column(
             }
             Ok(ColumnValues::Bits(out))
         }
-        Char | Byte | Int8 | UInt8 => {
+        Char | Byte => {
             let mut out = Vec::new();
             for p in pages {
                 let raw = read_page_bytes(data, p, bits)?;
@@ -139,6 +151,17 @@ pub fn read_column(
             }
             Ok(ColumnValues::Bytes(out))
         }
+
+        // 8-bit integers have no split form (transposing single bytes is a no-op).
+        Int8 => Ok(ColumnValues::I8(fixed(data, bits, pages, false, le_i8)?)),
+        UInt8 => Ok(ColumnValues::U8(fixed(data, bits, pages, false, le_u8)?)),
+        Int16 => Ok(ColumnValues::I16(fixed(data, bits, pages, false, le_i16)?)),
+        SplitInt16 => {
+            let raw = fixed(data, bits, pages, true, le_u16)?;
+            Ok(ColumnValues::I16(raw.into_iter().map(zigzag16).collect()))
+        }
+        UInt16 => Ok(ColumnValues::U16(fixed(data, bits, pages, false, le_u16)?)),
+        SplitUInt16 => Ok(ColumnValues::U16(fixed(data, bits, pages, true, le_u16)?)),
 
         Int32 => Ok(ColumnValues::I32(fixed(data, bits, pages, false, le_i32)?)),
         SplitInt32 => {
@@ -205,6 +228,18 @@ fn fixed<T>(
     Ok(out)
 }
 
+fn le_i8(c: &[u8]) -> i8 {
+    c[0] as i8
+}
+fn le_u8(c: &[u8]) -> u8 {
+    c[0]
+}
+fn le_i16(c: &[u8]) -> i16 {
+    i16::from_le_bytes(c.try_into().unwrap())
+}
+fn le_u16(c: &[u8]) -> u16 {
+    u16::from_le_bytes(c.try_into().unwrap())
+}
 fn le_i32(c: &[u8]) -> i32 {
     i32::from_le_bytes(c.try_into().unwrap())
 }

@@ -15,6 +15,14 @@ use crate::page::ColumnValues;
 pub enum FieldValues {
     /// `bool`.
     Bool(Vec<bool>),
+    /// 8-bit signed integer.
+    I8(Vec<i8>),
+    /// 8-bit unsigned integer.
+    U8(Vec<u8>),
+    /// 16-bit signed integer.
+    I16(Vec<i16>),
+    /// 16-bit unsigned integer.
+    U16(Vec<u16>),
     /// 32-bit signed integer.
     I32(Vec<i32>),
     /// 64-bit signed integer.
@@ -31,6 +39,14 @@ pub enum FieldValues {
     Str(Vec<String>),
     /// `std::vector<bool>`.
     VecBool(Vec<Vec<bool>>),
+    /// `std::vector<int8_t>`.
+    VecI8(Vec<Vec<i8>>),
+    /// `std::vector<uint8_t>`.
+    VecU8(Vec<Vec<u8>>),
+    /// `std::vector<int16_t>`.
+    VecI16(Vec<Vec<i16>>),
+    /// `std::vector<uint16_t>`.
+    VecU16(Vec<Vec<u16>>),
     /// `std::vector<int32_t>`.
     VecI32(Vec<Vec<i32>>),
     /// `std::vector<int64_t>`.
@@ -70,6 +86,10 @@ impl FieldValues {
         use FieldValues::*;
         match self {
             Bool(v) => v.len(),
+            I8(v) => v.len(),
+            U8(v) => v.len(),
+            I16(v) => v.len(),
+            U16(v) => v.len(),
             I32(v) => v.len(),
             I64(v) => v.len(),
             U32(v) => v.len(),
@@ -78,6 +98,10 @@ impl FieldValues {
             F64(v) => v.len(),
             Str(v) => v.len(),
             VecBool(v) => v.len(),
+            VecI8(v) => v.len(),
+            VecU8(v) => v.len(),
+            VecI16(v) => v.len(),
+            VecU16(v) => v.len(),
             VecI32(v) => v.len(),
             VecI64(v) => v.len(),
             VecU32(v) => v.len(),
@@ -101,6 +125,10 @@ impl FieldValues {
 pub(crate) fn scalar(values: ColumnValues) -> Result<FieldValues> {
     Ok(match values {
         ColumnValues::Bits(v) => FieldValues::Bool(v),
+        ColumnValues::I8(v) => FieldValues::I8(v),
+        ColumnValues::U8(v) => FieldValues::U8(v),
+        ColumnValues::I16(v) => FieldValues::I16(v),
+        ColumnValues::U16(v) => FieldValues::U16(v),
         ColumnValues::I32(v) => FieldValues::I32(v),
         ColumnValues::I64(v) => FieldValues::I64(v),
         ColumnValues::U32(v) => FieldValues::U32(v),
@@ -138,6 +166,10 @@ pub(crate) fn collect(offsets: Vec<u64>, items: FieldValues) -> Result<FieldValu
     use FieldValues::*;
     Ok(match items {
         Bool(v) => VecBool(group(&offsets, &v)?),
+        I8(v) => VecI8(group(&offsets, &v)?),
+        U8(v) => VecU8(group(&offsets, &v)?),
+        I16(v) => VecI16(group(&offsets, &v)?),
+        U16(v) => VecU16(group(&offsets, &v)?),
         I32(v) => VecI32(group(&offsets, &v)?),
         I64(v) => VecI64(group(&offsets, &v)?),
         U32(v) => VecU32(group(&offsets, &v)?),
