@@ -231,24 +231,29 @@ machine with neither still gets a meaningful green from `cargo test` alone.
 Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 (+`rootcling`) on `PATH` for the ROOT-C++ side.
 
-## Status & roadmap
+## Roadmap
 
-Experimental (`0.0.x`) but functional — reading and writing RNTuple, `TTree`,
-the classic histogram family, and graphs all work and interoperate with ROOT and
-uproot.
+Experimental (`0.0.x`). On the list — each item targets the same bar as what
+already ships: byte-level round-trips verified against both ROOT and uproot.
 
-**Done:** `TFile` read/write · histograms `TH1`/`TH2`/`TH3` (all precisions) +
-`TProfile`/`2D`/`3D` + `TEfficiency` + `THnSparse` + `TH2Poly` (read + create/
-fill/ops/write) · `TGraph`/`TGraphErrors`/`TGraphAsymmErrors` (read + write) ·
-multithreaded fill · RNTuple read + write · **`TTree`** read + write (scalar,
-fixed/variable array, string, unsplit `std::vector<T>`, and split
-`std::vector<MyStruct>`) · Zstd compression · self-describing `TStreamerInfo` ·
-nested directories · `update` (append) mode · streaming multi-cluster RNTuple ·
-64-bit (`> 2 GiB`) files · ergonomic facade with a `prelude`.
+- **Compression** — LZ4 and LZMA *decode* (today such a block reports an
+  unavailable-codec error); non-Zstd *encode* (zlib / LZ4) for files matching
+  older ROOT defaults.
+- **Histogram analysis** — fitting (`TF1` + a minimizer); `Chi2Test` /
+  `KolmogorovTest`; `GetQuantiles` / `Interpolate`; labelled / alphanumeric axes
+  (`fLabels` is currently skipped on read).
+- **Graphs** — `TGraph2D` and `TGraphMultiErrors`; persisting a graph's fitted
+  functions (`fFunctions`) and display frame (`fHistogram`), written empty today.
+- **RNTuple** — richer collection fields: `std::vector<std::string>`, nested
+  `std::vector<std::vector<T>>`, and vectors of records; the remaining column
+  encodings on the read path.
+- **`TTree`** — object / nested branches beyond split `std::vector<MyStruct>`
+  (nested structs, `std::vector<std::string>`, arrays of objects).
+- **Append mode** — `update` into files that contain subdirectories or an
+  RNTuple (currently rejected).
 
-**Not yet:** LZ4/LZMA decode · histogram fitting (`TF1`) · ROOT 7 `RHist`
-(intentionally out of scope — it has no persistable on-disk format; its
-`Streamer` throws).
+Out of scope: ROOT 7 `RHist` (no persistable on-disk format — its `Streamer`
+throws) and graphics objects (`TCanvas` and friends).
 
 ## License
 
