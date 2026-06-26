@@ -18,4 +18,4 @@ mod writer;
 pub use chain::TChain;
 pub use reader::TTree;
 pub use value::{BranchValues, Jagged, LeafType};
-pub use writer::{tree_file_bytes, write_tree_file, Branch, SplitMember};
+pub use writer::{tree_file_bytes, write_tree_file, write_tree_file_baskets, Branch, SplitMember};

@@ -726,6 +726,8 @@ impl Branch {
 struct BasketRec {
     seek: u64,
     nbytes: u32,
+    /// Number of entries this basket holds (for the cumulative `fBasketEntry`).
+    n_entries: u32,
 }
 
 /// Write a single-tree ROOT file containing the flat scalar `branches`.
@@ -747,7 +749,7 @@ pub fn write_tree_file(
     Ok(())
 }
 
-/// Build the bytes of a single-tree ROOT file.
+/// Build the bytes of a single-tree ROOT file (one basket per branch).
 ///
 /// Returns an error if a fixed-array branch ([`Branch::vec_f64`] …) was given
 /// rows of differing length — use [`Branch::jagged_f64`] … for that.
@@ -756,6 +758,47 @@ pub fn tree_file_bytes(
     tree_name: &str,
     branches: &[Branch],
     compression: Compression,
+) -> Result<Vec<u8>> {
+    tree_bytes(file_name, tree_name, branches, compression, 0)
+}
+
+/// Write a single-tree ROOT file, splitting each branch into baskets of at most
+/// `entries_per_basket` entries (`0` = one basket per branch). Multiple baskets
+/// let a large tree be stored the way ROOT writes it; split `std::vector<Struct>`
+/// branches are always one basket (their per-member alignment is not chunked).
+pub fn write_tree_file_baskets(
+    path: impl AsRef<Path>,
+    tree_name: &str,
+    branches: &[Branch],
+    compression: Compression,
+    entries_per_basket: usize,
+) -> Result<()> {
+    let path = path.as_ref();
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file.root");
+    std::fs::write(
+        path,
+        tree_bytes(
+            file_name,
+            tree_name,
+            branches,
+            compression,
+            entries_per_basket,
+        )?,
+    )?;
+    Ok(())
+}
+
+/// Shared body of [`tree_file_bytes`] / [`write_tree_file_baskets`]:
+/// `entries_per_basket` of `0` means one basket per branch.
+fn tree_bytes(
+    file_name: &str,
+    tree_name: &str,
+    branches: &[Branch],
+    compression: Compression,
+    entries_per_basket: usize,
 ) -> Result<Vec<u8>> {
     for b in branches {
         if !b.jagged && !b.stl_vector && b.is_jagged() {
@@ -836,7 +879,7 @@ pub fn tree_file_bytes(
     // branch has a count basket plus one per member sub-branch. ---
     let basket_groups: Vec<Vec<BasketRec>> = eff
         .iter()
-        .map(|&b| write_branch_baskets(&mut w, b, tree_name, compression))
+        .map(|&b| write_branch_baskets(&mut w, b, tree_name, compression, entries_per_basket))
         .collect();
     let tot_bytes: i64 = basket_groups
         .iter()
@@ -997,7 +1040,60 @@ fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: 
     w.u8(0); // flag
     w.bytes(&payload);
 
-    BasketRec { seek, nbytes }
+    BasketRec {
+        seek,
+        nbytes,
+        n_entries,
+    }
+}
+
+/// A sub-range `[start, start+len)` of a non-split branch's entries, as a fresh
+/// `Branch` — used to split a branch into multiple baskets.
+fn chunk_branch(branch: &Branch, start: usize, len: usize) -> Branch {
+    Branch {
+        name: branch.name.clone(),
+        values: chunk_values(&branch.values, start, len),
+        jagged: branch.jagged,
+        stl_vector: branch.stl_vector,
+        split: None,
+    }
+}
+
+/// Slice a [`BranchValues`] to `[start, start+len)` (clamped), preserving variant.
+fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> BranchValues {
+    use BranchValues::*;
+    macro_rules! sl {
+        ($variant:ident, $v:expr) => {{
+            let end = (start + len).min($v.len());
+            let s = start.min(end);
+            $variant($v[s..end].to_vec())
+        }};
+    }
+    match bv {
+        Bool(v) => sl!(Bool, v),
+        I8(v) => sl!(I8, v),
+        U8(v) => sl!(U8, v),
+        I16(v) => sl!(I16, v),
+        U16(v) => sl!(U16, v),
+        I32(v) => sl!(I32, v),
+        U32(v) => sl!(U32, v),
+        I64(v) => sl!(I64, v),
+        U64(v) => sl!(U64, v),
+        F32(v) => sl!(F32, v),
+        F64(v) => sl!(F64, v),
+        VecBool(v) => sl!(VecBool, v),
+        VecI8(v) => sl!(VecI8, v),
+        VecU8(v) => sl!(VecU8, v),
+        VecI16(v) => sl!(VecI16, v),
+        VecU16(v) => sl!(VecU16, v),
+        VecI32(v) => sl!(VecI32, v),
+        VecU32(v) => sl!(VecU32, v),
+        VecI64(v) => sl!(VecI64, v),
+        VecU64(v) => sl!(VecU64, v),
+        VecF32(v) => sl!(VecF32, v),
+        VecF64(v) => sl!(VecF64, v),
+        Str(v) => sl!(Str, v),
+    }
 }
 
 /// Write the basket(s) backing one branch. A leaf branch has exactly one. A
@@ -1010,9 +1106,33 @@ fn write_branch_baskets(
     branch: &Branch,
     tree_name: &str,
     compression: u32,
+    entries_per_basket: usize,
 ) -> Vec<BasketRec> {
     let Some(spec) = &branch.split else {
-        return vec![write_basket(w, branch, tree_name, compression)];
+        // A single-leaf branch is split into baskets of `entries_per_basket`
+        // entries (0 = one basket). An empty branch still gets one empty basket.
+        let n = branch.n_entries() as usize;
+        let epb = if entries_per_basket == 0 {
+            n.max(1)
+        } else {
+            entries_per_basket
+        };
+        let mut recs = Vec::new();
+        let mut start = 0;
+        while start < n {
+            let len = epb.min(n - start);
+            recs.push(write_basket(
+                w,
+                &chunk_branch(branch, start, len),
+                tree_name,
+                compression,
+            ));
+            start += len;
+        }
+        if recs.is_empty() {
+            recs.push(write_basket(w, branch, tree_name, compression));
+        }
+        return recs;
     };
     // Count basket: per-entry element counts as single-element jagged `i32`
     // rows, so it carries the same `fEntryOffset` ROOT writes for the parent.
@@ -1174,11 +1294,11 @@ fn write_branch_array(
             end_object_any(w, bc);
         } else if b.stl_vector {
             let bc = begin_object_any(w, "TBranchElement");
-            write_branch_element(w, b, &group[0], n_entries, keylen, refs);
+            write_branch_element(w, b, group, n_entries, keylen, refs);
             end_object_any(w, bc);
         } else {
             let bc = begin_object_any(w, "TBranch");
-            write_branch(w, b, &group[0], n_entries, keylen, refs);
+            write_branch(w, b, group, n_entries, keylen, refs);
             end_object_any(w, bc);
         }
     }
@@ -1190,13 +1310,13 @@ fn write_branch_array(
 fn write_branch_element(
     w: &mut WBuffer,
     branch: &Branch,
-    basket: &BasketRec,
+    group: &[BasketRec],
     n_entries: i64,
     keylen: u32,
     refs: &mut LeafRefs,
 ) {
     let tok = w.begin_object(10); // TBranchElement v10
-    write_branch(w, branch, basket, n_entries, keylen, refs); // the TBranch base
+    write_branch(w, branch, group, n_entries, keylen, refs); // the TBranch base
     let (class_name, checksum) = branch.stl_info();
     w.string(class_name); // fClassName, e.g. "vector<float>"
     w.string(""); // fParentName
@@ -1212,26 +1332,32 @@ fn write_branch_element(
     w.end_object(tok);
 }
 
-/// Write `fBasketBytes`/`fBasketEntry`/`fBasketSeek` (each `int[fMaxBaskets]` or
-/// `i64[]`, preceded by a marker byte): only basket 0 is populated.
-fn write_basket_arrays(w: &mut WBuffer, basket: &BasketRec, n_entries: i64, max_baskets: i32) {
+/// Write `fBasketBytes`/`fBasketEntry`/`fBasketSeek` for a branch's `group` of
+/// baskets (each `int[fMaxBaskets]` / `i64[fMaxBaskets]`, preceded by a marker
+/// byte). `fBasketEntry` is cumulative — the entry start of each basket, plus a
+/// trailing total — with the unused tail zeroed.
+fn write_basket_arrays(w: &mut WBuffer, group: &[BasketRec], max_baskets: i32) {
+    let cap = max_baskets as usize;
+    // cumulative[i] = entries before basket i; cumulative[group.len()] = total.
+    let mut cumulative = Vec::with_capacity(group.len() + 1);
+    let mut acc = 0i64;
+    cumulative.push(0);
+    for b in group {
+        acc += i64::from(b.n_entries);
+        cumulative.push(acc);
+    }
+
     w.u8(1);
-    for i in 0..max_baskets {
-        w.be_i32(if i == 0 { basket.nbytes as i32 } else { 0 });
+    for i in 0..cap {
+        w.be_i32(group.get(i).map_or(0, |b| b.nbytes as i32));
     }
     w.u8(1);
-    for i in 0..max_baskets {
-        w.be_i64(if i == 0 {
-            0
-        } else if i == 1 {
-            n_entries
-        } else {
-            0
-        });
+    for i in 0..cap {
+        w.be_i64(cumulative.get(i).copied().unwrap_or(0));
     }
     w.u8(1);
-    for i in 0..max_baskets {
-        w.be_i64(if i == 0 { basket.seek as i64 } else { 0 });
+    for i in 0..cap {
+        w.be_i64(group.get(i).map_or(0, |b| b.seek as i64));
     }
 }
 
@@ -1338,7 +1464,7 @@ fn write_split_parent(
 
     let baskets = obj_array_header(w, 0); // fBaskets (empty)
     w.end_object(baskets);
-    write_basket_arrays(w, count_basket, n_entries, max_baskets);
+    write_basket_arrays(w, std::slice::from_ref(count_basket), max_baskets);
     w.string(""); // fFileName
     w.end_object(tb);
 
@@ -1438,7 +1564,7 @@ fn write_split_sub(
 
     let baskets = obj_array_header(w, 0); // fBaskets (empty)
     w.end_object(baskets);
-    write_basket_arrays(w, basket, n_entries, max_baskets);
+    write_basket_arrays(w, std::slice::from_ref(basket), max_baskets);
     w.string(""); // fFileName
     w.end_object(tb);
 
@@ -1461,11 +1587,12 @@ fn write_split_sub(
 fn write_branch(
     w: &mut WBuffer,
     branch: &Branch,
-    basket: &BasketRec,
+    group: &[BasketRec],
     n_entries: i64,
     keylen: u32,
     refs: &mut LeafRefs,
 ) {
+    let tot_bytes: i64 = group.iter().map(|b| i64::from(b.nbytes)).sum();
     let leaf = branch.leaf();
     // Branch title encodes the layout: `name/CODE`, `name[N]/CODE` (fixed),
     // `name[count]/CODE` (jagged), or `name/C` (string).
@@ -1499,7 +1626,7 @@ fn write_branch(
     w.be_i32(0); // fCompress
     w.be_i32(32000); // fBasketSize
     w.be_i32(entry_offset_len); // fEntryOffsetLen
-    w.be_i32(1); // fWriteBasket
+    w.be_i32(group.len() as i32); // fWriteBasket
     w.be_i64(n_entries); // fEntryNumber
     write_iofeatures(w);
     w.be_i32(0); // fOffset
@@ -1507,8 +1634,8 @@ fn write_branch(
     w.be_i32(split_level); // fSplitLevel
     w.be_i64(n_entries); // fEntries
     w.be_i64(0); // fFirstEntry
-    w.be_i64(basket.nbytes as i64); // fTotBytes
-    w.be_i64(basket.nbytes as i64); // fZipBytes
+    w.be_i64(tot_bytes); // fTotBytes
+    w.be_i64(tot_bytes); // fZipBytes
 
     // fBranches (empty), fLeaves (one leaf), fBaskets (empty TObjArrays).
     let e = obj_array_header(w, 0);
@@ -1517,26 +1644,7 @@ fn write_branch(
     let e = obj_array_header(w, 0);
     w.end_object(e);
 
-    // fBasketBytes (int[fMaxBaskets]), fBasketEntry (i64[]), fBasketSeek (i64[]):
-    // each a marker byte then fMaxBaskets elements.
-    w.u8(1);
-    for i in 0..max_baskets {
-        w.be_i32(if i == 0 { basket.nbytes as i32 } else { 0 });
-    }
-    w.u8(1);
-    for i in 0..max_baskets {
-        w.be_i64(if i == 0 {
-            0
-        } else if i == 1 {
-            n_entries
-        } else {
-            0
-        });
-    }
-    w.u8(1);
-    for i in 0..max_baskets {
-        w.be_i64(if i == 0 { basket.seek as i64 } else { 0 });
-    }
+    write_basket_arrays(w, group, max_baskets);
     w.string(""); // fFileName
     w.end_object(tok);
 }
