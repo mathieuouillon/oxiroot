@@ -37,6 +37,10 @@ pub enum ColumnValues {
     F32(Vec<f32>),
     /// 64-bit float columns (`Real64`, `SplitReal64`).
     F64(Vec<f64>),
+    /// `Switch` columns (`std::variant` dispatch): per element, the `(index,
+    /// tag)` pair — a 64-bit index into the selected alternative's column and a
+    /// 32-bit 1-based alternative tag (`0` = valueless).
+    Switch(Vec<(u64, u32)>),
 }
 
 /// Uncompressed byte size of `n` elements stored at `bits` bits each. Computed
@@ -225,6 +229,21 @@ pub fn read_column(
                     .collect(),
             ))
         }
+        // std::variant dispatch: each 96-bit element is an 8-byte index plus a
+        // 4-byte alternative tag (both little-endian).
+        Switch => {
+            let mut out = Vec::new();
+            for p in pages {
+                let raw = read_page_bytes(data, p, bits)?;
+                for chunk in raw.chunks_exact(12).take(p.num_elements as usize) {
+                    let index = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
+                    let tag = u32::from_le_bytes(chunk[8..12].try_into().unwrap());
+                    out.push((index, tag));
+                }
+            }
+            Ok(ColumnValues::Switch(out))
+        }
+
         // A `bits`-wide unsigned integer linearly mapped onto the column's
         // [min, max] value range.
         Real32Quant => {

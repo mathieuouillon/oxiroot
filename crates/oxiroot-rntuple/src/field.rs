@@ -77,6 +77,18 @@ pub enum FieldValues {
         /// The flattened child values, partitioned by `offsets`.
         items: Box<FieldValues>,
     },
+    /// A `std::variant`: each element selects one `alternative` by its 1-based
+    /// `tag` (`0` = valueless) and reads it at `index`. The alternatives are
+    /// stored densely, so element `e`'s value is
+    /// `alternatives[tags[e] - 1].1` at position `indices[e]`.
+    Variant {
+        /// The variant alternatives (name, densely-packed values), in order.
+        alternatives: Vec<(String, FieldValues)>,
+        /// Per element: the 1-based active alternative (`0` = valueless).
+        tags: Vec<u32>,
+        /// Per element: the position within the active alternative's column.
+        indices: Vec<u64>,
+    },
 }
 
 impl FieldValues {
@@ -111,6 +123,7 @@ impl FieldValues {
             VecStr(v) => v.len(),
             Record(fields) => fields.first().map_or(0, |(_, f)| f.len()),
             Nested { offsets, .. } => offsets.len(),
+            Variant { tags, .. } => tags.len(),
         }
     }
 
@@ -138,6 +151,11 @@ pub(crate) fn scalar(values: ColumnValues) -> Result<FieldValues> {
         ColumnValues::Bytes(_) => {
             return Err(Error::Format(
                 "byte-typed scalar fields are not supported".into(),
+            ))
+        }
+        ColumnValues::Switch(_) => {
+            return Err(Error::Format(
+                "a Switch column is not a scalar leaf (it belongs to a variant)".into(),
             ))
         }
     })

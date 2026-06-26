@@ -271,6 +271,41 @@ impl RNTuple {
                 }
                 Ok(FieldValues::Record(out))
             }
+            StructRole::Variant => {
+                // The variant field carries one Switch column of (index, tag);
+                // each sub-field is one densely-packed alternative.
+                let switch_ci = *columns.first().ok_or_else(|| {
+                    Error::Format(format!("variant field {:?} has no switch column", fld.name))
+                })?;
+                let (tags, indices) = match self.read_column(file, switch_ci)? {
+                    ColumnValues::Switch(v) => (
+                        v.iter().map(|&(_, t)| t).collect::<Vec<_>>(),
+                        v.iter().map(|&(i, _)| i).collect::<Vec<_>>(),
+                    ),
+                    other => {
+                        return Err(Error::Format(format!(
+                            "variant switch column decoded as {other:?}"
+                        )))
+                    }
+                };
+                let children = self.child_fields(field_idx);
+                if children.is_empty() {
+                    return Err(Error::Format(format!(
+                        "variant field {:?} has no alternatives",
+                        fld.name
+                    )));
+                }
+                let mut alternatives = Vec::with_capacity(children.len());
+                for c in children {
+                    let sub_name = self.header.fields[c].name.clone();
+                    alternatives.push((sub_name, self.read_field_tree(file, c)?));
+                }
+                Ok(FieldValues::Variant {
+                    alternatives,
+                    tags,
+                    indices,
+                })
+            }
             other => Err(Error::Format(format!(
                 "field role {other:?} is not supported"
             ))),
