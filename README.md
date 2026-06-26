@@ -330,12 +330,14 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
     `TStreamerInfo` interpretation of the page bytes.
   - Write support for the fixed-size (`std::array`/`std::bitset`) and user-class
     field types (read is done).
-- **`TTree`** — streamer-info-driven parsing (read class member layouts from the
-  file's `TStreamerInfo` instead of pinned versions, and generate it on write
-  rather than embedding baked blobs); richer object/STL branches beyond split
-  `std::vector<MyStruct>` and `std::vector<std::string>` (nested structs,
-  `std::vector<std::vector<T>>`, `TClonesArray`); a truly incremental
-  fill-to-disk writer.
+- **`TTree`** — fuller streamer-info-driven parsing: the reader now reads and
+  validates the file's `TStreamerInfo` (see `TTree::streamer_classes`), but still
+  parses members at pinned offsets — an adaptive *generic member reader* (parse by
+  the streamer element list, not fixed layout) and a *write-side generator* (emit
+  the streamer info instead of baked blobs) remain. Plus richer object/STL
+  branches beyond split `std::vector<MyStruct>` and `std::vector<std::string>`
+  (nested structs, `std::vector<std::vector<T>>`, `TClonesArray`) and a truly
+  incremental fill-to-disk writer.
 - **Append mode** — `update` into files that contain subdirectories or an
   RNTuple (currently rejected).
 - **Plotting** — render histograms and graphs to static images (SVG / PNG) from
