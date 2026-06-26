@@ -25,7 +25,8 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
-  vectors), compressed, multi-cluster via a streaming writer.
+  vectors, **nested vectors and vectors of records**), compressed, multi-cluster
+  via a streaming writer.
 - 🗜 **Compression** — decode Zstd / zlib / LZ4 / LZMA; encode Zstd / zlib /
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
@@ -200,10 +201,13 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
 
 - Read the binary spec v1.0.0.0: anchor → envelopes → schema → clusters → pages,
   with split/zigzag/delta encodings and Zstd-compressed pages.
-- Typed field API (`read_field`) for scalars, `std::string`, and
-  `std::vector<T>`, across multiple clusters.
+- Typed field API (`read_field`) for scalars, `std::string`, `std::vector<T>`,
+  and nested collections — `std::vector<std::string>`,
+  `std::vector<std::vector<T>>`, and vectors of records
+  (`std::vector<MyStruct>`/`std::pair`) — across multiple clusters.
 - Write `bool`, 32/64-bit signed & unsigned ints, `f32`/`f64`, `std::string`,
-  and `std::vector<T>` (bool/int/float) — optionally Zstd-compressed.
+  `std::vector<T>`, and the same nested collections (`Field::vec_str` /
+  `vec_vec_*`, `Column::Record`/`Nested`) — optionally Zstd-compressed.
 - `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is
   never fully held in memory.
 
@@ -303,9 +307,9 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
 
 - **Graphs** — `TGraph2D` and `TGraphMultiErrors`; persisting a graph's fitted
   functions (`fFunctions`) and display frame (`fHistogram`), written empty today.
-- **RNTuple** — richer collection fields: `std::vector<std::string>`, nested
-  `std::vector<std::vector<T>>`, and vectors of records; the remaining column
-  encodings on the read path.
+- **RNTuple** — the remaining physical column encodings on the read path
+  (`Int8`/`Int16`, `Real16`, truncated/quantized reals, `Switch` for
+  `std::variant`); `std::variant`/`std::map` fields.
 - **`TTree`** — object / nested branches beyond split `std::vector<MyStruct>`
   (nested structs, `std::vector<std::string>`, arrays of objects).
 - **Append mode** — `update` into files that contain subdirectories or an
