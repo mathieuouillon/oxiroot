@@ -9,6 +9,7 @@
 //! blob) makes the file self-describing.
 
 use std::collections::HashMap;
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
@@ -727,6 +728,7 @@ impl Branch {
 }
 
 /// One basket's recorded location, for the branch metadata.
+#[derive(Clone, Copy)]
 struct BasketRec {
     seek: u64,
     nbytes: u32,
@@ -795,6 +797,519 @@ pub fn write_tree_file_baskets(
     Ok(())
 }
 
+/// A column's identity, used to check that every batch shares the first batch's
+/// schema: name, value-variant, and the array/`std::vector` flags. Fixed-array
+/// width is folded into the variant via `flen` so a shape change is caught too.
+#[derive(PartialEq)]
+struct ColSig {
+    name: String,
+    variant: std::mem::Discriminant<BranchValues>,
+    jagged: bool,
+    stl_vector: bool,
+    flen: i32,
+}
+
+fn col_sig(b: &Branch) -> ColSig {
+    ColSig {
+        name: b.name.clone(),
+        variant: std::mem::discriminant(&b.values),
+        jagged: b.jagged,
+        stl_vector: b.stl_vector,
+        flen: b.flen(),
+    }
+}
+
+/// The running aggregate a streamed column must keep so its leaf metadata is
+/// correct once every batch has been seen.
+enum ColAgg {
+    /// A plain data column (scalar / fixed array / jagged data / `std::vector`):
+    /// its leaf needs no value-derived aggregate.
+    Data,
+    /// A synthetic `n<name>` count column: track the maximum multiplicity, which
+    /// becomes the count leaf's `fMaximum` (ROOT sizes the read buffer from it).
+    Count(i64),
+    /// A `TLeafC` string column: track the longest string length + 1, which is
+    /// the leaf's `fLen` (the buffer ROOT allocates for the string).
+    Str(i32),
+}
+
+/// Accumulated state for one effective output column across batches.
+struct StreamCol {
+    /// A representative branch carrying the column's type/flags (and, for fixed
+    /// arrays, its width) plus minimal values, so [`build_tree_object`] can emit
+    /// the branch/leaf metadata. Its aggregate-bearing values (count `fMaximum`,
+    /// string `fLen`) are kept at the running maximum via [`StreamCol::agg`].
+    rep: Branch,
+    /// One [`BasketRec`] per batch written so far.
+    baskets: Vec<BasketRec>,
+    agg: ColAgg,
+}
+
+/// A streaming, bounded-memory `TTree` writer. Append entries in batches with
+/// [`write_batch`](TTreeWriter::write_batch); each call emits one basket per
+/// branch straight to the sink, so only the current batch's data is held in
+/// memory (the way ROOT's `TTree::Fill` flushes baskets as they fill).
+/// [`finish`](TTreeWriter::finish) writes the small `TTree` metadata, the
+/// streamer info, and the key list, then patches the file header.
+///
+/// Every batch must share the first batch's schema: branch names, element
+/// types, the jagged / `std::vector` flags, and fixed-array widths. Split
+/// `std::vector<Struct>` branches are not supported here — use
+/// [`write_tree_file`] for those.
+///
+/// ```no_run
+/// use oxiroot_io_core::Compression;
+/// use oxiroot_tree::{Branch, TTreeWriter};
+///
+/// let mut w = TTreeWriter::create("big.root", "T", Compression::None)?;
+/// for batch in 0..1_000 {
+///     let x: Vec<f64> = (0..10_000).map(|i| (batch * 10_000 + i) as f64).collect();
+///     w.write_batch(&[Branch::f64("x", x)])?; // one basket, flushed now
+/// }
+/// w.finish()?;
+/// # Ok::<(), oxiroot_io_core::Error>(())
+/// ```
+pub struct TTreeWriter<W: Write + Seek> {
+    sink: W,
+    pos: u64,
+    file_name: String,
+    tree_name: String,
+    compression: u32,
+    /// Whether any branch is a `std::vector<T>` (selects the streamer-info blob).
+    needs_vector: bool,
+    // File-header regions to back-patch at finish (absolute offsets).
+    p_end: u64,
+    p_nbytes_name: u64,
+    p_seek_info: u64,
+    p_nbytes_info: u64,
+    p_dir_nbytes_keys: u64,
+    p_dir_seek_keys: u64,
+    f_nbytes_name: u32,
+    /// Effective columns (count branches expanded inline); set by the first batch.
+    columns: Vec<StreamCol>,
+    /// The first batch's schema; `None` until the first batch is written.
+    schema: Option<Vec<ColSig>>,
+    total_entries: i64,
+}
+
+impl TTreeWriter<std::fs::File> {
+    /// Create a streaming tree file at `path`. The tree is named `tree_name`;
+    /// the file is the small (32-bit) container, so the total must stay under
+    /// 2 GiB ([`finish`](TTreeWriter::finish) errors otherwise).
+    pub fn create(
+        path: impl AsRef<Path>,
+        tree_name: &str,
+        compression: Compression,
+    ) -> Result<Self> {
+        let path = path.as_ref();
+        let file_name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file.root")
+            .to_string();
+        let file = std::fs::File::create(path)?;
+        TTreeWriter::new(file, &file_name, tree_name, compression)
+    }
+}
+
+impl<W: Write + Seek> TTreeWriter<W> {
+    /// Begin writing into an arbitrary seekable sink. The file header and root
+    /// directory record are written immediately (with pointers patched at the
+    /// end); `file_name` is the name stored in the directory record.
+    pub fn new(
+        sink: W,
+        file_name: &str,
+        tree_name: &str,
+        compression: Compression,
+    ) -> Result<Self> {
+        let compression = compression.setting();
+        let mut w = WBuffer::new();
+        let pp = write_file_prefix(&mut w, file_name, compression);
+        // The prefix is written at file offset 0, so a reserved region's buffer
+        // offset is its absolute file offset.
+        let p_end = w.patch_offset(pp.p_end) as u64;
+        let p_nbytes_name = w.patch_offset(pp.p_nbytes_name) as u64;
+        let p_seek_info = w.patch_offset(pp.p_seek_info) as u64;
+        let p_nbytes_info = w.patch_offset(pp.p_nbytes_info) as u64;
+        let p_dir_nbytes_keys = w.patch_offset(pp.p_dir_nbytes_keys) as u64;
+        let p_dir_seek_keys = w.patch_offset(pp.p_dir_seek_keys) as u64;
+
+        let prefix = w.into_vec();
+        let pos = prefix.len() as u64;
+        let mut sink = sink;
+        sink.write_all(&prefix)?;
+
+        Ok(TTreeWriter {
+            sink,
+            pos,
+            file_name: file_name.to_string(),
+            tree_name: tree_name.to_string(),
+            compression,
+            needs_vector: false,
+            p_end,
+            p_nbytes_name,
+            p_seek_info,
+            p_nbytes_info,
+            p_dir_nbytes_keys,
+            p_dir_seek_keys,
+            f_nbytes_name: pp.f_nbytes_name as u32,
+            columns: Vec::new(),
+            schema: None,
+            total_entries: 0,
+        })
+    }
+
+    /// Total entries appended so far.
+    #[must_use]
+    pub fn num_entries(&self) -> i64 {
+        self.total_entries
+    }
+
+    fn put(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.sink.write_all(bytes)?;
+        self.pos += bytes.len() as u64;
+        Ok(())
+    }
+
+    fn patch_u32(&mut self, offset: u64, value: u32) -> io::Result<()> {
+        self.sink.seek(SeekFrom::Start(offset))?;
+        self.sink.write_all(&value.to_be_bytes())
+    }
+
+    /// Append one batch of entries (one basket per branch). The first batch fixes
+    /// the schema; later batches must match it. An empty batch is a no-op.
+    pub fn write_batch(&mut self, branches: &[Branch]) -> Result<()> {
+        for b in branches {
+            if b.split.is_some() {
+                return Err(Error::Format(format!(
+                    "branch {:?}: TTreeWriter does not support split std::vector<Struct> branches; \
+                     use write_tree_file for those",
+                    b.name
+                )));
+            }
+            if !b.jagged && !b.stl_vector && b.is_jagged() {
+                return Err(Error::Format(format!(
+                    "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_*",
+                    b.name
+                )));
+            }
+        }
+
+        // All branches in a batch must carry the same number of entries.
+        let batch_entries = branches.first().map_or(0, Branch::n_entries);
+        if let Some(b) = branches.iter().find(|b| b.n_entries() != batch_entries) {
+            return Err(Error::Format(format!(
+                "branch {:?} has {} entries but the batch's first branch has {batch_entries}",
+                b.name,
+                b.n_entries()
+            )));
+        }
+        if batch_entries == 0 {
+            return Ok(());
+        }
+
+        let sig: Vec<ColSig> = branches.iter().map(col_sig).collect();
+        match &self.schema {
+            Some(prev) if *prev != sig => {
+                return Err(Error::Format(
+                    "this batch's branch schema differs from the first batch's".into(),
+                ))
+            }
+            Some(_) => {}
+            None => {
+                self.init_columns(branches);
+                self.schema = Some(sig);
+            }
+        }
+
+        // Walk the effective columns in lockstep: a jagged branch contributes its
+        // synthetic count column first, then its data column.
+        let mut col = 0;
+        let tree_name = self.tree_name.clone();
+        for b in branches {
+            if b.jagged {
+                let count = b
+                    .count_branch()
+                    .expect("a jagged branch has a count branch");
+                self.emit(col, &count, &tree_name)?;
+                col += 1;
+            }
+            self.emit(col, b, &tree_name)?;
+            col += 1;
+        }
+        self.total_entries += i64::from(batch_entries);
+        Ok(())
+    }
+
+    /// Emit one basket for column `col`, append its record, and grow that
+    /// column's leaf aggregate (count `fMaximum` / string `fLen`).
+    fn emit(&mut self, col: usize, branch: &Branch, tree_name: &str) -> Result<()> {
+        let (bytes, rec) = basket_bytes(branch, tree_name, self.compression, self.pos);
+        self.put(&bytes)?;
+        let c = &mut self.columns[col];
+        c.baskets.push(rec);
+        match &mut c.agg {
+            ColAgg::Count(m) => {
+                let batch_max = branch.leaf_max();
+                if batch_max > *m {
+                    *m = batch_max;
+                    c.rep.values = BranchValues::I32(vec![*m as i32]);
+                }
+            }
+            ColAgg::Str(len) => {
+                let batch_len = branch.str_len();
+                if batch_len > *len {
+                    *len = batch_len;
+                    c.rep.values = str_rep(*len);
+                }
+            }
+            ColAgg::Data => {}
+        }
+        Ok(())
+    }
+
+    /// Build the effective-column list from the first batch (jagged branches
+    /// expanded into a synthetic count column followed by the data column).
+    fn init_columns(&mut self, branches: &[Branch]) {
+        self.needs_vector = branches.iter().any(|b| b.stl_vector);
+        let mut cols = Vec::new();
+        for b in branches {
+            if b.jagged {
+                let count = b
+                    .count_branch()
+                    .expect("a jagged branch has a count branch");
+                let m = count.leaf_max();
+                cols.push(StreamCol {
+                    rep: Branch {
+                        name: count.name.clone(),
+                        values: BranchValues::I32(vec![m as i32]),
+                        jagged: false,
+                        stl_vector: false,
+                        split: None,
+                    },
+                    baskets: Vec::new(),
+                    agg: ColAgg::Count(m),
+                });
+            }
+            let (agg, values) = if matches!(b.kind(), Kind::Str) {
+                let len = b.str_len();
+                (ColAgg::Str(len), str_rep(len))
+            } else {
+                // One representative row/element fixes the type and (for a fixed
+                // array) the width; jagged/vector report flen = 1 regardless.
+                (ColAgg::Data, chunk_values(&b.values, 0, 1))
+            };
+            cols.push(StreamCol {
+                rep: Branch {
+                    name: b.name.clone(),
+                    values,
+                    jagged: b.jagged,
+                    stl_vector: b.stl_vector,
+                    split: None,
+                },
+                baskets: Vec::new(),
+                agg,
+            });
+        }
+        self.columns = cols;
+    }
+
+    /// Finish the file: write the `TTree` object, streamer info, and key list,
+    /// then patch the header pointers. Returns the sink. Errors if no batch was
+    /// written or the file exceeds the 2 GiB small-format limit.
+    pub fn finish(mut self) -> Result<W> {
+        if self.schema.is_none() {
+            return Err(Error::Format(
+                "TTreeWriter finished with no batches written".into(),
+            ));
+        }
+        let tot_bytes: i64 = self
+            .columns
+            .iter()
+            .flat_map(|c| &c.baskets)
+            .map(|r| i64::from(r.nbytes))
+            .sum();
+        let eff: Vec<&Branch> = self.columns.iter().map(|c| &c.rep).collect();
+        let groups: Vec<Vec<BasketRec>> = self.columns.iter().map(|c| c.baskets.clone()).collect();
+
+        // --- TTree object key + object. ---
+        let tree_obj = build_tree_object(
+            &self.tree_name,
+            &eff,
+            &groups,
+            self.total_entries,
+            tot_bytes,
+        );
+        let tree_payload = on_disk(&tree_obj, self.compression);
+        let tree_seek = self.pos;
+        let mut kb = WBuffer::new();
+        write_key_header(
+            &mut kb,
+            "TTree",
+            &self.tree_name,
+            "",
+            tree_obj.len() as u32,
+            tree_payload.len() as u32,
+            tree_seek,
+            100,
+        );
+        let kb = kb.into_vec();
+        self.put(&kb)?;
+        self.put(&tree_payload)?;
+
+        // --- Streamer-info record (referenced by fSeekInfo). ---
+        let streamer_info: &[u8] = if self.needs_vector {
+            TREE_VECTOR_STREAMER_INFO
+        } else {
+            TREE_STREAMER_INFO
+        };
+        let si_payload = on_disk(streamer_info, self.compression);
+        let seek_info = self.pos;
+        let mut sib = WBuffer::new();
+        write_key_header(
+            &mut sib,
+            "TList",
+            "StreamerInfo",
+            "Doubly linked list",
+            streamer_info.len() as u32,
+            si_payload.len() as u32,
+            seek_info,
+            100,
+        );
+        let sib = sib.into_vec();
+        self.put(&sib)?;
+        self.put(&si_payload)?;
+        let nbytes_info =
+            key_len("TList", "StreamerInfo", "Doubly linked list") as u32 + si_payload.len() as u32;
+
+        // --- Directory key list (one entry: the TTree). ---
+        let keylist_seek = self.pos;
+        let tree_klen = key_len("TTree", &self.tree_name, "");
+        let keylist_obj_len = 4 + tree_klen as u32;
+        let mut klb = WBuffer::new();
+        write_key_header(
+            &mut klb,
+            "TFile",
+            &self.file_name,
+            "",
+            keylist_obj_len,
+            keylist_obj_len,
+            keylist_seek,
+            100,
+        );
+        klb.be_i32(1); // nkeys
+        write_key_header(
+            &mut klb,
+            "TTree",
+            &self.tree_name,
+            "",
+            tree_obj.len() as u32,
+            tree_payload.len() as u32,
+            tree_seek,
+            100,
+        );
+        let klb = klb.into_vec();
+        self.put(&klb)?;
+        let keylist_nbytes = key_len("TFile", &self.file_name, "") as u32 + keylist_obj_len;
+
+        let f_end = self.pos;
+        guard_small_format(f_end as usize)?;
+
+        self.patch_u32(self.p_end, f_end as u32)?;
+        self.patch_u32(self.p_nbytes_name, self.f_nbytes_name)?;
+        self.patch_u32(self.p_seek_info, seek_info as u32)?;
+        self.patch_u32(self.p_nbytes_info, nbytes_info)?;
+        self.patch_u32(self.p_dir_nbytes_keys, keylist_nbytes)?;
+        self.patch_u32(self.p_dir_seek_keys, keylist_seek as u32)?;
+        self.sink.flush()?;
+        Ok(self.sink)
+    }
+}
+
+/// A representative `TLeafC` string value whose length yields `fLen` = `len`
+/// (longest string + 1), used for a streamed string column's leaf metadata.
+fn str_rep(len: i32) -> BranchValues {
+    let n = (len - 1).max(0) as usize;
+    BranchValues::Str(vec!["\0".repeat(n)])
+}
+
+/// The reserved 4-byte regions of a freshly written file prefix (header + root
+/// `TDirectory` record), to be back-patched once the file's size and its
+/// streamer-info / key-list locations are known.
+struct PrefixPatches {
+    p_end: Patch,
+    p_nbytes_name: Patch,
+    p_seek_info: Patch,
+    p_nbytes_info: Patch,
+    p_dir_nbytes_keys: Patch,
+    p_dir_seek_keys: Patch,
+    /// `fNbytesName` — the byte count of the first key + the dir name/title.
+    f_nbytes_name: usize,
+}
+
+/// Write the 100-byte file header and the root `TDirectory` record into `w`
+/// (expected empty), returning the regions to patch at the end. Shared by the
+/// one-shot [`tree_bytes`] and the streaming [`TTreeWriter`] so both emit a
+/// byte-identical prefix.
+fn write_file_prefix(w: &mut WBuffer, file_name: &str, compression: u32) -> PrefixPatches {
+    // --- File header (100 bytes; pointers patched at the end). ---
+    w.bytes(b"root");
+    w.be_u32(FILE_VERSION);
+    w.be_u32(100); // fBEGIN
+    let p_end = w.reserve(4);
+    w.be_u32(0); // fSeekFree
+    w.be_u32(0); // fNbytesFree
+    w.be_u32(0); // nfree
+    let p_nbytes_name = w.reserve(4);
+    w.u8(4); // fUnits
+    w.be_u32(compression); // fCompress
+    let p_seek_info = w.reserve(4);
+    let p_nbytes_info = w.reserve(4);
+    w.be_u16(1);
+    w.bytes(&[0u8; 16]);
+    while w.len() < 100 {
+        w.u8(0);
+    }
+
+    // --- Root directory name key + TDirectory record. ---
+    let first_klen = key_len("TFile", file_name, "");
+    let name_title_len = (1 + file_name.len()) + 1;
+    let f_nbytes_name = first_klen as usize + name_title_len;
+    let first_obj_len = (name_title_len + 30 + 18) as u32;
+    write_key_header(
+        w,
+        "TFile",
+        file_name,
+        "",
+        first_obj_len,
+        first_obj_len,
+        100,
+        0,
+    );
+    w.string(file_name);
+    w.string("");
+    w.be_i16(5);
+    w.be_u32(DATIME);
+    w.be_u32(DATIME);
+    let p_dir_nbytes_keys = w.reserve(4);
+    w.be_i32(f_nbytes_name as i32);
+    w.be_u32(100); // fSeekDir
+    w.be_u32(0); // fSeekParent
+    let p_dir_seek_keys = w.reserve(4);
+    w.be_u16(1);
+    w.bytes(&[0u8; 16]);
+
+    PrefixPatches {
+        p_end,
+        p_nbytes_name,
+        p_seek_info,
+        p_nbytes_info,
+        p_dir_nbytes_keys,
+        p_dir_seek_keys,
+        f_nbytes_name,
+    }
+}
+
 /// Shared body of [`tree_file_bytes`] / [`write_tree_file_baskets`]:
 /// `entries_per_basket` of `0` means one basket per branch.
 fn tree_bytes(
@@ -831,53 +1346,15 @@ fn tree_bytes(
     let n_entries = eff.first().map(|b| b.n_entries()).unwrap_or(0);
 
     let mut w = WBuffer::new();
-
-    // --- File header (100 bytes; pointers patched at the end). ---
-    w.bytes(b"root");
-    w.be_u32(FILE_VERSION);
-    w.be_u32(100); // fBEGIN
-    let p_end = w.reserve(4);
-    w.be_u32(0); // fSeekFree
-    w.be_u32(0); // fNbytesFree
-    w.be_u32(0); // nfree
-    let p_nbytes_name = w.reserve(4);
-    w.u8(4); // fUnits
-    w.be_u32(compression); // fCompress
-    let p_seek_info = w.reserve(4);
-    let p_nbytes_info = w.reserve(4);
-    w.be_u16(1);
-    w.bytes(&[0u8; 16]);
-    while w.len() < 100 {
-        w.u8(0);
-    }
-
-    // --- Root directory name key + TDirectory record. ---
-    let first_klen = key_len("TFile", file_name, "");
-    let name_title_len = (1 + file_name.len()) + 1;
-    let f_nbytes_name = first_klen as usize + name_title_len;
-    let first_obj_len = (name_title_len + 30 + 18) as u32;
-    write_key_header(
-        &mut w,
-        "TFile",
-        file_name,
-        "",
-        first_obj_len,
-        first_obj_len,
-        100,
-        0,
-    );
-    w.string(file_name);
-    w.string("");
-    w.be_i16(5);
-    w.be_u32(DATIME);
-    w.be_u32(DATIME);
-    let p_dir_nbytes_keys = w.reserve(4);
-    w.be_i32(f_nbytes_name as i32);
-    w.be_u32(100); // fSeekDir
-    w.be_u32(0); // fSeekParent
-    let p_dir_seek_keys = w.reserve(4);
-    w.be_u16(1);
-    w.bytes(&[0u8; 16]);
+    let PrefixPatches {
+        p_end,
+        p_nbytes_name,
+        p_seek_info,
+        p_nbytes_info,
+        p_dir_nbytes_keys,
+        p_dir_seek_keys,
+        f_nbytes_name,
+    } = write_file_prefix(&mut w, file_name, compression);
 
     // --- Baskets per branch (TBasket TKeys). A leaf branch has one; a split
     // branch has a count basket plus one per member sub-branch. ---
@@ -992,8 +1469,23 @@ fn on_disk(object: &[u8], compression: u32) -> Vec<u8> {
 }
 
 /// Write a `TBasket` (a big-format `TKey` whose `fKeyLen` includes the 19-byte
-/// extension), returning its location.
+/// extension) into `w` at its current end, returning its location.
 fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: u32) -> BasketRec {
+    let (bytes, rec) = basket_bytes(branch, tree_name, compression, w.len() as u64);
+    w.bytes(&bytes);
+    rec
+}
+
+/// The on-disk bytes of one `TBasket`, written as if it begins at absolute file
+/// offset `seek` (baked into the key's `fSeekKey`), plus its [`BasketRec`]. This
+/// is the streaming primitive that [`TTreeWriter`] emits straight to a sink;
+/// [`write_basket`] is the in-buffer wrapper that derives `seek` from `w.len()`.
+fn basket_bytes(
+    branch: &Branch,
+    tree_name: &str,
+    compression: u32,
+    seek: u64,
+) -> (Vec<u8>, BasketRec) {
     let (data, offsets) = branch.basket_content();
     let n_entries = branch.n_entries();
     let leaf = branch.leaf();
@@ -1004,7 +1496,6 @@ fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: 
         _ => branch.flen() * leaf.size,
     };
 
-    let seek = w.len() as u64;
     let klen = key_len_fmt("TBasket", &branch.name, tree_name, true) as u32 + 19;
     let border = data.len() as u32;
 
@@ -1023,6 +1514,7 @@ fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: 
     let nbytes = klen + payload.len() as u32;
     let f_last = klen + border; // entry data ends at the border
 
+    let mut w = WBuffer::with_capacity(nbytes as usize);
     // Big-format TKey header.
     w.be_i32(nbytes as i32);
     w.be_u16(1004); // big-format key version
@@ -1044,11 +1536,14 @@ fn write_basket(w: &mut WBuffer, branch: &Branch, tree_name: &str, compression: 
     w.u8(0); // flag
     w.bytes(&payload);
 
-    BasketRec {
-        seek,
-        nbytes,
-        n_entries,
-    }
+    (
+        w.into_vec(),
+        BasketRec {
+            seek,
+            nbytes,
+            n_entries,
+        },
+    )
 }
 
 /// A sub-range `[start, start+len)` of a non-split branch's entries, as a fresh
@@ -1623,7 +2118,11 @@ fn write_branch(
     } else {
         0
     };
-    let max_baskets = 10i32;
+    // `fMaxBaskets` is the allocated length of the basket arrays; it must be at
+    // least `fWriteBasket` (= group.len()). ROOT's default is 10, which we keep
+    // for the common case so small files stay byte-identical, but a streamed
+    // tree can hold more than 10 baskets per branch, so grow it to fit.
+    let max_baskets = (group.len() as i32).max(10);
 
     let tok = w.begin_object(13); // TBranch v13
     write_tnamed(w, OBJ_BITS, &branch.name, &title);

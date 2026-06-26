@@ -23,7 +23,8 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   and polygon-binned `TH2Poly` — all read **and** write.
 - 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, read and write.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
-  `std::vector<T>`, and **split `std::vector<MyStruct>`** branches.
+  `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; multi-basket
+  via a bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**), compressed, multi-cluster
   via a streaming writer.
@@ -198,6 +199,10 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
   fixed arrays, `Branch::jagged_*` for variable arrays, `Branch::vector_*` for
   `std::vector<T>`, and `Branch::split_vector` for split structs.
   `write_tree_file_baskets` writes several baskets per branch.
+- `TTreeWriter` streams a tree in batches (`write_batch` emits one basket per
+  branch straight to disk, then `finish`), so only the current batch is held in
+  memory — the way ROOT's `TTree::Fill` flushes baskets. ROOT-C++- and
+  uproot-verified across many baskets, compressed and not.
 - `read_branch` reads a whole branch, `read_branches` several at once,
   `read_branch_range(start, stop)` only the baskets covering a window, and
   `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `TChain` spans many
@@ -336,8 +341,8 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
   the streamer element list, not fixed layout) and a *write-side generator* (emit
   the streamer info instead of baked blobs) remain. Plus richer object/STL
   branches beyond split `std::vector<MyStruct>` and `std::vector<std::string>`
-  (nested structs, `std::vector<std::vector<T>>`, `TClonesArray`) and a truly
-  incremental fill-to-disk writer.
+  (nested structs, `std::vector<std::vector<T>>`, `TClonesArray`). A
+  bounded-memory streaming writer (`TTreeWriter`) already ships.
 - **Append mode** — `update` into files that contain subdirectories or an
   RNTuple (currently rejected).
 - **Plotting** — render histograms and graphs to static images (SVG / PNG) from
