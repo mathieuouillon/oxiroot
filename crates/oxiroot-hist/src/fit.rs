@@ -92,12 +92,16 @@ impl TF1 {
 
 /// Which cost a fit minimizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum FitMethod {
-    /// Neyman chi-square `Σ (n − f)² / σ²` over non-empty bins (ROOT's default).
+    /// Neyman chi-square `Σ (n − f)² / σ²` over non-empty bins, the per-bin error
+    /// being the *observed* `√Sumw2`/`√content` (ROOT's default fit).
     #[default]
     Chi2,
     /// Binned Poisson maximum likelihood (ROOT's `"L"`): minimize the
     /// likelihood-ratio `2·Σ [f − n + n·ln(n/f)]` over every in-range bin.
+    /// Assumes a non-negative model `f`; a model that dips below zero is clamped
+    /// to a tiny positive value (so it is heavily penalised, not rejected).
     Likelihood,
 }
 
@@ -117,11 +121,12 @@ pub struct FitResult {
 }
 
 impl FitResult {
-    /// Reduced chi-square `chi2 / ndf` (0 when `ndf == 0`).
+    /// Reduced chi-square `chi2 / ndf`, or `NaN` when `ndf == 0` (an
+    /// under-determined fit has no meaningful reduced chi-square).
     #[must_use]
     pub fn chi2_per_ndf(&self) -> f64 {
         if self.ndf == 0 {
-            0.0
+            f64::NAN
         } else {
             self.chi2 / self.ndf as f64
         }
@@ -149,17 +154,31 @@ impl TH1 {
     /// Requires the `fit` feature.
     #[must_use]
     pub fn fit_with(&self, model: &TF1, method: FitMethod) -> FitResult {
+        let np = model.params.len();
         let n = self.xaxis.nbins.max(0) as usize;
         // Chi-square uses non-empty bins (error > 0); likelihood uses all of them.
         let points: Vec<(f64, f64, f64)> = (1..=n)
             .filter_map(|i| {
-                let (y, err) = (self.contents[i], self.bin_error(i));
+                let y = self.contents.get(i).copied().unwrap_or(0.0);
+                let err = self.bin_error(i);
                 match method {
                     FitMethod::Chi2 => (err > 0.0).then(|| (self.bin_center(i), y, err)),
                     FitMethod::Likelihood => Some((self.bin_center(i), y, err)),
                 }
             })
             .collect();
+
+        // Too few data points to determine the parameters: report failure rather
+        // than returning a meaningless minimum of a flat cost.
+        if np == 0 || points.len() < np {
+            return FitResult {
+                params: model.params.clone(),
+                errors: vec![f64::NAN; np],
+                chi2: f64::NAN,
+                ndf: 0,
+                valid: false,
+            };
+        }
 
         let func = &model.func;
         let cost = |p: &[f64]| -> f64 {
@@ -194,24 +213,17 @@ impl TH1 {
             migrad = migrad.add(name, init, step);
         }
         let min = migrad.minimize(&cost);
-        let state = min.user_state();
 
-        let params: Vec<f64> = model
-            .param_names
-            .iter()
-            .map(|nm| state.value(nm).unwrap_or(f64::NAN))
-            .collect();
-        let errors: Vec<f64> = model
-            .param_names
-            .iter()
-            .map(|nm| state.error(nm).unwrap_or(f64::NAN))
-            .collect();
+        // Read results by index (external/user space) — robust against duplicate
+        // parameter names.
+        let params = min.params();
+        let errors = min.user_state().errors();
 
         FitResult {
             params,
             errors,
             chi2: min.fval(),
-            ndf: points.len().saturating_sub(model.params.len()),
+            ndf: points.len() - np,
             valid: min.is_valid(),
         }
     }

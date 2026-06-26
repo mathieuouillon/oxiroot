@@ -166,3 +166,15 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
         like.params[0]
     );
 }
+
+#[test]
+fn under_determined_fit_is_flagged_invalid() {
+    // 2 data points, 3-parameter Gaussian -> cannot be determined.
+    let mut h = TH1::new("tiny", "", 2, 0.0, 2.0);
+    h.contents[1] = 5.0;
+    h.contents[2] = 7.0;
+    let r = h.fit(&TF1::gaussian("g").with_params(vec![7.0, 1.0, 1.0]));
+    assert!(!r.valid);
+    assert_eq!(r.ndf, 0);
+    assert!(r.chi2_per_ndf().is_nan());
+}
