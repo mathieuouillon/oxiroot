@@ -209,20 +209,39 @@ impl TTree {
     }
 }
 
-/// Read the requested baskets of `branch` (by index) and decompress them.
+/// Read the requested baskets of `branch` (by index) and decompress them, in
+/// order. With the `rayon` feature the per-basket decompress runs in parallel.
 fn read_baskets(
     file: &RFile,
     branch: &Branch,
     indices: impl Iterator<Item = usize>,
 ) -> Result<Vec<Basket>> {
-    let mut out = Vec::new();
-    for i in indices {
-        let seek = *branch.basket_seek.get(i).ok_or_else(|| {
+    let data = file.data();
+    let seek_of = |i: usize| -> Result<u64> {
+        branch.basket_seek.get(i).copied().ok_or_else(|| {
             Error::Format(format!("branch {:?}: missing basket {i} seek", branch.name))
-        })?;
-        out.push(Basket::read(file.data(), seek)?);
+        })
+    };
+
+    #[cfg(feature = "rayon")]
+    {
+        use rayon::prelude::*;
+        let indices: Vec<usize> = indices.collect();
+        // par_iter().collect() into a Result preserves order and short-circuits
+        // on the first error; the file data and branch are read-only (Sync).
+        indices
+            .into_par_iter()
+            .map(|i| Basket::read(data, seek_of(i)?))
+            .collect()
     }
-    Ok(out)
+    #[cfg(not(feature = "rayon"))]
+    {
+        let mut out = Vec::new();
+        for i in indices {
+            out.push(Basket::read(data, seek_of(i)?)?);
+        }
+        Ok(out)
+    }
 }
 
 /// Decode the given (contiguous, in-order) baskets of `branch` into per-entry
