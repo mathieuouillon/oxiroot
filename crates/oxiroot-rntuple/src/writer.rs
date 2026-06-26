@@ -45,6 +45,14 @@ const ROLE_RECORD: u16 = 2;
 pub enum Column {
     /// `bool` (Bit column).
     Bool(Vec<bool>),
+    /// 8-bit signed integers.
+    I8(Vec<i8>),
+    /// 8-bit unsigned integers.
+    U8(Vec<u8>),
+    /// 16-bit signed integers.
+    I16(Vec<i16>),
+    /// 16-bit unsigned integers.
+    U16(Vec<u16>),
     /// 32-bit signed integers.
     I32(Vec<i32>),
     /// 64-bit signed integers.
@@ -61,6 +69,14 @@ pub enum Column {
     Str(Vec<String>),
     /// `std::vector<bool>`.
     VecBool(Vec<Vec<bool>>),
+    /// `std::vector<int8_t>`.
+    VecI8(Vec<Vec<i8>>),
+    /// `std::vector<uint8_t>`.
+    VecU8(Vec<Vec<u8>>),
+    /// `std::vector<int16_t>`.
+    VecI16(Vec<Vec<i16>>),
+    /// `std::vector<uint16_t>`.
+    VecU16(Vec<Vec<u16>>),
     /// `std::vector<float>`.
     VecF32(Vec<Vec<f32>>),
     /// `std::vector<double>`.
@@ -92,6 +108,10 @@ impl Column {
     fn len(&self) -> usize {
         match self {
             Column::Bool(v) => v.len(),
+            Column::I8(v) => v.len(),
+            Column::U8(v) => v.len(),
+            Column::I16(v) => v.len(),
+            Column::U16(v) => v.len(),
             Column::I32(v) => v.len(),
             Column::I64(v) => v.len(),
             Column::U32(v) => v.len(),
@@ -100,6 +120,10 @@ impl Column {
             Column::F64(v) => v.len(),
             Column::Str(v) => v.len(),
             Column::VecBool(v) => v.len(),
+            Column::VecI8(v) => v.len(),
+            Column::VecU8(v) => v.len(),
+            Column::VecI16(v) => v.len(),
+            Column::VecU16(v) => v.len(),
             Column::VecF32(v) => v.len(),
             Column::VecF64(v) => v.len(),
             Column::VecI32(v) => v.len(),
@@ -145,6 +169,10 @@ macro_rules! field_ctors {
 
 field_ctors! {
     bools => Bool(bool),
+    i8 => I8(i8),
+    u8 => U8(u8),
+    i16 => I16(i16),
+    u16 => U16(u16),
     i32 => I32(i32),
     i64 => I64(i64),
     u32 => U32(u32),
@@ -153,6 +181,10 @@ field_ctors! {
     f64 => F64(f64),
     strings => Str(String),
     vec_bool => VecBool(Vec<bool>),
+    vec_i8 => VecI8(Vec<i8>),
+    vec_u8 => VecU8(Vec<u8>),
+    vec_i16 => VecI16(Vec<i16>),
+    vec_u16 => VecU16(Vec<u16>),
     vec_i32 => VecI32(Vec<i32>),
     vec_i64 => VecI64(Vec<i64>),
     vec_f32 => VecF32(Vec<f32>),
@@ -335,6 +367,46 @@ fn record_type_name(children: &[Node]) -> String {
 fn lower_column(name: &str, data: &Column) -> Node {
     match data {
         Column::Bool(v) => leaf_node(name, "bool", raw(ColumnType::Bit, 1, pack_bits(v), v.len())),
+        Column::I8(v) => leaf_node(
+            name,
+            "std::int8_t",
+            raw(
+                ColumnType::Int8,
+                8,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::U8(v) => leaf_node(
+            name,
+            "std::uint8_t",
+            raw(
+                ColumnType::UInt8,
+                8,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::I16(v) => leaf_node(
+            name,
+            "std::int16_t",
+            raw(
+                ColumnType::Int16,
+                16,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
+        Column::U16(v) => leaf_node(
+            name,
+            "std::uint16_t",
+            raw(
+                ColumnType::UInt16,
+                16,
+                le_bytes(v, |x| x.to_le_bytes()),
+                v.len(),
+            ),
+        ),
         Column::I32(v) => leaf_node(
             name,
             "std::int32_t",
@@ -402,6 +474,62 @@ fn lower_column(name: &str, data: &Column) -> Node {
                 "_0",
                 "bool",
                 raw(ColumnType::Bit, 1, pack_bits(&data), data.len()),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecI8(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "std::int8_t",
+                raw(
+                    ColumnType::Int8,
+                    8,
+                    le_bytes(&data, |x| x.to_le_bytes()),
+                    data.len(),
+                ),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecU8(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "std::uint8_t",
+                raw(
+                    ColumnType::UInt8,
+                    8,
+                    le_bytes(&data, |x| x.to_le_bytes()),
+                    data.len(),
+                ),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecI16(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "std::int16_t",
+                raw(
+                    ColumnType::Int16,
+                    16,
+                    le_bytes(&data, |x| x.to_le_bytes()),
+                    data.len(),
+                ),
+            );
+            collection_node(name, &offsets, v.len(), child)
+        }
+        Column::VecU16(v) => {
+            let (offsets, data) = flatten(v);
+            let child = leaf_node(
+                "_0",
+                "std::uint16_t",
+                raw(
+                    ColumnType::UInt16,
+                    16,
+                    le_bytes(&data, |x| x.to_le_bytes()),
+                    data.len(),
+                ),
             );
             collection_node(name, &offsets, v.len(), child)
         }
