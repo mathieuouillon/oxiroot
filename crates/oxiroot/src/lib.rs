@@ -67,11 +67,12 @@ pub mod prelude {
         read_thnsparse, read_tprofile, read_tprofile2d, read_tprofile3d, write_histograms_dirs,
         write_histograms_file, write_tefficiency_file, write_th1c_file, write_th1d_file,
         write_th1f_file, write_th1i_file, write_th1l_file, write_th1s_file, write_th2c_file,
-        write_th2d_file, write_th2f_file, write_th2i_file, write_th2l_file, write_th2s_file,
-        write_th3c_file, write_th3d_file, write_th3f_file, write_th3i_file, write_th3l_file,
-        write_th3s_file, write_thnsparse_file, write_tprofile2d_file, write_tprofile3d_file,
-        write_tprofile_file, Hist, Merge, PolyBin, SparseBin, TAxis, TEfficiency, TH2Poly,
-        THnSparse, TProfile, TProfile2D, TProfile3D, ThreadedHist, TH1, TH2, TH3,
+        write_th2d_file, write_th2f_file, write_th2i_file, write_th2l_file, write_th2poly_file,
+        write_th2s_file, write_th3c_file, write_th3d_file, write_th3f_file, write_th3i_file,
+        write_th3l_file, write_th3s_file, write_thnsparse_file, write_tprofile2d_file,
+        write_tprofile3d_file, write_tprofile_file, Hist, Merge, PolyBin, SparseBin, TAxis,
+        TEfficiency, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, ThreadedHist, TH1, TH2,
+        TH3,
     };
 
     pub use oxiroot_rntuple::{

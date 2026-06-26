@@ -31,6 +31,7 @@ use crate::axis::TAxis;
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
 use crate::th2::TH2;
+use crate::th2poly::{PolyBin, TH2Poly};
 use crate::th3::TH3;
 use crate::thnsparse::THnSparse;
 use crate::tprofile::TProfile;
@@ -813,6 +814,189 @@ pub fn write_thnsparse(w: &mut WBuffer, h: &THnSparse) {
 pub fn thnsparse_to_bytes(h: &THnSparse) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_thnsparse(&mut w, h);
+    w.into_vec()
+}
+
+/// The number of partition cells per axis ROOT uses by default (`fCellX`/`fCellY`).
+const POLY_CELLS_PER_AXIS: i32 = 25;
+/// `kMustCleanup` — the `fBits` value ROOT writes for a `TGraph`'s `TNamed`.
+const GRAPH_BITS: u32 = 0x0000_0400;
+
+/// Write a single `TH2Poly` into a new ROOT file at `path`.
+pub fn write_th2poly_file(
+    path: impl AsRef<Path>,
+    h: &TH2Poly,
+    compression: Compression,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let record = ObjectRecord {
+            class_name: "TH2Poly".to_string(),
+            name: h.name.clone(),
+            title: h.title.clone(),
+            object: th2poly_to_bytes(h),
+        };
+        write_root_file_with_streamers(
+            file_name,
+            &[record],
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        )
+    })
+}
+
+/// Serialize a `TH2Poly` object (with its byte-count/version header).
+///
+/// The polygon bins are written **in full inside `fBins`**, and the `fCells`
+/// spatial-lookup grid is written empty (625 empty `TList`s). That is a valid
+/// ROOT serialization — the bins are first-seen in `fBins`, so no object
+/// back-references are needed — and reproduces every bin faithfully; only the
+/// fast-fill grid is left unpopulated (a re-fill in ROOT would need to be
+/// rebuilt, which oxiroot does not do).
+pub fn write_th2poly(w: &mut WBuffer, h: &TH2Poly) {
+    let mut bins: Vec<&PolyBin> = h.bins.iter().collect();
+    bins.sort_by_key(|b| b.number);
+    let n = bins.len();
+    let ncells_grid = (POLY_CELLS_PER_AXIS * POLY_CELLS_PER_AXIS) as usize; // fNCells
+
+    let tp = w.begin_object(3); // TH2Poly version 3
+    let th2 = w.begin_object(5); // TH2 version 5
+
+    // TH1 base. fNcells is the polygon-bin count plus the 9 over/underflow
+    // regions; fSumw2 is left empty so ROOT falls back to sqrt(content) errors.
+    let zaxis = TAxis::new("zaxis", 1, 0.0, 1.0);
+    write_th1_core(
+        w,
+        &h.name,
+        &h.title,
+        &h.xaxis,
+        &h.yaxis,
+        &zaxis,
+        (n + 9) as i32,
+        h.entries,
+        h.tsumw,
+        h.tsumw2,
+        h.tsumwx,
+        h.tsumwx2,
+        &[],
+    );
+    w.be_f64(1.0); // fScalefactor
+    w.be_f64(h.tsumwy);
+    w.be_f64(h.tsumwy2);
+    w.be_f64(h.tsumwxy);
+    w.end_object(th2);
+
+    // TH2Poly members.
+    for &o in &h.overflow {
+        w.be_f64(o); // fOverflow[9]
+    }
+    w.be_i32(POLY_CELLS_PER_AXIS); // fCellX
+    w.be_i32(POLY_CELLS_PER_AXIS); // fCellY
+    w.be_i32(ncells_grid as i32); // fNCells
+
+    // fCells (TStreamerLoop): a {byte count, version} header then `ncells_grid`
+    // empty TLists. ROOT/uproot skip the 6-byte header; we patch the byte count.
+    let cells_bc = w.reserve(4);
+    let cells_start = w.len();
+    w.be_u16(10); // streamloop version (constant in ROOT's TH2Poly)
+    for _ in 0..ncells_grid {
+        write_empty_tlist(w);
+    }
+    let cells_len = (w.len() - cells_start) as u32;
+    w.patch_be_u32(cells_bc, 0x4000_0000 | cells_len);
+
+    let step_x = (h.xaxis.xmax - h.xaxis.xmin) / POLY_CELLS_PER_AXIS as f64;
+    let step_y = (h.yaxis.xmax - h.yaxis.xmin) / POLY_CELLS_PER_AXIS as f64;
+    w.be_f64(step_x); // fStepX
+    w.be_f64(step_y); // fStepY
+
+    // fIsEmpty / fCompletelyInside: bool* //[fNCells], each a presence marker
+    // byte then one byte per cell. Every cell is empty and not fully inside a bin.
+    w.u8(1);
+    for _ in 0..ncells_grid {
+        w.u8(1); // fIsEmpty[i] = true
+    }
+    w.u8(1);
+    for _ in 0..ncells_grid {
+        w.u8(0); // fCompletelyInside[i] = false
+    }
+    w.u8(0); // fFloat = false
+
+    // fBins: a TList* holding every bin in full (first and only occurrence).
+    write_object_ptr(w, "TList", |w| {
+        let tl = w.begin_object(5); // TList version 5
+        write_tobject(w, TLIST_BITS);
+        w.string(""); // fName
+        w.be_i32(n as i32); // fSize
+        for b in &bins {
+            write_object_ptr(w, "TH2PolyBin", |w| write_polybin(w, b));
+            w.string(""); // per-element option string
+        }
+        w.end_object(tl);
+    });
+
+    w.end_object(tp);
+}
+
+/// Serialize one `TH2PolyBin` body (its object-pointer header is written by the
+/// caller). Layout: `TObject, fChanged, fNumber, fPoly(TGraph*), fArea,
+/// fContent, fXmin, fYmin, fXmax, fYmax`.
+fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
+    let bin = w.begin_object(1); // TH2PolyBin version 1
+    write_tobject(w, 0);
+    w.u8(1); // fChanged
+    w.be_i32(b.number);
+    write_object_ptr(w, "TGraph", |w| write_tgraph(w, &b.x, &b.y)); // fPoly
+    w.be_f64(b.area);
+    w.be_f64(b.content);
+    w.be_f64(b.xmin);
+    w.be_f64(b.ymin);
+    w.be_f64(b.xmax);
+    w.be_f64(b.ymax);
+    w.end_object(bin);
+}
+
+/// Serialize a `TGraph` (version 5) holding a bin's polygon vertices.
+fn write_tgraph(w: &mut WBuffer, x: &[f64], y: &[f64]) {
+    let g = w.begin_object(5); // TGraph version 5
+    write_tnamed(w, GRAPH_BITS, "Graph", "Graph");
+
+    let line = w.begin_object(2); // TAttLine
+    w.be_i16(1); // fLineColor
+    w.be_i16(1); // fLineStyle
+    w.be_i16(1); // fLineWidth
+    w.end_object(line);
+    let fill = w.begin_object(2); // TAttFill
+    w.be_i16(0); // fFillColor
+    w.be_i16(1000); // fFillStyle
+    w.end_object(fill);
+    let marker = w.begin_object(3); // TAttMarker
+    w.be_i16(1); // fMarkerColor
+    w.be_i16(1); // fMarkerStyle
+    w.be_f32(1.0); // fMarkerSize
+    w.end_object(marker);
+
+    let npoints = x.len().min(y.len());
+    w.be_i32(npoints as i32); // fNpoints
+    w.u8(1); // fX presence marker
+    for &v in &x[..npoints] {
+        w.be_f64(v);
+    }
+    w.u8(1); // fY presence marker
+    for &v in &y[..npoints] {
+        w.be_f64(v);
+    }
+    write_object_ptr(w, "TList", write_empty_tlist); // fFunctions
+    w.be_u32(0); // fHistogram (null TH1F*)
+    w.be_f64(-1111.0); // fMinimum
+    w.be_f64(-1111.0); // fMaximum
+    w.string(""); // fOption
+    w.end_object(g);
+}
+
+/// Serialize a `TH2Poly` object to a fresh byte vector.
+pub fn th2poly_to_bytes(h: &TH2Poly) -> Vec<u8> {
+    let mut w = WBuffer::new();
+    write_th2poly(&mut w, h);
     w.into_vec()
 }
 

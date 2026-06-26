@@ -16,6 +16,13 @@
 //! cell `TList` holds object pointers to the `TH2PolyBin`s overlapping that
 //! cell, so walking `fCells` collects every bin exactly once (the first, full
 //! occurrence). Each bin's `fPoly` is a `TGraph` giving the polygon vertices.
+//!
+//! **Writing** ([`crate::write_th2poly`]) takes the simpler-but-valid route: the
+//! bins are written in full inside `fBins` and the `fCells` grid is left empty,
+//! so there are no shared objects and hence no back-references to emit. ROOT and
+//! uproot read the result correctly (verified bit-for-bit against ROOT C++); the
+//! only thing not reconstructed is the spatial fast-fill grid. The reader handles
+//! both layouts — when `fCells` yields no bins it falls back to reading `fBins`.
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
@@ -103,6 +110,28 @@ pub struct TH2Poly {
 }
 
 impl TH2Poly {
+    /// Create an empty `TH2Poly` over the bounding box `[xlow, xup] × [ylow, yup]`,
+    /// matching ROOT's `TH2Poly(name, title, xlow, xup, ylow, yup)` constructor.
+    /// Add bins with [`add_bin`](Self::add_bin) / [`add_bin_rect`](Self::add_bin_rect).
+    pub fn new(name: &str, title: &str, xlow: f64, xup: f64, ylow: f64, yup: f64) -> TH2Poly {
+        TH2Poly {
+            name: name.to_string(),
+            title: title.to_string(),
+            xaxis: TAxis::new("xaxis", 100, xlow, xup),
+            yaxis: TAxis::new("yaxis", 100, ylow, yup),
+            entries: 0.0,
+            tsumw: 0.0,
+            tsumw2: 0.0,
+            tsumwx: 0.0,
+            tsumwx2: 0.0,
+            tsumwy: 0.0,
+            tsumwy2: 0.0,
+            tsumwxy: 0.0,
+            overflow: [0.0; 9],
+            bins: Vec::new(),
+        }
+    }
+
     /// Number of polygon bins.
     pub fn nbins(&self) -> usize {
         self.bins.len()
@@ -111,6 +140,75 @@ impl TH2Poly {
     /// Look up a bin by its ROOT `fNumber`.
     pub fn bin(&self, number: i32) -> Option<&PolyBin> {
         self.bins.iter().find(|b| b.number == number)
+    }
+
+    /// Add a polygon bin from its vertices (`x[i]`, `y[i]`); returns the new
+    /// bin's ROOT `number` (1-based, in insertion order). The bounding box is
+    /// derived from the vertices.
+    pub fn add_bin(&mut self, x: &[f64], y: &[f64]) -> i32 {
+        let number = self.bins.len() as i32 + 1;
+        let xmin = x.iter().copied().fold(f64::INFINITY, f64::min);
+        let xmax = x.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let ymin = y.iter().copied().fold(f64::INFINITY, f64::min);
+        let ymax = y.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        self.bins.push(PolyBin {
+            number,
+            content: 0.0,
+            area: 0.0,
+            xmin,
+            ymin,
+            xmax,
+            ymax,
+            x: x.to_vec(),
+            y: y.to_vec(),
+        });
+        number
+    }
+
+    /// Add a rectangular bin spanning `[xmin, xmax] × [ymin, ymax]`; returns its
+    /// `number`. Convenience for ROOT's `AddBin(xmin, ymin, xmax, ymax)`.
+    pub fn add_bin_rect(&mut self, xmin: f64, ymin: f64, xmax: f64, ymax: f64) -> i32 {
+        self.add_bin(
+            &[xmin, xmin, xmax, xmax, xmin],
+            &[ymin, ymax, ymax, ymin, ymin],
+        )
+    }
+
+    /// Set a bin's content by `number` (no-op if no such bin).
+    pub fn set_bin_content(&mut self, number: i32, content: f64) {
+        if let Some(b) = self.bins.iter_mut().find(|b| b.number == number) {
+            b.content = content;
+        }
+    }
+
+    /// Fill `(x, y)` with unit weight; see [`fill_weight`](Self::fill_weight).
+    pub fn fill(&mut self, x: f64, y: f64) -> i32 {
+        self.fill_weight(x, y, 1.0)
+    }
+
+    /// Fill `(x, y)` with weight `w`, adding it to the first bin that contains
+    /// the point and accumulating the statistics. Returns the filled bin's
+    /// `number`, or `0` if the point lay outside every bin (overflow).
+    pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) -> i32 {
+        self.entries += 1.0;
+        let hit = self
+            .bins
+            .iter()
+            .position(|b| point_in_polygon(&b.x, &b.y, x, y));
+        match hit {
+            Some(i) => {
+                self.bins[i].content += w;
+                self.tsumw += w;
+                self.tsumw2 += w * w;
+                self.tsumwx += w * x;
+                self.tsumwx2 += w * x * x;
+                self.tsumwy += w * y;
+                self.tsumwy2 += w * y * y;
+                self.tsumwxy += w * x * y;
+                self.bins[i].number
+            }
+            None => 0,
+        }
     }
 
     pub(crate) fn read(r: &mut RBuffer, keylen: usize) -> Result<TH2Poly> {
@@ -137,20 +235,35 @@ impl TH2Poly {
         let ncells = r.be_i32()?.max(0) as usize; // fNCells (grid cell count)
 
         // fCells (TStreamerLoop): a {byte-count, version} header then `ncells`
-        // inline TLists. Walking them collects every bin once (first occurrence).
+        // inline TLists. ROOT writes each bin in full the first time it appears
+        // here; walking the cells collects them all (later repeats are back-refs).
         r.skip(6)?;
         let mut bins: Vec<PolyBin> = Vec::new();
         for _ in 0..ncells {
             read_cell(r, &mut tags, &mut bins)?;
         }
 
-        // fStepX/fStepY/fIsEmpty/fCompletelyInside/fFloat/fBins follow; fBins is
-        // only back-references to bins we already have, so seek to the object end.
+        // A ROOT-written file stores its bins in full inside fCells, so we have
+        // them all and `fBins` holds only back-references — done. A file oxiroot
+        // wrote leaves fCells empty and stores the bins in full in `fBins`, so
+        // when fCells yielded nothing, walk the tail to `fBins` and read them.
+        if bins.is_empty() {
+            let _step_x = r.be_f64()?;
+            let _step_y = r.be_f64()?;
+            read_bool_pointer_array(r, ncells)?; // fIsEmpty
+            read_bool_pointer_array(r, ncells)?; // fCompletelyInside
+            let _float = r.u8()?;
+            let header = tags.read_header(r)?;
+            if header.class_name.is_some() {
+                read_cell(r, &mut tags, &mut bins)?; // the fBins TList of full bins
+            }
+        }
         if let Some(end) = top.end {
             r.seek(end)?;
         }
 
         bins.sort_by_key(|b| b.number);
+        bins.dedup_by_key(|b| b.number);
         Ok(TH2Poly {
             name: core.name,
             title: core.title,
@@ -168,6 +281,34 @@ impl TH2Poly {
             bins,
         })
     }
+}
+
+/// Ray-casting point-in-polygon test over vertices `(x[i], y[i])`. Used by
+/// [`TH2Poly::fill_weight`] to find the bin containing a point.
+fn point_in_polygon(x: &[f64], y: &[f64], px: f64, py: f64) -> bool {
+    let n = x.len().min(y.len());
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        if (y[i] > py) != (y[j] > py) && px < (x[j] - x[i]) * (py - y[i]) / (y[j] - y[i]) + x[i] {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+/// Skip a `bool* //[n]` member: a 1-byte presence marker, then (if present)
+/// `n` bytes — one per element.
+fn read_bool_pointer_array(r: &mut RBuffer, n: usize) -> Result<()> {
+    let present = r.u8()?;
+    if present != 0 {
+        r.skip(n)?;
+    }
+    Ok(())
 }
 
 /// Read one `fCells` entry: a full inline `TList` of `TH2PolyBin` object

@@ -4,8 +4,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::read_th2poly;
-use oxiroot_io_core::RFile;
+use oxiroot_hist::{read_th2poly, write_th2poly_file, TH2Poly};
+use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -67,4 +67,48 @@ fn reads_honeycomb_th2poly() {
     // same value lazily in GetArea().
     let expected = 1.5 * 3.0_f64.sqrt();
     assert!((h.bin(1).unwrap().polygon_area() - expected).abs() < 1e-9);
+}
+
+/// Read a ROOT fixture, write it back with oxiroot, and read the result: the
+/// bins must survive byte-for-byte. (Cross-checked against compiled ROOT C++,
+/// which reads the oxiroot-written file identically to ROOT's own.)
+#[test]
+fn th2poly_round_trips() {
+    for (file, name) in [("th2poly.root", "hp"), ("th2poly_honeycomb.root", "hc")] {
+        let h = read_th2poly(&RFile::open(fixture(file)).unwrap(), name).unwrap();
+        let out = std::env::temp_dir().join(format!("oxiroot_{name}.root"));
+        write_th2poly_file(&out, &h, Compression::None).expect("write");
+        let back = read_th2poly(&RFile::open(&out).unwrap(), name).unwrap();
+        assert_eq!(back.bins, h.bins, "{name} bins changed across round-trip");
+        assert_eq!(back.name, h.name);
+        assert_eq!(back.title, h.title);
+        assert_eq!(back.entries, h.entries);
+    }
+}
+
+/// Build a `TH2Poly` from scratch (rectangular + polygon bins, filled), write
+/// it, and read it back. (Cross-checked: ROOT C++ reads this file correctly,
+/// routing each fill to its bin via point-in-polygon, including the triangle.)
+#[test]
+fn th2poly_build_from_scratch() {
+    let mut h = TH2Poly::new("scratch", "built", 0.0, 3.0, 0.0, 3.0);
+    assert_eq!(h.add_bin_rect(0.0, 0.0, 1.0, 1.0), 1);
+    assert_eq!(h.add_bin_rect(1.0, 1.0, 2.0, 2.0), 2);
+    assert_eq!(h.add_bin(&[2.0, 3.0, 2.5], &[2.0, 2.0, 3.0]), 3); // a triangle
+    assert_eq!(h.fill(0.5, 0.5), 1);
+    assert_eq!(h.fill_weight(1.5, 1.5, 4.0), 2);
+    assert_eq!(h.fill(2.5, 2.3), 3); // inside the triangle
+    assert_eq!(h.fill(2.5, 2.3), 3);
+    assert_eq!(h.fill(10.0, 10.0), 0); // outside every bin -> overflow
+
+    let out = std::env::temp_dir().join("oxiroot_th2poly_scratch.root");
+    write_th2poly_file(&out, &h, Compression::Zstd(5)).expect("write");
+    let back = read_th2poly(&RFile::open(&out).unwrap(), "scratch").unwrap();
+
+    assert_eq!(back.nbins(), 3);
+    assert_eq!(back.bin(1).unwrap().content, 1.0);
+    assert_eq!(back.bin(2).unwrap().content, 4.0);
+    assert_eq!(back.bin(3).unwrap().content, 2.0);
+    assert_eq!(back.bin(3).unwrap().x, vec![2.0, 3.0, 2.5]);
+    assert_eq!(back.entries, 5.0);
 }
