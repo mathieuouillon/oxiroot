@@ -120,6 +120,41 @@ cargo run -p oxiroot --example analysis
   file with `append_histograms_file`. Written files embed a `TStreamerInfo` list,
   so they are self-describing for any ROOT reader.
 
+### Fitting (`oxiroot::hist`, `fit` feature)
+
+`TH1::fit` minimizes a chi-square against a `TF1` model; `fit_with` chooses
+chi-square or a binned Poisson likelihood. Models are built-in (`gaussian`,
+`exponential`, `polynomial`) or a closure `f(x, params)`. The fit returns the
+parameters, parabolic errors, and `chi2`/`ndf`.
+
+```rust
+use oxiroot::prelude::*; // needs `--features fit`
+
+let mut h = TH1::new("mass", "di-muon mass", 60, 80.0, 100.0);
+h.sumw2();
+// … fill h with events …
+
+// Gaussian peak fit (chi-square), seeded from the histogram.
+let model = TF1::gaussian("z").with_params(vec![h.maximum(), h.mean(), h.std_dev()]);
+let fit = h.fit(&model);
+println!("mean = {:.3} ± {:.3}", fit.params[1], fit.errors[1]);
+
+let ml = h.fit_with(&model, FitMethod::Likelihood); // binned Poisson likelihood
+
+// A custom model — Gaussian signal on a flat background — as a closure.
+let sig_bkg = TF1::new(
+    "s+b", &["norm", "mean", "sigma", "bkg"], vec![h.maximum(), 91.0, 2.0, 0.0],
+    |x, q| q[0] * (-0.5 * ((x - q[1]) / q[2]).powi(2)).exp() + q[3],
+);
+let r = h.fit(&sig_bkg);
+```
+
+A runnable worked example (fills a Z → μμ peak and fits it three ways):
+
+```sh
+cargo run -p oxiroot --example fit --features fit
+```
+
 ### Graphs (`oxiroot::hist`)
 
 A single `TGraph` type covers all three ROOT classes, selected by its `errors`
