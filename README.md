@@ -205,8 +205,9 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
   quantized), and the `Switch` column — on Zstd-compressed pages.
 - Typed field API (`read_field`) for scalars, `std::string`, `std::vector<T>`,
   nested collections — `std::vector<std::string>`, `std::vector<std::vector<T>>`,
-  and vectors of records (`std::vector<MyStruct>`/`std::pair`) — and
-  `std::variant`, across multiple clusters.
+  and vectors of records (`std::vector<MyStruct>`/`std::pair`) — `std::variant`,
+  fixed-size `std::array`/`std::bitset`, and user-defined classes (split into a
+  record of their members), across multiple clusters.
 - Write the same surface it reads: `bool`, every integer width (8/16/32/64-bit,
   signed & unsigned), `f32`/`f64`, reduced-precision reals (`Field::half` /
   `truncated` / `quantized`), `std::string`, `std::vector<T>`, the nested
@@ -311,9 +312,9 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
 
 - **Graphs** — `TGraph2D` and `TGraphMultiErrors`; persisting a graph's fitted
   functions (`fFunctions`) and display frame (`fHistogram`), written empty today.
-- **RNTuple** — higher-level STL field types beyond vectors and variants
-  (`std::map`, `std::set`, `std::array`, `std::bitset`) and user-defined classes
-  via the streamer field role.
+- **RNTuple** — associative containers (`std::map`, `std::set`), classes stored
+  unsplit via the streamer field role, and write support for the fixed-size and
+  user-class field types (read is done).
 - **`TTree`** — object / nested branches beyond split `std::vector<MyStruct>`
   (nested structs, `std::vector<std::string>`, arrays of objects).
 - **Append mode** — `update` into files that contain subdirectories or an
