@@ -3,7 +3,7 @@
 //! read them back through our own reader.
 
 use oxiroot_io_core::{Compression, RFile};
-use oxiroot_rntuple::{Field, FieldValues, RNTuple};
+use oxiroot_rntuple::{Column, Field, FieldValues, RNTuple};
 
 fn round_trip(fields: &[Field], tag: &str) -> RFile {
     let out = std::env::temp_dir().join(format!("oxiroot_write_coltypes_{tag}.root"));
@@ -82,4 +82,31 @@ fn writes_reduced_precision_reals() {
             assert!((g - w).abs() <= tol, "{n}[{i}] = {g}, want ~{w}");
         }
     }
+}
+
+#[test]
+fn writes_a_variant_field() {
+    // std::variant<int32_t, float>, alternating int (entries 0,2,4) / float (1,3).
+    // The dense alternatives hold only their active values, in entry order.
+    let fields = vec![Field::variant(
+        "v",
+        vec![Column::I32(vec![0, 20, 40]), Column::F32(vec![1.5, 3.5])],
+        vec![1, 2, 1, 2, 1],
+    )];
+    let file = round_trip(&fields, "variant");
+    let ntpl = RNTuple::open(&file, "ntpl").expect("open");
+    assert_eq!(ntpl.num_entries(), 5);
+
+    // Reads back as the same columnar variant the read path produces.
+    assert_eq!(
+        ntpl.read_field(&file, "v").expect("read v"),
+        FieldValues::Variant {
+            alternatives: vec![
+                ("_0".to_string(), FieldValues::I32(vec![0, 20, 40])),
+                ("_1".to_string(), FieldValues::F32(vec![1.5, 3.5])),
+            ],
+            tags: vec![1, 2, 1, 2, 1],
+            indices: vec![0, 0, 1, 1, 2],
+        }
+    );
 }

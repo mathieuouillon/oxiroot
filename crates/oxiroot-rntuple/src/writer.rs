@@ -39,6 +39,7 @@ fn on_disk_page(page: &[u8], compression: u32) -> Vec<u8> {
 const ROLE_LEAF: u16 = 0;
 const ROLE_COLLECTION: u16 = 1;
 const ROLE_RECORD: u16 = 2;
+const ROLE_VARIANT: u16 = 3;
 
 /// Column flag: the descriptor carries an `(f64, f64)` value range (e.g. for a
 /// quantized real column).
@@ -126,6 +127,18 @@ pub enum Column {
         /// The flattened child column.
         items: Box<Column>,
     },
+    /// A `std::variant`: the `alternatives` (named `_0`, `_1`, … on disk) each
+    /// hold their densely-packed active values, and `tags` selects the active
+    /// alternative per entry (1-based, `0` = valueless). The per-alternative
+    /// indices are derived from the tags (sequential within each alternative),
+    /// so each `alternatives[k]` must hold exactly as many values as there are
+    /// `tags == k + 1`.
+    Variant {
+        /// The variant alternatives, in order.
+        alternatives: Vec<Column>,
+        /// Per entry, the 1-based active alternative (`0` = valueless).
+        tags: Vec<u32>,
+    },
 }
 
 impl Column {
@@ -159,6 +172,7 @@ impl Column {
             Column::QuantF32 { values, .. } => values.len(),
             Column::Record(subs) => subs.first().map_or(0, |(_, c)| c.len()),
             Column::Nested { offsets, .. } => offsets.len(),
+            Column::Variant { tags, .. } => tags.len(),
         }
     }
 }
@@ -285,6 +299,13 @@ impl Field {
                 bits,
             },
         )
+    }
+
+    /// A `std::variant` field: `alternatives` are the densely-packed active
+    /// values per alternative, `tags` the 1-based active alternative per entry
+    /// (`0` = valueless). See [`Column::Variant`].
+    pub fn variant(name: impl Into<String>, alternatives: Vec<Column>, tags: Vec<u32>) -> Field {
+        Field::new(name, Column::Variant { alternatives, tags })
     }
 }
 
@@ -770,6 +791,39 @@ fn lower_column(name: &str, data: &Column) -> Node {
                 type_name,
                 role: ROLE_RECORD,
                 cols: vec![],
+                children,
+            }
+        }
+        Column::Variant { alternatives, tags } => {
+            // Derive each entry's index (a running counter within its active
+            // alternative) and encode the Switch column: 8-byte index + 4-byte
+            // tag per entry.
+            let mut counters = vec![0u64; alternatives.len()];
+            let mut switch = Vec::with_capacity(tags.len() * 12);
+            for &tag in tags {
+                let (index, out_tag) = if tag == 0 || (tag as usize) > alternatives.len() {
+                    (0u64, 0u32)
+                } else {
+                    let k = (tag - 1) as usize;
+                    let i = counters[k];
+                    counters[k] += 1;
+                    (i, tag)
+                };
+                switch.extend_from_slice(&index.to_le_bytes());
+                switch.extend_from_slice(&out_tag.to_le_bytes());
+            }
+            // Alternatives are named `_0`, `_1`, … on disk.
+            let children: Vec<Node> = alternatives
+                .iter()
+                .enumerate()
+                .map(|(k, c)| lower_column(&format!("_{k}"), c))
+                .collect();
+            let inner: Vec<&str> = children.iter().map(|c| c.type_name.as_str()).collect();
+            Node {
+                name: name.to_string(),
+                type_name: format!("std::variant<{}>", inner.join(",")),
+                role: ROLE_VARIANT,
+                cols: vec![raw(ColumnType::Switch, 96, switch, tags.len())],
                 children,
             }
         }
