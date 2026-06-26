@@ -18,6 +18,7 @@ mod stats;
 pub mod tefficiency;
 pub mod th1;
 pub mod th2;
+pub mod th2poly;
 pub mod th3;
 pub mod thnsparse;
 pub mod threaded;
@@ -32,6 +33,7 @@ pub use axis::TAxis;
 pub use tefficiency::{read_tefficiency, TEfficiency};
 pub use th1::{read_th1, read_th1d, read_th1d_in, read_th1f, TH1};
 pub use th2::{read_th2, read_th2d, read_th2f, TH2};
+pub use th2poly::{read_th2poly, PolyBin, TH2Poly};
 pub use th3::{read_th3, read_th3d, read_th3f, TH3};
 pub use thnsparse::{read_thnsparse, SparseBin, THnSparse};
 #[cfg(feature = "rayon")]

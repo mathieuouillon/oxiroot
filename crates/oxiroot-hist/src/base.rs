@@ -174,6 +174,32 @@ pub(crate) fn object_bytes(file: &RFile, name: &str, class: &str) -> Result<Vec<
         .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))
 }
 
+/// Like [`object_bytes`], but also return the key's header length (`fKeyLen`).
+///
+/// ROOT keys objects relative to `-fKeyLen`, so the object-reference map (see
+/// [`oxiroot_io_core::object::TagReader`]) needs the key length to resolve the
+/// class/object back-references inside a streamed object (e.g. `TH2Poly`'s bins).
+pub(crate) fn object_bytes_keyed(
+    file: &RFile,
+    name: &str,
+    class: &str,
+) -> Result<(Vec<u8>, usize)> {
+    let key = file
+        .key(name)
+        .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+    if key.class_name != class {
+        return Err(Error::Format(format!(
+            "key {name:?} is a {}, not {class}",
+            key.class_name
+        )));
+    }
+    let keylen = key.key_len as usize;
+    let payload = key.payload(file.data())?;
+    let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
+        .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
+    Ok((object, keylen))
+}
+
 /// Return a key's class name together with its decompressed object bytes,
 /// without checking the class.
 pub(crate) fn object_bytes_any(file: &RFile, name: &str) -> Result<(String, Vec<u8>)> {
