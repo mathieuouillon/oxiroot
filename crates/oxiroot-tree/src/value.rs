@@ -117,3 +117,83 @@ pub enum BranchValues {
     /// Per-entry string (`TLeafC`).
     Str(Vec<String>),
 }
+
+impl BranchValues {
+    /// The number of entries (top-level rows).
+    #[must_use]
+    pub fn len(&self) -> usize {
+        use BranchValues::*;
+        match self {
+            Bool(v) => v.len(),
+            I8(v) => v.len(),
+            U8(v) => v.len(),
+            I16(v) => v.len(),
+            U16(v) => v.len(),
+            I32(v) => v.len(),
+            U32(v) => v.len(),
+            I64(v) => v.len(),
+            U64(v) => v.len(),
+            F32(v) => v.len(),
+            F64(v) => v.len(),
+            VecBool(v) => v.len(),
+            VecI8(v) => v.len(),
+            VecU8(v) => v.len(),
+            VecI16(v) => v.len(),
+            VecU16(v) => v.len(),
+            VecI32(v) => v.len(),
+            VecU32(v) => v.len(),
+            VecI64(v) => v.len(),
+            VecU64(v) => v.len(),
+            VecF32(v) => v.len(),
+            VecF64(v) => v.len(),
+            Str(v) => v.len(),
+        }
+    }
+
+    /// Whether there are no entries.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// This branch's element type.
+    #[must_use]
+    pub fn leaf_type(&self) -> LeafType {
+        use BranchValues::*;
+        match self {
+            Bool(_) | VecBool(_) => LeafType::Bool,
+            I8(_) | VecI8(_) => LeafType::I8,
+            U8(_) | VecU8(_) => LeafType::U8,
+            I16(_) | VecI16(_) => LeafType::I16,
+            U16(_) | VecU16(_) => LeafType::U16,
+            I32(_) | VecI32(_) => LeafType::I32,
+            U32(_) | VecU32(_) => LeafType::U32,
+            I64(_) | VecI64(_) => LeafType::I64,
+            U64(_) | VecU64(_) => LeafType::U64,
+            F32(_) | VecF32(_) => LeafType::F32,
+            F64(_) | VecF64(_) => LeafType::F64,
+            Str(_) => LeafType::Str,
+        }
+    }
+}
+
+/// Generate `as_<ty>() -> Option<&[..]>` accessors for the common scalar types.
+macro_rules! scalar_accessors {
+    ($($method:ident => $variant:ident($ty:ty)),* $(,)?) => {
+        impl BranchValues {
+            $(
+                #[doc = concat!("The values if this is a scalar `", stringify!($variant), "` branch.")]
+                #[must_use]
+                pub fn $method(&self) -> Option<&[$ty]> {
+                    if let BranchValues::$variant(v) = self { Some(v) } else { None }
+                }
+            )*
+        }
+    };
+}
+scalar_accessors! {
+    as_bool => Bool(bool), as_i8 => I8(i8), as_u8 => U8(u8),
+    as_i16 => I16(i16), as_u16 => U16(u16), as_i32 => I32(i32), as_u32 => U32(u32),
+    as_i64 => I64(i64), as_u64 => U64(u64), as_f32 => F32(f32), as_f64 => F64(f64),
+    as_str => Str(String),
+}

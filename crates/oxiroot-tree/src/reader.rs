@@ -25,12 +25,17 @@ pub struct TTree {
     name: String,
     entries: u64,
     branches: Vec<Branch>,
+    /// Branches present in the file that this crate cannot (yet) read, as
+    /// `(name, reason)` — surfaced via [`TTree::unsupported_branches`].
+    unsupported: Vec<(String, String)>,
 }
 
 /// One branch's metadata: its leaf type and the location of its baskets.
 #[derive(Debug, Clone)]
 struct Branch {
     name: String,
+    /// `fTitle` — the leaf list / shape string (e.g. `x[3]`, `n`).
+    title: String,
     leaf_type: LeafType,
     /// `fLen` — elements per entry (1 for a scalar branch).
     leaf_len: i32,
@@ -75,6 +80,40 @@ impl TTree {
     /// The names of the (readable) branches, in tree order.
     pub fn branch_names(&self) -> Vec<&str> {
         self.branches.iter().map(|b| b.name.as_str()).collect()
+    }
+
+    /// The element type of branch `name` (without reading its data), or `None`
+    /// if there is no such readable branch.
+    pub fn branch_type(&self, name: &str) -> Option<LeafType> {
+        self.branch(name).map(|b| b.leaf_type)
+    }
+
+    /// `fLen` for branch `name`: the per-entry element count of a fixed-size
+    /// array branch (`1` for a scalar; jagged branches report `1` and vary per
+    /// entry). `None` if there is no such branch.
+    pub fn branch_len(&self, name: &str) -> Option<i32> {
+        self.branch(name).map(|b| b.leaf_len)
+    }
+
+    /// The title (`fTitle`) of branch `name` — the leaf-list / shape string such
+    /// as `x[3]` or `n` — or `None` if there is no such branch.
+    pub fn branch_title(&self, name: &str) -> Option<&str> {
+        self.branch(name).map(|b| b.title.as_str())
+    }
+
+    /// Branches present in the file that this crate cannot read yet, as
+    /// `(name, reason)` pairs (e.g. multi-leaf/leaflist branches or unsupported
+    /// element types). These are absent from [`branch_names`](Self::branch_names),
+    /// so this is the way to see what was skipped and why.
+    pub fn unsupported_branches(&self) -> Vec<(&str, &str)> {
+        self.unsupported
+            .iter()
+            .map(|(n, r)| (n.as_str(), r.as_str()))
+            .collect()
+    }
+
+    fn branch(&self, name: &str) -> Option<&Branch> {
+        self.branches.iter().find(|b| b.name == name)
     }
 
     /// Read all values of branch `name` across every basket.
@@ -200,7 +239,8 @@ fn read_tree(object: &[u8], keylen: usize) -> Result<TTree> {
     }
     skip_object(&mut r)?; // fIOFeatures (ROOT::TIOFeatures)
 
-    let branches = read_branch_array(&mut r, &mut tags)?;
+    let mut unsupported = Vec::new();
+    let branches = read_branch_array(&mut r, &mut tags, &mut unsupported)?;
 
     // fLeaves and everything after it is not needed; jump to the tree's end.
     if let Some(end) = tree_hdr.end {
@@ -211,12 +251,17 @@ fn read_tree(object: &[u8], keylen: usize) -> Result<TTree> {
         name: named.name,
         entries: entries.max(0) as u64,
         branches,
+        unsupported,
     })
 }
 
 /// Read a `TObjArray` of `TBranch`es. Branch classes we don't yet handle
 /// (e.g. `TBranchElement`) are skipped via the object byte count.
-fn read_branch_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Branch>> {
+fn read_branch_array(
+    r: &mut RBuffer,
+    tags: &mut TagReader,
+    diag: &mut Vec<(String, String)>,
+) -> Result<Vec<Branch>> {
     read_version_tobject_header(r)?;
     let size = r.be_i32()?.max(0);
     let _lower = r.be_i32()?;
@@ -226,14 +271,15 @@ fn read_branch_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Branch
         let header = tags.read_header(r)?;
         match header.class_name.as_deref() {
             Some("TBranch") => {
-                if let Some(b) = read_branch(r, tags)? {
+                if let Some(b) = read_branch(r, tags, diag)? {
                     branches.push(b);
                 }
             }
             Some("TBranchElement") => {
-                branches.extend(read_branch_element(r, tags)?);
+                branches.extend(read_branch_element(r, tags, diag)?);
             }
-            _ => {}
+            Some(other) => diag.push((other.to_string(), "unsupported branch class".to_string())),
+            None => {}
         }
         if let Some(end) = header.end {
             r.seek(end)?;
@@ -244,7 +290,11 @@ fn read_branch_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Branch
 
 /// Read one `TBranch` (v13) body, after its object header. Returns `None` if its
 /// single leaf has an unsupported type.
-fn read_branch(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> {
+fn read_branch(
+    r: &mut RBuffer,
+    tags: &mut TagReader,
+    diag: &mut Vec<(String, String)>,
+) -> Result<Option<Branch>> {
     r.read_version()?; // TBranch (v13)
     let named = read_tnamed(r)?; // fName, fTitle
     skip_versioned(r)?; // TAttFill
@@ -263,7 +313,7 @@ fn read_branch(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> 
     r.be_i64()?; // fTotBytes
     r.be_i64()?; // fZipBytes
 
-    let sub = read_branch_array(r, tags)?; // fBranches (sub-branches)
+    let sub = read_branch_array(r, tags, diag)?; // fBranches (sub-branches)
     let leaves = read_leaf_array(r, tags)?; // fLeaves
     read_skip_array(r, tags)?; // fBaskets (empty on disk)
 
@@ -276,8 +326,25 @@ fn read_branch(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> 
     // (fFileName TString follows; ignored — we jump to the object end via the
     // caller's byte count.)
 
-    // Tier 1 only handles a branch with no sub-branches and exactly one leaf.
-    if !sub.is_empty() || leaves.len() != 1 {
+    // We handle a branch with no sub-branches and exactly one leaf; anything else
+    // is recorded as unsupported (rather than silently vanishing).
+    if !sub.is_empty() {
+        diag.push((
+            named.name,
+            "branch with sub-branches is not supported".to_string(),
+        ));
+        return Ok(None);
+    }
+    if leaves.len() != 1 {
+        let reason = if leaves.is_empty() {
+            "no supported leaf type".to_string()
+        } else {
+            format!(
+                "multi-leaf (leaflist) branch with {} leaves is not yet supported",
+                leaves.len()
+            )
+        };
+        diag.push((named.name, reason));
         return Ok(None);
     }
     let (leaf_type, leaf_len) = leaves[0];
@@ -288,6 +355,7 @@ fn read_branch(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> 
 
     Ok(Some(Branch {
         name: named.name,
+        title: named.title,
         leaf_type,
         leaf_len,
         n_baskets: write_basket,
@@ -306,7 +374,11 @@ fn read_branch(r: &mut RBuffer, tags: &mut TagReader) -> Result<Option<Branch>> 
 ///   from `fStreamerType`, no per-entry header).
 ///
 /// Unsupported element types contribute nothing.
-fn read_branch_element(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Branch>> {
+fn read_branch_element(
+    r: &mut RBuffer,
+    tags: &mut TagReader,
+    diag: &mut Vec<(String, String)>,
+) -> Result<Vec<Branch>> {
     r.read_version()?; // TBranchElement (v10) — the object's own version
                        // Then the TBranch base — same layout as a standalone TBranch body.
     r.read_version()?; // TBranch base (v13)
@@ -325,7 +397,7 @@ fn read_branch_element(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Bran
     r.be_i64()?; // fFirstEntry
     r.be_i64()?; // fTotBytes
     r.be_i64()?; // fZipBytes
-    let sub = read_branch_array(r, tags)?; // fBranches (sub-branches if split)
+    let sub = read_branch_array(r, tags, diag)?; // fBranches (sub-branches if split)
     read_leaf_array(r, tags)?; // fLeaves (a TLeafElement; skipped)
     read_skip_array(r, tags)?; // fBaskets (empty on disk)
     let _basket_bytes = read_marked_array(r, max_baskets, |r| r.be_i32().map(|v| v as i64))?;
@@ -360,11 +432,16 @@ fn read_branch_element(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Bran
         parse_vector_elem(&class_name)
     };
     let Some(leaf_type) = leaf_type else {
+        diag.push((
+            named.name,
+            format!("unsupported TBranchElement (fType={f_type}, class {class_name:?})"),
+        ));
         return Ok(Vec::new());
     };
     let basket_seek = basket_seek.into_iter().map(|s| s.max(0) as u64).collect();
     Ok(vec![Branch {
         name: named.name,
+        title: named.title,
         leaf_type,
         leaf_len: 1,
         n_baskets: write_basket,
