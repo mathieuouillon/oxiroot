@@ -10,6 +10,3 @@ description = "Reading and writing ROOT TTree (classic columnar storage)"
 [dependencies]
 oxiroot-io-core = { workspace = true }
 oxiroot-compress = { workspace = true }
-
-[dev-dependencies]
-proptest.workspace = true

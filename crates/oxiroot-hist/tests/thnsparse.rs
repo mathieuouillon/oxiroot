@@ -51,3 +51,17 @@ fn thnsparse_round_trips() {
     assert_eq!(sorted(back.bins), sorted(h.bins.clone()));
     assert_eq!(back.entries, 4.0);
 }
+
+/// A never-filled THnSparse (zero stored bins) must still write a valid chunk
+/// and round-trip — the empty-chunk boundary.
+#[test]
+fn empty_thnsparse_round_trips() {
+    let h = THnSparse::new("hs", "", &[(3, 0.0, 3.0), (2, -1.0, 1.0)]);
+    assert!(h.bins.is_empty());
+    let out = PathBuf::from("/tmp/oxiroot_thnsparse_empty.root");
+    write_thnsparse_file(&out, &h, Compression::None).expect("write");
+    let back = read_thnsparse(&RFile::open(&out).unwrap(), "hs").unwrap();
+    assert_eq!(back.ndim(), 2);
+    assert!(back.bins.is_empty());
+    assert_eq!(back.entries, 0.0);
+}

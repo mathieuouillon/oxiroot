@@ -93,3 +93,19 @@ fn graphs_build_from_scratch() {
     assert_eq!(sym.class_name(), "TGraphErrors");
     assert_eq!(asym.class_name(), "TGraphAsymmErrors");
 }
+
+/// Zero-point graphs are a boundary worth pinning: the writer must still emit a
+/// valid (empty) `fNpoints`/`fX`/`fY`, and the reader must round-trip them.
+#[test]
+fn empty_graphs_round_trip() {
+    let plain = TGraph::new("e0", "empty", vec![], vec![]);
+    let sym = TGraph::with_errors("e1", "empty", vec![], vec![], vec![], vec![]);
+    for g in [&plain, &sym] {
+        assert_eq!(g.len(), 0);
+        assert!(g.is_empty());
+        let out = std::env::temp_dir().join(format!("oxiroot_graph_empty_{}.root", g.name));
+        write_tgraph_file(&out, g, Compression::None).expect("write");
+        let back = read_tgraph(&RFile::open(&out).unwrap(), &g.name).unwrap();
+        assert_eq!(back, *g);
+    }
+}

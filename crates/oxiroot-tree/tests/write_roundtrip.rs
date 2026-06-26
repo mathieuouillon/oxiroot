@@ -155,3 +155,19 @@ fn ragged_fixed_arrays_are_rejected() {
     let err = tree_file_bytes("f.root", "T", &branches, Compression::None).unwrap_err();
     assert!(format!("{err}").contains("differ in length"), "got: {err}");
 }
+
+/// A tree with zero entries must still write a valid file and read back empty —
+/// the empty-tree boundary (empty baskets).
+#[test]
+fn write_then_read_empty_tree() {
+    let out = std::path::PathBuf::from("/tmp/oxiroot_empty_tree.root");
+    let branches = vec![Branch::i32("i4", vec![]), Branch::f64("f8", vec![])];
+    write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
+
+    let f = RFile::open(&out).expect("reopen");
+    let t = TTree::open(&f, "Events").expect("open tree");
+    assert_eq!(t.num_entries(), 0);
+    assert_eq!(t.branch_names(), ["i4", "f8"]);
+    assert_eq!(t.read_branch(&f, "i4").unwrap(), BranchValues::I32(vec![]));
+    assert_eq!(t.read_branch(&f, "f8").unwrap(), BranchValues::F64(vec![]));
+}

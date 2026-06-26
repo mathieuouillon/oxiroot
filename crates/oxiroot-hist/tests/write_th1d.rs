@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th1d, th1d_to_bytes, TH1};
-use oxiroot_io_core::RFile;
+use oxiroot_hist::{read_th1d, th1d_to_bytes, write_th1d_file, TH1};
+use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -126,4 +126,17 @@ fn writes_a_zstd_compressed_th1d() {
     assert!(!key.is_uncompressed(), "object should be stored compressed");
     let h2 = read_th1d(&f2, "h1").expect("read back compressed TH1D");
     assert_eq!(h2, h, "compressed histogram must round-trip");
+}
+
+/// A never-filled histogram (all-zero contents, no entries) must still write a
+/// valid file and round-trip — the empty-histogram boundary.
+#[test]
+fn empty_th1d_round_trips() {
+    let h = TH1::new("empty", "never filled", 10, 0.0, 1.0);
+    let out = std::path::PathBuf::from("/tmp/oxiroot_empty_th1d.root");
+    write_th1d_file(&out, &h, Compression::None).expect("write");
+    let back = read_th1d(&RFile::open(&out).unwrap(), "empty").expect("read");
+    assert_eq!(back.contents.len(), 12); // nbins + 2 flow cells
+    assert!(back.contents.iter().all(|&c| c == 0.0));
+    assert_eq!(back.entries, 0.0);
 }
