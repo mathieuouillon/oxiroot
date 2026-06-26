@@ -16,6 +16,7 @@ pub enum Compression {
 
 impl Compression {
     /// The ROOT setting integer (`algorithm*100 + level`, 0 = none).
+    #[must_use]
     pub const fn setting(self) -> u32 {
         match self {
             Compression::None => 0,
@@ -24,6 +25,7 @@ impl Compression {
     }
 
     /// Whether anything is compressed (i.e. not [`Compression::None`]).
+    #[must_use]
     pub const fn is_enabled(self) -> bool {
         !matches!(self, Compression::None)
     }

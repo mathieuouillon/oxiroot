@@ -40,6 +40,7 @@ const ROLE_LEAF: u16 = 0;
 const ROLE_COLLECTION: u16 = 1;
 
 /// A column of data for one RNTuple field.
+#[non_exhaustive]
 pub enum Column {
     /// `bool` (Bit column).
     Bool(Vec<bool>),

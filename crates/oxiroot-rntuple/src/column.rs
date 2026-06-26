@@ -5,6 +5,7 @@ use oxiroot_io_core::error::{Error, Result};
 /// A physical column type, per the RNTuple spec's type-code table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum ColumnType {
     Bit = 0x00,
     Byte = 0x01,

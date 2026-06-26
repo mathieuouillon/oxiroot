@@ -53,6 +53,7 @@ impl TH1 {
     /// `ngroup` does not divide the bin count, the leftover high bins fold into
     /// the overflow (as ROOT does). Contents and `Sumw2` sum per group; the
     /// statistical moments are unchanged (same fills, coarser bins).
+    #[must_use]
     pub fn rebin(&self, ngroup: usize) -> TH1 {
         let ng = ngroup.max(1);
         let n = self.xaxis.nbins.max(0) as usize;
@@ -98,6 +99,7 @@ impl TH1 {
     /// The cumulative histogram (ROOT's `GetCumulative`): bin `i` becomes the
     /// running sum of the in-range bins up to `i` (`forward`) or from `i` to the
     /// top (`!forward`). Binning and moment sums are preserved.
+    #[must_use]
     pub fn cumulative(&self, forward: bool) -> TH1 {
         let n = self.xaxis.nbins.max(0) as usize;
         let mut out = self.clone();
@@ -133,12 +135,14 @@ impl TH2 {
     /// Project onto the x axis by summing the in-range y bins (ROOT's
     /// `ProjectionX`) → a `TH1` with this histogram's x binning. The x-moment
     /// sums carry over so `mean()`/`std_dev()` are correct.
+    #[must_use]
     pub fn projection_x(&self, name: &str) -> TH1 {
         self.project(name, true)
     }
 
     /// Project onto the y axis by summing the in-range x bins (ROOT's
     /// `ProjectionY`) → a `TH1` with this histogram's y binning.
+    #[must_use]
     pub fn projection_y(&self, name: &str) -> TH1 {
         self.project(name, false)
     }
@@ -184,12 +188,14 @@ impl TH2 {
 
     /// Profile along x (ROOT's `ProfileX`) → a `TProfile` with this histogram's x
     /// binning, accumulating each y bin at its center.
+    #[must_use]
     pub fn profile_x(&self, name: &str) -> TProfile {
         self.profile(name, true)
     }
 
     /// Profile along y (ROOT's `ProfileY`) → a `TProfile` with this histogram's y
     /// binning.
+    #[must_use]
     pub fn profile_y(&self, name: &str) -> TProfile {
         self.profile(name, false)
     }
@@ -254,6 +260,7 @@ impl TH2 {
 
     /// Merge `ngx`×`ngy` blocks of adjacent bins into one (ROOT's `Rebin2D`).
     /// Contents and `Sumw2` sum per block; the moment sums are unchanged.
+    #[must_use]
     pub fn rebin2d(&self, ngx: usize, ngy: usize) -> TH2 {
         let (nx, ny) = (self.nx(), self.ny());
         let (ngx, ngy) = (ngx.clamp(1, nx.max(1)), ngy.clamp(1, ny.max(1)));
@@ -288,6 +295,7 @@ impl TH2 {
 impl TH3 {
     /// Merge `ngx`×`ngy`×`ngz` blocks of adjacent bins into one. Contents and
     /// `Sumw2` sum per block; the moment sums are unchanged.
+    #[must_use]
     pub fn rebin3d(&self, ngx: usize, ngy: usize, ngz: usize) -> TH3 {
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let (ngx, ngy, ngz) = (
@@ -358,14 +366,17 @@ impl TH3 {
 
     /// Project onto the x axis, summing the in-range y and z bins (ROOT's
     /// `Project3D("x")`) → a `TH1` carrying the x-moment sums.
+    #[must_use]
     pub fn projection_x(&self, name: &str) -> TH1 {
         self.project_axis(name, 0)
     }
     /// Project onto the y axis (sum x, z) → a `TH1`.
+    #[must_use]
     pub fn projection_y(&self, name: &str) -> TH1 {
         self.project_axis(name, 1)
     }
     /// Project onto the z axis (sum x, y) → a `TH1`.
+    #[must_use]
     pub fn projection_z(&self, name: &str) -> TH1 {
         self.project_axis(name, 2)
     }
@@ -422,14 +433,17 @@ impl TH3 {
     }
 
     /// Project onto the x–y plane, summing the in-range z bins → a `TH2`.
+    #[must_use]
     pub fn projection_xy(&self, name: &str) -> TH2 {
         self.project_plane(name, 2)
     }
     /// Project onto the x–z plane (sum y) → a `TH2`.
+    #[must_use]
     pub fn projection_xz(&self, name: &str) -> TH2 {
         self.project_plane(name, 1)
     }
     /// Project onto the y–z plane (sum x) → a `TH2`.
+    #[must_use]
     pub fn projection_yz(&self, name: &str) -> TH2 {
         self.project_plane(name, 0)
     }

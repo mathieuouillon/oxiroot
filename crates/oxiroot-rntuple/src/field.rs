@@ -11,6 +11,7 @@ use crate::page::ColumnValues;
 
 /// One top-level field's values, one element per entry.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum FieldValues {
     /// `bool`.
     Bool(Vec<bool>),

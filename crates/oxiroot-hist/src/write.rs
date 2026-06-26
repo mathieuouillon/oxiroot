@@ -88,12 +88,12 @@ fn write_th1_obj(w: &mut WBuffer, h: &TH1, version: u16, write_array: ArrayWrite
 
 /// Serialize a `TH1D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
-pub fn write_th1d(w: &mut WBuffer, h: &TH1) {
+pub(crate) fn write_th1d(w: &mut WBuffer, h: &TH1) {
     write_th1_obj(w, h, 3, write_tarrayd);
 }
 
 /// Serialize a `TH1F` object (the float-precision `TH1`) into `w`.
-pub fn write_th1f(w: &mut WBuffer, h: &TH1) {
+pub(crate) fn write_th1f(w: &mut WBuffer, h: &TH1) {
     write_th1_obj(w, h, 3, write_tarrayf);
 }
 
@@ -169,12 +169,12 @@ fn write_th2_obj(w: &mut WBuffer, h: &TH2, version: u16, write_array: ArrayWrite
 
 /// Serialize a `TH2D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
-pub fn write_th2d(w: &mut WBuffer, h: &TH2) {
+pub(crate) fn write_th2d(w: &mut WBuffer, h: &TH2) {
     write_th2_obj(w, h, 4, write_tarrayd);
 }
 
 /// Serialize a `TH2F` object (the float-precision `TH2`) into `w`.
-pub fn write_th2f(w: &mut WBuffer, h: &TH2) {
+pub(crate) fn write_th2f(w: &mut WBuffer, h: &TH2) {
     write_th2_obj(w, h, 4, write_tarrayf);
 }
 
@@ -256,12 +256,12 @@ fn write_th3_obj(w: &mut WBuffer, h: &TH3, version: u16, write_array: ArrayWrite
 
 /// Serialize a `TH3D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
-pub fn write_th3d(w: &mut WBuffer, h: &TH3) {
+pub(crate) fn write_th3d(w: &mut WBuffer, h: &TH3) {
     write_th3_obj(w, h, 4, write_tarrayd);
 }
 
 /// Serialize a `TH3F` object (the float-precision `TH3`) into `w`.
-pub fn write_th3f(w: &mut WBuffer, h: &TH3) {
+pub(crate) fn write_th3f(w: &mut WBuffer, h: &TH3) {
     write_th3_obj(w, h, 4, write_tarrayf);
 }
 
@@ -305,7 +305,7 @@ pub fn write_th3f_file(path: impl AsRef<Path>, h: &TH3, compression: Compression
 macro_rules! int_hist {
     ($write:ident, $bytes:ident, $file:ident, $class:literal, $htype:ty, $obj:ident, $ver:literal, $array:ident) => {
         #[doc = concat!("Serialize a `", $class, "` object (with its byte-count/version header) into `w`.")]
-        pub fn $write(w: &mut WBuffer, h: &$htype) {
+        pub(crate) fn $write(w: &mut WBuffer, h: &$htype) {
             $obj(w, h, $ver, $array);
         }
         #[doc = concat!("Serialize a `", $class, "` object to a fresh byte vector.")]
@@ -481,7 +481,7 @@ pub fn write_tprofile_file(
 /// Serialize a `TProfile` object (including its leading byte-count/version
 /// header) into `w`. Layout: `TProfile{ TH1D{ TH1{…, fSumw2=Σwy²}, TArrayD=Σwy },
 /// fBinEntries, fErrorMode, fYmin, fYmax, fTsumwy, fTsumwy2, fBinSumw2 }`.
-pub fn write_tprofile(w: &mut WBuffer, h: &TProfile) {
+pub(crate) fn write_tprofile(w: &mut WBuffer, h: &TProfile) {
     // A 1-D profile keeps degenerate y/z axes, as ROOT's TH1 constructor does.
     let yaxis = TAxis::new("yaxis", 1, 0.0, 1.0);
     let zaxis = TAxis::new("zaxis", 1, 0.0, 1.0);
@@ -537,7 +537,7 @@ pub fn write_tprofile2d_file(
 /// Layout: `TProfile2D{ TH2D{ TH2{ TH1{…, fSumw2=Σwz²}, fScalefactor, fTsumwy,
 /// fTsumwy2, fTsumwxy }, TArrayD=Σwz }, fBinEntries, fErrorMode, fZmin, fZmax,
 /// fTsumwz, fTsumwz2, fBinSumw2 }`.
-pub fn write_tprofile2d(w: &mut WBuffer, h: &TProfile2D) {
+pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &TProfile2D) {
     // A 2-D profile keeps a degenerate z axis, as ROOT's TH2 constructor does.
     let zaxis = TAxis::new("zaxis", 1, 0.0, 1.0);
 
@@ -598,7 +598,7 @@ pub fn write_tprofile3d_file(
 /// Layout: `TProfile3D{ TH3D{ TH3{ TH1{…, fSumw2=Σwt²}, TAtt3D, fTsumwy…fTsumwyz },
 /// TArrayD=Σwt }, fBinEntries, fErrorMode, fTmin, fTmax, fTsumwt, fTsumwt2,
 /// fBinSumw2 }`.
-pub fn write_tprofile3d(w: &mut WBuffer, h: &TProfile3D) {
+pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &TProfile3D) {
     let tp = w.begin_object(8); // TProfile3D version 8
     let th3d = w.begin_object(4); // TH3D version 4
     let th3 = w.begin_object(6); // TH3 version 6
@@ -687,7 +687,7 @@ pub fn write_tefficiency_file(
 /// Layout: `TEfficiency{ TNamed, TAttLine, TAttFill, TAttMarker, fBeta_alpha,
 /// fBeta_beta, fBeta_bin_params, fConfLevel, fFunctions, fPassedHistogram(TH1D*),
 /// fStatisticOption, fTotalHistogram(TH1D*), fWeight }`.
-pub fn write_tefficiency(w: &mut WBuffer, h: &TEfficiency) {
+pub(crate) fn write_tefficiency(w: &mut WBuffer, h: &TEfficiency) {
     let te = w.begin_object(2); // TEfficiency version 2
     write_tnamed(w, HIST_BITS, &h.name, &h.title);
     write_attline(w);
@@ -765,7 +765,7 @@ pub fn write_thnsparse_file(
 /// TNamed, fNdimensions, fAxes(TObjArray<TAxis>), fEntries, fTsumw, fTsumw2,
 /// fTsumwx, fTsumwx2 }, fChunkSize, fFilledBins, fBinContent(TObjArray<chunk>) }}`.
 /// The single chunk packs every filled bin's compact coordinate and content.
-pub fn write_thnsparse(w: &mut WBuffer, h: &THnSparse) {
+pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &THnSparse) {
     let bits = h.axis_bits();
     let total_bits: u32 = bits.iter().sum();
     let single = total_bits.div_ceil(8).max(1) as usize; // fSingleCoordinateSize
@@ -853,7 +853,7 @@ pub fn write_th2poly_file(
 /// back-references are needed — and reproduces every bin faithfully; only the
 /// fast-fill grid is left unpopulated (a re-fill in ROOT would need to be
 /// rebuilt, which oxiroot does not do).
-pub fn write_th2poly(w: &mut WBuffer, h: &TH2Poly) {
+pub(crate) fn write_th2poly(w: &mut WBuffer, h: &TH2Poly) {
     let mut bins: Vec<&PolyBin> = h.bins.iter().collect();
     bins.sort_by_key(|b| b.number);
     let n = bins.len();
@@ -1018,7 +1018,7 @@ fn write_basic_array(w: &mut WBuffer, data: &[f64], n: usize) {
 
 /// Serialize a [`TGraph`] (or its `TGraphErrors`/`TGraphAsymmErrors` variant,
 /// chosen by [`TGraph::errors`]) with its byte-count/version header.
-pub fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
+pub(crate) fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
     let n = g.len();
     let x = &g.x[..n];
     let y = &g.y[..n];

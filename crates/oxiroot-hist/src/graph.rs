@@ -19,6 +19,7 @@ use crate::base::object_bytes_any;
 
 /// Error bars attached to a graph's points.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum GraphErrors {
     /// No error bars — a plain `TGraph`.
     None,

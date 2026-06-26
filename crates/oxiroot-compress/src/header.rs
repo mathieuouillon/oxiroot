@@ -21,6 +21,7 @@ pub const MAX_CHUNK_SIZE: usize = 0xFF_FFFF;
 
 /// A ROOT compression algorithm, identified by the 2-character block tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Algorithm {
     /// zlib / DEFLATE (`b"ZL"`).
     Zlib,

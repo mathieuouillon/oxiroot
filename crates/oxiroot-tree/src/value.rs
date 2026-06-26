@@ -3,6 +3,7 @@
 /// The element type of a branch's leaf, derived from the leaf class and its
 /// `fIsUnsigned` flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LeafType {
     /// `TLeafO` — `bool`.
     Bool,
@@ -67,6 +68,7 @@ impl LeafType {
 /// variable-length (`x[n]`) branches yield a nested vector (one inner vector per
 /// entry); `TLeafC` branches yield strings.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum BranchValues {
     /// `bool` branch.
     Bool(Vec<bool>),

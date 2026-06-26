@@ -20,6 +20,7 @@ const COLUMN_FLAG_RANGE: u16 = 0x02;
 
 /// Structural role of a field within the schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum StructRole {
     /// A leaf field (scalar, or a string).
     Leaf,
