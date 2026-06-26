@@ -122,10 +122,14 @@ cargo run -p oxiroot --example analysis
 
 ### Fitting (`oxiroot::hist`, `fit` feature)
 
-`TH1::fit` minimizes a chi-square against a `TF1` model; `fit_with` chooses
-chi-square or a binned Poisson likelihood. Models are built-in (`gaussian`,
-`exponential`, `polynomial`) or a closure `f(x, params)`. The fit returns the
-parameters, parabolic errors, and `chi2`/`ndf`.
+`TH1::fit` minimizes a chi-square against a `TF1` model; `fit_with` picks the
+cost (Neyman or Pearson chi-square, or a binned Poisson likelihood) and
+`fit_opts` adds a fit range and opt-in MINOS errors. Models are built-in
+(`gaussian`, `exponential`, `polynomial`) or a closure `f(x, params)`, with
+per-parameter limits, fixing, and a data-driven seed. The fit returns the
+parameters, parabolic errors, optional asymmetric MINOS errors and covariance
+matrix, and `chi2`/`ndf` (with `chi2_per_ndf()` and a goodness-of-fit
+`p_value()`).
 
 ```rust
 use oxiroot::prelude::*; // needs `--features fit`
@@ -134,12 +138,22 @@ let mut h = TH1::new("mass", "di-muon mass", 60, 80.0, 100.0);
 h.sumw2();
 // … fill h with events …
 
-// Gaussian peak fit (chi-square), seeded from the histogram.
-let model = TF1::gaussian("z").with_params(vec![h.maximum(), h.mean(), h.std_dev()]);
+// Gaussian peak fit (chi-square). `estimate_from` seeds (constant, mean, sigma)
+// from the bins — no manual moment loop, and it works for set_bin_content too.
+let model = TF1::gaussian("z").estimate_from(&h);
 let fit = h.fit(&model);
 println!("mean = {:.3} ± {:.3}", fit.params[1], fit.errors[1]);
+println!("chi2/ndf = {:.2}, p = {:.3}", fit.chi2_per_ndf(), fit.p_value());
 
 let ml = h.fit_with(&model, FitMethod::Likelihood); // binned Poisson likelihood
+
+// Full control: fit the core ±window, keep sigma positive, and ask for MINOS.
+let opts = FitOptions::new().range(85.0, 97.0).with_minos(true);
+let mut peak = TF1::gaussian("z").estimate_from(&h).lower_limit("sigma", 0.0);
+let r = h.fit_into(&mut peak, &opts); // writes the fit back into `peak`
+if let Some(minos) = &r.minos {
+    println!("mean +{:.3} {:.3}", minos[1].1, minos[1].0); // asymmetric errors
+}
 
 // A custom model — Gaussian signal on a flat background — as a closure.
 let sig_bkg = TF1::new(

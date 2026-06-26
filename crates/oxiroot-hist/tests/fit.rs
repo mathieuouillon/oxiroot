@@ -295,3 +295,35 @@ fn minos_errors_and_covariance() {
     let plain = hg.fit(&model);
     assert!(plain.minos.is_none());
 }
+
+#[test]
+fn ergonomics_estimate_seed_and_fit_into() {
+    use oxiroot_hist::FitOptions;
+
+    // TF1 is Send + Sync + Clone (cross threads, share the model, rebuild seeds).
+    fn assert_traits<T: Send + Sync + Clone>() {}
+    assert_traits::<TF1>();
+
+    let hg = read("hg"); // SetBinContent gaussian: mean()/std_dev() read back as 0
+    assert_eq!(hg.mean(), 0.0, "fixture stores no moment sums");
+
+    // estimate_from seeds (constant, mean, sigma) straight from the bins, so the
+    // call site needs no manual content-weighted moment loop.
+    let mut model = TF1::gaussian("g").estimate_from(&hg);
+    // A clone shares the closure and fits identically.
+    assert_eq!(model.clone().eval(0.5), model.eval(0.5));
+    assert!(model.params[2] > 0.0, "sigma seed must be positive");
+    assert!(format!("{model:?}").contains("TF1")); // Debug prints (closure hidden)
+
+    // fit_into writes the best-fit parameters back into the model.
+    let r = hg.fit_into(&mut model, &FitOptions::new());
+    assert!(r.valid);
+    assert!(
+        rel_close(model.params[1], 0.5, 5e-3),
+        "mean = {}",
+        model.params[1]
+    );
+    assert_eq!(model.params, r.params, "model holds the fitted parameters");
+    // The model now evaluates the fitted curve: its peak == the fitted constant.
+    assert!(rel_close(model.eval(model.params[1]), r.params[0], 1e-9));
+}

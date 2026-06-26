@@ -14,8 +14,10 @@ use minuit2::{MnMigrad, MnMinos};
 
 use crate::th1::TH1;
 
-/// A model evaluator: `f(x, params) -> y`.
-type ModelFn = Box<dyn Fn(f64, &[f64]) -> f64>;
+/// A model evaluator: `f(x, params) -> y`. `Send + Sync` so a [`TF1`] can cross
+/// thread boundaries (e.g. be shared by a parallel fit); an `Arc` so [`TF1`] is
+/// cheaply `Clone` (clones share the immutable closure).
+type ModelFn = std::sync::Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>;
 
 /// Optional fit constraints on one parameter.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -29,6 +31,7 @@ struct Constraint {
 /// A parametric fit function (a minimal `TF1`): a closure `f(x, params)` plus
 /// named parameters with their current/initial values and optional per-parameter
 /// limits, fixing, and step hints.
+#[derive(Clone)]
 pub struct TF1 {
     /// Function name.
     pub name: String,
@@ -47,7 +50,7 @@ impl TF1 {
         name: &str,
         param_names: &[&str],
         params: Vec<f64>,
-        func: impl Fn(f64, &[f64]) -> f64 + 'static,
+        func: impl Fn(f64, &[f64]) -> f64 + Send + Sync + 'static,
     ) -> TF1 {
         let constraints = vec![Constraint::default(); params.len()];
         TF1 {
@@ -55,7 +58,7 @@ impl TF1 {
             param_names: param_names.iter().map(|s| s.to_string()).collect(),
             params,
             constraints,
-            func: Box::new(func),
+            func: std::sync::Arc::new(func),
         }
     }
 
@@ -167,6 +170,72 @@ impl TF1 {
     pub fn eval(&self, x: f64) -> f64 {
         (self.func)(x, &self.params)
     }
+
+    /// Whether this is the built-in Gaussian shape (parameters
+    /// `constant`/`mean`/`sigma`), the one shape that needs data-driven seeding.
+    fn is_gaussian(&self) -> bool {
+        self.param_names.len() == 3
+            && self.param_names[0] == "constant"
+            && self.param_names[1] == "mean"
+            && self.param_names[2] == "sigma"
+    }
+
+    /// Seed the parameters from a histogram's binned data, for a good starting
+    /// point even when the stored moment sums are zero — e.g. a histogram built
+    /// with `set_bin_content` rather than `fill`, where [`TH1::mean`] and
+    /// [`TH1::std_dev`] both read back as 0.
+    ///
+    /// For the [`gaussian`](Self::gaussian) shape this sets `(constant, mean,
+    /// sigma)` to the peak height and the *content-weighted* mean and standard
+    /// deviation of `h`. For other shapes it is a no-op (seed those with
+    /// [`with_params`](Self::with_params)).
+    ///
+    /// ```ignore
+    /// let model = TF1::gaussian("g").estimate_from(&h); // no manual seed needed
+    /// let fit = h.fit(&model);
+    /// ```
+    #[must_use]
+    pub fn estimate_from(mut self, h: &TH1) -> TF1 {
+        if self.is_gaussian() {
+            let (constant, mean, sigma) = gaussian_seed(h);
+            self.params = vec![constant, mean, sigma];
+            self.constraints.resize(3, Constraint::default());
+        }
+        self
+    }
+}
+
+impl std::fmt::Debug for TF1 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TF1")
+            .field("name", &self.name)
+            .field("param_names", &self.param_names)
+            .field("params", &self.params)
+            .field("constraints", &self.constraints)
+            .finish_non_exhaustive() // the model closure is not printable
+    }
+}
+
+/// Content-weighted `(peak, mean, sigma)` over the in-range bins of `h` — the
+/// Gaussian seed. Robust when `h`'s stored moment sums are zero; falls back to a
+/// unit width when the contents carry no spread.
+fn gaussian_seed(h: &TH1) -> (f64, f64, f64) {
+    let n = h.xaxis.nbins.max(0) as usize;
+    let (mut sw, mut swx, mut swx2) = (0.0, 0.0, 0.0);
+    for i in 1..=n {
+        let c = h.contents.get(i).copied().unwrap_or(0.0);
+        let x = h.bin_center(i);
+        sw += c;
+        swx += c * x;
+        swx2 += c * x * x;
+    }
+    let peak = h.maximum();
+    if sw <= 0.0 {
+        return (peak, 0.0, 1.0);
+    }
+    let mean = swx / sw;
+    let sigma = (swx2 / sw - mean * mean).max(0.0).sqrt();
+    (peak, mean, if sigma > 0.0 { sigma } else { 1.0 })
 }
 
 /// Which cost a fit minimizes.
@@ -436,5 +505,17 @@ impl TH1 {
             ndf: points.len() - n_free,
             valid: min.is_valid(),
         }
+    }
+
+    /// Fit `model` (per `opts`) and write the best-fit parameters back into it,
+    /// so `model.eval(x)` evaluates the *fitted* curve afterwards — convenient
+    /// for drawing the result. Use [`fit_opts`](Self::fit_opts) when you want to
+    /// keep the model's initial parameters untouched.
+    ///
+    /// Requires the `fit` feature.
+    pub fn fit_into(&self, model: &mut TF1, opts: &FitOptions) -> FitResult {
+        let result = self.fit_opts(model, opts);
+        model.params.clone_from(&result.params);
+        result
     }
 }

@@ -49,7 +49,9 @@ fn main() {
         peak.fill(rng.gauss(true_mean, true_sigma));
     }
 
-    let model = TF1::gaussian("z").with_params(vec![peak.maximum(), peak.mean(), peak.std_dev()]);
+    // `estimate_from` seeds (constant, mean, sigma) straight from the bins — no
+    // manual moment loop, and it works even for set_bin_content histograms.
+    let model = TF1::gaussian("z").estimate_from(&peak);
     let chi2 = peak.fit(&model); // chi-square (the default)
     let like = peak.fit_with(&model, FitMethod::Likelihood); // Poisson likelihood
 
@@ -80,13 +82,15 @@ fn main() {
 
     // A closure model: Gaussian signal + constant background.
     // params: [norm, mean, sigma, background-per-bin].
-    let sig_bkg = TF1::new(
+    let mut sig_bkg = TF1::new(
         "sig+bkg",
         &["norm", "mean", "sigma", "bkg"],
         vec![withbkg.maximum(), 91.0, 2.0, withbkg.minimum()],
         |x, q| q[0] * (-0.5 * ((x - q[1]) / q[2]).powi(2)).exp() + q[3],
     );
-    let r = withbkg.fit(&sig_bkg);
+    // fit_into writes the best-fit parameters back into the model, so `sig_bkg`
+    // then evaluates the fitted curve.
+    let r = withbkg.fit_into(&mut sig_bkg, &FitOptions::new());
 
     println!("Signal + background fit (custom closure model):");
     println!(
@@ -97,5 +101,9 @@ fn main() {
         r.chi2_per_ndf()
     );
     // A plain Gaussian here would be biased by the background; the extra term
-    // recovers the true peak.
+    // recovers the true peak. The fitted model draws the full curve:
+    println!(
+        "  fitted curve height at the peak: {:.1} counts/bin",
+        sig_bkg.eval(r.params[1])
+    );
 }
