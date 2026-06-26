@@ -50,12 +50,17 @@ struct Branch {
     /// For one leaf of a multi-leaf (leaflist) branch: `(byte offset of this leaf
     /// within an entry, total entry stride)`. `None` for a single-leaf branch.
     leaflist: Option<(usize, usize)>,
+    /// Per-entry array shape parsed from the leaf title — `[N]` for `x[N]`,
+    /// `[N, M]` for a multidimensional `x[N][M]`, empty for a scalar. The data is
+    /// stored row-major flat (`fLen` = the product); this records the split.
+    dims: Vec<usize>,
 }
 
-/// One `TLeaf` of a branch: its name, element type, fixed length, and byte offset
-/// within an entry (`fOffset`, non-zero only inside a leaflist).
+/// One `TLeaf` of a branch: its name/title, element type, fixed length, and byte
+/// offset within an entry (`fOffset`, non-zero only inside a leaflist).
 struct Leaf {
     name: String,
+    title: String,
     leaf_type: LeafType,
     len: i32,
     offset: usize,
@@ -111,6 +116,15 @@ impl TTree {
     /// as `x[3]` or `n` — or `None` if there is no such branch.
     pub fn branch_title(&self, name: &str) -> Option<&str> {
         self.branch(name).map(|b| b.title.as_str())
+    }
+
+    /// The per-entry fixed array shape of branch `name`: `[N]` for `x[N]`,
+    /// `[N, M]` for a multidimensional `x[N][M]`, and `[]` for a scalar or a
+    /// variable-length branch. The values are stored row-major flat (each entry's
+    /// inner vector has `N` or `N*M` elements); use this to reshape them. `None`
+    /// if there is no such branch.
+    pub fn branch_shape(&self, name: &str) -> Option<&[usize]> {
+        self.branch(name).map(|b| b.dims.as_slice())
     }
 
     /// Branches present in the file that this crate cannot read yet, as
@@ -408,6 +422,7 @@ fn read_branch(
             basket_seek,
             elem_header: 0,
             leaflist: None,
+            dims: parse_dims(&leaf.title),
         }]);
     }
 
@@ -429,6 +444,7 @@ fn read_branch(
             basket_seek: basket_seek.clone(),
             elem_header: 0,
             leaflist: Some((leaf.offset, stride)),
+            dims: parse_dims(&leaf.title),
         })
         .collect();
     Ok(out)
@@ -520,6 +536,7 @@ fn read_branch_element(
         basket_seek,
         elem_header: if member { 0 } else { 10 },
         leaflist: None,
+        dims: Vec::new(),
     }])
 }
 
@@ -603,10 +620,27 @@ fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<Leaf>> {
                                  // caller's byte count.
     Ok(LeafType::from_leaf(class, unsigned).map(|leaf_type| Leaf {
         name: named.name,
+        title: named.title,
         leaf_type,
         len,
         offset: offset.max(0) as usize,
     }))
+}
+
+/// Parse the per-entry array shape from a leaf title: `x[2][3]` → `[2, 3]`,
+/// `x[5]` → `[5]`, a scalar (no brackets) → `[]`.
+fn parse_dims(title: &str) -> Vec<usize> {
+    let mut dims = Vec::new();
+    let mut rest = title;
+    while let Some(open) = rest.find('[') {
+        let after = &rest[open + 1..];
+        let Some(close) = after.find(']') else { break };
+        if let Ok(n) = after[..close].parse::<usize>() {
+            dims.push(n);
+        }
+        rest = &after[close + 1..];
+    }
+    dims
 }
 
 /// Read a `TObjArray` and discard it (used for `fBaskets`, always empty here).
