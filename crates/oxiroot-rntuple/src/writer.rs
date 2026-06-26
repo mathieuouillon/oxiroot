@@ -40,6 +40,10 @@ const ROLE_LEAF: u16 = 0;
 const ROLE_COLLECTION: u16 = 1;
 const ROLE_RECORD: u16 = 2;
 
+/// Column flag: the descriptor carries an `(f64, f64)` value range (e.g. for a
+/// quantized real column).
+const COLUMN_FLAG_RANGE: u16 = 0x02;
+
 /// A column of data for one RNTuple field.
 #[non_exhaustive]
 pub enum Column {
@@ -87,6 +91,27 @@ pub enum Column {
     VecI64(Vec<Vec<i64>>),
     /// `std::vector<std::string>`.
     VecStr(Vec<Vec<String>>),
+    /// A `float` field stored at half precision (the `Real16` column).
+    HalfF32(Vec<f32>),
+    /// A `float` field stored with its mantissa truncated to `bits` bits total
+    /// (the `Real32Trunc` column, `10 <= bits <= 31`).
+    TruncF32 {
+        /// The values to store.
+        values: Vec<f32>,
+        /// Bits kept per value (sign + exponent + high mantissa).
+        bits: u16,
+    },
+    /// A `float` field linearly quantized into `bits`-wide integers over
+    /// `[min, max]` (the `Real32Quant` column, `1 <= bits <= 32`). Values are
+    /// assumed to lie within the range.
+    QuantF32 {
+        /// The values to store.
+        values: Vec<f32>,
+        /// The (inclusive) value range the quantization spans.
+        range: (f64, f64),
+        /// Bits per quantized value.
+        bits: u16,
+    },
     /// A record / struct: named sub-fields (a struct-of-arrays), each with one
     /// value per record instance. At top level this is a struct field; wrap it
     /// in [`Nested`](Self::Nested) for a `std::vector<MyStruct>`.
@@ -129,6 +154,9 @@ impl Column {
             Column::VecI32(v) => v.len(),
             Column::VecI64(v) => v.len(),
             Column::VecStr(v) => v.len(),
+            Column::HalfF32(v) => v.len(),
+            Column::TruncF32 { values, .. } => values.len(),
+            Column::QuantF32 { values, .. } => values.len(),
             Column::Record(subs) => subs.first().map_or(0, |(_, c)| c.len()),
             Column::Nested { offsets, .. } => offsets.len(),
         }
@@ -226,6 +254,40 @@ vec_vec_ctors! {
     vec_vec_str => VecStr(String),
 }
 
+impl Field {
+    /// A `float` field stored at half precision (the `Real16` column) — half the
+    /// space, ~3 decimal digits.
+    pub fn half(name: impl Into<String>, values: Vec<f32>) -> Field {
+        Field::new(name, Column::HalfF32(values))
+    }
+
+    /// A `float` field with its mantissa truncated to `bits` bits total (the
+    /// `Real32Trunc` column, `10 <= bits <= 31`).
+    pub fn truncated(name: impl Into<String>, values: Vec<f32>, bits: u16) -> Field {
+        Field::new(name, Column::TruncF32 { values, bits })
+    }
+
+    /// A `float` field linearly quantized into `bits`-wide integers over
+    /// `[min, max]` (the `Real32Quant` column, `1 <= bits <= 32`). All values
+    /// must lie within the range.
+    pub fn quantized(
+        name: impl Into<String>,
+        values: Vec<f32>,
+        min: f64,
+        max: f64,
+        bits: u16,
+    ) -> Field {
+        Field::new(
+            name,
+            Column::QuantF32 {
+                values,
+                range: (min, max),
+                bits,
+            },
+        )
+    }
+}
+
 // --- internal lowered model ------------------------------------------------
 
 struct FieldPlan {
@@ -241,6 +303,7 @@ struct ColumnPlan {
     field_id: u32,
     page: Vec<u8>,
     n: u32,
+    value_range: Option<(f64, f64)>,
 }
 
 fn le_bytes<T, const N: usize>(values: &[T], to: impl Fn(&T) -> [u8; N]) -> Vec<u8> {
@@ -272,12 +335,70 @@ fn flatten<T: Clone>(v: &[Vec<T>]) -> (Vec<u64>, Vec<T>) {
     (offsets, data)
 }
 
+/// Bit-pack `bits`-wide unsigned values LSB-first into little-endian bytes (the
+/// inverse of the reader's unpacking; used by the truncated/quantized reals).
+fn pack_uints(values: &[u64], bits: u16) -> Vec<u8> {
+    let nbits = bits as usize;
+    let mut out = vec![0u8; (values.len() * nbits).div_ceil(8)];
+    let mut pos = 0usize;
+    for &v in values {
+        for b in 0..nbits {
+            if (v >> b) & 1 != 0 {
+                let g = pos + b;
+                out[g >> 3] |= 1 << (g & 7);
+            }
+        }
+        pos += nbits;
+    }
+    out
+}
+
+/// Encode an IEEE-754 single into a half (binary16), round-to-nearest-even.
+fn f32_to_half(value: f32) -> u16 {
+    let x = value.to_bits();
+    let sign = ((x >> 16) & 0x8000) as u16;
+    let mut mant = (x & 0x007f_ffff) as i32;
+    let exp = ((x >> 23) & 0xff) as i32;
+
+    if exp == 0xff {
+        // Inf, or NaN (keep it a non-signalling NaN).
+        return sign | 0x7c00 | if mant != 0 { 0x0200 } else { 0 };
+    }
+    let he = exp - 127 + 15; // rebias to the half's exponent
+    if he >= 0x1f {
+        return sign | 0x7c00; // overflow -> Inf
+    }
+    if he <= 0 {
+        if he < -10 {
+            return sign; // underflow -> +/-0
+        }
+        // Subnormal half: shift the (restored) mantissa down, rounding to even.
+        mant |= 0x0080_0000;
+        let shift = 14 - he;
+        let mut h = (mant >> shift) as u16;
+        let rem = mant & ((1 << shift) - 1);
+        let halfway = 1 << (shift - 1);
+        if rem > halfway || (rem == halfway && (h & 1) == 1) {
+            h += 1;
+        }
+        return sign | h;
+    }
+    // Normal half; rounding may carry into the exponent, which is correct.
+    let mut h = ((he as u16) << 10) | (mant >> 13) as u16;
+    let rem = mant & 0x1fff;
+    if rem > 0x1000 || (rem == 0x1000 && (h & 1) == 1) {
+        h += 1;
+    }
+    sign | h
+}
+
 /// One column's lowered bytes, before its field id is known.
 struct RawCol {
     column_type: ColumnType,
     bits: u16,
     page: Vec<u8>,
     n: u32,
+    value_range: Option<(f64, f64)>,
 }
 
 /// A lowered field subtree — a field, its own columns, and its children —
@@ -296,6 +417,7 @@ fn raw(column_type: ColumnType, bits: u16, page: Vec<u8>, n: usize) -> RawCol {
         bits,
         page,
         n: n as u32,
+        value_range: None,
     }
 }
 
@@ -593,6 +715,49 @@ fn lower_column(name: &str, data: &Column) -> Node {
             let (offsets, data) = flatten(v);
             collection_node(name, &offsets, v.len(), string_node("_0", &data))
         }
+        Column::HalfF32(v) => {
+            let page: Vec<u8> = v
+                .iter()
+                .flat_map(|&x| f32_to_half(x).to_le_bytes())
+                .collect();
+            leaf_node(name, "float", raw(ColumnType::Real16, 16, page, v.len()))
+        }
+        Column::TruncF32 { values, bits } => {
+            let shift = 32 - u32::from(*bits);
+            let packed: Vec<u64> = values
+                .iter()
+                .map(|&x| u64::from(x.to_bits() >> shift))
+                .collect();
+            let page = pack_uints(&packed, *bits);
+            leaf_node(
+                name,
+                "float",
+                raw(ColumnType::Real32Trunc, *bits, page, values.len()),
+            )
+        }
+        Column::QuantF32 {
+            values,
+            range: (min, max),
+            bits,
+        } => {
+            let denom = ((1u64 << bits) - 1) as f64;
+            let span = max - min;
+            let packed: Vec<u64> = values
+                .iter()
+                .map(|&x| {
+                    let t = if span != 0.0 {
+                        ((f64::from(x) - min) / span).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    (t * denom).round() as u64
+                })
+                .collect();
+            let page = pack_uints(&packed, *bits);
+            let mut col = raw(ColumnType::Real32Quant, *bits, page, values.len());
+            col.value_range = Some((*min, *max));
+            leaf_node(name, "float", col)
+        }
         Column::Nested { offsets, items } => {
             let child = lower_column("_0", items);
             collection_node(name, offsets, offsets.len(), child)
@@ -642,6 +807,7 @@ fn push_node(
             field_id: id,
             page: c.page,
             n: c.n,
+            value_range: c.value_range,
         });
     }
     for child in node.children {
@@ -731,8 +897,17 @@ fn build_header(name: &str, fields: &[FieldPlan], cols: &[ColumnPlan]) -> Vec<u8
             r.extend_from_slice(&(c.column_type as u16).to_le_bytes());
             r.extend_from_slice(&c.bits.to_le_bytes());
             r.extend_from_slice(&c.field_id.to_le_bytes());
-            r.extend_from_slice(&0u16.to_le_bytes()); // flags
+            let flags = if c.value_range.is_some() {
+                COLUMN_FLAG_RANGE
+            } else {
+                0
+            };
+            r.extend_from_slice(&flags.to_le_bytes());
             r.extend_from_slice(&0u16.to_le_bytes()); // representation index
+            if let Some((min, max)) = c.value_range {
+                r.extend_from_slice(&min.to_le_bytes());
+                r.extend_from_slice(&max.to_le_bytes());
+            }
             record_frame(&r)
         })
         .collect();
