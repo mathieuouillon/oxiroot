@@ -98,10 +98,17 @@ cargo run -p oxiroot --example analysis
   merge used to combine job outputs), `multiply`, `divide`, `integral`.
 - Statistics & shape accessors: `mean`/`std_dev`/`rms`, `maximum`/`minimum`/
   `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,
-  `effective_entries`, `reset`; derived histograms `rebin`/`rebin2d`/`rebin3d`,
-  `cumulative`, projections (`TH2`→`TH1`; `TH3`→`TH1`/`TH2`), and
-  `profile_x`/`profile_y` — all carrying the statistical moment sums so the
-  results' `mean`/`std_dev` stay correct.
+  `effective_entries`, `reset`, `interpolate`, `quantiles`; derived histograms
+  `rebin`/`rebin2d`/`rebin3d`, `cumulative`, projections (`TH2`→`TH1`;
+  `TH3`→`TH1`/`TH2`), and `profile_x`/`profile_y` — all carrying the statistical
+  moment sums so the results' `mean`/`std_dev` stay correct.
+- Compatibility tests: `chi2_test` (Pearson χ², unweighted) and
+  `kolmogorov_test`, returning ROOT-matched p-values. Alphanumeric (labelled)
+  axes are read into `TAxis::labels`.
+- **Fitting** (optional `fit` feature) — `TH1::fit` minimizes a chi-square
+  against a `TF1` parametric model (built-in `gaussian`/`exponential`/
+  `polynomial`, or a custom closure) via the pure-Rust Minuit2 port, returning
+  parameters, errors, and `chi2`/`ndf`.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
   `TThreadedObject<TH1>`: each worker fills a private clone (lock-free), then
   `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
@@ -198,6 +205,7 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 |---------|--------|
 | `mmap` | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
 | `rayon` | Data-parallel histogram fill (`hist::fill_par`); adds `rayon`. |
+| `fit` | Histogram fitting (`hist::TF1`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 
 Both are off by default, so the default build stays pure safe Rust.
 
@@ -243,9 +251,9 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 Experimental (`0.0.x`). On the list — each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 
-- **Histogram analysis** — fitting (`TF1` + a minimizer); `Chi2Test` /
-  `KolmogorovTest`; `GetQuantiles` / `Interpolate`; labelled / alphanumeric axes
-  (`fLabels` is currently skipped on read).
+- **Histogram analysis (remaining)** — *writing* alphanumeric axis labels (read
+  is done), the weighted `Chi2Test` variants (`UW`/`WW`), and a binned
+  maximum-likelihood fit option (the chi-square fit ships).
 - **Graphs** — `TGraph2D` and `TGraphMultiErrors`; persisting a graph's fitted
   functions (`fFunctions`) and display frame (`fHistogram`), written empty today.
 - **RNTuple** — richer collection fields: `std::vector<std::string>`, nested
