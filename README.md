@@ -5,7 +5,7 @@
 [![No libROOT](https://img.shields.io/badge/dependency-no%20libROOT-success.svg)](#)
 
 Pure-Rust IO for the [CERN ROOT](https://root.cern) file format — **read and
-write** RNTuple and classic histograms (`TH1`/`TH2`/`TH3`/`TProfile`) in the ROOT
+write** RNTuple, `TTree`, the classic histogram family, and graphs in the ROOT
 (`TFile`) container, with **no C++/libROOT or Python dependency**. Files written
 by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 
@@ -14,31 +14,39 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 ## Highlights
 
 - 🦀 **Pure Rust** — the on-disk format reimplemented from the official specs.
-  No libROOT, no Python; builds and runs anywhere Rust does.
+  No libROOT, no Python; builds and runs anywhere Rust does, and the default
+  build pulls in only three small pure-Rust crates.
 - 🔄 **Two-way interop** — every reader and writer is validated against both
-  official ROOT and uproot, in both directions.
-- 📊 **Histograms** — read & fill `TH1`/`TH2`/`TH3`/`TProfile`; weighted errors
-  (`Sumw2`), variable bins, arithmetic (scale / merge / divide), subdirectories.
-- 🧱 **RNTuple** — read & write ROOT's columnar format (scalars, strings,
-  vectors), Zstd-compressed, and multi-cluster via a streaming writer.
-- 🗜 **Compression** — Zstd read **and** write; zlib/LZ4 decode for real-world
-  files.
+  official ROOT (C++) and uproot, in both directions.
+- 📊 **Histograms & profiles** — `TH1`/`TH2`/`TH3` (every precision),
+  `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`, N-dimensional `THnSparse`,
+  and polygon-binned `TH2Poly` — all read **and** write.
+- 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, read and write.
+- 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
+  `std::vector<T>`, and **split `std::vector<MyStruct>`** branches.
+- 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
+  vectors), Zstd-compressed, multi-cluster via a streaming writer.
+- 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
+  `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
+- 🛡 **Robust by construction** — readers never panic on malformed input
+  (fuzz-tested), and writers refuse to silently corrupt a file past the 2 GiB
+  32-bit limit.
 
 ## Quick start
 
 Not yet on crates.io — depend on it via git. Pull in everything through the
-facade, or just the part you need: the histogram and RNTuple crates are
-independent, so a histogram-only project never compiles the RNTuple code (and
-vice versa).
+facade, or just the part you need: the histogram, tree, and RNTuple crates are
+independent, so a histogram-only project never compiles the others.
 
 ```toml
 [dependencies]
-# Everything — histograms + RNTuple — through the facade:
+# Everything — histograms, graphs, TTree, RNTuple — through the facade:
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 
 # …or depend on just one crate from the same repo:
-oxiroot-hist    = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms only
-oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple only
+oxiroot-hist    = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
+oxiroot-tree    = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
+oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
 ```
 
 ```rust
@@ -48,18 +56,27 @@ use oxiroot::prelude::*;
 let mut h = TH1::new("pt", "p_{T}", 50, 0.0, 100.0);
 h.sumw2();
 h.fill_weight(42.0, 1.5);
-write_th1d_file("out.root".as_ref(), &h, Compression::Zstd(5))?;
+write_th1d_file("hist.root", &h, Compression::Zstd(5))?;
 
-// Write a columnar dataset, then read it back.
+// Write a TTree, then read a branch back.
+let branches = vec![
+    Branch::i32("n", vec![1, 2, 3]),
+    Branch::f64("pt", vec![10.5, 20.1, 33.7]),
+];
+write_tree_file("tree.root", "Events", &branches, Compression::None)?;
+let f = RFile::open("tree.root")?;
+let t = TTree::open(&f, "Events")?;
+let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
+
+// Write a columnar RNTuple, then read it back.
 let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
-write_rntuple_file("data.root".as_ref(), "events", &fields, Compression::None)?;
-let f = RFile::open("data.root")?;
-let n = RNTuple::open(&f, "events")?.num_entries();
+write_rntuple_file("data.root", "events", &fields, Compression::None)?;
+let n = RNTuple::open(&RFile::open("data.root")?, "events")?.num_entries();
 ```
 
 The [`analysis` example](crates/oxiroot/examples/analysis.rs) is an end-to-end
 mini analysis — weighted/variable-bin histograms → scale/merge/normalize →
-per-region subdirectories → a columnar event dataset → read-back. Run it with:
+per-region subdirectories → a columnar event dataset → read-back:
 
 ```sh
 cargo run -p oxiroot --example analysis
@@ -67,10 +84,11 @@ cargo run -p oxiroot --example analysis
 
 ## Features
 
-### Histograms (`oxiroot::hist`)
+### Histograms & profiles (`oxiroot::hist`)
 
-- Read `TH1`/`TH2`/`TH3` in every precision (`D`/`F`/`I`/`S`/`C`/`L`) and
-  `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`, and N-dimensional `THnSparse`.
+- **Read & write** `TH1`/`TH2`/`TH3` in every precision (`D`/`F`/`I`/`S`/`C`/`L`),
+  `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`, N-dimensional `THnSparse`,
+  and polygon-binned `TH2Poly` (arbitrary-shape bins, with a builder API).
 - Create and `fill`/`fill_weight` with ROOT's exact `Fill` semantics; uniform or
   variable (`new_variable`) bins; `sumw2()` for weighted per-bin errors
   (`bin_error`).
@@ -79,21 +97,45 @@ cargo run -p oxiroot --example analysis
 - Statistics & shape accessors: `mean`/`std_dev`/`rms`, `maximum`/`minimum`/
   `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,
   `effective_entries`, `reset`; derived histograms `rebin`/`rebin2d`/`rebin3d`,
-  `cumulative`, projections (`TH2`→`TH1` via `projection_x`/`_y`; `TH3`→`TH1`/`TH2`
-  via `projection_x`/`_y`/`_z` and `projection_xy`/`_xz`/`_yz`), and
-  `profile_x`/`profile_y` (`TH2`→`TProfile`) — all carrying the statistical moment
-  sums so the results' `mean`/`std_dev` stay correct.
+  `cumulative`, projections (`TH2`→`TH1`; `TH3`→`TH1`/`TH2`), and
+  `profile_x`/`profile_y` — all carrying the statistical moment sums so the
+  results' `mean`/`std_dev` stay correct.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
   `TThreadedObject<TH1>`: each worker fills a private clone (lock-free), then
   `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
   with `std::thread::scope` and needs no dependency; the optional `rayon` feature
   adds a one-call `fill_par(&template, &data, |h, x| h.fill(*x))`.
-- Write `TH1`/`TH2`/`TH3` in every precision — `D`/`F` (double/float) and
-  `C`/`S`/`I`/`L` (char/short/int/long64) — plus `TProfile`/`TProfile2D`/`TProfile3D`; one per file,
-  several per file (`write_histograms_file`), or organized into subdirectories
-  (`write_histograms_dirs`); append to an existing file with
-  `append_histograms_file`. Written files embed a `TStreamerInfo` list, so they
-  are self-describing for any ROOT reader.
+- Write one histogram per file, several per file (`write_histograms_file`), or
+  organized into subdirectories (`write_histograms_dirs`); append to an existing
+  file with `append_histograms_file`. Written files embed a `TStreamerInfo` list,
+  so they are self-describing for any ROOT reader.
+
+### Graphs (`oxiroot::hist`)
+
+A single `TGraph` type covers all three ROOT classes, selected by its `errors`
+field: plain (`TGraph`), symmetric (`TGraphErrors`), or asymmetric
+(`TGraphAsymmErrors`). `read_tgraph` detects the class on read.
+
+```rust
+use oxiroot::prelude::*;
+let g = TGraph::with_errors(
+    "res", "resolution",
+    vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
+    vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],    // ex, ey
+);
+write_tgraph_file("graph.root", &g, Compression::None)?;
+```
+
+### TTree (`oxiroot::tree`)
+
+- **Read & write** scalar, fixed-size array (`x[N]`), variable-length / jagged
+  (`x[n]`), string, and `std::vector<T>` branches.
+- **Split `std::vector<MyStruct>`** branches written as per-member sub-branches
+  (`TBranchElement`), with a generated `TStreamerInfo` for the element class —
+  ROOT-C++- and uproot-verified, both directions.
+- `Branch::{i32, f64, bools, strings, …}` for scalars, `Branch::vec_*` for
+  fixed arrays, `Branch::jagged_*` for variable arrays, `Branch::vector_*` for
+  `std::vector<T>`, and `Branch::split_vector` for split structs.
 
 ### RNTuple (`oxiroot::ntuple`)
 
@@ -106,19 +148,51 @@ cargo run -p oxiroot --example analysis
 - `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is
   never fully held in memory.
 
+### Compression
+
+- **Read:** Zstd and zlib decode (the codecs real ROOT files use in practice).
+  Uncompressed objects pass through directly. (LZ4/LZMA decode are not yet
+  wired up — such a block reports an unavailable-codec error rather than
+  corrupting silently.)
+- **Write:** Zstd, at any level via `Compression::Zstd(level)`, or
+  `Compression::None`.
+
+### Robustness & large files
+
+- Parsers are hardened against malformed input: every read path is bounds- and
+  overflow-checked, capacity reservations are bounded by the remaining buffer,
+  and histogram array lengths are validated against the axis geometry — so a
+  crafted or truncated file yields an `Err`, never a panic. Byte-flip and
+  truncation fuzz tests cover the container, RNTuple, `TTree`, and every
+  histogram/graph reader.
+- 64-bit (`> 2 GiB`) files are supported on read; the RNTuple writer
+  auto-switches to the big format, and the `TFile`/`TTree` writers reject an
+  over-2 GiB write instead of silently truncating their 32-bit seek pointers.
+- `Error` is `#[non_exhaustive]` and preserves the underlying `io::ErrorKind`.
+
 ## Workspace layout
 
 | Crate | Purpose |
 |-------|---------|
 | `oxiroot` | Facade: `prelude` + re-exports of everything below |
-| `oxiroot-io-core` | `TFile` container, buffer primitives, streamer engine |
-| `oxiroot-compress` | ROOT 9-byte block framing + codec backends |
+| `oxiroot-io-core` | `TFile` container, buffer primitives, streamer + object-reference engine, `Error` |
+| `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib codecs |
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
-| `oxiroot-hist` | Classic `TH1`/`TH2`/`TH3`/`TProfile` read/write |
+| `oxiroot-hist` | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
+| `oxiroot-tree` | Classic `TTree` read/write |
 
 Dependencies are pure Rust: [`xxhash-rust`](https://crates.io/crates/xxhash-rust)
 (RNTuple XXH3), [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd encode/decode),
 and [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib decode).
+
+### Optional features
+
+| Feature | Effect |
+|---------|--------|
+| `mmap` | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
+| `rayon` | Data-parallel histogram fill (`hist::fill_par`); adds `rayon`. |
+
+Both are off by default, so the default build stays pure safe Rust.
 
 ## Build & test
 
@@ -130,24 +204,25 @@ cargo fmt    --all --check
 ```
 
 The committed tests are pure Rust (no ROOT or Python needed): they check
-self-round-trips and byte-level agreement against committed reference files. CI
-additionally round-trips histograms and RNTuple both ways against official ROOT
-(C++) and uproot — Rust writes files they read, and reads files they write.
+self-round-trips, byte-level agreement against committed reference files, and
+malformed-input hardening. CI additionally round-trips every type both ways
+against official ROOT (C++) and uproot — Rust writes files they read, and reads
+files they write.
 
 ### Full local interop check
 
 For a comprehensive cross-language check on your own machine (not CI), run:
 
 ```sh
-bash scripts/interop_local.sh            # full run; prints a PASS/FAIL matrix
+bash scripts/interop_local.sh                 # full run; prints a PASS/FAIL matrix
 bash scripts/interop_local.sh --no-fixtures   # skip the fixture-regen step (fast)
-bash scripts/interop_local.sh --big      # also exercise the >2 GiB (64-bit) read path
+bash scripts/interop_local.sh --big           # also exercise the >2 GiB (64-bit) read path
 ```
 
 It exercises oxiroot's full read+write surface against **both** ROOT C++ and
 uproot, in both directions: the lean canonical round-trip, a manifest-driven
-**matrix** (~38 cases — every histogram precision×dimension, `TProfile`, Sumw2,
-variable bins, multi-object/subdirs/append, every RNTuple scalar+vector type +
+**matrix** (every histogram precision×dimension, `TProfile`, Sumw2, variable
+bins, multi-object/subdirs/append, every RNTuple scalar+vector type +
 multi-cluster, every `TTree` branch kind + scalar width + split
 `std::vector<Struct>`), `cargo test --workspace`, and a drift check that
 regenerates the committed fixtures from your *local* ROOT/uproot and re-tests.
@@ -158,22 +233,22 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 
 ## Status & roadmap
 
-Experimental (`0.0.x`) but functional — reading and writing RNTuple and the
-classic histogram family both work and interoperate with ROOT and uproot.
+Experimental (`0.0.x`) but functional — reading and writing RNTuple, `TTree`,
+the classic histogram family, and graphs all work and interoperate with ROOT and
+uproot.
 
-**Done:** `TFile` read/write · histogram family read + create/fill/ops/write ·
-RNTuple read + write · **`TTree`** — read and write scalar, fixed/variable
-array, string, unsplit `std::vector<T>`, and **split
-`std::vector<MyStruct>`** (`TBranchElement`) branches as per-member
-sub-branches, with a generated `TStreamerInfo` for the element class
-(ROOT-C++- and uproot-verified, both directions) · Zstd
-compression · self-describing `TStreamerInfo` · nested directories · `update`
-(append) mode · streaming multi-cluster RNTuple · 64-bit (`> 2 GiB`) files —
-read, plus RNTuple write (the one-shot writer auto-switches past 2 GiB; the
-streaming writer via `create_large`) · ergonomic facade with a `prelude`.
+**Done:** `TFile` read/write · histograms `TH1`/`TH2`/`TH3` (all precisions) +
+`TProfile`/`2D`/`3D` + `TEfficiency` + `THnSparse` + `TH2Poly` (read + create/
+fill/ops/write) · `TGraph`/`TGraphErrors`/`TGraphAsymmErrors` (read + write) ·
+multithreaded fill · RNTuple read + write · **`TTree`** read + write (scalar,
+fixed/variable array, string, unsplit `std::vector<T>`, and split
+`std::vector<MyStruct>`) · Zstd compression · self-describing `TStreamerInfo` ·
+nested directories · `update` (append) mode · streaming multi-cluster RNTuple ·
+64-bit (`> 2 GiB`) files · ergonomic facade with a `prelude`.
 
-> ROOT 7 `RHist` is intentionally out of scope — it has no persistable on-disk
-> format (its `Streamer` throws).
+**Not yet:** LZ4/LZMA decode · histogram fitting (`TF1`) · ROOT 7 `RHist`
+(intentionally out of scope — it has no persistable on-disk format; its
+`Streamer` throws).
 
 ## License
 

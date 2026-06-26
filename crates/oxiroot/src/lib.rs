@@ -1,9 +1,12 @@
 //! `oxiroot`: pure-Rust IO for the CERN ROOT file format.
 //!
-//! Read and write [RNTuple](oxiroot_rntuple) (ROOT's columnar event-data format)
-//! and classic [histograms](oxiroot_hist) — `TH1`/`TH2`/`TH3`/`TProfile` — in the
-//! ROOT (`TFile`) container, with no C++/libROOT dependency. Files written here
-//! are read by official ROOT and uproot, and vice versa.
+//! Read and write [RNTuple](oxiroot_rntuple) (ROOT's columnar event-data
+//! format), classic [`TTree`](oxiroot_tree), the [histogram](oxiroot_hist)
+//! family (`TH1`/`TH2`/`TH3`, `TProfile`/`2D`/`3D`, `TEfficiency`, `THnSparse`,
+//! `TH2Poly`), and [graphs](oxiroot_hist::graph) (`TGraph`/`TGraphErrors`/
+//! `TGraphAsymmErrors`) in the ROOT (`TFile`) container, with no C++/libROOT
+//! dependency. Files written here are read by official ROOT and uproot, and
+//! vice versa.
 //!
 //! # Quick start
 //!
@@ -26,7 +29,8 @@
 //! ```
 //!
 //! The flat [`prelude`] covers the common read/write surface; the [`hist`],
-//! [`ntuple`], [`compress`], and [`file`] modules expose everything else.
+//! [`ntuple`], [`tree`], [`compress`], and [`file`](mod@file) modules expose
+//! everything else.
 
 #[doc(inline)]
 pub use oxiroot_io_core::{buffer, error, file, Compression, Error, RFile, Result};
