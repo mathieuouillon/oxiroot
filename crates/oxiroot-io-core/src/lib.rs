@@ -24,8 +24,8 @@ pub mod streamer_info;
 pub use compression::Compression;
 pub use error::{Error, Result};
 pub use file::{
-    key_len, key_len_fmt, update_root_file, write_key_header, write_key_header_cycle,
-    write_key_header_fmt, write_root_file, write_root_file_with_dirs,
+    guard_small_format, key_len, key_len_fmt, update_root_file, write_key_header,
+    write_key_header_cycle, write_key_header_fmt, write_root_file, write_root_file_with_dirs,
     write_root_file_with_streamers, Directory, FileHeader, FreeSegment, ObjectRecord, RFile,
     Subdir, TDatime, TKey, TUuid, KSTART_BIG_FILE,
 };

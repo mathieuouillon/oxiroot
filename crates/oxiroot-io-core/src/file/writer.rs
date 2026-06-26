@@ -52,6 +52,21 @@ pub fn key_len_fmt(class: &str, name: &str, title: &str, big: bool) -> u16 {
 /// directory record, and the file header all widen their seek fields to 64 bits.
 pub const KSTART_BIG_FILE: u64 = 2_000_000_000;
 
+/// Reject a file whose total size would overflow the small format's 32-bit seek
+/// pointers. These writers only emit the small (32-bit) `TFile` form, so beyond
+/// [`KSTART_BIG_FILE`] the back-patched `fEND`/seek fields would silently wrap
+/// and corrupt the file; return an error instead. (The RNTuple writer already
+/// guards this; the streaming writers switch to the big format.)
+pub fn guard_small_format(f_end: usize) -> Result<()> {
+    if f_end as u64 > KSTART_BIG_FILE {
+        return Err(Error::Format(format!(
+            "file size {f_end} bytes exceeds the {KSTART_BIG_FILE}-byte small-format \
+             TFile limit (64-bit seek pointers are not emitted by this writer)"
+        )));
+    }
+    Ok(())
+}
+
 /// Key version written for the small (32-bit seek) form; the big form adds 1000,
 /// which is what the reader keys on ([`crate::file::key`]).
 const KEY_VERSION_SMALL: u16 = 4;
@@ -173,7 +188,11 @@ const TLIST_CLASS: &str = "TList";
 
 /// Build a complete TFile holding `objects` in its root directory, optionally
 /// compressing object payloads (`compression` = `algorithm*100 + level`, 0 = none).
-pub fn write_root_file(file_name: &str, objects: &[ObjectRecord], compression: u32) -> Vec<u8> {
+pub fn write_root_file(
+    file_name: &str,
+    objects: &[ObjectRecord],
+    compression: u32,
+) -> Result<Vec<u8>> {
     write_root_file_with_streamers(file_name, objects, compression, None)
 }
 
@@ -185,7 +204,7 @@ pub fn write_root_file_with_streamers(
     objects: &[ObjectRecord],
     compression: u32,
     streamer_info: Option<&[u8]>,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
     let payloads: Vec<Vec<u8>> = objects
         .iter()
         .map(|o| on_disk_payload(&o.object, compression))
@@ -331,10 +350,11 @@ pub fn write_root_file_with_streamers(
         );
     }
     let keylist_nbytes = key_len(DIR_CLASS, file_name, "") as u32 + keylist_obj_len;
-    let f_end = w.len() as u32;
+    let f_end = w.len();
+    guard_small_format(f_end)?;
 
     // --- Back-patch header + directory pointers. ---
-    w.patch_be_u32(p_end, f_end);
+    w.patch_be_u32(p_end, f_end as u32);
     w.patch_be_u32(p_seek_free, 0);
     w.patch_be_u32(p_nbytes_free, 0);
     w.patch_be_u32(p_nfree, 0);
@@ -344,7 +364,7 @@ pub fn write_root_file_with_streamers(
     w.patch_be_u32(p_dir_nbytes_keys, keylist_nbytes);
     w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
 
-    w.into_vec()
+    Ok(w.into_vec())
 }
 
 /// Append `new_objects` to an existing ROOT file (`existing` bytes), returning a
@@ -412,12 +432,7 @@ pub fn update_root_file(
     let existing_si = file.streamer_info_object()?;
     let si = streamer_info.or(existing_si.as_deref());
 
-    Ok(write_root_file_with_streamers(
-        file_name,
-        &objects,
-        compression,
-        si,
-    ))
+    write_root_file_with_streamers(file_name, &objects, compression, si)
 }
 
 /// A subdirectory to create in the file's root directory, holding its own
@@ -494,7 +509,7 @@ pub fn write_root_file_with_dirs(
     subdirs: &[Subdir],
     compression: u32,
     streamer_info: Option<&[u8]>,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
     let root_pl: Vec<Vec<u8>> = root_objects
         .iter()
         .map(|o| on_disk_payload(&o.object, compression))
@@ -675,8 +690,9 @@ pub fn write_root_file_with_dirs(
     w.patch_be_u32(p_root_nbk, root_kl_nbytes);
     w.patch_be_u32(p_root_sk, root_kl_seek as u32);
 
-    let f_end = w.len() as u32;
-    w.patch_be_u32(p_end, f_end);
+    let f_end = w.len();
+    guard_small_format(f_end)?;
+    w.patch_be_u32(p_end, f_end as u32);
     w.patch_be_u32(p_seek_free, 0);
     w.patch_be_u32(p_nbytes_free, 0);
     w.patch_be_u32(p_nfree, 0);
@@ -684,5 +700,17 @@ pub fn write_root_file_with_dirs(
     w.patch_be_u32(p_seek_info, seek_info);
     w.patch_be_u32(p_nbytes_info, nbytes_info);
 
-    w.into_vec()
+    Ok(w.into_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{guard_small_format, KSTART_BIG_FILE};
+
+    #[test]
+    fn small_format_guard_boundary() {
+        assert!(guard_small_format(0).is_ok());
+        assert!(guard_small_format(KSTART_BIG_FILE as usize).is_ok());
+        assert!(guard_small_format(KSTART_BIG_FILE as usize + 1).is_err());
+    }
 }

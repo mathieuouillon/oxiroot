@@ -17,13 +17,13 @@ use oxiroot_io_core::{
 /// Derive the in-file name from `path`, build the file bytes, and write them,
 /// returning the crate [`Result`]. Shared by every `write_*_file` entry point so
 /// they agree on path handling, the default name, and the error type.
-fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Vec<u8>) -> Result<()> {
+fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Result<Vec<u8>>) -> Result<()> {
     let path = path.as_ref();
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("file.root");
-    std::fs::write(path, build(file_name))?;
+    std::fs::write(path, build(file_name)?)?;
     Ok(())
 }
 

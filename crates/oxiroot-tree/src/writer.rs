@@ -14,7 +14,7 @@ use std::path::Path;
 use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
-use oxiroot_io_core::{key_len, key_len_fmt, write_key_header, Compression};
+use oxiroot_io_core::{guard_small_format, key_len, key_len_fmt, write_key_header, Compression};
 
 use crate::value::BranchValues;
 
@@ -917,9 +917,13 @@ pub fn tree_file_bytes(
         100,
     );
     let keylist_nbytes = key_len("TFile", file_name, "") as u32 + keylist_obj_len;
-    let f_end = w.len() as u32;
+    // The TFile header / directory record use 32-bit seek pointers; reject a tree
+    // that would overflow them (the per-basket i32 fields are bounded by this too,
+    // since KSTART_BIG_FILE < i32::MAX). Without this the file corrupts silently.
+    let f_end = w.len();
+    guard_small_format(f_end)?;
 
-    w.patch_be_u32(p_end, f_end);
+    w.patch_be_u32(p_end, f_end as u32);
     w.patch_be_u32(p_nbytes_name, f_nbytes_name as u32);
     w.patch_be_u32(p_seek_info, seek_info);
     w.patch_be_u32(p_nbytes_info, nbytes_info);
