@@ -2,7 +2,7 @@
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::Result;
-use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
+use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
 
 /// A ROOT histogram axis (`TAxis`).
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +19,10 @@ pub struct TAxis {
     pub xmax: f64,
     /// Variable bin edges (`fXbins`); empty when the axis is uniform.
     pub xbins: Vec<f64>,
+    /// Alphanumeric bin labels (`fLabels`), one per bin (`labels[i]` labels bin
+    /// `i + 1`). Empty for an ordinary numeric axis; an unlabelled bin in an
+    /// otherwise-labelled axis holds an empty string.
+    pub labels: Vec<String>,
 }
 
 impl TAxis {
@@ -31,6 +35,7 @@ impl TAxis {
             xmin,
             xmax,
             xbins: Vec::new(),
+            labels: Vec::new(),
         }
     }
 
@@ -50,6 +55,7 @@ impl TAxis {
             xmin: edges[0],
             xmax: edges[edges.len() - 1],
             xbins: edges.to_vec(),
+            labels: Vec::new(),
         }
     }
 
@@ -110,8 +116,15 @@ impl TAxis {
             xbins.push(r.be_f64()?);
         }
 
-        // Skip the rest (fFirst, fLast, fBits2, fTimeDisplay, fTimeFormat,
-        // fLabels, fModLabs) via the axis byte count.
+        // fFirst, fLast, fBits2, fTimeDisplay, fTimeFormat precede the labels.
+        let _first = r.be_i32()?;
+        let _last = r.be_i32()?;
+        let _bits2 = r.be_u16()?;
+        let _time_display = r.u8()?;
+        let _time_format = r.string()?;
+        let labels = read_labels(r, nbins.max(0) as usize)?; // fLabels (THashList*)
+
+        // Skip the remainder (fModLabs) via the axis byte count.
         if let Some(end) = vh.end {
             r.seek(end)?;
         }
@@ -123,7 +136,27 @@ impl TAxis {
             xmin,
             xmax,
             xbins,
+            labels,
         })
+    }
+
+    /// Alphanumeric label for bin `bin` (1-based), or `None` for an unlabelled
+    /// bin / numeric axis.
+    pub fn bin_label(&self, bin: usize) -> Option<&str> {
+        self.labels
+            .get(bin.checked_sub(1)?)
+            .filter(|s| !s.is_empty())
+            .map(String::as_str)
+    }
+
+    /// The 1-based bin carrying label `label`, if any.
+    pub fn find_label(&self, label: &str) -> Option<usize> {
+        self.labels.iter().position(|l| l == label).map(|i| i + 1)
+    }
+
+    /// Whether the axis carries alphanumeric bin labels (`fLabels`).
+    pub fn is_labelled(&self) -> bool {
+        self.labels.iter().any(|l| !l.is_empty())
     }
 
     /// The `nbins + 1` bin edges, low to high (uniform when `xbins` is empty).
@@ -165,4 +198,53 @@ impl TAxis {
             0.0
         }
     }
+}
+
+/// Consume an object pointer's class tag (already past the byte count): a
+/// `kNewClassTag` (`0xFFFFFFFF`) is followed by a NUL-terminated class name; a
+/// class back-reference is the bare 4-byte tag. We never need to *resolve* the
+/// class — context fixes the type — so we just advance past whichever form.
+fn skip_class_tag(r: &mut RBuffer) -> Result<()> {
+    if r.be_u32()? == 0xFFFF_FFFF {
+        while r.u8()? != 0 {}
+    }
+    Ok(())
+}
+
+/// Read the `fLabels` member: a `THashList*` of `TObjString`, each carrying its
+/// 1-based bin number in `fUniqueID` and the label text in `fString`. Returns a
+/// `Vec` of length `nbins` (empty strings for unlabelled bins), or empty when
+/// the pointer is null (an ordinary numeric axis).
+fn read_labels(r: &mut RBuffer, nbins: usize) -> Result<Vec<String>> {
+    if r.be_u32()? == 0 {
+        return Ok(Vec::new()); // null fLabels pointer
+    }
+    skip_class_tag(r)?; // THashList class tag
+    r.read_version()?; // THashList (a TList, version 5)
+    read_tobject(r)?;
+    let _name = r.string()?; // fName (empty)
+    let size = r.be_i32()?.max(0) as usize;
+
+    let mut labels = vec![String::new(); nbins];
+    for _ in 0..size {
+        if r.be_u32()? == 0 {
+            continue; // null entry
+        }
+        skip_class_tag(r)?; // TObjString class tag
+        let body = r.read_version()?; // TObjString body {byte count, version}
+        let obj = read_tobject(r)?; // fUniqueID = 1-based bin number
+        let label = r.string()?; // fString
+        let bin = obj.unique_id as usize;
+        if (1..=nbins).contains(&bin) {
+            labels[bin - 1] = label;
+        }
+        if let Some(end) = body.end {
+            r.seek(end)?;
+        }
+        let _option = r.string()?; // per-element option string (empty), as in TList
+    }
+    if labels.iter().all(String::is_empty) {
+        return Ok(Vec::new());
+    }
+    Ok(labels)
 }
