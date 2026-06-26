@@ -42,9 +42,11 @@ impl Footer {
         let ext = read_frame(&mut r)?;
         r.seek(ext.end)?;
 
-        // Cluster group list frame.
+        // Cluster group list frame. Cap the reservation at the remaining buffer
+        // so a forged `n_items` can't drive a huge allocation (matching the
+        // header/page-list parsers).
         let list = read_frame(&mut r)?;
-        let mut cluster_groups = Vec::with_capacity(list.n_items as usize);
+        let mut cluster_groups = Vec::with_capacity((list.n_items as usize).min(r.remaining()));
         for _ in 0..list.n_items {
             let frame = read_frame(&mut r)?;
             let min_entry = r.le_u64()?;

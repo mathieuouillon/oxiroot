@@ -116,13 +116,19 @@ impl RFile {
 
     /// Navigate into a subdirectory by name, returning its parsed [`Directory`]
     /// (with the keys it directly contains). Errors if the root directory has no
-    /// such `TDirectory` key.
+    /// such subdirectory key.
+    ///
+    /// Accepts both `TDirectory` (the in-memory class oxiroot writes) and
+    /// `TDirectoryFile` (the class official ROOT C++ records on disk), so
+    /// subdirectories of ROOT-written files are navigable.
     pub fn subdir(&self, name: &str) -> Result<Directory> {
         let key = self
             .root_dir
             .keys
             .iter()
-            .find(|k| k.name == name && k.class_name == "TDirectory")
+            .find(|k| {
+                k.name == name && (k.class_name == "TDirectory" || k.class_name == "TDirectoryFile")
+            })
             .ok_or_else(|| Error::Format(format!("no subdirectory named {name:?}")))?;
         Directory::read(&self.data, key.payload_start(self.data.len())?)
     }

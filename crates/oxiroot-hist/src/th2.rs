@@ -10,7 +10,8 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    histogram_object, object_bytes, precision_of, read_tarray, read_th1_base, Precision,
+    cell_count, check_cells, histogram_object, object_bytes, precision_of, read_tarray,
+    read_th1_base, Precision,
 };
 
 /// A 2-D classic histogram (`TH2D` or `TH2F`); contents are widened to `f64`.
@@ -69,6 +70,10 @@ impl TH2 {
             .ok_or_else(|| Error::Format("TH2 record has no byte count".into()))?;
         r.seek(end)?;
         let contents = read_tarray(r, precision)?;
+
+        let cells = cell_count(&[c.xaxis.nbins, c.yaxis.nbins])?;
+        check_cells("TH2 contents", contents.len(), cells, false)?;
+        check_cells("TH2 fSumw2", c.sumw2.len(), cells, true)?;
 
         Ok(TH2 {
             class_name: class_name.to_string(),

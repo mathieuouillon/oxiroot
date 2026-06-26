@@ -123,11 +123,41 @@ pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<TH1Core> {
     })
 }
 
+/// The number of cells (flow-inclusive) for the given per-axis bin counts:
+/// `Π (nbins_i + 2)`, computed with overflow checking. A malformed file can
+/// carry absurd `fNbins`, so this returns `Err` rather than wrapping.
+pub(crate) fn cell_count(axis_nbins: &[i32]) -> Result<usize> {
+    let mut total: usize = 1;
+    for &n in axis_nbins {
+        let cells = (n.max(0) as usize)
+            .checked_add(2)
+            .and_then(|c| total.checked_mul(c))
+            .ok_or_else(|| Error::Format("histogram cell count overflows usize".into()))?;
+        total = cells;
+    }
+    Ok(total)
+}
+
+/// Reject a histogram array whose length disagrees with its axis cell count,
+/// so later flow-bin indexing (`contents[ix + stride*iy]`, etc.) is provably
+/// in range. `optional` arrays (e.g. `fSumw2`) may also be empty.
+pub(crate) fn check_cells(name: &str, len: usize, cells: usize, optional: bool) -> Result<()> {
+    if len == cells || (optional && len == 0) {
+        Ok(())
+    } else {
+        Err(Error::Format(format!(
+            "histogram {name} length {len} does not match {cells} cells"
+        )))
+    }
+}
+
 /// Read an inline `TArray` of `n` values at the given precision (a count
 /// followed by that many values, widened to `f64`).
 pub(crate) fn read_tarray(r: &mut RBuffer, precision: Precision) -> Result<Vec<f64>> {
     let n = r.be_i32()?.max(0) as usize;
-    let mut v = Vec::with_capacity(n);
+    // Cap the up-front reservation at what the buffer could possibly hold, so a
+    // forged count can't drive a huge allocation before the read fails.
+    let mut v = Vec::with_capacity(n.min(r.remaining()));
     for _ in 0..n {
         let value = match precision {
             Precision::Double => r.be_f64()?,
@@ -226,5 +256,27 @@ pub(crate) fn histogram_object(
         Err(Error::Format(format!(
             "key {name:?} is a {class}, not a {dim_prefix} histogram"
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cell_count, check_cells};
+
+    #[test]
+    fn cell_count_products_and_overflow() {
+        assert_eq!(cell_count(&[5]).unwrap(), 7); // nx + 2
+        assert_eq!(cell_count(&[3, 2]).unwrap(), 5 * 4);
+        assert_eq!(cell_count(&[3, 2, 1]).unwrap(), 5 * 4 * 3);
+        // A forged axis count must error, not wrap.
+        assert!(cell_count(&[i32::MAX, i32::MAX, i32::MAX]).is_err());
+    }
+
+    #[test]
+    fn check_cells_accepts_match_and_optional_empty() {
+        assert!(check_cells("c", 7, 7, false).is_ok());
+        assert!(check_cells("c", 6, 7, false).is_err()); // wrong length rejected
+        assert!(check_cells("sumw2", 0, 7, true).is_ok()); // optional empty ok
+        assert!(check_cells("sumw2", 3, 7, true).is_err()); // wrong non-empty rejected
     }
 }

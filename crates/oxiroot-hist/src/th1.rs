@@ -8,7 +8,10 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{histogram_object, object_bytes, precision_of, read_th1_object, Precision};
+use crate::base::{
+    cell_count, check_cells, histogram_object, object_bytes, precision_of, read_th1_object,
+    Precision,
+};
 
 /// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
@@ -136,6 +139,9 @@ impl TH1 {
 
     pub(crate) fn read(r: &mut RBuffer, class_name: &str, precision: Precision) -> Result<TH1> {
         let (c, contents) = read_th1_object(r, precision)?;
+        let cells = cell_count(&[c.xaxis.nbins])?;
+        check_cells("TH1 contents", contents.len(), cells, false)?;
+        check_cells("TH1 fSumw2", c.sumw2.len(), cells, true)?;
         Ok(TH1 {
             class_name: class_name.to_string(),
             name: c.name,

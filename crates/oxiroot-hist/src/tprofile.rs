@@ -10,7 +10,7 @@ use oxiroot_io_core::error::Result;
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{object_bytes, read_tarray, read_th1_object, Precision};
+use crate::base::{cell_count, check_cells, object_bytes, read_tarray, read_th1_object, Precision};
 
 /// A 1-D profile histogram (`TProfile`).
 #[derive(Debug, Clone, PartialEq)]
@@ -71,6 +71,12 @@ impl TProfile {
         if let Some(end) = tprofile.end {
             r.seek(end)?;
         }
+
+        let cells = cell_count(&[core.xaxis.nbins])?;
+        check_cells("TProfile sums", sums.len(), cells, false)?;
+        check_cells("TProfile fBinEntries", bin_entries.len(), cells, false)?;
+        check_cells("TProfile fSumw2", core.sumw2.len(), cells, true)?;
+        check_cells("TProfile fBinSumw2", bin_sumw2.len(), cells, true)?;
 
         Ok(TProfile {
             name: core.name,

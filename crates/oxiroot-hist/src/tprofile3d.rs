@@ -10,7 +10,7 @@ use oxiroot_io_core::streamer::skip_versioned;
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{object_bytes, read_tarray, read_th1_base, Precision};
+use crate::base::{cell_count, check_cells, object_bytes, read_tarray, read_th1_base, Precision};
 
 /// A 3-D profile histogram (ROOT `TProfile3D`).
 #[derive(Debug, Clone, PartialEq)]
@@ -237,6 +237,12 @@ impl TProfile3D {
         if let Some(end) = tp.end {
             r.seek(end)?;
         }
+
+        let cells = cell_count(&[c.xaxis.nbins, c.yaxis.nbins, c.zaxis.nbins])?;
+        check_cells("TProfile3D sums", sums.len(), cells, false)?;
+        check_cells("TProfile3D fBinEntries", bin_entries.len(), cells, false)?;
+        check_cells("TProfile3D fSumw2", c.sumw2.len(), cells, true)?;
+        check_cells("TProfile3D fBinSumw2", bin_sumw2.len(), cells, true)?;
 
         Ok(TProfile3D {
             name: c.name,

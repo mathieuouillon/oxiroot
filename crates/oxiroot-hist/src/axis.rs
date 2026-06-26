@@ -102,8 +102,10 @@ impl TAxis {
         let xmax = r.be_f64()?;
 
         // fXbins is a TArrayD member: a count followed by that many doubles.
+        // Cap the reservation at the buffer size so a forged count can't drive a
+        // huge allocation before the element reads fail.
         let n = r.be_i32()?.max(0) as usize;
-        let mut xbins = Vec::with_capacity(n);
+        let mut xbins = Vec::with_capacity(n.min(r.remaining()));
         for _ in 0..n {
             xbins.push(r.be_f64()?);
         }
