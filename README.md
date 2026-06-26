@@ -199,12 +199,14 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
 
 ### RNTuple (`oxiroot::ntuple`)
 
-- Read the binary spec v1.0.0.0: anchor → envelopes → schema → clusters → pages,
-  with split/zigzag/delta encodings and Zstd-compressed pages.
+- Read the binary spec v1.0.0.0: anchor → envelopes → schema → clusters → pages.
+  Every physical column encoding decodes — split/zigzag/delta, all integer widths
+  (8/16/32/64-bit, signed & unsigned), reduced-precision reals (half, truncated,
+  quantized), and the `Switch` column — on Zstd-compressed pages.
 - Typed field API (`read_field`) for scalars, `std::string`, `std::vector<T>`,
-  and nested collections — `std::vector<std::string>`,
-  `std::vector<std::vector<T>>`, and vectors of records
-  (`std::vector<MyStruct>`/`std::pair`) — across multiple clusters.
+  nested collections — `std::vector<std::string>`, `std::vector<std::vector<T>>`,
+  and vectors of records (`std::vector<MyStruct>`/`std::pair`) — and
+  `std::variant`, across multiple clusters.
 - Write `bool`, 32/64-bit signed & unsigned ints, `f32`/`f64`, `std::string`,
   `std::vector<T>`, and the same nested collections (`Field::vec_str` /
   `vec_vec_*`, `Column::Record`/`Nested`) — optionally Zstd-compressed.
@@ -307,9 +309,10 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
 
 - **Graphs** — `TGraph2D` and `TGraphMultiErrors`; persisting a graph's fitted
   functions (`fFunctions`) and display frame (`fHistogram`), written empty today.
-- **RNTuple** — the remaining physical column encodings on the read path
-  (`Int8`/`Int16`, `Real16`, truncated/quantized reals, `Switch` for
-  `std::variant`); `std::variant`/`std::map` fields.
+- **RNTuple** — higher-level STL field types beyond vectors and variants
+  (`std::map`, `std::set`, `std::array`, `std::bitset`), user-defined classes via
+  the streamer field role, and write support for the reduced-precision real and
+  variant encodings (read is done).
 - **`TTree`** — object / nested branches beyond split `std::vector<MyStruct>`
   (nested structs, `std::vector<std::string>`, arrays of objects).
 - **Append mode** — `update` into files that contain subdirectories or an
