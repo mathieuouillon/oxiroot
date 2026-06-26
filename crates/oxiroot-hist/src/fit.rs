@@ -17,8 +17,18 @@ use crate::th1::TH1;
 /// A model evaluator: `f(x, params) -> y`.
 type ModelFn = Box<dyn Fn(f64, &[f64]) -> f64>;
 
+/// Optional fit constraints on one parameter.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Constraint {
+    lower: Option<f64>,
+    upper: Option<f64>,
+    fixed: bool,
+    step: Option<f64>,
+}
+
 /// A parametric fit function (a minimal `TF1`): a closure `f(x, params)` plus
-/// named parameters with their current/initial values.
+/// named parameters with their current/initial values and optional per-parameter
+/// limits, fixing, and step hints.
 pub struct TF1 {
     /// Function name.
     pub name: String,
@@ -26,6 +36,8 @@ pub struct TF1 {
     pub param_names: Vec<String>,
     /// Current parameter values; these seed the fit.
     pub params: Vec<f64>,
+    /// Per-parameter constraints (limits / fixed / step), one per parameter.
+    constraints: Vec<Constraint>,
     func: ModelFn,
 }
 
@@ -37,17 +49,83 @@ impl TF1 {
         params: Vec<f64>,
         func: impl Fn(f64, &[f64]) -> f64 + 'static,
     ) -> TF1 {
+        let constraints = vec![Constraint::default(); params.len()];
         TF1 {
             name: name.to_string(),
             param_names: param_names.iter().map(|s| s.to_string()).collect(),
             params,
+            constraints,
             func: Box::new(func),
         }
     }
 
+    /// Index of the parameter named `name`.
+    fn index_of(&self, name: &str) -> Option<usize> {
+        self.param_names.iter().position(|n| n == name)
+    }
+
+    /// Mutable access to a parameter's constraints, growing the vector if a
+    /// later `with_params` shrank it.
+    fn constraint_mut(&mut self, i: usize) -> &mut Constraint {
+        if self.constraints.len() < self.params.len() {
+            self.constraints
+                .resize(self.params.len(), Constraint::default());
+        }
+        &mut self.constraints[i]
+    }
+
+    /// Constrain parameter `name` to `[lower, upper]` during the fit.
+    #[must_use]
+    pub fn limit(mut self, name: &str, lower: f64, upper: f64) -> TF1 {
+        if let Some(i) = self.index_of(name) {
+            let c = self.constraint_mut(i);
+            c.lower = Some(lower);
+            c.upper = Some(upper);
+        }
+        self
+    }
+
+    /// Constrain parameter `name` to be `>= lower` (e.g. a positive width).
+    #[must_use]
+    pub fn lower_limit(mut self, name: &str, lower: f64) -> TF1 {
+        if let Some(i) = self.index_of(name) {
+            self.constraint_mut(i).lower = Some(lower);
+        }
+        self
+    }
+
+    /// Constrain parameter `name` to be `<= upper`.
+    #[must_use]
+    pub fn upper_limit(mut self, name: &str, upper: f64) -> TF1 {
+        if let Some(i) = self.index_of(name) {
+            self.constraint_mut(i).upper = Some(upper);
+        }
+        self
+    }
+
+    /// Hold parameter `name` fixed at its current value during the fit.
+    #[must_use]
+    pub fn fix(mut self, name: &str) -> TF1 {
+        if let Some(i) = self.index_of(name) {
+            self.constraint_mut(i).fixed = true;
+        }
+        self
+    }
+
+    /// Set the initial Minuit2 step for parameter `name` (default: 10 % of the
+    /// value, with a small floor).
+    #[must_use]
+    pub fn step(mut self, name: &str, step: f64) -> TF1 {
+        if let Some(i) = self.index_of(name) {
+            self.constraint_mut(i).step = Some(step);
+        }
+        self
+    }
+
     /// A Gaussian `[0]·exp(-½·((x-[1])/[2])²)` (ROOT's `"gaus"`); parameters are
     /// `constant`, `mean`, `sigma`. Seed sensible initials with
-    /// [`with_params`](Self::with_params) (e.g. `[h.maximum(), h.mean(), h.std_dev()]`).
+    /// [`with_params`](Self::with_params) (e.g. `[h.maximum(), h.mean(), h.std_dev()]`),
+    /// and add `.lower_limit("sigma", 0.0)` to keep the width positive.
     pub fn gaussian(name: &str) -> TF1 {
         TF1::new(
             name,
@@ -79,6 +157,7 @@ impl TF1 {
     /// Replace the (initial) parameter values.
     #[must_use]
     pub fn with_params(mut self, params: Vec<f64>) -> TF1 {
+        self.constraints.resize(params.len(), Constraint::default());
         self.params = params;
         self
     }
@@ -168,9 +247,14 @@ impl TH1 {
             })
             .collect();
 
-        // Too few data points to determine the parameters: report failure rather
-        // than returning a meaningless minimum of a flat cost.
-        if np == 0 || points.len() < np {
+        // Free (non-fixed) parameters determine the degrees of freedom.
+        let n_free = (0..np)
+            .filter(|&i| !model.constraints.get(i).map(|c| c.fixed).unwrap_or(false))
+            .count();
+
+        // Too few data points to determine the free parameters: report failure
+        // rather than a meaningless minimum of a flat cost.
+        if np == 0 || points.len() < n_free.max(1) {
             return FitResult {
                 params: model.params.clone(),
                 errors: vec![f64::NAN; np],
@@ -207,10 +291,20 @@ impl TH1 {
         };
 
         let mut migrad = MnMigrad::new();
-        for (name, &init) in model.param_names.iter().zip(&model.params) {
-            // Minuit2's initial step; a fraction of the value, with a floor.
-            let step = (init.abs() * 0.1).max(0.01);
-            migrad = migrad.add(name, init, step);
+        for (i, (name, &init)) in model.param_names.iter().zip(&model.params).enumerate() {
+            let c = model.constraints.get(i).copied().unwrap_or_default();
+            // Initial Minuit2 step: the hint, else 10 % of the value with a floor.
+            let step = c.step.unwrap_or_else(|| (init.abs() * 0.1).max(0.01));
+            migrad = if c.fixed {
+                migrad.add_const(name, init)
+            } else {
+                match (c.lower, c.upper) {
+                    (Some(lo), Some(hi)) => migrad.add_limited(name, init, step, lo, hi),
+                    (Some(lo), None) => migrad.add_lower_limited(name, init, step, lo),
+                    (None, Some(hi)) => migrad.add_upper_limited(name, init, step, hi),
+                    (None, None) => migrad.add(name, init, step),
+                }
+            };
         }
         let min = migrad.minimize(&cost);
 
@@ -223,7 +317,7 @@ impl TH1 {
             params,
             errors,
             chi2: min.fval(),
-            ndf: points.len() - np,
+            ndf: points.len() - n_free,
             valid: min.is_valid(),
         }
     }

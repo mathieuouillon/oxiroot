@@ -178,3 +178,37 @@ fn under_determined_fit_is_flagged_invalid() {
     assert_eq!(r.ndf, 0);
     assert!(r.chi2_per_ndf().is_nan());
 }
+
+#[test]
+fn bounded_and_fixed_parameters() {
+    let hg = read("hg"); // gaussian, const≈1000, mean≈0.5, sigma≈1.3
+    let n = hg.xaxis.nbins.max(0) as usize;
+    let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
+    let mean: f64 = (1..=n)
+        .map(|i| hg.bin_center(i) * hg.contents[i])
+        .sum::<f64>()
+        / total;
+
+    // (a) sigma constrained positive still recovers the width.
+    let bounded = TF1::gaussian("g")
+        .with_params(vec![hg.maximum(), mean, 1.0])
+        .lower_limit("sigma", 0.0);
+    let rb = hg.fit(&bounded);
+    assert!(rb.valid);
+    assert!(rb.params[2] > 0.0 && rel_close(rb.params[2], 1.297287, 1e-2));
+
+    // (b) fixing the mean removes one degree of freedom and pins the parameter.
+    let free = hg.fit(&TF1::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]));
+    let fixed = hg.fit(
+        &TF1::gaussian("g")
+            .with_params(vec![hg.maximum(), 0.5, 1.3])
+            .fix("mean"),
+    );
+    assert!(fixed.valid);
+    assert_eq!(fixed.params[1], 0.5, "fixed parameter must stay put");
+    assert_eq!(
+        fixed.ndf,
+        free.ndf + 1,
+        "fixing frees one degree of freedom"
+    );
+}
