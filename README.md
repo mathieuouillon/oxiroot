@@ -312,9 +312,16 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
 
 - **Graphs** — `TGraph2D` and `TGraphMultiErrors`; persisting a graph's fitted
   functions (`fFunctions`) and display frame (`fHistogram`), written empty today.
-- **RNTuple** — associative containers (`std::map`, `std::set`), classes stored
-  unsplit via the streamer field role, and write support for the fixed-size and
-  user-class field types (read is done).
+- **RNTuple**:
+  - *Associative containers* (`std::map`, `std::set`) — they instantiate as a
+    collection of records / a collection, so they should fall out of the existing
+    field-tree reader, but the local ROOT build can't write them via RNTuple (its
+    collection proxy aborts), so there's no fixture to ground against yet.
+  - *Streamer field role* — a class stored *unsplit* as a single serialized blob
+    (rather than split into a record of members); reading it needs
+    `TStreamerInfo` interpretation of the page bytes.
+  - Write support for the fixed-size (`std::array`/`std::bitset`) and user-class
+    field types (read is done).
 - **`TTree`** — object / nested branches beyond split `std::vector<MyStruct>`
   (nested structs, `std::vector<std::string>`, arrays of objects).
 - **Append mode** — `update` into files that contain subdirectories or an
