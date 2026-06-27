@@ -44,20 +44,28 @@ pub struct Branch {
     /// Branch values (a [`BranchValues`] variant — scalar, array, or string).
     /// Private: a branch is built only through the typed constructors
     /// ([`Branch::i32`], [`Branch::jagged_f64`], …) so the payload can never
-    /// drift from the `jagged`/`stl_vector`/`split` kind that decides how it is
-    /// serialized.
+    /// drift from the `kind` that decides how it is serialized.
     values: BranchValues,
-    /// True for a variable-length (jagged) array branch: rows may differ in
-    /// length, and the writer emits a paired `n<name>` count branch plus an
-    /// `fLeafCount` reference. False for scalar/fixed-array/string branches.
-    jagged: bool,
-    /// True for a `std::vector<T>` branch, written as a `TBranchElement` (each
-    /// basket entry carries a 10-byte streamer header instead of a count branch).
-    stl_vector: bool,
-    /// `Some` for a split `std::vector<MyStruct>` branch — a parent
-    /// `TBranchElement` whose per-member data lives in sub-branches. When set,
-    /// `values` is unused.
-    split: Option<SplitSpec>,
+    /// How the branch is serialized; one private enum instead of three
+    /// independent flags, so an invalid combination is unrepresentable.
+    kind: BranchKind,
+}
+
+/// How a [`Branch`] is written, replacing the old `jagged`/`stl_vector`/`split`
+/// flag triple. The constructors pick the variant; the payload type is the
+/// `Branch`'s `values`.
+enum BranchKind {
+    /// A scalar, fixed-size array (`x[N]`), or string (`TLeafC`) branch.
+    Plain,
+    /// A variable-length (jagged) array: rows may differ in length, written
+    /// with a paired `n<name>` count branch and an `fLeafCount` reference.
+    Jagged,
+    /// A `std::vector<T>` branch, written as a `TBranchElement` (each basket
+    /// entry carries a 10-byte streamer header instead of a count branch).
+    StlVector,
+    /// A split `std::vector<MyStruct>` branch — a parent `TBranchElement` whose
+    /// per-member data lives in sub-branches; the `Branch`'s `values` is unused.
+    Split(SplitSpec),
 }
 
 /// A split `std::vector<MyStruct>` branch: the struct's class name and one
@@ -65,6 +73,30 @@ pub struct Branch {
 struct SplitSpec {
     class_name: String,
     members: Vec<SplitMember>,
+}
+
+impl Branch {
+    fn jagged(&self) -> bool {
+        matches!(self.kind, BranchKind::Jagged)
+    }
+    fn stl_vector(&self) -> bool {
+        matches!(self.kind, BranchKind::StlVector)
+    }
+    fn split(&self) -> Option<&SplitSpec> {
+        match &self.kind {
+            BranchKind::Split(spec) => Some(spec),
+            _ => None,
+        }
+    }
+    /// The kind a chunk/copy of this branch takes — the same kind unless it is a
+    /// split branch (which is never chunked), in which case [`BranchKind::Plain`].
+    fn chunk_kind(&self) -> BranchKind {
+        match self.kind {
+            BranchKind::Jagged => BranchKind::Jagged,
+            BranchKind::StlVector => BranchKind::StlVector,
+            _ => BranchKind::Plain,
+        }
+    }
 }
 
 /// One member of a split `std::vector<MyStruct>` branch: its name and the
@@ -98,7 +130,7 @@ macro_rules! branch_ctors {
             $(
                 #[doc = concat!("A branch holding `", stringify!($variant), "` values.")]
                 pub fn $method(name: impl Into<String>, values: Vec<$elem>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: false, split: None }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Plain }
                 }
             )*
         }
@@ -118,7 +150,7 @@ macro_rules! vec_ctors {
             $(
                 #[doc = concat!("A fixed-size array branch holding `", stringify!($variant), "` rows.")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: false, split: None }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Plain }
                 }
             )*
         }
@@ -140,7 +172,7 @@ macro_rules! jagged_ctors {
             $(
                 #[doc = concat!("A variable-length array branch holding `", stringify!($variant), "` rows.")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: true, stl_vector: false, split: None }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Jagged }
                 }
             )*
         }
@@ -161,7 +193,7 @@ macro_rules! vector_ctors {
             $(
                 #[doc = concat!("A `std::vector<", stringify!($elem), ">` branch (a `TBranchElement`).")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), jagged: false, stl_vector: true, split: None }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::StlVector }
                 }
             )*
         }
@@ -180,9 +212,7 @@ impl Branch {
         Branch {
             name: name.into(),
             values: BranchValues::Str(values),
-            jagged: false,
-            stl_vector: false,
-            split: None,
+            kind: BranchKind::Plain,
         }
     }
 
@@ -198,9 +228,7 @@ impl Branch {
         Branch {
             name: name.into(),
             values: BranchValues::I32(Vec::new()),
-            jagged: false,
-            stl_vector: false,
-            split: Some(SplitSpec {
+            kind: BranchKind::Split(SplitSpec {
                 class_name: class_name.into(),
                 members,
             }),
@@ -367,7 +395,7 @@ impl Branch {
     /// Number of entries (rows for arrays/strings).
     fn n_entries(&self) -> u32 {
         use BranchValues::*;
-        if let Some(spec) = &self.split {
+        if let Some(spec) = self.split() {
             return spec
                 .members
                 .first()
@@ -421,12 +449,12 @@ impl Branch {
             // vector<string> is read-only; it never reaches the writer.
             Str(_) | VecStr(_) => ("TLeafC", 'C', 1, false),
         };
-        let len_type = if matches!(self.values, Str(_)) || self.stl_vector {
+        let len_type = if matches!(self.values, Str(_)) || self.stl_vector() {
             0
         } else {
             size
         };
-        if self.stl_vector {
+        if self.stl_vector() {
             class = "TLeafElement";
         }
         LeafInfo {
@@ -472,7 +500,7 @@ impl Branch {
     /// string, and the jagged leaf — whose per-entry length is dynamic).
     fn flen(&self) -> i32 {
         use BranchValues::*;
-        if self.jagged || self.stl_vector {
+        if self.jagged() || self.stl_vector() {
             return 1;
         }
         let n = match &self.values {
@@ -520,10 +548,10 @@ impl Branch {
 
     fn kind(&self) -> Kind {
         use BranchValues::*;
-        if self.stl_vector {
+        if self.stl_vector() {
             return Kind::StlVector;
         }
-        if self.jagged {
+        if self.jagged() {
             return Kind::Jagged;
         }
         match &self.values {
@@ -570,12 +598,10 @@ impl Branch {
     /// The paired count branch (`n<name>`, a scalar `i32` of row lengths) for a
     /// jagged branch; `None` for any other branch.
     fn count_branch(&self) -> Option<Branch> {
-        self.jagged.then(|| Branch {
+        self.jagged().then(|| Branch {
             name: self.count_name(),
             values: BranchValues::I32(self.row_lengths()),
-            jagged: false,
-            stl_vector: false,
-            split: None,
+            kind: BranchKind::Plain,
         })
     }
 
@@ -641,7 +667,7 @@ impl Branch {
     /// data-relative `fEntryOffset` array (`n_entries + 1` offsets).
     fn basket_content(&self) -> (Vec<u8>, Option<Vec<u32>>) {
         use BranchValues::*;
-        if self.stl_vector {
+        if self.stl_vector() {
             let (data, offsets) = self.stl_basket_content();
             return (data, Some(offsets));
         }
@@ -709,7 +735,7 @@ impl Branch {
         };
         // A jagged numeric branch is variable-length too: emit the byte offset
         // after each row (element count × element width).
-        if self.jagged {
+        if self.jagged() {
             let elem = self.leaf().size as u32;
             let mut offsets = Vec::with_capacity(self.n_entries() as usize + 1);
             let mut acc = 0u32;
@@ -810,8 +836,8 @@ fn col_sig(b: &Branch) -> ColSig {
     ColSig {
         name: b.name.clone(),
         variant: std::mem::discriminant(&b.values),
-        jagged: b.jagged,
-        stl_vector: b.stl_vector,
+        jagged: b.jagged(),
+        stl_vector: b.stl_vector(),
         flen: b.flen(),
     }
 }
@@ -974,14 +1000,14 @@ impl<W: Write + Seek> TTreeWriter<W> {
     /// the schema; later batches must match it. An empty batch is a no-op.
     pub fn write_batch(&mut self, branches: &[Branch]) -> Result<()> {
         for b in branches {
-            if b.split.is_some() {
+            if b.split().is_some() {
                 return Err(Error::Format(format!(
                     "branch {:?}: TTreeWriter does not support split std::vector<Struct> branches; \
                      use write_tree_file for those",
                     b.name
                 )));
             }
-            if !b.jagged && !b.stl_vector && b.is_jagged() {
+            if !b.jagged() && !b.stl_vector() && b.is_jagged() {
                 return Err(Error::Format(format!(
                     "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_*",
                     b.name
@@ -1021,7 +1047,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
         let mut col = 0;
         let tree_name = self.tree_name.clone();
         for b in branches {
-            if b.jagged {
+            if b.jagged() {
                 let count = b
                     .count_branch()
                     .expect("a jagged branch has a count branch");
@@ -1067,7 +1093,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
     fn init_columns(&mut self, branches: &[Branch]) {
         let mut cols = Vec::new();
         for b in branches {
-            if b.jagged {
+            if b.jagged() {
                 let count = b
                     .count_branch()
                     .expect("a jagged branch has a count branch");
@@ -1076,9 +1102,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
                     rep: Branch {
                         name: count.name.clone(),
                         values: BranchValues::I32(vec![m as i32]),
-                        jagged: false,
-                        stl_vector: false,
-                        split: None,
+                        kind: BranchKind::Plain,
                     },
                     baskets: Vec::new(),
                     agg: ColAgg::Count(m),
@@ -1096,9 +1120,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
                 rep: Branch {
                     name: b.name.clone(),
                     values,
-                    jagged: b.jagged,
-                    stl_vector: b.stl_vector,
-                    split: None,
+                    kind: b.chunk_kind(),
                 },
                 baskets: Vec::new(),
                 agg,
@@ -1309,7 +1331,7 @@ fn tree_bytes(
     entries_per_basket: usize,
 ) -> Result<Vec<u8>> {
     for b in branches {
-        if !b.jagged && !b.stl_vector && b.is_jagged() {
+        if !b.jagged() && !b.stl_vector() && b.is_jagged() {
             return Err(Error::Format(format!(
                 "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_* for \
                  variable-length arrays (Branch::vec_* requires every row to have the same length)",
@@ -1326,7 +1348,7 @@ fn tree_bytes(
     let mut eff: Vec<&Branch> = Vec::with_capacity(branches.len() + counts.len());
     let mut ci = 0;
     for b in branches {
-        if b.jagged {
+        if b.jagged() {
             eff.push(&counts[ci]);
             ci += 1;
         }
@@ -1379,7 +1401,7 @@ fn tree_bytes(
     // additionally needs its struct's generated TStreamerInfo appended. ---
     let mut streamer_info = crate::streamer_gen::tree_streamer_info();
     for b in branches {
-        if let Some(spec) = &b.split {
+        if let Some(spec) = b.split() {
             let info = write_class_streamer_info(&spec.class_name, &spec.members);
             streamer_info = append_streamer_info(&streamer_info, &info);
         }
@@ -1537,9 +1559,7 @@ fn chunk_branch(branch: &Branch, start: usize, len: usize) -> Branch {
     Branch {
         name: branch.name.clone(),
         values: chunk_values(&branch.values, start, len),
-        jagged: branch.jagged,
-        stl_vector: branch.stl_vector,
-        split: None,
+        kind: branch.chunk_kind(),
     }
 }
 
@@ -1593,7 +1613,7 @@ fn write_branch_baskets(
     compression: u32,
     entries_per_basket: usize,
 ) -> Vec<BasketRec> {
-    let Some(spec) = &branch.split else {
+    let Some(spec) = branch.split() else {
         // A single-leaf branch is split into baskets of `entries_per_basket`
         // entries (0 = one basket). An empty branch still gets one empty basket.
         let n = branch.n_entries() as usize;
@@ -1625,18 +1645,14 @@ fn write_branch_baskets(
     let count_branch = Branch {
         name: branch.name.clone(),
         values: BranchValues::VecI32(counts.into_iter().map(|n| vec![n]).collect()),
-        jagged: true,
-        stl_vector: false,
-        split: None,
+        kind: BranchKind::Jagged,
     };
     let mut recs = vec![write_basket(w, &count_branch, tree_name, compression)];
     for m in &spec.members {
         let sub = Branch {
             name: format!("{}.{}", branch.name, m.name),
             values: m.values.clone(),
-            jagged: true,
-            stl_vector: false,
-            split: None,
+            kind: BranchKind::Jagged,
         };
         recs.push(write_basket(w, &sub, tree_name, compression));
     }
@@ -1770,14 +1786,14 @@ fn write_branch_array(
 ) {
     let tok = obj_array_header(w, branches.len());
     for (&b, group) in branches.iter().zip(baskets) {
-        if b.split.is_some() {
+        if b.split().is_some() {
             // The parent's object-map position: its sub-branches reference it
             // (`fBranchCount`) so ROOT can find the collection they belong to.
             let parent_ref = w.len() as u32 + keylen + K_MAP_OFFSET;
             let bc = begin_object_any(w, "TBranchElement");
             write_split_parent(w, b, group, n_entries, keylen, parent_ref, refs);
             end_object_any(w, bc);
-        } else if b.stl_vector {
+        } else if b.stl_vector() {
             let bc = begin_object_any(w, "TBranchElement");
             write_branch_element(w, b, group, n_entries, keylen, refs);
             end_object_any(w, bc);
@@ -1891,7 +1907,7 @@ fn write_split_parent(
     parent_ref: u32,
     refs: &mut LeafRefs,
 ) {
-    let spec = branch.split.as_ref().expect("split spec");
+    let spec = branch.split().expect("split spec");
     let counter = format!("{}_", branch.name);
     let count_basket = &group[0];
     let checksum = class_checksum(&spec.class_name, &spec.members);
@@ -2176,7 +2192,7 @@ fn write_tree_leaf_array(w: &mut WBuffer, branches: &[&Branch], refs: &LeafRefs)
 /// leaf branch contributes one (its own name); a split branch contributes the
 /// parent counter leaf (`name_`) followed by each member leaf (`name.member`).
 fn branch_leaf_names(b: &Branch) -> Vec<String> {
-    match &b.split {
+    match b.split() {
         Some(spec) => std::iter::once(format!("{}_", b.name))
             .chain(
                 spec.members
@@ -2193,7 +2209,7 @@ fn branch_leaf_names(b: &Branch) -> Vec<String> {
 /// `fID`/`fType`).
 fn write_leaf(w: &mut WBuffer, branch: &Branch, refs: &LeafRefs) {
     let leaf = branch.leaf();
-    if branch.stl_vector {
+    if branch.stl_vector() {
         let outer = w.begin_object(1); // TLeafElement v1
         let base = w.begin_object(2); // TLeaf v2
         write_tnamed(w, OBJ_BITS, &branch.name, &branch.name);

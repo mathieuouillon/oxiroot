@@ -40,6 +40,7 @@ pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 #[cfg(feature = "fit")]
 pub use fit::{FitMethod, FitOptions, FitResult, TF1};
 pub use graph::{read_tgraph, GraphErrors, TGraph};
+pub use ops::Histogram;
 pub use read::ReadRoot;
 pub use tefficiency::{read_tefficiency, TEfficiency};
 pub use th1::{read_th1, read_th1d, read_th1d_in, read_th1f, TH1};

@@ -386,3 +386,38 @@ impl std::fmt::Display for TH3 {
         )
     }
 }
+
+/// Uniform read access to a classic histogram's bins, implemented by
+/// [`TH1`]/[`TH2`]/[`TH3`] so generic code can work over any of them. (The
+/// mutating ops — `scale`/`add`/`integral` — stay inherent per type, since each
+/// also updates its own moment sums and dimension-specific in-range cells.)
+pub trait Histogram {
+    /// All bin contents including under/overflow, flat (x fastest).
+    fn contents(&self) -> &[f64];
+    /// Number of fills (`fEntries`).
+    fn entries(&self) -> f64;
+    /// Sum of every cell's content, under/overflow included.
+    fn sum(&self) -> f64 {
+        self.contents().iter().sum()
+    }
+    /// Whether the histogram has no cells.
+    fn is_empty(&self) -> bool {
+        self.contents().is_empty()
+    }
+}
+
+macro_rules! impl_histogram {
+    ($ty:ty) => {
+        impl Histogram for $ty {
+            fn contents(&self) -> &[f64] {
+                &self.contents
+            }
+            fn entries(&self) -> f64 {
+                self.entries
+            }
+        }
+    };
+}
+impl_histogram!(TH1);
+impl_histogram!(TH2);
+impl_histogram!(TH3);
