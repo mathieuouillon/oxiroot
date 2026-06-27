@@ -52,11 +52,11 @@ pub struct THnSparse {
 impl THnSparse {
     /// Create an empty `THnSparse` over the given per-dimension uniform axes,
     /// `(nbins, xmin, xmax)`.
-    pub fn new(name: &str, title: &str, axes: &[(i32, f64, f64)]) -> THnSparse {
+    pub fn new(axes: &[(i32, f64, f64)]) -> THnSparse {
         let n = axes.len();
         THnSparse {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             axes: axes
                 .iter()
                 .enumerate()

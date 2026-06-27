@@ -5,7 +5,7 @@ use oxiroot_hist::{TProfile, TH1, TH2};
 
 fn filled_th1() -> TH1 {
     // 4 bins over [0,4); fills at 0.5,0.5,1.5,2.5,2.5,2.5 → contents [2,1,3,0].
-    let mut h = TH1::new("h", "", 4, 0.0, 4.0);
+    let mut h = TH1::new(4, 0.0, 4.0).named("h");
     for x in [0.5, 0.5, 1.5, 2.5, 2.5, 2.5] {
         h.fill(x);
     }
@@ -56,7 +56,7 @@ fn th1_reset_clears_everything() {
 
 #[test]
 fn th2_extrema_and_find_bin() {
-    let mut h = TH2::new("h", "", 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut h = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0).named("h");
     h.fill(0.5, 0.5); // cell (1,1)
     h.fill(1.5, 1.5);
     h.fill(1.5, 1.5); // cell (2,2) = 2
@@ -69,7 +69,7 @@ fn th2_extrema_and_find_bin() {
 
 #[test]
 fn tprofile_mean_std_dev() {
-    let mut p = TProfile::new("p", "", 4, 0.0, 4.0);
+    let mut p = TProfile::new(4, 0.0, 4.0).named("p");
     for (x, y) in [(0.5, 10.0), (0.5, 20.0), (1.5, 5.0), (2.5, 30.0)] {
         p.fill(x, y);
     }

@@ -24,7 +24,7 @@ fn reads_root_written_tprofile3d() {
 
 #[test]
 fn tprofile3d_round_trips() {
-    let mut p = TProfile3D::new("p3", "", 2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut p = TProfile3D::new(2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0).named("p3");
     p.fill(0.5, 0.5, 0.5, 10.0);
     p.fill(0.5, 0.5, 0.5, 20.0); // cell(1,1,1) mean 15
     p.fill(1.5, 1.5, 1.5, 7.0); // cell(2,2,2) mean 7

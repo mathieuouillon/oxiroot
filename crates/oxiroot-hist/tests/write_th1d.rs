@@ -57,7 +57,7 @@ fn writes_a_root_file_that_round_trips() {
 #[test]
 fn create_fill_save_round_trips() {
     // Build a histogram from scratch and fill it, as in an analysis loop.
-    let mut h = TH1::new("h", "filled", 5, 0.0, 5.0);
+    let mut h = TH1::new(5, 0.0, 5.0).named("h").titled("filled");
     h.fill(0.5);
     h.fill(1.5);
     h.fill(1.5);
@@ -91,7 +91,7 @@ fn create_fill_save_round_trips() {
 fn written_file_embeds_self_describing_streamer_info() {
     // A written file carries a TStreamerInfo list covering the histogram
     // hierarchy at the exact versions we emit, so any ROOT reader can read it.
-    let mut h = TH1::new("h", "", 5, 0.0, 5.0);
+    let mut h = TH1::new(5, 0.0, 5.0).named("h");
     h.fill(2.5);
     let out = std::path::PathBuf::from("/tmp/rootrs_streamerinfo_th1d.root");
     h.write_root(&out, oxiroot_io_core::Compression::None)
@@ -134,7 +134,7 @@ fn writes_a_zstd_compressed_th1d() {
 /// valid file and round-trip — the empty-histogram boundary.
 #[test]
 fn empty_th1d_round_trips() {
-    let h = TH1::new("empty", "never filled", 10, 0.0, 1.0);
+    let h = TH1::new(10, 0.0, 1.0).named("empty").titled("never filled");
     let out = std::path::PathBuf::from("/tmp/oxiroot_empty_th1d.root");
     h.write_root(&out, Compression::None).expect("write");
     let back = TH1::read_root(&RFile::open(&out).unwrap(), "empty").expect("read");

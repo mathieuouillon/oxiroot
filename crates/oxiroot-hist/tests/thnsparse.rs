@@ -39,7 +39,7 @@ fn reads_root_written_thnsparse() {
 
 #[test]
 fn thnsparse_round_trips() {
-    let mut h = THnSparse::new("hs", "", &[(2, 0.0, 2.0), (2, 0.0, 2.0)]);
+    let mut h = THnSparse::new(&[(2, 0.0, 2.0), (2, 0.0, 2.0)]).named("hs");
     h.fill(&[0.5, 0.5]);
     h.fill(&[1.5, 1.5]);
     h.fill(&[1.5, 1.5]);
@@ -56,7 +56,7 @@ fn thnsparse_round_trips() {
 /// and round-trip — the empty-chunk boundary.
 #[test]
 fn empty_thnsparse_round_trips() {
-    let h = THnSparse::new("hs", "", &[(3, 0.0, 3.0), (2, -1.0, 1.0)]);
+    let h = THnSparse::new(&[(3, 0.0, 3.0), (2, -1.0, 1.0)]).named("hs");
     assert!(h.bins.is_empty());
     let out = PathBuf::from("/tmp/oxiroot_thnsparse_empty.root");
     h.write_root(&out, Compression::None).expect("write");

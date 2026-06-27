@@ -91,7 +91,9 @@ fn th2poly_round_trips() {
 /// routing each fill to its bin via point-in-polygon, including the triangle.)
 #[test]
 fn th2poly_build_from_scratch() {
-    let mut h = TH2Poly::new("scratch", "built", 0.0, 3.0, 0.0, 3.0);
+    let mut h = TH2Poly::new(0.0, 3.0, 0.0, 3.0)
+        .named("scratch")
+        .titled("built");
     assert_eq!(h.add_bin_rect(0.0, 0.0, 1.0, 1.0), 1);
     assert_eq!(h.add_bin_rect(1.0, 1.0, 2.0, 2.0), 2);
     assert_eq!(h.add_bin(&[2.0, 3.0, 2.5], &[2.0, 2.0, 3.0]), 3); // a triangle

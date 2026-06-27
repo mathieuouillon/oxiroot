@@ -13,7 +13,9 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn sample() -> TEfficiency {
-    let mut e = TEfficiency::new("eff", "my eff;x;#epsilon", 4, 0.0, 4.0);
+    let mut e = TEfficiency::new(4, 0.0, 4.0)
+        .named("eff")
+        .titled("my eff;x;#epsilon");
     e.fill(true, 0.5);
     e.fill(false, 0.5); // bin1 1/2
     e.fill(true, 1.5);

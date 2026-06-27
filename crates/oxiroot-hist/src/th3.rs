@@ -154,8 +154,6 @@ impl TH3 {
     /// constructor: `nx` bins over `[xlo, xhi)`, etc.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        name: &str,
-        title: &str,
         nx: i32,
         xlo: f64,
         xhi: f64,
@@ -169,8 +167,8 @@ impl TH3 {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2);
         TH3 {
             precision: Precision::Double,
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::new("xaxis", nx, xlo, xhi),
             yaxis: TAxis::new("yaxis", ny, ylo, yhi),
             zaxis: TAxis::new("zaxis", nz, zlo, zhi),

@@ -95,7 +95,7 @@ where
 /// use oxiroot_hist::{ThreadedHist, TH1};
 ///
 /// let data: Vec<f64> = (0..1000).map(|i| i as f64 % 100.0).collect();
-/// let hist = ThreadedHist::new(TH1::new("h", "", 100, 0.0, 100.0));
+/// let hist = ThreadedHist::new(TH1::new(100, 0.0, 100.0).named("h"));
 ///
 /// std::thread::scope(|s| {
 ///     for chunk in data.chunks(data.len().div_ceil(4)) {
@@ -136,7 +136,7 @@ impl<H: Merge> ThreadedHist<H> {
     ///
     /// ```
     /// # use oxiroot_hist::{ThreadedHist, TH1};
-    /// # let hist = ThreadedHist::new(TH1::new("h", "", 10, 0.0, 1.0));
+    /// # let hist = ThreadedHist::new(TH1::new(10, 0.0, 1.0).named("h"));
     /// hist.with_local(|h| {
     ///     for x in [0.1, 0.2, 0.3] {
     ///         h.fill(x);
@@ -246,7 +246,7 @@ impl ThreadedHist<TProfile> {
 /// # #[cfg(feature = "rayon")] {
 /// use oxiroot_hist::{fill_par, TH1};
 /// let data: Vec<f64> = (0..1000).map(|i| i as f64 % 100.0).collect();
-/// let template = TH1::new("h", "", 100, 0.0, 100.0);
+/// let template = TH1::new(100, 0.0, 100.0).named("h");
 /// let hist = fill_par(&template, &data, |h, &x| h.fill(x));
 /// assert_eq!(hist.entries, 1000.0);
 /// # }

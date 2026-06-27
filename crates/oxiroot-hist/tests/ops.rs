@@ -10,11 +10,11 @@ use oxiroot_io_core::RFile;
 #[test]
 fn merge_then_scale_matches_root() {
     // Two weighted histograms, as if from two parallel jobs.
-    let mut a = TH1::new("h", "merged", 4, 0.0, 4.0);
+    let mut a = TH1::new(4, 0.0, 4.0).named("h").titled("merged");
     a.sumw2();
     a.fill_weight(0.5, 2.0);
     a.fill_weight(1.5, 1.0);
-    let mut b = TH1::new("h", "merged", 4, 0.0, 4.0);
+    let mut b = TH1::new(4, 0.0, 4.0).named("h").titled("merged");
     b.sumw2();
     b.fill_weight(0.5, 3.0);
     b.fill_weight(2.5, 1.0);
@@ -40,28 +40,28 @@ fn merge_then_scale_matches_root() {
 #[test]
 fn add_rejects_mismatched_binning() {
     // Different bin counts.
-    let mut a = TH1::new("a", "", 4, 0.0, 4.0);
-    let b = TH1::new("b", "", 5, 0.0, 5.0);
+    let mut a = TH1::new(4, 0.0, 4.0).named("a");
+    let b = TH1::new(5, 0.0, 5.0).named("b");
     assert!(a.add(&b, 1.0).is_err(), "different bin counts -> error");
 
     // Same bin count but different range — must also be rejected (cell-count
     // equality alone would have missed this).
-    let mut c = TH1::new("c", "", 4, 0.0, 4.0);
-    let d = TH1::new("d", "", 4, 0.0, 8.0);
+    let mut c = TH1::new(4, 0.0, 4.0).named("c");
+    let d = TH1::new(4, 0.0, 8.0).named("d");
     assert!(c.add(&d, 1.0).is_err(), "different edges -> error");
     assert_eq!(c.contents[1], 0.0, "rejected add makes no change");
 }
 
 #[test]
 fn integral_multiply_divide() {
-    let mut num = TH1::new("n", "", 2, 0.0, 2.0);
+    let mut num = TH1::new(2, 0.0, 2.0).named("n");
     num.sumw2();
     num.fill(0.5);
     num.fill(0.5);
     num.fill(1.5);
     assert_eq!(num.integral(), 3.0, "sum of in-range bins");
 
-    let mut den = TH1::new("d", "", 2, 0.0, 2.0);
+    let mut den = TH1::new(2, 0.0, 2.0).named("d");
     den.sumw2();
     for _ in 0..4 {
         den.fill(0.5);
@@ -86,7 +86,7 @@ fn integral_multiply_divide() {
 
 #[test]
 fn find_bin_routes_nan_and_top_edge() {
-    let h = TH1::new("h", "", 4, 0.0, 4.0);
+    let h = TH1::new(4, 0.0, 4.0).named("h");
     assert_eq!(h.xaxis.find_bin(-0.1), 0, "below range -> underflow");
     assert_eq!(h.xaxis.find_bin(0.0), 1, "low edge -> first bin");
     assert_eq!(h.xaxis.find_bin(3.999), 4, "just under top -> last bin");
@@ -105,10 +105,10 @@ fn find_bin_routes_nan_and_top_edge() {
 #[test]
 fn tprofile_merge_and_bin_error_match_root() {
     // Two profiles of the same (x,y) stream, split across "jobs", then merged.
-    let mut a = TProfile::new("p", "", 2, 0.0, 2.0);
+    let mut a = TProfile::new(2, 0.0, 2.0).named("p");
     a.fill(0.5, 1.0);
     a.fill(0.5, 3.0);
-    let mut b = TProfile::new("p", "", 2, 0.0, 2.0);
+    let mut b = TProfile::new(2, 0.0, 2.0).named("p");
     b.fill(0.5, 5.0);
     b.fill(1.5, 10.0);
 
@@ -128,6 +128,6 @@ fn tprofile_merge_and_bin_error_match_root() {
     assert!((a.values()[1] - 10.0).abs() < 1e-12);
     assert_eq!(a.bin_error(2), 0.0, "single entry -> no spread");
 
-    let mut wrong = TProfile::new("p", "", 3, 0.0, 3.0);
+    let mut wrong = TProfile::new(3, 0.0, 3.0).named("p");
     assert!(wrong.add(&a, 1.0).is_err(), "different binning rejected");
 }

@@ -53,13 +53,14 @@ pub struct TH1 {
 
 impl TH1 {
     /// Create an empty `TH1D` with `nbins` uniform bins over `[xmin, xmax)`,
-    /// ready to be filled.
-    pub fn new(name: &str, title: &str, nbins: i32, xmin: f64, xmax: f64) -> TH1 {
+    /// ready to be filled. The histogram is anonymous; name it with
+    /// [`named`](TH1::named) when you write it to a file.
+    pub fn new(nbins: i32, xmin: f64, xmax: f64) -> TH1 {
         let cells = (nbins.max(0) as usize) + 2;
         TH1 {
             precision: Precision::Double,
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::new("xaxis", nbins, xmin, xmax),
             yaxis: TAxis::new("yaxis", 1, 0.0, 1.0),
             zaxis: TAxis::new("zaxis", 1, 0.0, 1.0),
@@ -75,13 +76,13 @@ impl TH1 {
     }
 
     /// Create an empty `TH1D` with variable bin edges (`edges` = the `nbins + 1`
-    /// boundaries, ascending).
-    pub fn new_variable(name: &str, title: &str, edges: &[f64]) -> TH1 {
+    /// boundaries, ascending). Anonymous; name it with [`named`](TH1::named).
+    pub fn new_variable(edges: &[f64]) -> TH1 {
         let cells = edges.len() + 1; // (edges.len() - 1) bins + 2 flow
         TH1 {
             precision: Precision::Double,
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::variable("xaxis", edges),
             yaxis: TAxis::new("yaxis", 1, 0.0, 1.0),
             zaxis: TAxis::new("zaxis", 1, 0.0, 1.0),

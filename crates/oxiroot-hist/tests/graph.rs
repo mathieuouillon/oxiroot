@@ -62,25 +62,27 @@ fn graphs_round_trip() {
 
 #[test]
 fn graphs_build_from_scratch() {
-    let plain = TGraph::new("p", "plain", vec![0.0, 1.0, 2.0], vec![1.0, 4.0, 9.0]);
+    let plain = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 4.0, 9.0])
+        .named("p")
+        .titled("plain");
     let sym = TGraph::with_errors(
-        "s",
-        "sym",
         vec![0.0, 1.0],
         vec![2.0, 3.0],
         vec![0.1, 0.1],
         vec![0.5, 0.5],
-    );
+    )
+    .named("s")
+    .titled("sym");
     let asym = TGraph::with_asymm_errors(
-        "a",
-        "asym",
         vec![0.0, 1.0],
         vec![2.0, 3.0],
         vec![0.1, 0.2],
         vec![0.3, 0.4],
         vec![1.0, 1.0],
         vec![2.0, 2.0],
-    );
+    )
+    .named("a")
+    .titled("asym");
 
     for g in [&plain, &sym, &asym] {
         let out = std::env::temp_dir().join(format!("oxiroot_graph_scratch_{}.root", g.name));
@@ -98,8 +100,10 @@ fn graphs_build_from_scratch() {
 /// valid (empty) `fNpoints`/`fX`/`fY`, and the reader must round-trip them.
 #[test]
 fn empty_graphs_round_trip() {
-    let plain = TGraph::new("e0", "empty", vec![], vec![]);
-    let sym = TGraph::with_errors("e1", "empty", vec![], vec![], vec![], vec![]);
+    let plain = TGraph::new(vec![], vec![]).named("e0").titled("empty");
+    let sym = TGraph::with_errors(vec![], vec![], vec![], vec![])
+        .named("e1")
+        .titled("empty");
     for g in [&plain, &sym] {
         assert_eq!(g.len(), 0);
         assert!(g.is_empty());

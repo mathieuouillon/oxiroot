@@ -7,7 +7,7 @@ use oxiroot_io_core::{Compression, RFile};
 
 #[test]
 fn th1f_write_read_round_trips() {
-    let mut h = TH1::new("h1", "float", 4, 0.0, 4.0);
+    let mut h = TH1::new(4, 0.0, 4.0).named("h1").titled("float");
     for (i, &n) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
         for _ in 0..(n as usize) {
             h.fill(i as f64 + 0.5);
@@ -27,7 +27,9 @@ fn th1f_write_read_round_trips() {
 
 #[test]
 fn th2f_write_read_round_trips() {
-    let mut h = TH2::new("h2", "float2", 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut h = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0)
+        .named("h2")
+        .titled("float2");
     h.fill(0.5, 0.5);
     h.fill(1.5, 1.5);
     h.fill(1.5, 1.5);
@@ -45,7 +47,9 @@ fn th2f_write_read_round_trips() {
 
 #[test]
 fn th3f_write_read_round_trips() {
-    let mut h = TH3::new("h3", "float3", 2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut h = TH3::new(2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0)
+        .named("h3")
+        .titled("float3");
     h.fill(0.5, 0.5, 0.5);
     h.fill(1.5, 1.5, 1.5);
     let out = std::path::PathBuf::from("/tmp/oxiroot_th3f.root");

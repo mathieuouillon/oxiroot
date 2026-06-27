@@ -10,7 +10,7 @@ fn data() -> Vec<f64> {
 }
 
 fn serial(data: &[f64]) -> TH1 {
-    let mut h = TH1::new("h", "", 100, 0.0, 100.0);
+    let mut h = TH1::new(100, 0.0, 100.0).named("h");
     for &x in data {
         h.fill(x);
     }
@@ -22,7 +22,7 @@ fn threaded_fill_matches_serial() {
     let data = data();
     let want = serial(&data);
 
-    let acc = ThreadedHist::new(TH1::new("h", "", 100, 0.0, 100.0));
+    let acc = ThreadedHist::new(TH1::new(100, 0.0, 100.0).named("h"));
     std::thread::scope(|s| {
         for chunk in data.chunks(data.len().div_ceil(4)) {
             let acc = &acc;
@@ -50,7 +50,7 @@ fn threaded_fill_matches_serial() {
 #[test]
 fn merge_with_no_work_returns_empty_prototype() {
     // No thread filled → an empty histogram with the template's binning.
-    let acc = ThreadedHist::new(TH1::new("h", "", 4, 0.0, 4.0));
+    let acc = ThreadedHist::new(TH1::new(4, 0.0, 4.0).named("h"));
     let h = acc.merge().unwrap();
     assert_eq!(h.entries, 0.0);
     assert_eq!(h.values(), &[0.0, 0.0, 0.0, 0.0]);
@@ -61,7 +61,7 @@ fn merge_with_no_work_returns_empty_prototype() {
 fn fill_and_with_local_share_one_copy_per_thread() {
     // Repeated fills from the same thread route to a single copy (not one per
     // call), and `with_local` batches share it too.
-    let acc = ThreadedHist::new(TH1::new("h", "", 10, 0.0, 10.0));
+    let acc = ThreadedHist::new(TH1::new(10, 0.0, 10.0).named("h"));
     acc.fill(1.5);
     acc.fill(1.5);
     acc.with_local(|h| {
@@ -79,7 +79,7 @@ fn fill_and_with_local_share_one_copy_per_thread() {
 fn threaded_fill_2d_merges() {
     // The convenience `fill` exists for TH2/TH3/TProfile too (matching signatures).
     use oxiroot_hist::TH2;
-    let acc = ThreadedHist::new(TH2::new("h2", "", 4, 0.0, 4.0, 4, 0.0, 4.0));
+    let acc = ThreadedHist::new(TH2::new(4, 0.0, 4.0, 4, 0.0, 4.0).named("h2"));
     std::thread::scope(|s| {
         for _ in 0..3 {
             let acc = &acc;
@@ -112,8 +112,8 @@ fn merge_all_folds_or_none() {
 
 #[test]
 fn merge_rejects_mismatched_binning() {
-    let a = TH1::new("h", "", 4, 0.0, 4.0);
-    let b = TH1::new("h", "", 5, 0.0, 5.0);
+    let a = TH1::new(4, 0.0, 4.0).named("h");
+    let b = TH1::new(5, 0.0, 5.0).named("h");
     assert!(
         merge_all(vec![a, b]).is_err(),
         "incompatible binnings error"
@@ -126,7 +126,7 @@ fn fill_par_matches_serial() {
     use oxiroot_hist::fill_par;
     let data = data();
     let want = serial(&data);
-    let got = fill_par(&TH1::new("h", "", 100, 0.0, 100.0), &data, |h, &x| {
+    let got = fill_par(&TH1::new(100, 0.0, 100.0).named("h"), &data, |h, &x| {
         h.fill(x)
     });
     assert_eq!(

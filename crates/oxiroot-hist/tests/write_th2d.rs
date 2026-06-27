@@ -32,7 +32,9 @@ fn serializes_th2d_byte_identical_to_root() {
 #[test]
 fn create_fill_save_round_trips() {
     // Build a 3x2 histogram and fill it, as in a 2-D analysis loop.
-    let mut h = TH2::new("h2", "filled", 3, 0.0, 3.0, 2, 0.0, 2.0);
+    let mut h = TH2::new(3, 0.0, 3.0, 2, 0.0, 2.0)
+        .named("h2")
+        .titled("filled");
     h.fill(0.5, 0.5); // (binx=1, biny=1)
     h.fill(0.5, 0.5);
     h.fill(2.5, 1.5); // (binx=3, biny=2)

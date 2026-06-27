@@ -57,14 +57,14 @@ oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTup
 use oxiroot::prelude::*;
 
 // Fill and save one histogram — the WriteRoot / ReadRoot traits.
-let mut h = TH1::new("pt", "p_{T}", 50, 0.0, 100.0);
+let mut h = TH1::new(50, 0.0, 100.0).named("pt").titled("p_{T}");
 h.sumw2();
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;            // any single writable object
 let same = TH1::read_root(&RFile::open("hist.root")?, "pt")?; // any readable object
 
 // Several objects, subdirectories, or appending — the RootFile builder.
-let prof = TProfile::new("prof", "<pt> per region", 5, 0.0, 5.0);
+let prof = TProfile::new(5, 0.0, 5.0).named("prof").titled("<pt> per region");
 RootFile::create("out.root")
     .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
@@ -111,6 +111,12 @@ cargo run -p oxiroot --example analysis
   set with `.with_precision(Precision::Float)` (writes a `TH1F`), and
   `h.class_name()` reconstructs the ROOT class. Profiles carry a typed
   `ErrorMode`.
+- **No forced names, no global registry.** A histogram is just data: construct
+  it with `TH1::new(nbins, lo, hi)` and name it only when you persist it —
+  `.named("pt")` sets the file key (`.titled(...)` the title). Unlike ROOT there
+  is no `gROOT`/`gDirectory`, so any number of same-named histograms coexist in
+  memory; and writing two objects under the same key name in one directory is a
+  loud `DuplicateName` error, never ROOT's silent shadow-on-read.
 - Create and `fill`/`fill_weight` with ROOT's exact `Fill` semantics; uniform or
   variable (`new_variable`) bins; `sumw2()` (chains: `h.sumw2().fill(x)`) for
   weighted per-bin errors (`bin_error`).
@@ -141,7 +147,7 @@ cargo run -p oxiroot --example analysis
   each thread transparently gets its own copy — then `hist.merge()` combines them
   exactly (contents + `Sumw2` + every moment sum), identical to a serial fill:
   ```rust
-  let hist = ThreadedHist::new(TH1::new("h", "", 100, 0.0, 100.0));
+  let hist = ThreadedHist::new(TH1::new(100, 0.0, 100.0).named("h"));
   std::thread::scope(|s| for chunk in data.chunks(n) {
       let hist = &hist;
       s.spawn(move || for &x in chunk { hist.fill(x); });
@@ -185,7 +191,7 @@ in the dependency-free `oxiroot-stat` crate.
 ```rust
 use oxiroot::prelude::*; // needs `--features fit`
 
-let mut h = TH1::new("mass", "di-muon mass", 60, 80.0, 100.0);
+let mut h = TH1::new(60, 80.0, 100.0).named("mass").titled("di-muon mass");
 h.sumw2();
 // … fill h with events …
 
@@ -214,7 +220,7 @@ let sig_bkg = TF1::new(
 let r = h.fit(&sig_bkg);
 
 // The SAME `Model` + `.fit()` works on a TGraph …
-let graph = TGraph::with_errors("g", "", x.clone(), y.clone(), ex, ey);
+let graph = TGraph::with_errors(x.clone(), y.clone(), ex, ey).named("g");
 let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
 
 // … and on raw points (a `Vec`/slice of `Point`, or your own `FitData` impl).
@@ -237,11 +243,8 @@ field: plain (`TGraph`), symmetric (`TGraphErrors`), or asymmetric
 
 ```rust
 use oxiroot::prelude::*;
-let g = TGraph::with_errors(
-    "res", "resolution",
-    vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
-    vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],    // ex, ey
-);
+let g = TGraph::with_errors(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
+    vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5], // ex, ey).named("res").titled("resolution");
 write_tgraph_file("graph.root", &g, Compression::None)?;
 ```
 

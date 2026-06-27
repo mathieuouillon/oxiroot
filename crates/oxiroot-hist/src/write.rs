@@ -48,7 +48,7 @@ use crate::tprofile3d::TProfile3D;
 ///
 /// ```no_run
 /// use oxiroot_hist::{Compression, TH1, WriteRoot};
-/// let h = TH1::new("h", "", 100, 0.0, 1.0);
+/// let h = TH1::new(100, 0.0, 1.0).named("h");
 /// h.write_root("out.root", Compression::None)?; // works for any writable type
 /// let bytes = h.to_root_bytes();                // just the streamed object payload
 /// # Ok::<(), oxiroot_io_core::Error>(())
@@ -75,6 +75,12 @@ pub trait WriteRoot {
     where
         Self: Sized,
     {
+        if self.root_name().is_empty() {
+            return Err(Error::Format(format!(
+                "cannot write an unnamed {}; give it a key name with `.named(\"...\")`",
+                self.root_class()
+            )));
+        }
         write_named(path, |file_name| {
             write_root_file_with_streamers(
                 file_name,
@@ -772,6 +778,28 @@ fn record_of(object: &dyn WriteRoot) -> ObjectRecord {
     }
 }
 
+/// Reject objects that cannot be addressed by key: an empty name (it could never
+/// be looked up) or two objects sharing a name in one directory (the second
+/// would silently shadow the first on read).
+fn check_names(records: &[ObjectRecord], location: &str) -> Result<()> {
+    let mut seen = std::collections::HashSet::new();
+    for r in records {
+        if r.name.is_empty() {
+            return Err(Error::Format(format!(
+                "cannot write an unnamed {} in {location}; give it a key name with `.named(\"...\")`",
+                r.class_name
+            )));
+        }
+        if !seen.insert(r.name.as_str()) {
+            return Err(Error::DuplicateName {
+                name: r.name.clone(),
+                location: location.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Builder for composing a ROOT file from several objects — optionally organised
 /// into subdirectories, or appended to an existing file.
 ///
@@ -782,9 +810,9 @@ fn record_of(object: &dyn WriteRoot) -> ObjectRecord {
 ///
 /// ```no_run
 /// use oxiroot_hist::{Compression, RootFile, TH1, TProfile};
-/// let pt = TH1::new("pt", "", 10, 0.0, 1.0);
-/// let prof = TProfile::new("prof", "", 10, 0.0, 1.0);
-/// let signal = TH1::new("sig", "", 10, 0.0, 1.0);
+/// let pt = TH1::new(10, 0.0, 1.0).named("pt");
+/// let prof = TProfile::new(10, 0.0, 1.0).named("prof");
+/// let signal = TH1::new(10, 0.0, 1.0).named("sig");
 /// RootFile::create("out.root")
 ///     .add(&pt)
 ///     .add(&prof)
@@ -797,7 +825,7 @@ fn record_of(object: &dyn WriteRoot) -> ObjectRecord {
 ///
 /// ```no_run
 /// # use oxiroot_hist::{Compression, RootFile, TH1};
-/// # let extra = TH1::new("extra", "", 10, 0.0, 1.0);
+/// # let extra = TH1::new(10, 0.0, 1.0).named("extra");
 /// RootFile::open("out.root")?.add(&extra).write(Compression::None)?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
@@ -864,6 +892,12 @@ impl RootFile {
     /// new file; one from [`open`](RootFile::open) rewrites the file with its
     /// existing contents plus the additions.
     pub fn write(self, compression: Compression) -> Result<()> {
+        // Reject unnamed / clashing keys before writing — loudly, instead of
+        // ROOT's silent shadow-on-read.
+        check_names(&self.root, "the top directory")?;
+        for dir in &self.dirs {
+            check_names(&dir.objects, &format!("subdirectory {:?}", dir.name))?;
+        }
         let file_name = self
             .path
             .file_name()

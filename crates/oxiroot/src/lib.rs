@@ -14,7 +14,7 @@
 //! use oxiroot::prelude::*;
 //!
 //! // Fill and save a histogram.
-//! let mut h = TH1::new("pt", "transverse momentum", 50, 0.0, 100.0);
+//! let mut h = TH1::new(50, 0.0, 100.0).named("pt").titled("transverse momentum");
 //! h.sumw2();
 //! h.fill_weight(42.0, 1.5);
 //! h.write_root("out.root", Compression::Zstd(5))?; // WriteRoot trait

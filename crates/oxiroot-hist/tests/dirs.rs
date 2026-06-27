@@ -8,13 +8,13 @@ use oxiroot_io_core::RFile;
 
 #[test]
 fn writes_histograms_into_subdirectories() {
-    let mut top = TH1::new("top", "top-level", 3, 0.0, 3.0);
+    let mut top = TH1::new(3, 0.0, 3.0).named("top").titled("top-level");
     top.fill(0.5);
 
-    let mut sr = TH1::new("mll", "signal region", 4, 0.0, 4.0);
+    let mut sr = TH1::new(4, 0.0, 4.0).named("mll").titled("signal region");
     sr.fill(1.5);
     sr.fill(2.5);
-    let mut cr = TH1::new("mll", "control region", 4, 0.0, 4.0);
+    let mut cr = TH1::new(4, 0.0, 4.0).named("mll").titled("control region");
     cr.fill(0.5);
 
     let out = PathBuf::from("/tmp/rootrs_dirs.root");

@@ -61,7 +61,7 @@ fn gaussian_fit_matches_root() {
 #[test]
 fn polynomial_fit_recovers_a_line() {
     // y = 3 + 2x exactly on a fine grid -> a degree-1 fit recovers (3, 2).
-    let mut h = TH1::new("line", "", 100, 0.0, 10.0);
+    let mut h = TH1::new(100, 0.0, 10.0).named("line");
     for i in 1..=100 {
         let x = h.bin_center(i);
         h.contents[i] = 3.0 + 2.0 * x;
@@ -92,7 +92,7 @@ fn likelihood_fit_of_a_constant_equals_the_mean() {
     // from chi-square.
     use oxiroot_hist::FitMethod;
     let counts = [10.0, 20.0, 30.0, 40.0];
-    let mut h = TH1::new("c", "", counts.len() as i32, 0.0, counts.len() as f64);
+    let mut h = TH1::new(counts.len() as i32, 0.0, counts.len() as f64).named("c");
     for (i, &c) in counts.iter().enumerate() {
         h.contents[i + 1] = c;
     }
@@ -170,7 +170,7 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
 #[test]
 fn under_determined_fit_is_flagged_invalid() {
     // 2 data points, 3-parameter Gaussian -> cannot be determined.
-    let mut h = TH1::new("tiny", "", 2, 0.0, 2.0);
+    let mut h = TH1::new(2, 0.0, 2.0).named("tiny");
     h.contents[1] = 5.0;
     h.contents[2] = 7.0;
     let r = h.fit(&TF1::gaussian("g").with_params(vec![7.0, 1.0, 1.0]));
@@ -338,7 +338,7 @@ fn fit_a_tgraph_with_errors() {
     let y: Vec<f64> = x.iter().map(|&x| 2.0 * x + 3.0).collect();
     let ex = vec![0.0; x.len()];
     let ey = vec![0.1; x.len()];
-    let g = TGraph::with_errors("g", "line", x, y, ex, ey);
+    let g = TGraph::with_errors(x, y, ex, ey).named("g").titled("line");
 
     let fit = g.fit(&TF1::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     assert!(fit.valid);

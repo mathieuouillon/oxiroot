@@ -15,11 +15,15 @@ fn main() -> Result<()> {
     // --- Fill histograms, as in an event loop. ---------------------------------
     // A momentum spectrum with physics-style variable bins and weighted entries.
     let edges = [0.0, 10.0, 20.0, 40.0, 80.0, 160.0];
-    let mut pt = TH1::new_variable("pt", "p_{T} spectrum", &edges);
+    let mut pt = TH1::new_variable(&edges)
+        .named("pt")
+        .titled("p_{T} spectrum");
     pt.sumw2(); // track per-bin errors for the weighted fills
 
     // A 2-D correlation.
-    let mut eta_phi = TH2::new("eta_phi", "#eta vs #phi", 5, -2.5, 2.5, 4, -3.2, 3.2);
+    let mut eta_phi = TH2::new(5, -2.5, 2.5, 4, -3.2, 3.2)
+        .named("eta_phi")
+        .titled("#eta vs #phi");
 
     // Pretend events: (pt, weight, eta, phi).
     let events = [
@@ -47,7 +51,7 @@ fn main() -> Result<()> {
     // transparently gets its own copy; `merge` combines them exactly (identical
     // to a serial fill).
     let samples: Vec<f64> = (0..100_000).map(|i| (i as f64 * 0.618) % 100.0).collect();
-    let acc = ThreadedHist::new(TH1::new("mass", "toy mass", 100, 0.0, 100.0));
+    let acc = ThreadedHist::new(TH1::new(100, 0.0, 100.0).named("mass").titled("toy mass"));
     std::thread::scope(|s| {
         for chunk in samples.chunks(samples.len().div_ceil(4)) {
             let acc = &acc;
@@ -89,7 +93,9 @@ fn main() -> Result<()> {
     println!("wrote histograms -> {}", hist_path.display());
 
     // --- A flat file mixing any writable types — histograms, profiles, graphs. -
-    let mut prof = TProfile::new("pt_prof", "<pt> per region", 5, 0.0, 5.0);
+    let mut prof = TProfile::new(5, 0.0, 5.0)
+        .named("pt_prof")
+        .titled("<pt> per region");
     for (region, &(p, ..)) in events.iter().enumerate() {
         prof.fill(region as f64 + 0.5, p);
     }

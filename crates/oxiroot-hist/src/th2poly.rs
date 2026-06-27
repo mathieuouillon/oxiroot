@@ -113,10 +113,10 @@ impl TH2Poly {
     /// Create an empty `TH2Poly` over the bounding box `[xlow, xup] × [ylow, yup]`,
     /// matching ROOT's `TH2Poly(name, title, xlow, xup, ylow, yup)` constructor.
     /// Add bins with [`add_bin`](Self::add_bin) / [`add_bin_rect`](Self::add_bin_rect).
-    pub fn new(name: &str, title: &str, xlow: f64, xup: f64, ylow: f64, yup: f64) -> TH2Poly {
+    pub fn new(xlow: f64, xup: f64, ylow: f64, yup: f64) -> TH2Poly {
         TH2Poly {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::new("xaxis", 100, xlow, xup),
             yaxis: TAxis::new("yaxis", 100, ylow, yup),
             entries: 0.0,

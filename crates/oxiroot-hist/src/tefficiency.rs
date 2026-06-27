@@ -41,14 +41,12 @@ pub struct TEfficiency {
 impl TEfficiency {
     /// Create an empty `TEfficiency` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and ROOT's default interval parameters.
-    pub fn new(name: &str, title: &str, nbins: i32, xlo: f64, xhi: f64) -> TEfficiency {
-        let mut total = TH1::new(&format!("{name}_total"), title, nbins, xlo, xhi);
-        total.title = title.to_string();
-        let mut passed = TH1::new(&format!("{name}_passed"), title, nbins, xlo, xhi);
-        passed.title = title.to_string();
+    pub fn new(nbins: i32, xlo: f64, xhi: f64) -> TEfficiency {
+        let total = TH1::new(nbins, xlo, xhi).named("total");
+        let passed = TH1::new(nbins, xlo, xhi).named("passed");
         TEfficiency {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             passed,
             total,
             conf_level: DEFAULT_CONF_LEVEL,

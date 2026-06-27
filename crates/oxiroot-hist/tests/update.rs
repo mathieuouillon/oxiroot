@@ -12,16 +12,18 @@ fn appends_objects_to_an_existing_file() {
     let out = PathBuf::from("/tmp/rootrs_update.root");
 
     // Start with a one-histogram file.
-    let mut a = TH1::new("a", "first", 4, 0.0, 4.0);
+    let mut a = TH1::new(4, 0.0, 4.0).named("a").titled("first");
     a.fill(0.5);
     a.fill(2.5);
     a.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("initial write");
 
     // Append two more histograms (a TH1D and a TH2D).
-    let mut b = TH1::new("b", "second", 3, 0.0, 3.0);
+    let mut b = TH1::new(3, 0.0, 3.0).named("b").titled("second");
     b.fill(1.5);
-    let mut c = TH2::new("c", "third", 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut c = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0)
+        .named("c")
+        .titled("third");
     c.fill(0.5, 1.5);
     RootFile::open(&out)
         .expect("open for append")
@@ -49,14 +51,14 @@ fn appends_objects_to_an_existing_file() {
 #[test]
 fn re_adding_a_name_bumps_the_cycle() {
     let out = PathBuf::from("/tmp/rootrs_update_cycle.root");
-    let mut v1 = TH1::new("h", "v1", 4, 0.0, 4.0);
+    let mut v1 = TH1::new(4, 0.0, 4.0).named("h").titled("v1");
     v1.fill(0.5);
     v1.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write v1");
 
     // Re-add "h" with different contents; ROOT keeps both at different cycles,
     // newest (highest cycle) wins for a plain lookup.
-    let mut v2 = TH1::new("h", "v2", 4, 0.0, 4.0);
+    let mut v2 = TH1::new(4, 0.0, 4.0).named("h").titled("v2");
     v2.fill(1.5);
     v2.fill(1.5);
     RootFile::open(&out)

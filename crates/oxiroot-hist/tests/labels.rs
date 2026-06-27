@@ -52,7 +52,7 @@ fn writes_and_round_trips_labels() {
     assert_eq!(back.xaxis.labels, src.xaxis.labels);
 
     // Build a labelled histogram from scratch.
-    let mut h = TH1::new("cuts", "selection", 3, 0.0, 3.0);
+    let mut h = TH1::new(3, 0.0, 3.0).named("cuts").titled("selection");
     h.xaxis.set_label(1, "trigger");
     h.xaxis.set_label(2, "vertex");
     h.xaxis.set_label(3, "isolation");

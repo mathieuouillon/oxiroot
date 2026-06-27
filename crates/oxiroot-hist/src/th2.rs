@@ -122,21 +122,12 @@ impl TH2 {
     /// Create an empty `TH2D` with uniform axes: `nx` bins over `[xlo, xhi)`
     /// and `ny` bins over `[ylo, yhi)`. Mirrors ROOT's `TH2D` constructor.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        name: &str,
-        title: &str,
-        nx: i32,
-        xlo: f64,
-        xhi: f64,
-        ny: i32,
-        ylo: f64,
-        yhi: f64,
-    ) -> TH2 {
+    pub fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> TH2 {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2);
         TH2 {
             precision: Precision::Double,
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::new("xaxis", nx, xlo, xhi),
             yaxis: TAxis::new("yaxis", ny, ylo, yhi),
             zaxis: TAxis::new("zaxis", 1, 0.0, 1.0),
@@ -155,12 +146,12 @@ impl TH2 {
     }
 
     /// Create an empty `TH2D` with variable bin edges on each axis.
-    pub fn new_variable(name: &str, title: &str, xedges: &[f64], yedges: &[f64]) -> TH2 {
+    pub fn new_variable(xedges: &[f64], yedges: &[f64]) -> TH2 {
         let ncells = (xedges.len() as i32 + 1) * (yedges.len() as i32 + 1);
         TH2 {
             precision: Precision::Double,
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::variable("xaxis", xedges),
             yaxis: TAxis::variable("yaxis", yedges),
             zaxis: TAxis::new("zaxis", 1, 0.0, 1.0),

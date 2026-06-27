@@ -6,7 +6,7 @@ use oxiroot_hist::{Precision, ReadRoot, WriteRoot, TH1, TH2, TH3};
 use oxiroot_io_core::{Compression, RFile};
 
 fn filled_th1() -> TH1 {
-    let mut h = TH1::new("h", "int", 4, 0.0, 4.0);
+    let mut h = TH1::new(4, 0.0, 4.0).named("h").titled("int");
     for (i, &n) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
         for _ in 0..(n as usize) {
             h.fill(i as f64 + 0.5);
@@ -51,7 +51,7 @@ fn th1_integer_variants_round_trip() {
 
 #[test]
 fn th2i_th3i_round_trip() {
-    let mut h2 = TH2::new("h2", "i2", 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut h2 = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0).named("h2").titled("i2");
     h2.fill(0.5, 0.5);
     h2.fill(1.5, 1.5);
     let out = std::path::PathBuf::from("/tmp/oxiroot_th2i.root");
@@ -63,7 +63,9 @@ fn th2i_th3i_round_trip() {
     assert_eq!(f.key("h2").expect("key").class_name, "TH2I");
     assert_eq!(TH2::read_root(&f, "h2").unwrap().values(), h2.values());
 
-    let mut h3 = TH3::new("h3", "i3", 2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut h3 = TH3::new(2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0)
+        .named("h3")
+        .titled("i3");
     h3.fill(0.5, 0.5, 0.5);
     let out = std::path::PathBuf::from("/tmp/oxiroot_th3i.root");
     h3.clone()

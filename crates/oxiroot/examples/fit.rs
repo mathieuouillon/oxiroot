@@ -45,7 +45,9 @@ fn main() {
     let (true_mean, true_sigma) = (91.2, 2.5);
 
     // --- 1. A clean Gaussian peak: chi-square vs binned likelihood. ---
-    let mut peak = TH1::new("mass", "di-muon mass [GeV]", 60, 80.0, 100.0);
+    let mut peak = TH1::new(60, 80.0, 100.0)
+        .named("mass")
+        .titled("di-muon mass [GeV]");
     peak.sumw2(); // track per-bin errors for the chi-square
     for _ in 0..10_000 {
         peak.fill(rng.gauss(true_mean, true_sigma));
@@ -73,7 +75,9 @@ fn main() {
     );
 
     // --- 2. The same peak on a flat background, fitted with a custom model. ---
-    let mut withbkg = TH1::new("mass_bkg", "peak + background", 60, 80.0, 100.0);
+    let mut withbkg = TH1::new(60, 80.0, 100.0)
+        .named("mass_bkg")
+        .titled("peak + background");
     withbkg.sumw2();
     for _ in 0..10_000 {
         withbkg.fill(rng.gauss(true_mean, true_sigma)); // signal
@@ -117,13 +121,13 @@ fn main() {
         .map(|&x| 0.5 * x + 1.0 + rng.gauss(0.0, 0.03))
         .collect();
     let graph = TGraph::with_errors(
-        "resp",
-        "response vs threshold",
         thr.to_vec(),
         resp,
         vec![0.0; thr.len()],
         vec![0.03; thr.len()],
-    );
+    )
+    .named("resp")
+    .titled("response vs threshold");
     let line = graph.fit(&TF1::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     println!(
         "TGraph line fit (truth: slope 0.5, intercept 1.0):  slope = {:.3} ± {:.3}, intercept = {:.3}",

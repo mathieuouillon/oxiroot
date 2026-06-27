@@ -74,7 +74,7 @@ const DIRS_DH: [f64; 2] = [2.0, 4.0];
 const DIRS_RH: [f64; 3] = [3.0, 6.0, 9.0];
 
 fn canonical_hist() -> TH1 {
-    let mut h = TH1::new("h", "interop", 4, 0.0, 4.0);
+    let mut h = TH1::new(4, 0.0, 4.0).named("h").titled("interop");
     // Fill bin i (0-based) with i+1 entries at its center, giving contents
     // [1, 2, 3, 4] without relying on direct field mutation.
     for (i, &count) in HIST_BINS.iter().enumerate() {
@@ -91,7 +91,7 @@ fn canonical_hist() -> TH1 {
 /// multi-object / append fixtures.
 fn hist(name: &str, contents: &[f64]) -> TH1 {
     let n = contents.len() as i32;
-    let mut h = TH1::new(name, "interop", n, 0.0, n as f64);
+    let mut h = TH1::new(n, 0.0, n as f64).named(name).titled("interop");
     for (i, &c) in contents.iter().enumerate() {
         h.fill_weight(i as f64 + 0.5, c);
     }

@@ -23,7 +23,9 @@ fn reads_root_written_tprofile2d() {
 
 #[test]
 fn tprofile2d_round_trips() {
-    let mut p = TProfile2D::new("p2", "prof", 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut p = TProfile2D::new(2, 0.0, 2.0, 2, 0.0, 2.0)
+        .named("p2")
+        .titled("prof");
     p.fill(0.5, 0.5, 10.0);
     p.fill(0.5, 0.5, 20.0); // bin(1,1) mean 15
     p.fill(1.5, 0.5, 5.0); // bin(2,1) mean 5

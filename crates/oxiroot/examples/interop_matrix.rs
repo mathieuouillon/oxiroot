@@ -124,7 +124,7 @@ fn jvi64_2(v: &[Vec<i64>]) -> J {
 // ---------------------------------------------------------------------------
 
 fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> TH1 {
-    let mut h = TH1::new("h", "m", nbins, xmin, xmax);
+    let mut h = TH1::new(nbins, xmin, xmax).named("h").titled("m");
     for (i, &c) in contents.iter().enumerate() {
         h.contents[i + 1] = c; // [0] is underflow
     }
@@ -133,7 +133,9 @@ fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> TH1 {
 }
 
 fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> TH2 {
-    let mut h = TH2::new("h", "m", nx, 0.0, nx as f64, ny, 0.0, ny as f64);
+    let mut h = TH2::new(nx, 0.0, nx as f64, ny, 0.0, ny as f64)
+        .named("h")
+        .titled("m");
     // ROOT cell index = ix + (nx+2)*iy, in-range ix,iy in 1..=n.
     let stride = (nx + 2) as usize;
     let mut entries = 0.0;
@@ -148,9 +150,9 @@ fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> TH2 {
 }
 
 fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> TH3 {
-    let mut h = TH3::new(
-        "h", "m", n, 0.0, n as f64, n, 0.0, n as f64, n, 0.0, n as f64,
-    );
+    let mut h = TH3::new(n, 0.0, n as f64, n, 0.0, n as f64, n, 0.0, n as f64)
+        .named("h")
+        .titled("m");
     let s = (n + 2) as usize;
     let mut entries = 0.0;
     for (ix, plane) in contents.iter().enumerate() {
@@ -539,7 +541,9 @@ fn write(dir: &Path) {
 
     // --- Variable bin edges (TH1 + TH2 only; TH3 has no new_variable). ---
     {
-        let mut h = TH1::new_variable("h", "m", &[0.0, 1.0, 4.0, 10.0]);
+        let mut h = TH1::new_variable(&[0.0, 1.0, 4.0, 10.0])
+            .named("h")
+            .titled("m");
         for (i, &c) in [2.0, 1.0, 3.0].iter().enumerate() {
             h.contents[i + 1] = c;
         }
@@ -547,7 +551,9 @@ fn write(dir: &Path) {
         cases.push(hist1_case("th1d_variable", "TH1D", none, &h, dir));
     }
     {
-        let mut h = TH2::new_variable("h", "m", &[0.0, 1.0, 4.0], &[0.0, 2.0, 5.0]);
+        let mut h = TH2::new_variable(&[0.0, 1.0, 4.0], &[0.0, 2.0, 5.0])
+            .named("h")
+            .titled("m");
         let stride = 4; // nx+2 = 2+2
         for (ix, col) in [[1.0, 2.0], [3.0, 4.0]].iter().enumerate() {
             for (iy, &c) in col.iter().enumerate() {
@@ -560,7 +566,7 @@ fn write(dir: &Path) {
 
     // --- Sumw2 (weighted errors), 1/2/3-D. ---
     {
-        let mut h = TH1::new("h", "m", 3, 0.0, 3.0);
+        let mut h = TH1::new(3, 0.0, 3.0).named("h").titled("m");
         h.sumw2();
         h.fill_weight(0.5, 2.0);
         h.fill_weight(0.5, 3.0); // bin1: content 5, sumw2 13
@@ -568,7 +574,7 @@ fn write(dir: &Path) {
         cases.push(hist1_case("th1d_sumw2", "TH1D", none, &h, dir));
     }
     {
-        let mut h = TH2::new("h", "m", 2, 0.0, 2.0, 2, 0.0, 2.0);
+        let mut h = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0).named("h").titled("m");
         h.sumw2();
         h.fill_weight(0.5, 0.5, 2.0);
         h.fill_weight(0.5, 0.5, 1.0); // (0,0): content 3, sumw2 5
@@ -576,7 +582,9 @@ fn write(dir: &Path) {
         cases.push(hist2_case("th2d_sumw2", "TH2D", none, &h, dir));
     }
     {
-        let mut h = TH3::new("h", "m", 2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0);
+        let mut h = TH3::new(2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0)
+            .named("h")
+            .titled("m");
         h.sumw2();
         h.fill_weight(0.5, 0.5, 0.5, 2.0);
         h.fill_weight(0.5, 0.5, 0.5, 3.0); // (0,0,0): content 5, sumw2 13
@@ -586,7 +594,7 @@ fn write(dir: &Path) {
 
     // --- TProfile. ---
     {
-        let mut p = TProfile::new("p", "prof", 4, 0.0, 4.0);
+        let mut p = TProfile::new(4, 0.0, 4.0).named("p").titled("prof");
         p.fill(0.5, 10.0);
         p.fill(0.5, 20.0); // bin1 mean 15
         p.fill(1.5, 5.0);

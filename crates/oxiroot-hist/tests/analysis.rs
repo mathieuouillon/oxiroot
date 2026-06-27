@@ -68,7 +68,7 @@ fn kolmogorov_test_matches_root() {
 #[test]
 fn comparison_tests_reject_mismatched_binning() {
     let a = h("h");
-    let other = TH1::new("x", "", 10, 0.0, 10.0); // different binning
+    let other = TH1::new(10, 0.0, 10.0).named("x"); // different binning
     assert!(a.chi2_test(&other).is_err());
     assert!(a.kolmogorov_test(&other).is_err());
 }

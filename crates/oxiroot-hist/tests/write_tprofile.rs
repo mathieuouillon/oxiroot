@@ -28,7 +28,7 @@ fn round_trips_real_root_tprofile() {
 #[test]
 fn create_fill_save_round_trips() {
     // Reproduce the fixture's fills: 4 bins over [0,4], profiling y vs x.
-    let mut h = TProfile::new("p", "profile", 4, 0.0, 4.0);
+    let mut h = TProfile::new(4, 0.0, 4.0).named("p").titled("profile");
     h.fill(0.5, 20.0);
     h.fill(0.5, 10.0);
     h.fill(1.5, 10.0);

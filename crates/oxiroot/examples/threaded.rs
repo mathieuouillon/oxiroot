@@ -20,7 +20,11 @@ use oxiroot::prelude::*;
 
 fn main() {
     // A binning prototype (normally empty); each thread copies it on first fill.
-    let hist = ThreadedHist::new(TH1::new("mass", "toy mass [GeV]", 100, 0.0, 100.0));
+    let hist = ThreadedHist::new(
+        TH1::new(100, 0.0, 100.0)
+            .named("mass")
+            .titled("toy mass [GeV]"),
+    );
 
     // Some data to fill, split across the available worker threads.
     let data: Vec<f64> = (0..1_000_000)
@@ -59,7 +63,9 @@ fn main() {
 
     // The result is identical to a plain single-threaded fill (bins are exact;
     // moment sums agree up to floating-point summation order).
-    let mut serial = TH1::new("mass", "toy mass [GeV]", 100, 0.0, 100.0);
+    let mut serial = TH1::new(100, 0.0, 100.0)
+        .named("mass")
+        .titled("toy mass [GeV]");
     for &x in &data {
         serial.fill(x);
     }

@@ -37,7 +37,9 @@ fn round_trips_real_root_th3d() {
 
 #[test]
 fn create_fill_save_round_trips() {
-    let mut h = TH3::new("h3", "filled", 2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0);
+    let mut h = TH3::new(2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0)
+        .named("h3")
+        .titled("filled");
     h.fill(0.5, 0.5, 0.5); // (1,1,1)
     h.fill(0.5, 0.5, 0.5);
     h.fill(1.5, 1.5, 1.5); // (2,2,2)

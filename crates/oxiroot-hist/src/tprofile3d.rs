@@ -87,8 +87,6 @@ impl TProfile3D {
     /// Create an empty `TProfile3D` with uniform x/y/z bins and no t restriction.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        name: &str,
-        title: &str,
         nx: i32,
         xlo: f64,
         xhi: f64,
@@ -101,8 +99,8 @@ impl TProfile3D {
     ) -> TProfile3D {
         let ncells = ((nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2)) as usize;
         TProfile3D {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::new("xaxis", nx, xlo, xhi),
             yaxis: TAxis::new("yaxis", ny, ylo, yhi),
             zaxis: TAxis::new("zaxis", nz, zlo, zhi),

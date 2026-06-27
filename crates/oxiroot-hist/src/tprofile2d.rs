@@ -66,20 +66,11 @@ pub struct TProfile2D {
 impl TProfile2D {
     /// Create an empty `TProfile2D` with uniform x and y bins and no z restriction.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        name: &str,
-        title: &str,
-        nx: i32,
-        xlo: f64,
-        xhi: f64,
-        ny: i32,
-        ylo: f64,
-        yhi: f64,
-    ) -> TProfile2D {
+    pub fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> TProfile2D {
         let ncells = ((nx.max(0) + 2) * (ny.max(0) + 2)) as usize;
         TProfile2D {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::new("xaxis", nx, xlo, xhi),
             yaxis: TAxis::new("yaxis", ny, ylo, yhi),
             ncells: ncells as i32,

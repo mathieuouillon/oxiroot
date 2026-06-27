@@ -62,10 +62,10 @@ pub struct TGraph {
 impl TGraph {
     /// Create a plain `TGraph` from paired `x`/`y` points (truncated to the
     /// shorter length).
-    pub fn new(name: &str, title: &str, x: Vec<f64>, y: Vec<f64>) -> TGraph {
+    pub fn new(x: Vec<f64>, y: Vec<f64>) -> TGraph {
         TGraph {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             x,
             y,
             errors: GraphErrors::None,
@@ -73,17 +73,10 @@ impl TGraph {
     }
 
     /// Create a `TGraphErrors` with symmetric x/y errors.
-    pub fn with_errors(
-        name: &str,
-        title: &str,
-        x: Vec<f64>,
-        y: Vec<f64>,
-        ex: Vec<f64>,
-        ey: Vec<f64>,
-    ) -> TGraph {
+    pub fn with_errors(x: Vec<f64>, y: Vec<f64>, ex: Vec<f64>, ey: Vec<f64>) -> TGraph {
         TGraph {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             x,
             y,
             errors: GraphErrors::Symmetric { ex, ey },
@@ -93,8 +86,6 @@ impl TGraph {
     /// Create a `TGraphAsymmErrors` with independent low/high errors per axis.
     #[allow(clippy::too_many_arguments)]
     pub fn with_asymm_errors(
-        name: &str,
-        title: &str,
         x: Vec<f64>,
         y: Vec<f64>,
         ex_low: Vec<f64>,
@@ -103,8 +94,8 @@ impl TGraph {
         ey_high: Vec<f64>,
     ) -> TGraph {
         TGraph {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             x,
             y,
             errors: GraphErrors::Asymmetric {

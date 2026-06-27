@@ -39,6 +39,15 @@ pub enum Error {
     },
     /// A generic, described format violation.
     Format(String),
+    /// Two objects were given the same key name in one directory (which would
+    /// silently shadow on read). Name them distinctly, or write them to separate
+    /// subdirectories.
+    DuplicateName {
+        /// The clashing key name.
+        name: String,
+        /// Where the clash is (e.g. `"the top directory"` or a subdirectory name).
+        location: String,
+    },
     /// A histogram operation was asked to combine incompatible binnings.
     BinningMismatch {
         /// Human-readable description of the mismatch.
@@ -64,6 +73,13 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::DuplicateName { name, location } => {
+                write!(
+                    f,
+                    "duplicate key name {name:?} in {location}: two objects with the same name \
+                     would shadow each other on read"
+                )
+            }
             Error::UnexpectedEof { needed, available } => {
                 write!(
                     f,

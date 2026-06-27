@@ -63,16 +63,12 @@ impl TH1 {
         let new_edges: Vec<f64> = (0..=newn).map(|k| edges[k * ng]).collect();
 
         let mut out = if new_edges.len() >= 2 {
-            TH1::new_variable(&self.name, &self.title, &new_edges)
+            TH1::new_variable(&new_edges)
         } else {
-            TH1::new(
-                &self.name,
-                &self.title,
-                newn.max(1) as i32,
-                edges[0],
-                edges[n],
-            )
-        };
+            TH1::new(newn.max(1) as i32, edges[0], edges[n])
+        }
+        .named(self.name.clone())
+        .titled(self.title.clone());
         out.precision = self.precision;
         let track = !self.sumw2.is_empty();
         if track {
@@ -153,7 +149,9 @@ impl TH2 {
         let axis = if onto_x { &self.xaxis } else { &self.yaxis };
         let (n_keep, n_sum) = if onto_x { (nx, ny) } else { (ny, nx) };
 
-        let mut out = TH1::new(name, &self.title, n_keep as i32, axis.xmin, axis.xmax);
+        let mut out = TH1::new(n_keep as i32, axis.xmin, axis.xmax)
+            .named(name)
+            .titled(self.title.clone());
         out.xaxis = axis.clone();
         let track = !self.sumw2.is_empty();
         if track {
@@ -207,13 +205,9 @@ impl TH2 {
         let other_axis = if along_x { &self.yaxis } else { &self.xaxis };
         let (n_keep, n_other) = if along_x { (nx, ny) } else { (ny, nx) };
 
-        let mut p = TProfile::new(
-            name,
-            &self.title,
-            n_keep as i32,
-            keep_axis.xmin,
-            keep_axis.xmax,
-        );
+        let mut p = TProfile::new(n_keep as i32, keep_axis.xmin, keep_axis.xmax)
+            .named(name)
+            .titled(self.title.clone());
         p.xaxis = keep_axis.clone();
         // Centers of the "other" (profiled-value) axis bins.
         let other_center: Vec<f64> = (0..=n_other + 1)
@@ -269,7 +263,9 @@ impl TH2 {
         let xedges = group_edges(&self.xaxis.edges(), ngx, newnx);
         let yedges = group_edges(&self.yaxis.edges(), ngy, newny);
 
-        let mut out = TH2::new_variable(&self.name, &self.title, &xedges, &yedges);
+        let mut out = TH2::new_variable(&xedges, &yedges)
+            .named(self.name.clone())
+            .titled(self.title.clone());
         out.precision = self.precision;
         let track = !self.sumw2.is_empty();
         if track {
@@ -309,8 +305,6 @@ impl TH3 {
 
         // TH3 has no variable-bin constructor; build it and set the axes.
         let mut out = TH3::new(
-            &self.name,
-            &self.title,
             newnx as i32,
             0.0,
             1.0,
@@ -320,7 +314,9 @@ impl TH3 {
             newnz as i32,
             0.0,
             1.0,
-        );
+        )
+        .named(self.name.clone())
+        .titled(self.title.clone());
         out.precision = self.precision;
         out.xaxis = TAxis::variable("xaxis", &group_edges(&self.xaxis.edges(), ngx, newnx));
         out.yaxis = TAxis::variable("yaxis", &group_edges(&self.yaxis.edges(), ngy, newny));
@@ -390,7 +386,9 @@ impl TH3 {
             1 => (&self.yaxis, ny),
             _ => (&self.zaxis, nz),
         };
-        let mut out = TH1::new(name, &self.title, nkeep as i32, axis.xmin, axis.xmax);
+        let mut out = TH1::new(nkeep as i32, axis.xmin, axis.xmax)
+            .named(name)
+            .titled(self.title.clone());
         out.xaxis = axis.clone();
         let track = !self.sumw2.is_empty();
         if track {
@@ -458,16 +456,9 @@ impl TH3 {
             1 => (&self.xaxis, nx, &self.zaxis, nz, ny),
             _ => (&self.yaxis, ny, &self.zaxis, nz, nx),
         };
-        let mut out = TH2::new(
-            name,
-            &self.title,
-            na as i32,
-            axa.xmin,
-            axa.xmax,
-            nb as i32,
-            axb.xmin,
-            axb.xmax,
-        );
+        let mut out = TH2::new(na as i32, axa.xmin, axa.xmax, nb as i32, axb.xmin, axb.xmax)
+            .named(name)
+            .titled(self.title.clone());
         out.xaxis = axa.clone();
         out.yaxis = axb.clone();
         let track = !self.sumw2.is_empty();

@@ -11,6 +11,7 @@
 
 mod base;
 mod compare;
+mod naming;
 mod ops;
 mod read;
 

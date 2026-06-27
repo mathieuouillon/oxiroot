@@ -232,11 +232,11 @@ impl TProfile {
 
     /// Create an empty `TProfile` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and no y restriction. Mirrors ROOT's `TProfile` constructor.
-    pub fn new(name: &str, title: &str, nbins: i32, xlo: f64, xhi: f64) -> TProfile {
+    pub fn new(nbins: i32, xlo: f64, xhi: f64) -> TProfile {
         let ncells = (nbins.max(0) + 2) as usize;
         TProfile {
-            name: name.to_string(),
-            title: title.to_string(),
+            name: String::new(),
+            title: String::new(),
             xaxis: TAxis::new("xaxis", nbins, xlo, xhi),
             ncells: ncells as i32,
             entries: 0.0,
