@@ -5,8 +5,8 @@
 //! reference), string (`TLeafC`), and `std::vector<T>` (`TBranchElement`)
 //! branches. Mirrors the layout ROOT/uproot write (TTree v20, TBranch v13,
 //! TLeaf* v1, TBranchElement v10) so the result reads back in ROOT, uproot, and
-//! this crate. One basket per branch. The embedded `TStreamerInfo` (a baked
-//! blob) makes the file self-describing.
+//! this crate. The embedded `TStreamerInfo` ([`crate::streamer_gen`]) makes the
+//! file self-describing.
 
 use std::collections::HashMap;
 use std::io::{self, Seek, SeekFrom, Write};
@@ -34,13 +34,6 @@ const K_MAP_OFFSET: u32 = 2;
 /// of the first place that leaf was written, so a later `fLeafCount` can point
 /// back to it the way ROOT does.
 type LeafRefs = HashMap<String, u32>;
-/// The baked `TStreamerInfo` for the TTree hierarchy (TTree/TBranch/TLeaf*/…),
-/// extracted from a uproot-written tree. Embedded so the file is self-describing.
-const TREE_STREAMER_INFO: &[u8] = include_bytes!("tree.streamerinfo.bin");
-/// The baked `TStreamerInfo` for a tree that also uses `TBranchElement` /
-/// `TLeafElement` (`std::vector<T>` branches), extracted from a ROOT C++ file.
-/// A superset of [`TREE_STREAMER_INFO`]; used when any branch is a `std::vector`.
-const TREE_VECTOR_STREAMER_INFO: &[u8] = include_bytes!("tree_vector.streamerinfo.bin");
 
 /// One named branch to write. Use the typed constructors: [`Branch::i32`] … for
 /// scalars, [`Branch::vec_f64`] … for fixed-size arrays, [`Branch::jagged_f64`] …
@@ -875,8 +868,6 @@ pub struct TTreeWriter<W: Write + Seek> {
     file_name: String,
     tree_name: String,
     compression: u32,
-    /// Whether any branch is a `std::vector<T>` (selects the streamer-info blob).
-    needs_vector: bool,
     // File-header regions to back-patch at finish (absolute offsets).
     p_end: u64,
     p_nbytes_name: u64,
@@ -945,7 +936,6 @@ impl<W: Write + Seek> TTreeWriter<W> {
             file_name: file_name.to_string(),
             tree_name: tree_name.to_string(),
             compression,
-            needs_vector: false,
             p_end,
             p_nbytes_name,
             p_seek_info,
@@ -1071,7 +1061,6 @@ impl<W: Write + Seek> TTreeWriter<W> {
     /// Build the effective-column list from the first batch (jagged branches
     /// expanded into a synthetic count column followed by the data column).
     fn init_columns(&mut self, branches: &[Branch]) {
-        self.needs_vector = branches.iter().any(|b| b.stl_vector);
         let mut cols = Vec::new();
         for b in branches {
             if b.jagged {
@@ -1158,12 +1147,8 @@ impl<W: Write + Seek> TTreeWriter<W> {
         self.put(&tree_payload)?;
 
         // --- Streamer-info record (referenced by fSeekInfo). ---
-        let streamer_info: &[u8] = if self.needs_vector {
-            TREE_VECTOR_STREAMER_INFO
-        } else {
-            TREE_STREAMER_INFO
-        };
-        let si_payload = on_disk(streamer_info, self.compression);
+        let streamer_info = crate::streamer_gen::tree_streamer_info();
+        let si_payload = on_disk(&streamer_info, self.compression);
         let seek_info = self.pos;
         let mut sib = WBuffer::new();
         write_key_header(
@@ -1384,15 +1369,11 @@ fn tree_bytes(
     );
     w.bytes(&tree_payload);
 
-    // --- Streamer-info record (referenced by fSeekInfo only). A tree with any
-    // std::vector branch needs the TBranchElement/TLeafElement streamers; a split
-    // branch additionally needs its struct's generated TStreamerInfo appended. ---
-    let needs_vector = branches.iter().any(|b| b.stl_vector || b.split.is_some());
-    let mut streamer_info = if needs_vector {
-        TREE_VECTOR_STREAMER_INFO.to_vec()
-    } else {
-        TREE_STREAMER_INFO.to_vec()
-    };
+    // --- Streamer-info record (referenced by fSeekInfo only). The canonical
+    // TTree-hierarchy TStreamerInfo describes every class a tree uses (including
+    // the TBranchElement/TLeafElement std::vector streamers); a split branch
+    // additionally needs its struct's generated TStreamerInfo appended. ---
+    let mut streamer_info = crate::streamer_gen::tree_streamer_info();
     for b in branches {
         if let Some(spec) = &b.split {
             let info = write_class_streamer_info(&spec.class_name, &spec.members);

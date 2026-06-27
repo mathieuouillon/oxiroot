@@ -12,6 +12,7 @@
 mod basket;
 mod chain;
 mod reader;
+mod streamer_gen;
 mod value;
 mod writer;
 

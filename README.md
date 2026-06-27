@@ -213,6 +213,10 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
   `TBranchElement` by walking the member list in the file's own `TStreamerInfo`
   (`TTree::streamer_classes` exposes it), so a schema change is absorbed instead
   of misread; an unknown member type is reported, never parsed at a guessed offset.
+- The writer **generates** that `TStreamerInfo` from a declarative class table
+  (the whole `TTree`/`TBranch`/`TLeaf*`/`TBranchElement` hierarchy, with ROOT's
+  own versions and checksums) rather than shipping baked blobs — every written
+  file is self-describing and reads back in ROOT, uproot, and this crate.
 
 ### RNTuple (`oxiroot::ntuple`)
 
@@ -339,13 +343,13 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
     `TStreamerInfo` interpretation of the page bytes.
   - Write support for the fixed-size (`std::array`/`std::bitset`) and user-class
     field types (read is done).
-- **`TTree`** — the reader now parses `TTree`/`TBranch`/`TBranchElement` by
-  walking the file's `TStreamerInfo` member list (not fixed offsets), so it
-  adapts to the schema the file declares; a *write-side generator* (emit that
-  streamer info instead of the baked blobs) is the remaining streamer-info piece.
-  Plus richer object/STL branches beyond split `std::vector<MyStruct>` and
-  `std::vector<std::string>` (nested structs, `std::vector<std::vector<T>>`,
-  `TClonesArray`). A bounded-memory streaming writer (`TTreeWriter`) already ships.
+- **`TTree`** — richer object/STL branches beyond split `std::vector<MyStruct>`
+  and `std::vector<std::string>` (nested structs, `std::vector<std::vector<T>>`,
+  `TClonesArray`). The streamer-info work is done end to end: the reader parses
+  `TTree`/`TBranch`/`TBranchElement` by walking the file's `TStreamerInfo` member
+  list (not fixed offsets), and the writer generates that streamer info from a
+  declarative table (no baked blobs); a bounded-memory streaming writer
+  (`TTreeWriter`) also ships.
 - **Append mode** — `update` into files that contain subdirectories or an
   RNTuple (currently rejected).
 - **Plotting** — render histograms and graphs to static images (SVG / PNG) from
