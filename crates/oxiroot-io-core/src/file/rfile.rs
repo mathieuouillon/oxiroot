@@ -68,6 +68,9 @@ impl RFile {
     pub fn open_mmap(path: impl AsRef<Path>) -> Result<RFile> {
         let file = std::fs::File::open(path)?;
         // SAFETY: see the read-only / no-concurrent-modification contract above.
+        // This is the sole `unsafe` in the workspace (the `unsafe_code` lint is
+        // denied everywhere else); memmap2's `map` is unavoidably `unsafe`.
+        #[allow(unsafe_code)]
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
         Self::from_backing(FileData::Mapped(mmap))
     }

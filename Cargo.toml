@@ -9,6 +9,14 @@ rust-version = "1.95"
 license = "MIT"
 repository = "https://github.com/mathieuouillon/oxiroot"
 
+[workspace.lints.rust]
+# Pure-safe-Rust library: the only `unsafe` is the feature-gated mmap in
+# oxiroot-io-core (scoped `#[allow]` + SAFETY note). Deny keeps it that way.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+
 [workspace.dependencies]
 oxiroot-io-core = { path = "crates/oxiroot-io-core" }
 oxiroot-compress = { path = "crates/oxiroot-compress" }

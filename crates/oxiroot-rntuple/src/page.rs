@@ -12,6 +12,7 @@ use crate::pagelist::PageInfo;
 
 /// Decoded values of a physical column (concatenated across its pages).
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum ColumnValues {
     /// `Bit` columns.
     Bits(Vec<bool>),

@@ -16,3 +16,6 @@ xxhash-rust = { version = "0.8", features = ["xxh64"] }
 
 [dev-dependencies]
 proptest.workspace = true
+
+[lints]
+workspace = true

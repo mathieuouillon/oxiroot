@@ -111,3 +111,12 @@ impl ColumnType {
         )
     }
 }
+
+impl TryFrom<u16> for ColumnType {
+    type Error = Error;
+    /// Parse an on-disk column-type code (the std-trait counterpart to
+    /// [`from_code`](ColumnType::from_code), so callers can use `.try_into()`).
+    fn try_from(code: u16) -> Result<ColumnType> {
+        ColumnType::from_code(code)
+    }
+}

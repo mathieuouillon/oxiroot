@@ -21,3 +21,6 @@ rayon = ["dep:rayon"]
 # Opt-in histogram fitting (`TH1::fit` + `TF1`), backed by the pure-Rust Minuit2
 # port. Off by default to keep the core dependency-light.
 fit = ["dep:minuit2"]
+
+[lints]
+workspace = true

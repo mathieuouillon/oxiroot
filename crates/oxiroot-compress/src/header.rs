@@ -63,6 +63,21 @@ impl Algorithm {
     }
 }
 
+impl From<[u8; 2]> for Algorithm {
+    /// The std-trait counterpart to [`from_tag`](Algorithm::from_tag) (total: an
+    /// unrecognized tag becomes [`Algorithm::Unknown`]), so callers can `.into()`.
+    fn from(tag: [u8; 2]) -> Algorithm {
+        Algorithm::from_tag(tag)
+    }
+}
+
+impl From<Algorithm> for [u8; 2] {
+    /// The std-trait counterpart to [`tag`](Algorithm::tag).
+    fn from(algorithm: Algorithm) -> [u8; 2] {
+        algorithm.tag()
+    }
+}
+
 /// A parsed ROOT compression block header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockHeader {

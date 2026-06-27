@@ -871,14 +871,22 @@ fn push_node(
 
 /// Lower user fields into field and column plans (depth-first, parents before
 /// children), returning the top-level entry count.
-fn lower(fields: &[Field]) -> (Vec<FieldPlan>, Vec<ColumnPlan>, u32) {
-    let n_entries = fields.first().map(|f| f.data.len() as u32).unwrap_or(0);
+fn lower(fields: &[Field]) -> Result<(Vec<FieldPlan>, Vec<ColumnPlan>, u32)> {
+    // The entry count is a 32-bit field on disk; reject an over-large batch
+    // rather than silently wrapping it into a corrupt-but-accepted file.
+    let n_rows = fields.first().map_or(0, |f| f.data.len());
+    let n_entries = u32::try_from(n_rows).map_err(|_| {
+        Error::Format(format!(
+            "RNTuple batch has {n_rows} entries, over the {} limit for one write",
+            u32::MAX
+        ))
+    })?;
     let roots: Vec<Node> = fields
         .iter()
         .map(|f| lower_column(&f.name, &f.data))
         .collect();
     let (field_plans, columns) = flatten_tree(roots);
-    (field_plans, columns, n_entries)
+    Ok((field_plans, columns, n_entries))
 }
 
 // --- envelope / frame / string primitives ---------------------------------
@@ -1123,7 +1131,7 @@ fn rntuple_file_bytes_threshold(
     threshold: u64,
 ) -> Result<Vec<u8>> {
     let compression = compression.setting();
-    let (field_plans, cols, n_entries) = lower(fields);
+    let (field_plans, cols, n_entries) = lower(fields)?;
 
     let header_env = build_header(ntuple_name, &field_plans, &cols);
     let header_checksum =
@@ -1636,7 +1644,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         if fields.is_empty() {
             return Ok(());
         }
-        let (field_plans, cols, n_entries) = lower(fields);
+        let (field_plans, cols, n_entries) = lower(fields)?;
         if n_entries == 0 {
             return Ok(());
         }
