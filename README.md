@@ -56,12 +56,21 @@ oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTup
 ```rust
 use oxiroot::prelude::*;
 
-// Fill and save a histogram (weighted errors + variable bins supported).
+// Fill and save one histogram — the WriteRoot / ReadRoot traits.
 let mut h = TH1::new("pt", "p_{T}", 50, 0.0, 100.0);
 h.sumw2();
 h.fill_weight(42.0, 1.5);
-h.write_root("hist.root", Compression::Zstd(5))?;   // WriteRoot trait — any hist type
-// ...later: let h = TH1::read_root(&RFile::open("hist.root")?, "pt")?;   // ReadRoot trait
+h.write_root("hist.root", Compression::Zstd(5))?;            // any single writable object
+let same = TH1::read_root(&RFile::open("hist.root")?, "pt")?; // any readable object
+
+// Several objects, subdirectories, or appending — the RootFile builder.
+let prof = TProfile::new("prof", "<pt> per region", 5, 0.0, 5.0);
+RootFile::create("out.root")
+    .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
+    .dir("by_region", |d| d.add(&prof))   // a TDirectory
+    .write(Compression::Zstd(5))?;
+let g = RFile::open("out.root")?;
+let p = TProfile::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
 
 // Write a TTree, then read a branch back.
 let branches = vec![

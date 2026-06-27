@@ -108,6 +108,15 @@ fn main() -> Result<()> {
         pt_f32.class_name(),
     );
 
+    // --- Append one more object to that existing file (RootFile::open). --------
+    // The file keeps its existing keys; the normalized signal is added alongside.
+    let mut sig = signal.clone();
+    sig.name = "signal".to_string();
+    RootFile::open(&multi_path)?
+        .add(&sig)
+        .write(Compression::Zstd(5))?;
+    println!("appended `{}` to {}", sig.name, multi_path.display());
+
     // --- Write a columnar event dataset: build an `Ntuple`, then `write_root`. -
     // The method form of `write_rntuple_file`, mirroring `hist.write_root`.
     let ntuple_path = dir.join("analysis_events.root");
