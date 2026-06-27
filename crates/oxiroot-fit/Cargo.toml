@@ -10,6 +10,14 @@ description = "Parametric curve fitting (Minuit2) for any 1-D data — histogram
 [dependencies]
 minuit2 = { workspace = true }
 oxiroot-stat = { workspace = true }
+argmin = { workspace = true, optional = true }
+argmin-math = { workspace = true, optional = true }
+
+[features]
+# Opt-in second minimizer backend: gradient-free Nelder–Mead via the `argmin`
+# crate, selectable with `FitOptions::minimizer(Minimizer::NelderMead)`. Off by
+# default; Minuit2 (always present) is the default backend.
+argmin = ["dep:argmin", "dep:argmin-math"]
 
 [lints]
 workspace = true

@@ -16,7 +16,7 @@
 //! port). The whole `oxiroot-fit` surface is re-exported here for convenience.
 
 pub use oxiroot_fit::{
-    FitData, FitExt, FitMethod, FitOptions, FitResult, Model, Point, Points, TF1,
+    FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points, TF1,
 };
 
 use crate::graph::{GraphErrors, TGraph};

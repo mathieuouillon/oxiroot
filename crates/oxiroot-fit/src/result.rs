@@ -21,9 +21,26 @@ pub enum FitMethod {
     Likelihood,
 }
 
+/// Which optimizer minimizes the cost.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Minimizer {
+    /// The pure-Rust [Minuit2](https://crates.io/crates/minuit2) port (MIGRAD) —
+    /// ROOT's algorithm. Gives parabolic errors, the covariance matrix, and (on
+    /// request) asymmetric MINOS errors. The default, always available.
+    #[default]
+    Minuit2,
+    /// Gradient-free Nelder–Mead simplex via the
+    /// [`argmin`](https://crates.io/crates/argmin) crate (requires the `argmin`
+    /// feature). Parameter errors come from a numerical Hessian at the minimum;
+    /// MINOS is not available. A useful independent cross-check of Minuit2.
+    #[cfg(feature = "argmin")]
+    NelderMead,
+}
+
 /// Options controlling a fit ([`FitExt::fit_opts`](crate::FitExt::fit_opts)).
 /// Construct with [`new`](Self::new) and the chainable setters; the defaults are
-/// a full-range chi-square fit.
+/// a full-range chi-square fit minimized with [`Minimizer::Minuit2`].
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
 pub struct FitOptions {
@@ -34,7 +51,10 @@ pub struct FitOptions {
     /// Also compute asymmetric [MINOS](https://root.cern/doc/master/classTMinuit.html)
     /// errors for each free parameter (a likelihood scan — more accurate than the
     /// parabolic errors near a non-quadratic minimum, but extra work).
+    /// Ignored by the [`NelderMead`](Minimizer::NelderMead) backend.
     pub minos: bool,
+    /// Which optimizer backend to use.
+    pub minimizer: Minimizer,
 }
 
 impl FitOptions {
@@ -59,6 +79,12 @@ impl FitOptions {
     #[must_use]
     pub fn with_minos(mut self, on: bool) -> FitOptions {
         self.minos = on;
+        self
+    }
+    /// Choose the optimizer backend ([`Minimizer`]).
+    #[must_use]
+    pub fn minimizer(mut self, minimizer: Minimizer) -> FitOptions {
+        self.minimizer = minimizer;
         self
     }
 }

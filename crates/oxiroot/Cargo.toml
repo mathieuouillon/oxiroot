@@ -24,6 +24,8 @@ rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
 # Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxiroot-fit` engine
 # plus the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works.
 fit = ["oxiroot-hist/fit", "dep:oxiroot-fit"]
+# Also build the gradient-free Nelder–Mead (`argmin`) minimizer backend.
+argmin = ["fit", "oxiroot-hist/argmin", "oxiroot-fit/argmin"]
 
 [lints]
 workspace = true

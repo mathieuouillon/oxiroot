@@ -39,7 +39,9 @@ pub use axis::TAxis;
 pub use base::Precision;
 pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 #[cfg(feature = "fit")]
-pub use fit::{FitData, FitExt, FitMethod, FitOptions, FitResult, Model, Point, Points, TF1};
+pub use fit::{
+    FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points, TF1,
+};
 pub use graph::{GraphErrors, TGraph};
 pub use ops::Histogram;
 pub use read::ReadRoot;

@@ -188,6 +188,17 @@ matrix, and `chi2`/`ndf` (with `chi2_per_ndf()` and a goodness-of-fit
 `p_value()`). The χ² survival function it shares with the comparison tests lives
 in the dependency-free `oxiroot-stat` crate.
 
+Two minimizer backends are selectable via `FitOptions::minimizer(...)`: the
+default `Minimizer::Minuit2` (the pure-Rust Minuit2 MIGRAD — ROOT's algorithm,
+with parabolic + MINOS errors and the covariance), and, behind the **`argmin`
+feature**, `Minimizer::NelderMead` — a gradient-free simplex from the
+[`argmin`](https://crates.io/crates/argmin) crate (parameter errors from a
+numerical Hessian; no MINOS), a handy independent cross-check.
+
+```rust
+let fit = data.fit_opts(&model, &FitOptions::new().minimizer(Minimizer::NelderMead));
+```
+
 ```rust
 use oxiroot::prelude::*; // needs `--features fit`
 
@@ -354,7 +365,8 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 |---------|--------|
 | `mmap` | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
 | `rayon` | Data-parallel histogram fill (`hist::fill_par`); adds `rayon`. |
-| `fit` | Histogram fitting (`hist::TF1`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
+| `fit` | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
+| `argmin` | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 
 Both are off by default, so the default build stays pure safe Rust.
 

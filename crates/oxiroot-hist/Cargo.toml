@@ -23,6 +23,8 @@ rayon = ["dep:rayon"]
 # works) and re-exports the `oxiroot-fit` crate, which carries the Minuit2
 # minimizer. Off by default to keep the core dependency-light.
 fit = ["dep:oxiroot-fit"]
+# Add the gradient-free Nelder–Mead (`argmin`) backend to the fitter.
+argmin = ["fit", "oxiroot-fit/argmin"]
 
 [lints]
 workspace = true

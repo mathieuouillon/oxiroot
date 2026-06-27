@@ -29,7 +29,7 @@ mod result;
 
 pub use data::{FitData, FitExt, Point, Points};
 pub use model::Model;
-pub use result::{FitMethod, FitOptions, FitResult};
+pub use result::{FitMethod, FitOptions, FitResult, Minimizer};
 
 /// ROOT-compatible alias for [`Model`] — a 1-D parametric fit function (ROOT's
 /// `TF1`). Provided so existing `TF1::gaussian(...)` code keeps working.

@@ -27,6 +27,8 @@ oxiroot-tree = { path = "crates/oxiroot-tree" }
 oxiroot-stat = { path = "crates/oxiroot-stat" }
 oxiroot-fit = { path = "crates/oxiroot-fit" }
 minuit2 = "0.5"
+argmin = { version = "0.11", default-features = false }
+argmin-math = { version = "0.5", features = ["vec"] }
 proptest = "1"
 
 [profile.release]

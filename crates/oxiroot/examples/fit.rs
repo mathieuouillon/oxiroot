@@ -151,4 +151,19 @@ fn main() {
         "Custom-points Gaussian fit (truth: mean 0.3, sigma 0.6):  mean = {:.3}, sigma = {:.3}",
         g.params[1], g.params[2]
     );
+
+    // --- 5. Pick the minimizer backend (the `argmin` feature). ----------------
+    // The same fit, run with the gradient-free Nelder–Mead simplex instead of
+    // Minuit2 — a useful independent cross-check. Run with `--features argmin`.
+    #[cfg(feature = "argmin")]
+    {
+        let chi2_nm = peak.fit_opts(
+            &TF1::gaussian("z").estimate_from(&peak),
+            &FitOptions::new().minimizer(Minimizer::NelderMead),
+        );
+        println!(
+            "Nelder-Mead (argmin) backend: mean = {:.3} ± {:.3} GeV   sigma = {:.3} ± {:.3} GeV",
+            chi2_nm.params[1], chi2_nm.errors[1], chi2_nm.params[2], chi2_nm.errors[2]
+        );
+    }
 }
