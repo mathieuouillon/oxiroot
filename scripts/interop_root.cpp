@@ -51,10 +51,38 @@ static const std::vector<std::vector<float>> TREE_TH_Y = {
     {1.5}, {}, {2.5, 3.5}, {4.5}, {5.5, 6.5, 7.5}};
 static const std::vector<std::vector<int>> TREE_TH_ID = {
     {1}, {}, {2, 3}, {4}, {5, 6, 7}};
+// rust_multi.root (RootFile builder): top-level mh + subdirectory sub/sh.
+static const std::vector<double> MULTI_MH = {5, 6, 7};
+static const std::vector<double> MULTI_SH = {8, 9};
+// rust_append.root: base bh, then ah appended via RootFile::open.
+static const std::vector<double> APPEND_BH = {3, 1};
+static const std::vector<double> APPEND_AH = {4};
+// oracle_dirs.root (ROOT C++ -> Rust): top-level dh + subdirectory region/rh.
+static const std::vector<double> DIRS_DH = {2, 4};
+static const std::vector<double> DIRS_RH = {3, 6, 9};
 
 static void fail(const std::string &msg) {
     std::fprintf(stderr, "interop MISMATCH: %s\n", msg.c_str());
     std::exit(1);
+}
+
+// Assert an in-range TH1D bin-content vector. `h` may live in a subdirectory.
+static void check_hist(TH1D *h, const std::string &name,
+                       const std::vector<double> &want) {
+    if (!h)
+        fail(name + ": missing TH1D");
+    for (size_t b = 0; b < want.size(); ++b)
+        if (std::fabs(h->GetBinContent(int(b) + 1) - want[b]) > 1e-9)
+            fail(name + " bin " + std::to_string(b + 1));
+}
+
+// Build a TH1D over [0, n) unit bins with the given in-range bin contents.
+static TH1D make_hist(const char *name, const std::vector<double> &contents) {
+    TH1D h(name, "interop", int(contents.size()), 0.0, double(contents.size()));
+    for (size_t b = 0; b < contents.size(); ++b)
+        h.SetBinContent(int(b) + 1, contents[b]);
+    h.SetEntries(double(contents.size()));
+    return h;
 }
 
 static std::string join(const char *dir, const char *file) {
@@ -116,8 +144,20 @@ static void write_oracle(const char *dir) {
         t.Write();
         f.Close();
     }
+    // A directory file: top-level `dh` plus a subdirectory `region` holding `rh`,
+    // for Rust to read via read_root and read_root_in.
+    {
+        TFile f(join(dir, "oracle_dirs.root").c_str(), "RECREATE");
+        TH1D dh = make_hist("dh", DIRS_DH);
+        dh.Write();
+        TDirectory *region = f.mkdir("region");
+        region->cd();
+        TH1D rh = make_hist("rh", DIRS_RH);
+        rh.Write();
+        f.Close();
+    }
     std::printf("ROOT C++ wrote oracle_hist.root + oracle_ntuple.root + "
-                "oracle_tree.root\n");
+                "oracle_tree.root + oracle_dirs.root\n");
 }
 
 static void read_rust(const char *dir) {
@@ -237,8 +277,28 @@ static void read_rust(const char *dir) {
             fail("rust tree th entry count");
         f->Close();
     }
+    // Multi-object + subdirectory file written by the RootFile builder.
+    {
+        TFile *f = TFile::Open(join(dir, "rust_multi.root").c_str());
+        if (!f || f->IsZombie())
+            fail("cannot open rust_multi.root");
+        check_hist(dynamic_cast<TH1D *>(f->Get("mh")), "rust multi mh", MULTI_MH);
+        // ROOT resolves "sub/sh" through the TDirectory the builder wrote.
+        check_hist(dynamic_cast<TH1D *>(f->Get("sub/sh")), "rust multi sub/sh",
+                   MULTI_SH);
+        f->Close();
+    }
+    // Append file: the base key plus the one appended via RootFile::open.
+    {
+        TFile *f = TFile::Open(join(dir, "rust_append.root").c_str());
+        if (!f || f->IsZombie())
+            fail("cannot open rust_append.root");
+        check_hist(dynamic_cast<TH1D *>(f->Get("bh")), "rust append bh", APPEND_BH);
+        check_hist(dynamic_cast<TH1D *>(f->Get("ah")), "rust append ah", APPEND_AH);
+        f->Close();
+    }
     std::printf("ROOT C++ read Rust hist + RNTuple + TTree (incl. split "
-                "std::vector<Hit>) — values match\n");
+                "std::vector<Hit>) + multi/subdir + append — values match\n");
 }
 
 int main(int argc, char **argv) {

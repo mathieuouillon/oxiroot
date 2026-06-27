@@ -39,6 +39,20 @@ TREE_TH_ID = [[1], [], [2, 3], [4], [5, 6, 7]]
 OTREE_OI = [10, 11, 12]
 OTREE_OJ = [[1.0, 2.0], [], [3.0]]
 OTREE_OS = ["x", "yy", "zzz"]
+# rust_multi.root (RootFile builder): top-level mh + subdirectory sub/sh.
+MULTI_MH = [5.0, 6.0, 7.0]
+MULTI_SH = [8.0, 9.0]
+# rust_append.root: base bh, then ah appended via RootFile::open.
+APPEND_BH = [3.0, 1.0]
+APPEND_AH = [4.0]
+# oracle_dirs.root (uproot -> Rust): top-level dh + subdirectory region/rh.
+DIRS_DH = [2.0, 4.0]
+DIRS_RH = [3.0, 6.0, 9.0]
+
+
+def _th1(values: list[float]):
+    """A (contents, edges) pair uproot writes as a TH1D over [0, n) unit bins."""
+    return (np.array(values, dtype=np.float64), np.arange(len(values) + 1, dtype=np.float64))
 
 
 def _fail(msg: str) -> None:
@@ -95,7 +109,28 @@ def read(d: str) -> None:
     if thid != TREE_TH_ID:
         _fail(f"rust tree th.id: got {thid}, want {TREE_TH_ID}")
 
-    print("uproot read Rust hist + RNTuple + TTree (incl. split vector<Hit>) — values match")
+    # rust_multi.root — RootFile builder: top-level `mh` + subdirectory `sub/sh`.
+    mf = uproot.open(os.path.join(d, "rust_multi.root"))
+    mh = list(mf["mh"].values())
+    if mh != MULTI_MH:
+        _fail(f"rust multi mh: got {mh}, want {MULTI_MH}")
+    sh = list(mf["sub/sh"].values())
+    if sh != MULTI_SH:
+        _fail(f"rust multi sub/sh: got {sh}, want {MULTI_SH}")
+
+    # rust_append.root — base `bh` plus the appended `ah` (RootFile::open).
+    af = uproot.open(os.path.join(d, "rust_append.root"))
+    bh = list(af["bh"].values())
+    if bh != APPEND_BH:
+        _fail(f"rust append bh: got {bh}, want {APPEND_BH}")
+    ah = list(af["ah"].values())
+    if ah != APPEND_AH:
+        _fail(f"rust append ah: got {ah}, want {APPEND_AH}")
+
+    print(
+        "uproot read Rust hist + RNTuple + TTree (incl. split vector<Hit>) "
+        "+ multi/subdir + append — values match"
+    )
 
 
 def write(d: str) -> None:
@@ -116,7 +151,14 @@ def write(d: str) -> None:
                 "os": OTREE_OS,
             }
         )
-    print("uproot wrote oracle_hist.root + oracle_tree.root")
+
+    # A directory file: top-level `dh` plus a subdirectory `region` holding `rh`,
+    # for Rust to read via read_root and read_root_in.
+    with uproot.recreate(os.path.join(d, "oracle_dirs.root")) as f:
+        f["dh"] = _th1(DIRS_DH)
+        region = f.mkdir("region")
+        region["rh"] = _th1(DIRS_RH)
+    print("uproot wrote oracle_hist.root + oracle_tree.root + oracle_dirs.root")
 
 
 def main() -> None:

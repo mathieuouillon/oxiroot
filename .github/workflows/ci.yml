@@ -33,6 +33,16 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      - name: Run examples (smoke)
+        # The showcase examples drive the method-based read/write API end to end —
+        # the RootFile builder (multi-object, subdirectory, append), read_root_in,
+        # Tree/Ntuple::write_root, and nested RNTuple round-trips — so a regression
+        # in any of them fails CI (each asserts against its own written output).
+        run: |
+          cargo run -q -p oxiroot --example analysis
+          cargo run -q -p oxiroot --example tree
+          cargo run -q -p oxiroot --example rntuple_nested
+
   fuzz-build:
     name: fuzz targets build
     runs-on: ubuntu-latest
@@ -54,9 +64,11 @@ jobs:
   interop-uproot:
     name: interop (uproot)
     # Round-trip against uproot (the Python ROOT-IO library): Rust writes a
-    # histogram + RNTuple + TTree that uproot reads, and uproot writes a
-    # histogram + TTree that Rust reads. (uproot's TTree writer can't emit
-    # std::vector, so that branch is exercised only in the ROOT C++ job.)
+    # histogram + RNTuple + TTree + a RootFile-built multi-object/subdirectory
+    # file + an appended file, all of which uproot reads; uproot writes a
+    # histogram + TTree + a subdirectory file that Rust reads (the subdirectory
+    # via read_root_in). (uproot's TTree writer can't emit std::vector, so that
+    # branch is exercised only in the ROOT C++ job.)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -91,10 +103,12 @@ jobs:
   interop-root:
     name: interop (ROOT C++)
     # Round-trip against an official ROOT build: ROOT C++ writes a histogram +
-    # RNTuple + TTree (incl. a std::vector branch) that Rust reads, and Rust
-    # writes a histogram + RNTuple + TTree that ROOT C++ reads. The TTree covers
-    # scalar, fixed array, string, jagged, and std::vector branches both ways.
-    # Pin the image tag if upstream RNTuple format drift is a concern.
+    # RNTuple + TTree (incl. a std::vector branch) + a subdirectory file that
+    # Rust reads (the subdirectory via read_root_in), and Rust writes a histogram
+    # + RNTuple + TTree + a RootFile-built multi-object/subdirectory file + an
+    # appended file that ROOT C++ reads. The TTree covers scalar, fixed array,
+    # string, jagged, and std::vector branches both ways. Pin the image tag if
+    # upstream RNTuple format drift is a concern.
     runs-on: ubuntu-latest
     container: rootproject/root:latest
     # The container runs as root; align HOME with root's actual home so rustup

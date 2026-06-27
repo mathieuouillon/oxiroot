@@ -12,6 +12,13 @@
 //!     fixed array, ts = string, tj = jagged double (auto count ntj),
 //!     tw = std::vector<double> (TBranchElement), th = split std::vector<Hit>
 //!     (Hit = {float x; float y; int id;}) read back as th.x/th.y/th.id.
+//!   - rust_multi.root (RootFile builder, Rust → oracle): top-level TH1D "mh"
+//!     = [5,6,7] plus a subdirectory "sub" holding TH1D "sh" = [8,9].
+//!   - rust_append.root (RootFile create then open/append, Rust → oracle):
+//!     TH1D "bh" = [3,1] written first, TH1D "ah" = [4] appended afterwards.
+//!   - oracle_dirs.root (oracle → Rust, read via read_root + read_root_in):
+//!     top-level TH1D "dh" = [2,4] plus a subdirectory "region" holding "rh"
+//!     = [3,6,9].
 
 use std::path::Path;
 use std::process::exit;
@@ -56,6 +63,15 @@ const OTREE_OI: [i32; 3] = [10, 11, 12];
 const OTREE_OJ: [&[f64]; 3] = [&[1.0, 2.0], &[], &[3.0]];
 const OTREE_OS: [&str; 3] = ["x", "yy", "zzz"];
 const OTREE_OV: [&[f64]; 3] = [&[1.0], &[2.0, 3.0], &[]];
+/// `rust_multi.root` (RootFile builder): top-level `mh` + subdirectory `sub/sh`.
+const MULTI_MH: [f64; 3] = [5.0, 6.0, 7.0];
+const MULTI_SH: [f64; 2] = [8.0, 9.0];
+/// `rust_append.root`: base `bh`, then `ah` appended via `RootFile::open`.
+const APPEND_BH: [f64; 2] = [3.0, 1.0];
+const APPEND_AH: [f64; 1] = [4.0];
+/// Oracle-written `oracle_dirs.root`: top-level `dh` + subdirectory `region/rh`.
+const DIRS_DH: [f64; 2] = [2.0, 4.0];
+const DIRS_RH: [f64; 3] = [3.0, 6.0, 9.0];
 
 fn canonical_hist() -> TH1 {
     let mut h = TH1::new("h", "interop", 4, 0.0, 4.0);
@@ -66,6 +82,18 @@ fn canonical_hist() -> TH1 {
         for _ in 0..(count as usize) {
             h.fill(center);
         }
+    }
+    h
+}
+
+/// A `TH1D` with `contents.len()` unit bins over `[0, n)` whose in-range bin `i`
+/// holds `contents[i]` (one weighted fill per bin). Used for the directory /
+/// multi-object / append fixtures.
+fn hist(name: &str, contents: &[f64]) -> TH1 {
+    let n = contents.len() as i32;
+    let mut h = TH1::new(name, "interop", n, 0.0, n as f64);
+    for (i, &c) in contents.iter().enumerate() {
+        h.fill_weight(i as f64 + 0.5, c);
     }
     h
 }
@@ -107,8 +135,29 @@ fn write(dir: &Path) -> Result<()> {
         ],
         Compression::None,
     )?;
+
+    // rust_multi.root — the RootFile builder: a top-level hist plus a
+    // subdirectory (`sub`) holding its own hist.
+    let mh = hist("mh", &MULTI_MH);
+    let sh = hist("sh", &MULTI_SH);
+    RootFile::create(dir.join("rust_multi.root"))
+        .add(&mh)
+        .dir("sub", |d| d.add(&sh))
+        .write(Compression::None)?;
+
+    // rust_append.root — write one hist, then append a second via RootFile::open
+    // (the existing key is preserved and the new one added).
+    let append_path = dir.join("rust_append.root");
+    RootFile::create(&append_path)
+        .add(&hist("bh", &APPEND_BH))
+        .write(Compression::None)?;
+    RootFile::open(&append_path)?
+        .add(&hist("ah", &APPEND_AH))
+        .write(Compression::None)?;
+
     println!(
-        "wrote rust_hist.root + rust_ntuple.root + rust_tree.root to {}",
+        "wrote rust_hist.root + rust_ntuple.root + rust_tree.root + rust_multi.root \
+         + rust_append.root to {}",
         dir.display()
     );
     Ok(())
@@ -123,6 +172,18 @@ fn read(dir: &Path) -> Result<()> {
 
     // TTree written by the oracle (both ROOT C++ and uproot produce it).
     read_oracle_tree(dir)?;
+
+    // Directory file written by the oracle: a top-level hist (`dh`, via
+    // read_root) and a hist inside subdirectory `region` (`rh`, via
+    // read_root_in). Both ROOT C++ and uproot produce it.
+    let f = RFile::open(dir.join("oracle_dirs.root"))?;
+    assert_close("dirs dh", TH1::read_root(&f, "dh")?.values(), &DIRS_DH);
+    assert_close(
+        "dirs region/rh",
+        TH1::read_root_in(&f, "region", "rh")?.values(),
+        &DIRS_RH,
+    );
+    println!("read oracle_dirs.root — top-level + subdirectory (read_root_in) match");
 
     // RNTuple written by the ROOT oracle. uproot's RNTuple writer is
     // experimental, so the uproot job omits this file; only the ROOT C++ job
