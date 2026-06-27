@@ -24,6 +24,9 @@ oxiroot-compress = { path = "crates/oxiroot-compress" }
 oxiroot-rntuple = { path = "crates/oxiroot-rntuple" }
 oxiroot-hist = { path = "crates/oxiroot-hist" }
 oxiroot-tree = { path = "crates/oxiroot-tree" }
+oxiroot-stat = { path = "crates/oxiroot-stat" }
+oxiroot-fit = { path = "crates/oxiroot-fit" }
+minuit2 = "0.5"
 proptest = "1"
 
 [profile.release]

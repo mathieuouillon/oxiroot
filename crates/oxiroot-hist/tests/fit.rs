@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, TF1, TH1};
+use oxiroot_hist::{FitExt, ReadRoot, TF1, TH1};
 use oxiroot_io_core::RFile;
 
 fn read(name: &str) -> TH1 {
@@ -313,7 +313,7 @@ fn ergonomics_estimate_seed_and_fit_into() {
     // A clone shares the closure and fits identically.
     assert_eq!(model.clone().eval(0.5), model.eval(0.5));
     assert!(model.params[2] > 0.0, "sigma seed must be positive");
-    assert!(format!("{model:?}").contains("TF1")); // Debug prints (closure hidden)
+    assert!(format!("{model:?}").contains("Model")); // Debug prints (closure hidden)
 
     // fit_into writes the best-fit parameters back into the model.
     let r = hg.fit_into(&mut model, &FitOptions::new());
@@ -326,4 +326,33 @@ fn ergonomics_estimate_seed_and_fit_into() {
     assert_eq!(model.params, r.params, "model holds the fitted parameters");
     // The model now evaluates the fitted curve: its peak == the fitted constant.
     assert!(rel_close(model.eval(model.params[1]), r.params[0], 1e-9));
+}
+
+#[test]
+fn fit_a_tgraph_with_errors() {
+    use oxiroot_hist::TGraph;
+
+    // Points exactly on y = 2x + 3 with small symmetric y-errors. The same
+    // `.fit(...)` API as a histogram works because `TGraph` is `FitData` too.
+    let x = vec![0.0, 1.0, 2.0, 3.0, 4.0];
+    let y: Vec<f64> = x.iter().map(|&x| 2.0 * x + 3.0).collect();
+    let ex = vec![0.0; x.len()];
+    let ey = vec![0.1; x.len()];
+    let g = TGraph::with_errors("g", "line", x, y, ex, ey);
+
+    let fit = g.fit(&TF1::polynomial("line", 1).with_params(vec![0.0, 0.0]));
+    assert!(fit.valid);
+    assert!(
+        rel_close(fit.params[0], 3.0, 1e-6),
+        "intercept = {}",
+        fit.params[0]
+    );
+    assert!(
+        rel_close(fit.params[1], 2.0, 1e-6),
+        "slope = {}",
+        fit.params[1]
+    );
+    assert!(fit.chi2 < 1e-6, "perfect line → chi2 ≈ 0, got {}", fit.chi2);
+    // 5 points − 2 free params = 3 d.o.f.
+    assert_eq!(fit.ndf, 3);
 }

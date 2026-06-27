@@ -13,6 +13,7 @@ oxiroot-compress = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }
 oxiroot-tree = { workspace = true }
+oxiroot-fit = { workspace = true, optional = true }
 
 [features]
 # Enable the memory-mapped read path (`RFile::open_mmap`).
@@ -20,8 +21,9 @@ mmap = ["oxiroot-io-core/mmap"]
 # Enable data-parallel helpers: the histogram fill (`hist::fill_par`) and
 # parallel TTree basket decode.
 rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
-# Enable histogram fitting (`hist::TF1`, `TH1::fit`) via Minuit2.
-fit = ["oxiroot-hist/fit"]
+# Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxiroot-fit` engine
+# plus the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works.
+fit = ["oxiroot-hist/fit", "dep:oxiroot-fit"]
 
 [lints]
 workspace = true

@@ -129,10 +129,13 @@ cargo run -p oxiroot --example analysis
   `UU`/`UW`/`WW` weighting schemes) and `kolmogorov_test`, returning ROOT-matched
   p-values. Alphanumeric (labelled) axes round-trip through `TAxis::labels`
   (read **and** write, with `set_label`).
-- **Fitting** (optional `fit` feature) — `TH1::fit`/`fit_with` minimizes a
-  chi-square or a binned Poisson likelihood against a `TF1` parametric model
-  (built-in `gaussian`/`exponential`/`polynomial`, or a custom closure) via the
-  pure-Rust Minuit2 port, returning parameters, errors, and `chi2`/`ndf`.
+- **Fitting** (optional `fit` feature) — fit a parametric model to **any 1-D
+  data**: a histogram, a `TGraph`, or your own `(x, y, σ)` points. The standalone
+  [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) crate provides the `Model`
+  (built-in `gaussian`/`exponential`/`polynomial`, or a custom closure) and a
+  pure-Rust Minuit2 minimizer; anything implementing the `FitData` trait gets
+  `.fit(&model)` (Neyman/Pearson χ² or binned Poisson likelihood), returning
+  parameters, parabolic + MINOS errors, covariance, and `chi2`/`ndf`.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
   `TThreadedObject<TH1>`: each worker fills a private clone (lock-free), then
   `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
@@ -152,16 +155,21 @@ cargo run -p oxiroot --example analysis
   Written files embed a `TStreamerInfo` list, so they are self-describing for any
   ROOT reader.
 
-### Fitting (`oxiroot::hist`, `fit` feature)
+### Fitting (`oxiroot::fit`, `fit` feature)
 
-`TH1::fit` minimizes a chi-square against a `TF1` model; `fit_with` picks the
-cost (Neyman or Pearson chi-square, or a binned Poisson likelihood) and
-`fit_opts` adds a fit range and opt-in MINOS errors. Models are built-in
+Fitting lives in its **own crate** (`oxiroot-fit`), so it works on **any 1-D
+data**, not just histograms. A dataset implements the `FitData` trait (yielding
+`(x, y, σ)` points) and the blanket `FitExt` gives it `.fit(&model)`. `TH1` and
+`TGraph` implement `FitData` out of the box, and `Points` (or your own `FitData`
+impl) covers everything else. `fit` is χ² by default; `fit_with` picks the cost
+(Neyman or Pearson chi-square, or a binned Poisson likelihood) and `fit_opts`
+adds a fit range and opt-in MINOS errors. `Model` (alias `TF1`) is built-in
 (`gaussian`, `exponential`, `polynomial`) or a closure `f(x, params)`, with
 per-parameter limits, fixing, and a data-driven seed. The fit returns the
 parameters, parabolic errors, optional asymmetric MINOS errors and covariance
 matrix, and `chi2`/`ndf` (with `chi2_per_ndf()` and a goodness-of-fit
-`p_value()`).
+`p_value()`). The χ² survival function it shares with the comparison tests lives
+in the dependency-free `oxiroot-stat` crate.
 
 ```rust
 use oxiroot::prelude::*; // needs `--features fit`
@@ -193,9 +201,18 @@ let sig_bkg = TF1::new(
     |x, q| q[0] * (-0.5 * ((x - q[1]) / q[2]).powi(2)).exp() + q[3],
 );
 let r = h.fit(&sig_bkg);
+
+// The SAME `Model` + `.fit()` works on a TGraph …
+let graph = TGraph::with_errors("g", "", x.clone(), y.clone(), ex, ey);
+let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
+
+// … and on raw points (a `Vec`/slice of `Point`, or your own `FitData` impl).
+let data = Points::new(&x, &y, &sigma);
+let peak = data.fit(&Model::gaussian("g").estimate_from(&data));
 ```
 
-A runnable worked example (fills a Z → μμ peak and fits it three ways):
+A runnable worked example (fits a Z → μμ peak, then the same models to a
+`TGraph` and to raw points):
 
 ```sh
 cargo run -p oxiroot --example fit --features fit
@@ -308,6 +325,8 @@ verified on read.
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
 | `oxiroot-hist` | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
 | `oxiroot-tree` | Classic `TTree` read/write |
+| `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
+| `oxiroot-stat` | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
 
 Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib),

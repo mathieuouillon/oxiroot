@@ -7,7 +7,9 @@
 //!
 //! It fills a histogram with simulated Z → μμ events and fits the mass peak with
 //! a Gaussian (both chi-square and binned maximum likelihood), then fits a peak
-//! sitting on a flat background with a custom model defined as a closure.
+//! sitting on a flat background with a custom closure model — and finally fits
+//! the *same* models to a `TGraph` and to raw `(x, y, σ)` points, showing the
+//! one fitting API (`oxiroot::fit`) works on any 1-D data, not just histograms.
 
 #[cfg(not(feature = "fit"))]
 fn main() {
@@ -105,5 +107,44 @@ fn main() {
     println!(
         "  fitted curve height at the peak: {:.1} counts/bin",
         sig_bkg.eval(r.params[1])
+    );
+
+    // --- 3. The SAME fitting API on a TGraph (an (x, y) scatter with errors). ---
+    // e.g. a measured response vs threshold; fit a straight line `y = a + b·x`.
+    let thr = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let resp: Vec<f64> = thr
+        .iter()
+        .map(|&x| 0.5 * x + 1.0 + rng.gauss(0.0, 0.03))
+        .collect();
+    let graph = TGraph::with_errors(
+        "resp",
+        "response vs threshold",
+        thr.to_vec(),
+        resp,
+        vec![0.0; thr.len()],
+        vec![0.03; thr.len()],
+    );
+    let line = graph.fit(&TF1::polynomial("line", 1).with_params(vec![0.0, 0.0]));
+    println!(
+        "TGraph line fit (truth: slope 0.5, intercept 1.0):  slope = {:.3} ± {:.3}, intercept = {:.3}",
+        line.params[1], line.errors[1], line.params[0]
+    );
+
+    // --- 4. The SAME fitting API on raw points — no ROOT object at all. ---
+    // Anything that is `(x, y, σ)`: a `Points` set, or your own `FitData` impl.
+    let xs: Vec<f64> = (0..40).map(|i| -2.0 + i as f64 * 0.1).collect();
+    let ys: Vec<f64> = xs
+        .iter()
+        .map(|&x| 8.0 * (-0.5 * ((x - 0.3) / 0.6).powi(2)).exp() + rng.gauss(0.0, 0.05))
+        .collect();
+    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()]);
+    let g = data.fit(
+        &Model::gaussian("g")
+            .estimate_from(&data)
+            .lower_limit("sigma", 0.0),
+    );
+    println!(
+        "Custom-points Gaussian fit (truth: mean 0.3, sigma 0.6):  mean = {:.3}, sigma = {:.3}",
+        g.params[1], g.params[2]
     );
 }

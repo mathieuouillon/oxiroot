@@ -55,6 +55,15 @@ pub mod tree {
     pub use oxiroot_tree::*;
 }
 
+/// Curve fitting for any 1-D data — histograms, graphs, or custom points (from
+/// `oxiroot-fit`). The [`FitData`](oxiroot_fit::FitData) trait + the blanket
+/// [`FitExt`](oxiroot_fit::FitExt) give `data.fit(&model)` to every dataset;
+/// `hist`'s `TH1`/`TGraph` implement `FitData` (under the `fit` feature).
+#[cfg(feature = "fit")]
+pub mod fit {
+    pub use oxiroot_fit::*;
+}
+
 /// The common types and functions for reading and writing ROOT files.
 ///
 /// `use oxiroot::prelude::*;` brings in the container ([`RFile`],
@@ -63,6 +72,10 @@ pub mod tree {
 pub mod prelude {
     pub use oxiroot_io_core::{Compression, Error, RFile, Result};
 
+    #[cfg(feature = "fit")]
+    pub use oxiroot_fit::{
+        FitData, FitExt, FitMethod, FitOptions, FitResult, Model, Point, Points, TF1,
+    };
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     pub use oxiroot_hist::{
@@ -71,8 +84,6 @@ pub mod prelude {
         TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TH1,
         TH2, TH3,
     };
-    #[cfg(feature = "fit")]
-    pub use oxiroot_hist::{FitMethod, FitOptions, FitResult, TF1};
 
     pub use oxiroot_rntuple::{
         write_rntuple_file, Column, Field, FieldValues, Ntuple, RNTuple, RNTupleWriter,

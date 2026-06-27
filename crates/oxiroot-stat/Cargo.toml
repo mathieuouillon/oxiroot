@@ -1,0 +1,13 @@
+[package]
+name = "oxiroot-stat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Special functions (incomplete gamma, Kolmogorov distribution) shared by oxiroot's statistics and fitting"
+
+[dependencies]
+
+[lints]
+workspace = true
