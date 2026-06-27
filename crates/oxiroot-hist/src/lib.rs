@@ -12,6 +12,7 @@
 mod base;
 mod compare;
 mod ops;
+mod read;
 
 pub mod axis;
 mod derive;
@@ -34,10 +35,12 @@ pub mod write;
 pub use oxiroot_io_core::Compression;
 
 pub use axis::TAxis;
+pub use base::Precision;
 pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 #[cfg(feature = "fit")]
 pub use fit::{FitMethod, FitOptions, FitResult, TF1};
 pub use graph::{read_tgraph, GraphErrors, TGraph};
+pub use read::ReadRoot;
 pub use tefficiency::{read_tefficiency, TEfficiency};
 pub use th1::{read_th1, read_th1d, read_th1d_in, read_th1f, TH1};
 pub use th2::{read_th2, read_th2d, read_th2f, TH2};
@@ -56,10 +59,10 @@ pub use write::{
     th2f_to_bytes, th2i_to_bytes, th2l_to_bytes, th2poly_to_bytes, th2s_to_bytes, th3c_to_bytes,
     th3d_to_bytes, th3f_to_bytes, th3i_to_bytes, th3l_to_bytes, th3s_to_bytes, thnsparse_to_bytes,
     tprofile2d_to_bytes, tprofile3d_to_bytes, tprofile_to_bytes, write_histograms_dirs,
-    write_histograms_file, write_tefficiency_file, write_tgraph_file, write_th1c_file,
-    write_th1d_file, write_th1f_file, write_th1i_file, write_th1l_file, write_th1s_file,
-    write_th2c_file, write_th2d_file, write_th2f_file, write_th2i_file, write_th2l_file,
-    write_th2poly_file, write_th2s_file, write_th3c_file, write_th3d_file, write_th3f_file,
-    write_th3i_file, write_th3l_file, write_th3s_file, write_thnsparse_file, write_tprofile2d_file,
-    write_tprofile3d_file, write_tprofile_file, Hist,
+    write_histograms_file, write_root_file, write_tefficiency_file, write_tgraph_file,
+    write_th1c_file, write_th1d_file, write_th1f_file, write_th1i_file, write_th1l_file,
+    write_th1s_file, write_th2c_file, write_th2d_file, write_th2f_file, write_th2i_file,
+    write_th2l_file, write_th2poly_file, write_th2s_file, write_th3c_file, write_th3d_file,
+    write_th3f_file, write_th3i_file, write_th3l_file, write_th3s_file, write_thnsparse_file,
+    write_tprofile2d_file, write_tprofile3d_file, write_tprofile_file, Hist, WriteRoot,
 };

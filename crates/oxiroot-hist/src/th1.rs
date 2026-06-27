@@ -95,10 +95,28 @@ impl TH1 {
     /// Enable per-bin error tracking (ROOT's `Sumw2`): allocate the `fSumw2`
     /// array and seed it from the current contents, after which every fill also
     /// accumulates `weight^2`. Call before filling for correct weighted errors.
-    pub fn sumw2(&mut self) {
+    /// Returns `&mut self` so it can chain (`h.sumw2().fill(x)`).
+    pub fn sumw2(&mut self) -> &mut Self {
         if self.sumw2.len() != self.contents.len() {
             self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
         }
+        self
+    }
+
+    /// This histogram's on-disk [`Precision`] — the `class_name` suffix
+    /// (`TH1`**`D`**/`F`/`I`/`S`/`C`/`L`). [`Precision::Double`] by default.
+    #[must_use]
+    pub fn precision(&self) -> Precision {
+        precision_of(&self.class_name).unwrap_or(Precision::Double)
+    }
+
+    /// Set the on-disk precision (the `TArray*` element type the writer emits):
+    /// `TH1::new(...).with_precision(Precision::Float)` writes a `TH1F`. Bin
+    /// contents stay `f64` in memory and are narrowed only at write time.
+    #[must_use]
+    pub fn with_precision(mut self, precision: Precision) -> Self {
+        self.class_name = precision.class_name("TH1");
+        self
     }
 
     /// Fill the histogram with `x` (weight 1).

@@ -60,7 +60,8 @@ use oxiroot::prelude::*;
 let mut h = TH1::new("pt", "p_{T}", 50, 0.0, 100.0);
 h.sumw2();
 h.fill_weight(42.0, 1.5);
-write_th1d_file("hist.root", &h, Compression::Zstd(5))?;
+h.write_root("hist.root", Compression::Zstd(5))?;   // WriteRoot trait — any hist type
+// ...later: let h = TH1::read_root(&RFile::open("hist.root")?, "pt")?;   // ReadRoot trait
 
 // Write a TTree, then read a branch back.
 let branches = vec![

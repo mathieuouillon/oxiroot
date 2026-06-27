@@ -28,6 +28,7 @@ fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Result<Vec<u8
 }
 
 use crate::axis::TAxis;
+use crate::base::{precision_of, Precision};
 use crate::graph::{GraphErrors, TGraph};
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
@@ -38,6 +39,170 @@ use crate::thnsparse::THnSparse;
 use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
+
+/// A ROOT object this crate can serialize — a histogram (`TH1`/`TH2`/`TH3`), a
+/// profile ([`TProfile`]/[`TProfile2D`]/[`TProfile3D`]), a [`TEfficiency`], a
+/// [`THnSparse`], a [`TH2Poly`], or a [`TGraph`].
+///
+/// One trait replaces the per-type, per-precision `write_*_file` / `*_to_bytes`
+/// free functions:
+///
+/// ```no_run
+/// use oxiroot_hist::{Compression, TH1, WriteRoot};
+/// let h = TH1::new("h", "", 100, 0.0, 1.0);
+/// h.write_root("out.root", Compression::None)?; // works for any writable type
+/// let bytes = h.to_root_bytes();                // just the streamed object payload
+/// # Ok::<(), oxiroot_io_core::Error>(())
+/// ```
+///
+/// The bytes are identical to those the free functions produced, so the result
+/// still reads in ROOT, uproot, and this crate. Use [`write_root_file`] to put
+/// several heterogeneous objects in one file. A `TH1`/`TH2`/`TH3`'s on-disk
+/// precision follows its [`precision`](TH1::precision) (set via
+/// [`with_precision`](TH1::with_precision)); the other types have a fixed class.
+pub trait WriteRoot {
+    /// The ROOT class name written for this object (e.g. `"TH1D"`, `"TProfile"`).
+    fn root_class(&self) -> String;
+    /// The object's key name (`fName`).
+    fn root_name(&self) -> &str;
+    /// The object's title (`fTitle`).
+    fn root_title(&self) -> &str;
+    /// Serialize the streamed object payload (no file/key framing) — the bytes
+    /// stored under the object's key.
+    #[must_use]
+    fn to_root_bytes(&self) -> Vec<u8>;
+
+    /// Write this object as the sole content of a new ROOT file at `path`.
+    fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()>
+    where
+        Self: Sized,
+    {
+        write_named(path, |file_name| {
+            let record = ObjectRecord {
+                class_name: self.root_class(),
+                name: self.root_name().to_string(),
+                title: self.root_title().to_string(),
+                object: self.to_root_bytes(),
+            };
+            write_root_file_with_streamers(
+                file_name,
+                &[record],
+                compression.setting(),
+                Some(HIST_STREAMER_INFO),
+            )
+        })
+    }
+}
+
+/// Write several heterogeneous objects (histograms, profiles, graphs, …) into
+/// one new ROOT file, each stored under its own name. The idiomatic replacement
+/// for [`write_histograms_file`], which only accepted `TH1`/`TH2`/`TH3`.
+///
+/// ```no_run
+/// use oxiroot_hist::{write_root_file, Compression, TH1, TProfile};
+/// let h = TH1::new("h", "", 10, 0.0, 1.0);
+/// let p = TProfile::new("p", "", 10, 0.0, 1.0);
+/// write_root_file("out.root", &[&h, &p], Compression::None)?;
+/// # Ok::<(), oxiroot_io_core::Error>(())
+/// ```
+pub fn write_root_file(
+    path: impl AsRef<Path>,
+    objects: &[&dyn WriteRoot],
+    compression: Compression,
+) -> Result<()> {
+    write_named(path, |file_name| {
+        let records: Vec<ObjectRecord> = objects
+            .iter()
+            .map(|o| ObjectRecord {
+                class_name: o.root_class(),
+                name: o.root_name().to_string(),
+                title: o.root_title().to_string(),
+                object: o.to_root_bytes(),
+            })
+            .collect();
+        write_root_file_with_streamers(
+            file_name,
+            &records,
+            compression.setting(),
+            Some(HIST_STREAMER_INFO),
+        )
+    })
+}
+
+/// `TH1`/`TH2`/`TH3` serialize at the precision carried by their `class_name`;
+/// the macro picks the right `write_th{1,2,3}{d,f,i,s,c,l}` for the suffix.
+macro_rules! impl_write_root_hist {
+    ($ty:ty, $d:ident, $f:ident, $i:ident, $s:ident, $c:ident, $l:ident) => {
+        impl WriteRoot for $ty {
+            fn root_class(&self) -> String {
+                self.class_name.clone()
+            }
+            fn root_name(&self) -> &str {
+                &self.name
+            }
+            fn root_title(&self) -> &str {
+                &self.title
+            }
+            fn to_root_bytes(&self) -> Vec<u8> {
+                let mut w = WBuffer::new();
+                match precision_of(&self.class_name).unwrap_or(Precision::Double) {
+                    Precision::Double => $d(&mut w, self),
+                    Precision::Float => $f(&mut w, self),
+                    Precision::Int => $i(&mut w, self),
+                    Precision::Short => $s(&mut w, self),
+                    Precision::Char => $c(&mut w, self),
+                    Precision::Long => $l(&mut w, self),
+                }
+                w.into_vec()
+            }
+        }
+    };
+}
+impl_write_root_hist!(TH1, write_th1d, write_th1f, write_th1i, write_th1s, write_th1c, write_th1l);
+impl_write_root_hist!(TH2, write_th2d, write_th2f, write_th2i, write_th2s, write_th2c, write_th2l);
+impl_write_root_hist!(TH3, write_th3d, write_th3f, write_th3i, write_th3s, write_th3c, write_th3l);
+
+/// A fixed-class writable type (profiles, efficiency, sparse, poly, graph):
+/// `root_class` is a constant and `to_root_bytes` delegates to its serializer.
+macro_rules! impl_write_root_fixed {
+    ($ty:ty, $class:expr, $bytes:ident) => {
+        impl WriteRoot for $ty {
+            fn root_class(&self) -> String {
+                $class.to_string()
+            }
+            fn root_name(&self) -> &str {
+                &self.name
+            }
+            fn root_title(&self) -> &str {
+                &self.title
+            }
+            fn to_root_bytes(&self) -> Vec<u8> {
+                $bytes(self)
+            }
+        }
+    };
+}
+impl_write_root_fixed!(TProfile, "TProfile", tprofile_to_bytes);
+impl_write_root_fixed!(TProfile2D, "TProfile2D", tprofile2d_to_bytes);
+impl_write_root_fixed!(TProfile3D, "TProfile3D", tprofile3d_to_bytes);
+impl_write_root_fixed!(TEfficiency, "TEfficiency", tefficiency_to_bytes);
+impl_write_root_fixed!(THnSparse, "THnSparseT<TArrayD>", thnsparse_to_bytes);
+impl_write_root_fixed!(TH2Poly, "TH2Poly", th2poly_to_bytes);
+
+impl WriteRoot for TGraph {
+    fn root_class(&self) -> String {
+        self.class_name().to_string()
+    }
+    fn root_name(&self) -> &str {
+        &self.name
+    }
+    fn root_title(&self) -> &str {
+        &self.title
+    }
+    fn to_root_bytes(&self) -> Vec<u8> {
+        tgraph_to_bytes(self)
+    }
+}
 
 /// Write a single `TH1D` into a new ROOT file at `path`. `compression`
 /// is e.g. `Compression::None` or `Compression::Zstd(5)`.
@@ -1078,6 +1243,9 @@ pub fn write_tgraph_file(
 }
 
 /// A histogram to store in a multi-object file via [`write_histograms_file`].
+/// For new code prefer [`write_root_file`], which takes any `&dyn `[`WriteRoot`]
+/// (profiles, graphs, …), not just `TH1`/`TH2`/`TH3`.
+#[non_exhaustive]
 pub enum Hist<'a> {
     /// A 1-D histogram (written as `TH1D`).
     Th1(&'a TH1),

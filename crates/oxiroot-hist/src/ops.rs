@@ -290,3 +290,53 @@ impl TProfile {
         Ok(())
     }
 }
+
+// --- Standard operator/formatting traits over the inherent histogram ops. ---
+// `scale` is infallible, so `*=`/`*` are clean; `add`/`multiply`/`divide` stay
+// inherent + fallible (binning can mismatch), so no `AddAssign`/`+`.
+
+macro_rules! impl_scale_ops {
+    ($ty:ty) => {
+        impl std::ops::MulAssign<f64> for $ty {
+            /// `h *= c` scales every bin (and its error) by `c`, like ROOT's `Scale`.
+            fn mul_assign(&mut self, c: f64) {
+                self.scale(c);
+            }
+        }
+        impl std::ops::Mul<f64> for $ty {
+            type Output = $ty;
+            fn mul(mut self, c: f64) -> $ty {
+                self.scale(c);
+                self
+            }
+        }
+    };
+}
+impl_scale_ops!(TH1);
+impl_scale_ops!(TH2);
+impl_scale_ops!(TH3);
+
+impl std::ops::Index<usize> for TH1 {
+    type Output = f64;
+    /// Bin content by cell index (`0` = underflow, `1..=nbins` in range,
+    /// `nbins + 1` = overflow), the same indexing as [`TH1::bin_error`].
+    fn index(&self, bin: usize) -> &f64 {
+        &self.contents[bin]
+    }
+}
+
+impl std::fmt::Display for TH1 {
+    /// A one-line summary, e.g. `TH1D "pt": 100 bins [0, 100), entries=4096`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {:?}: {} bins [{}, {}), entries={}",
+            self.class_name,
+            self.name,
+            self.xaxis.nbins.max(0),
+            self.xaxis.xmin,
+            self.xaxis.xmax,
+            self.entries
+        )
+    }
+}

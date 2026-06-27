@@ -11,21 +11,51 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 
-/// Bin-content array element type, named by the histogram class suffix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Precision {
-    /// `TArrayD` (`f64`).
+/// On-disk bin-content precision, named by a histogram class suffix
+/// (`TH1**D**`, `TH2**F**`, …). Contents are always held in memory as `f64`;
+/// this only selects the `TArray*` element type written to (and read from) the
+/// file. The default is [`Precision::Double`] (ROOT's `TH1D`/`TH2D`/`TH3D`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Precision {
+    /// `TArrayD` (`f64`) — the `D` classes.
+    #[default]
     Double,
-    /// `TArrayF` (`f32`).
+    /// `TArrayF` (`f32`) — the `F` classes.
     Float,
-    /// `TArrayI` (`i32`).
+    /// `TArrayI` (`i32`) — the `I` classes.
     Int,
-    /// `TArrayS` (`i16`).
+    /// `TArrayS` (`i16`) — the `S` classes.
     Short,
-    /// `TArrayC` (`i8`).
+    /// `TArrayC` (`i8`) — the `C` classes.
     Char,
-    /// `TArrayL64` (`i64`).
+    /// `TArrayL64` (`i64`) — the `L` classes.
     Long,
+}
+
+impl Precision {
+    /// The class-name suffix character for this precision (`'D'`, `'F'`, …).
+    #[must_use]
+    pub fn code(self) -> char {
+        match self {
+            Precision::Double => 'D',
+            Precision::Float => 'F',
+            Precision::Int => 'I',
+            Precision::Short => 'S',
+            Precision::Char => 'C',
+            Precision::Long => 'L',
+        }
+    }
+
+    /// The full ROOT class name for a histogram of dimension `dim` (`"TH1"`,
+    /// `"TH2"`, `"TH3"`) at this precision, e.g. `Precision::Float.class_name("TH1") == "TH1F"`.
+    #[must_use]
+    pub fn class_name(self, dim: &str) -> String {
+        let mut s = String::with_capacity(dim.len() + 1);
+        s.push_str(dim);
+        s.push(self.code());
+        s
+    }
 }
 
 /// Determine the bin-content type from a histogram class name's suffix

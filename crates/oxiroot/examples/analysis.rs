@@ -69,10 +69,11 @@ fn main() -> Result<()> {
     // --- Combine and normalize, as when merging samples. -----------------------
     let mut signal = pt.clone();
     let mut background = pt.clone();
-    background.scale(0.1); // scale background down
+    background *= 0.1; // MulAssign — scale background down
     signal.add(&background, 1.0)?; // stack background onto signal (a merge)
-    signal.scale(1.0 / signal.integral().max(1.0)); // normalize to unit area
+    signal *= 1.0 / signal.integral().max(1.0); // normalize to unit area
     println!("normalized signal integral = {:.6}", signal.integral());
+    println!("{signal}"); // Display: one-line summary
 
     // --- Save histograms into per-region subdirectories. -----------------------
     let hist_path = dir.join("analysis_hists.root");
@@ -98,9 +99,9 @@ fn main() -> Result<()> {
     write_rntuple_file(&ntuple_path, "events", &fields, Compression::Zstd(5))?;
     println!("wrote RNTuple -> {}", ntuple_path.display());
 
-    // --- Read it all back. -----------------------------------------------------
+    // --- Read it all back (idiomatic `TH1::read_root`; subdir via `_in`). -------
     let f = RFile::open(&hist_path)?;
-    let pt_back = read_th1d(&f, "pt")?;
+    let pt_back = TH1::read_root(&f, "pt")?;
     let sig_back = read_th1d_in(&f, "signal", "pt")?;
     println!(
         "read back: pt has {} bins, signal/pt integral = {:.6}",

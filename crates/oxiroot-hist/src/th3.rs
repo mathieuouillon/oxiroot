@@ -191,10 +191,26 @@ impl TH3 {
     }
 
     /// Enable per-bin error tracking (ROOT's `Sumw2`); see [`crate::TH1::sumw2`].
-    pub fn sumw2(&mut self) {
+    /// Returns `&mut self` so it can chain.
+    pub fn sumw2(&mut self) -> &mut Self {
         if self.sumw2.len() != self.contents.len() {
             self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
         }
+        self
+    }
+
+    /// This histogram's on-disk [`Precision`] (the `class_name` suffix);
+    /// [`Precision::Double`] by default. See [`crate::TH1::precision`].
+    #[must_use]
+    pub fn precision(&self) -> Precision {
+        precision_of(&self.class_name).unwrap_or(Precision::Double)
+    }
+
+    /// Set the on-disk precision (e.g. `Precision::Float` writes a `TH3F`).
+    #[must_use]
+    pub fn with_precision(mut self, precision: Precision) -> Self {
+        self.class_name = precision.class_name("TH3");
+        self
     }
 
     /// Per-bin error: `sqrt(sumw2[bin])` when error tracking is on, else

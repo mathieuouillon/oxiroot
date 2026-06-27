@@ -1,0 +1,53 @@
+//! [`ReadRoot`] — read a ROOT object from a file with an associated function.
+
+use oxiroot_io_core::error::Result;
+use oxiroot_io_core::RFile;
+
+use crate::graph::TGraph;
+use crate::tefficiency::TEfficiency;
+use crate::th1::TH1;
+use crate::th2::TH2;
+use crate::th2poly::TH2Poly;
+use crate::th3::TH3;
+use crate::thnsparse::THnSparse;
+use crate::tprofile::TProfile;
+use crate::tprofile2d::TProfile2D;
+use crate::tprofile3d::TProfile3D;
+
+/// Read a ROOT object of this type from an open file by key name, auto-detecting
+/// the on-disk precision where one applies (`TH1D`/`F`/`I`/`S`/`C`/`L` all read
+/// into a [`TH1`]). The idiomatic counterpart to the `read_th1`/`read_th2`/…
+/// free functions:
+///
+/// ```no_run
+/// use oxiroot_hist::{ReadRoot, TH1};
+/// use oxiroot_io_core::RFile;
+/// let f = RFile::open("in.root")?;
+/// let h = TH1::read_root(&f, "h")?; // any of TH1D/F/I/S/C/L
+/// # Ok::<(), oxiroot_io_core::Error>(())
+/// ```
+pub trait ReadRoot: Sized {
+    /// Read the object stored under key `name` in `file`.
+    fn read_root(file: &RFile, name: &str) -> Result<Self>;
+}
+
+macro_rules! impl_read_root {
+    ($ty:ty, $read:path) => {
+        impl ReadRoot for $ty {
+            fn read_root(file: &RFile, name: &str) -> Result<Self> {
+                $read(file, name)
+            }
+        }
+    };
+}
+
+impl_read_root!(TH1, crate::th1::read_th1);
+impl_read_root!(TH2, crate::th2::read_th2);
+impl_read_root!(TH3, crate::th3::read_th3);
+impl_read_root!(TProfile, crate::tprofile::read_tprofile);
+impl_read_root!(TProfile2D, crate::tprofile2d::read_tprofile2d);
+impl_read_root!(TProfile3D, crate::tprofile3d::read_tprofile3d);
+impl_read_root!(TEfficiency, crate::tefficiency::read_tefficiency);
+impl_read_root!(THnSparse, crate::thnsparse::read_thnsparse);
+impl_read_root!(TH2Poly, crate::th2poly::read_th2poly);
+impl_read_root!(TGraph, crate::graph::read_tgraph);

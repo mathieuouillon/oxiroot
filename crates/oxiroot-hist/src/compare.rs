@@ -13,6 +13,7 @@ use crate::th1::TH1;
 /// Which weighting scheme a chi-square test assumes for the two histograms
 /// (ROOT's `Chi2Test` options).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Chi2TestKind {
     /// Both histograms are unweighted counts (`"UU"`).
     #[default]

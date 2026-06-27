@@ -1,7 +1,7 @@
 //! `TAxis` — a histogram axis.
 
 use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::Result;
+use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
 
 /// A ROOT histogram axis (`TAxis`).
@@ -41,14 +41,28 @@ impl TAxis {
 
     /// Create a variable-width axis from `edges` (the `nbins + 1` bin
     /// boundaries, ascending). Panics if fewer than two edges are given or if
-    /// they are not strictly ascending (which would silently corrupt binning).
+    /// they are not strictly ascending; use [`try_variable`](Self::try_variable)
+    /// for caller-supplied edges you would rather validate than trust.
+    #[must_use]
     pub fn variable(name: &str, edges: &[f64]) -> TAxis {
-        assert!(edges.len() >= 2, "a variable axis needs at least two edges");
-        assert!(
-            edges.windows(2).all(|w| w[0] < w[1]),
-            "variable axis edges must be strictly ascending"
-        );
-        TAxis {
+        Self::try_variable(name, edges).expect("invalid variable axis edges")
+    }
+
+    /// Like [`variable`](Self::variable), but returns an error instead of
+    /// panicking when `edges` has fewer than two entries or is not strictly
+    /// ascending — the fallible form for untrusted input.
+    pub fn try_variable(name: &str, edges: &[f64]) -> Result<TAxis> {
+        if edges.len() < 2 {
+            return Err(Error::Format(
+                "a variable axis needs at least two edges".to_string(),
+            ));
+        }
+        if !edges.windows(2).all(|w| w[0] < w[1]) {
+            return Err(Error::Format(
+                "variable axis edges must be strictly ascending".to_string(),
+            ));
+        }
+        Ok(TAxis {
             name: name.to_string(),
             title: String::new(),
             nbins: (edges.len() - 1) as i32,
@@ -56,7 +70,7 @@ impl TAxis {
             xmax: edges[edges.len() - 1],
             xbins: edges.to_vec(),
             labels: Vec::new(),
-        }
+        })
     }
 
     /// Find the bin for value `x`: 0 = underflow, `1..=nbins` = in range,
@@ -91,9 +105,13 @@ impl TAxis {
 
     /// Whether two axes describe the same binning — identical bin count and
     /// edges, ignoring name/title. This is the precondition for bin-by-bin
-    /// histogram arithmetic (`add`/`multiply`/`divide`) and merging.
+    /// histogram arithmetic (`add`/`multiply`/`divide`) and merging. Compared
+    /// edge-by-edge (so a uniform axis and an equivalent variable one match)
+    /// without allocating either edge array.
+    #[must_use]
     pub fn same_binning(&self, other: &TAxis) -> bool {
-        self.nbins == other.nbins && self.edges() == other.edges()
+        self.nbins == other.nbins
+            && (0..=self.nbins.max(0) as usize).all(|i| self.edge(i) == other.edge(i))
     }
 
     /// Read a `TAxis` from `r` (positioned at the axis's `{byte-count, version}`
@@ -185,28 +203,46 @@ impl TAxis {
         (0..=n).map(|i| self.xmin + step * i as f64).collect()
     }
 
+    /// The `i`-th bin boundary (`i` in `0..=nbins`: `0` is `xmin`, `nbins` is
+    /// `xmax`), computed in O(1) without allocating — unlike [`edges`](Self::edges),
+    /// which materializes the whole array. Out-of-range `i` clamps to an end.
+    #[must_use]
+    pub fn edge(&self, i: usize) -> f64 {
+        if !self.xbins.is_empty() {
+            return self.xbins[i.min(self.xbins.len() - 1)];
+        }
+        let n = self.nbins.max(0) as usize;
+        if n == 0 {
+            return if i == 0 { self.xmin } else { self.xmax };
+        }
+        let i = i.min(n) as f64;
+        self.xmin + (self.xmax - self.xmin) / n as f64 * i
+    }
+
     /// Low edge of bin `bin` (1-based; bin 1 starts at `xmin`). Out-of-range bins
     /// clamp to the nearest edge.
+    #[must_use]
     pub fn bin_low_edge(&self, bin: usize) -> f64 {
-        let e = self.edges();
-        e[bin.clamp(1, e.len().max(1)) - 1]
+        self.edge(bin.saturating_sub(1))
     }
 
     /// Width of bin `bin` (1-based). `0.0` for an out-of-range bin index.
+    #[must_use]
     pub fn bin_width(&self, bin: usize) -> f64 {
-        let e = self.edges();
-        if (1..e.len()).contains(&bin) {
-            e[bin] - e[bin - 1]
+        let n = self.nbins.max(0) as usize;
+        if (1..=n).contains(&bin) {
+            self.edge(bin) - self.edge(bin - 1)
         } else {
             0.0
         }
     }
 
     /// Center of bin `bin` (1-based). `0.0` for an out-of-range bin index.
+    #[must_use]
     pub fn bin_center(&self, bin: usize) -> f64 {
-        let e = self.edges();
-        if (1..e.len()).contains(&bin) {
-            0.5 * (e[bin - 1] + e[bin])
+        let n = self.nbins.max(0) as usize;
+        if (1..=n).contains(&bin) {
+            0.5 * (self.edge(bin - 1) + self.edge(bin))
         } else {
             0.0
         }
