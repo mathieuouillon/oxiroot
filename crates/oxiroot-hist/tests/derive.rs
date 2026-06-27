@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th1d, read_th3d, write_th1d_file, write_th3d_file, TH1, TH2, TH3};
+use oxiroot_hist::{ReadRoot, WriteRoot, TH1, TH2, TH3};
 use oxiroot_io_core::{Compression, RFile};
 
 #[test]
@@ -66,9 +66,13 @@ fn projection_x_sums_y_and_keeps_x_moments() {
 
     // The projection is an ordinary TH1D — round-trips through ROOT's format.
     let out = PathBuf::from("/tmp/oxiroot_projx.root");
-    write_th1d_file(&out, &px, Compression::None).expect("write");
+    px.write_root(&out, Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
-    assert_eq!(read_th1d(&f, "px").unwrap(), px, "projection round-trips");
+    assert_eq!(
+        TH1::read_root(&f, "px").unwrap(),
+        px,
+        "projection round-trips"
+    );
 }
 
 #[test]
@@ -125,10 +129,10 @@ fn rebin3d_sums_blocks() {
 
     // The rebinned TH3 has variable axes — confirm that round-trips on disk.
     let out = std::path::PathBuf::from("/tmp/oxiroot_rebin3d.root");
-    write_th3d_file(&out, &r, Compression::None).expect("write");
+    r.write_root(&out, Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
     assert_eq!(
-        read_th3d(&f, "h").unwrap(),
+        TH3::read_root(&f, "h").unwrap(),
         r,
         "variable-axis TH3 round-trips"
     );

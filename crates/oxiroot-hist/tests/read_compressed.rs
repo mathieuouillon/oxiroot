@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::read_th1d;
+use oxiroot_hist::{ReadRoot, TH1};
 use oxiroot_io_core::RFile;
 
 fn fixture(name: &str) -> PathBuf {
@@ -38,7 +38,7 @@ fn decodes_every_compressed_block_format() {
             "{name} must be compressed with setting {setting}"
         );
 
-        let h = read_th1d(&f, "h").unwrap_or_else(|e| panic!("read {name}: {e}"));
+        let h = TH1::read_root(&f, "h").unwrap_or_else(|e| panic!("read {name}: {e}"));
         assert_eq!(h.xaxis.nbins, 500);
 
         // Content written by gen_compressed_fixtures.cpp: bin i = (i%7) + 0.5*(i%3).

@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th2d, th2d_to_bytes, TH2};
+use oxiroot_hist::{ReadRoot, WriteRoot, TH2};
 use oxiroot_io_core::RFile;
 
 fn fixture(name: &str) -> PathBuf {
@@ -19,8 +19,8 @@ fn serializes_th2d_byte_identical_to_root() {
     assert!(key.is_uncompressed());
     let expected: &[u8] = &f.data()[key.payload_range()];
 
-    let h = read_th2d(&f, "h2").expect("read TH2D");
-    let written = th2d_to_bytes(&h);
+    let h = TH2::read_root(&f, "h2").expect("read TH2D");
+    let written = h.to_root_bytes();
 
     assert_eq!(written.len(), expected.len(), "serialized length differs");
     assert_eq!(
@@ -47,24 +47,25 @@ fn create_fill_save_round_trips() {
     assert!((h.mean_y() - 2.5 / 3.0).abs() < 1e-12, "mean y");
 
     let out = PathBuf::from("/tmp/rootrs_filled_th2d.root");
-    oxiroot_hist::write_th2d_file(&out, &h, oxiroot_io_core::Compression::None).expect("write");
+    h.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write");
     let f = RFile::open(&out).expect("reopen");
-    let h2 = read_th2d(&f, "h2").expect("read back");
+    let h2 = TH2::read_root(&f, "h2").expect("read back");
     assert_eq!(h2, h, "filled 2-D histogram must round-trip");
 }
 
 #[test]
 fn writes_a_zstd_compressed_th2d() {
     let f = RFile::open(fixture("th2d_uncompressed.root")).expect("open fixture");
-    let h = read_th2d(&f, "h2").expect("read TH2D");
+    let h = TH2::read_root(&f, "h2").expect("read TH2D");
 
     let out = PathBuf::from("/tmp/rootrs_written_th2d_zstd.root");
-    oxiroot_hist::write_th2d_file(&out, &h, oxiroot_io_core::Compression::Zstd(5))
+    h.write_root(&out, oxiroot_io_core::Compression::Zstd(5))
         .expect("write compressed file");
 
     let f2 = RFile::open(&out).expect("reopen");
     let key = f2.key("h2").expect("h2 key");
     assert!(!key.is_uncompressed(), "object should be stored compressed");
-    let h2 = read_th2d(&f2, "h2").expect("read back compressed TH2D");
+    let h2 = TH2::read_root(&f2, "h2").expect("read back compressed TH2D");
     assert_eq!(h2, h, "compressed 2-D histogram must round-trip");
 }

@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{append_histograms_file, read_th1d, read_th2d, Hist, TH1, TH2};
+use oxiroot_hist::{ReadRoot, RootFile, WriteRoot, TH1, TH2};
 use oxiroot_io_core::RFile;
 
 #[test]
@@ -15,7 +15,7 @@ fn appends_objects_to_an_existing_file() {
     let mut a = TH1::new("a", "first", 4, 0.0, 4.0);
     a.fill(0.5);
     a.fill(2.5);
-    oxiroot_hist::write_th1d_file(&out, &a, oxiroot_io_core::Compression::None)
+    a.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("initial write");
 
     // Append two more histograms (a TH1D and a TH2D).
@@ -23,12 +23,12 @@ fn appends_objects_to_an_existing_file() {
     b.fill(1.5);
     let mut c = TH2::new("c", "third", 2, 0.0, 2.0, 2, 0.0, 2.0);
     c.fill(0.5, 1.5);
-    append_histograms_file(
-        &out,
-        &[Hist::Th1(&b), Hist::Th2(&c)],
-        oxiroot_io_core::Compression::None,
-    )
-    .expect("append");
+    RootFile::open(&out)
+        .expect("open for append")
+        .add(&b)
+        .add(&c)
+        .write(oxiroot_io_core::Compression::None)
+        .expect("append");
 
     // All three are present and intact.
     let f = RFile::open(&out).expect("reopen");
@@ -37,9 +37,9 @@ fn appends_objects_to_an_existing_file() {
         names.contains(&"a") && names.contains(&"b") && names.contains(&"c"),
         "{names:?}"
     );
-    assert_eq!(read_th1d(&f, "a").unwrap(), a, "original survived");
-    assert_eq!(read_th1d(&f, "b").unwrap(), b);
-    assert_eq!(read_th2d(&f, "c").unwrap(), c);
+    assert_eq!(TH1::read_root(&f, "a").unwrap(), a, "original survived");
+    assert_eq!(TH1::read_root(&f, "b").unwrap(), b);
+    assert_eq!(TH2::read_root(&f, "c").unwrap(), c);
 
     // The embedded streamer info is preserved across the update.
     let reg = f.streamer_registry().expect("streamer info");
@@ -51,14 +51,18 @@ fn re_adding_a_name_bumps_the_cycle() {
     let out = PathBuf::from("/tmp/rootrs_update_cycle.root");
     let mut v1 = TH1::new("h", "v1", 4, 0.0, 4.0);
     v1.fill(0.5);
-    oxiroot_hist::write_th1d_file(&out, &v1, oxiroot_io_core::Compression::None).expect("write v1");
+    v1.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write v1");
 
     // Re-add "h" with different contents; ROOT keeps both at different cycles,
     // newest (highest cycle) wins for a plain lookup.
     let mut v2 = TH1::new("h", "v2", 4, 0.0, 4.0);
     v2.fill(1.5);
     v2.fill(1.5);
-    append_histograms_file(&out, &[Hist::Th1(&v2)], oxiroot_io_core::Compression::None)
+    RootFile::open(&out)
+        .expect("open for append")
+        .add(&v2)
+        .write(oxiroot_io_core::Compression::None)
         .expect("append v2");
 
     let f = RFile::open(&out).expect("reopen");
@@ -71,5 +75,5 @@ fn re_adding_a_name_bumps_the_cycle() {
     assert_eq!(cycles.len(), 2, "both cycles present: {cycles:?}");
     assert!(cycles.contains(&1) && cycles.contains(&2), "{cycles:?}");
     // Our reader returns the highest cycle (newest) -> v2.
-    assert_eq!(read_th1d(&f, "h").unwrap(), v2, "newest cycle wins");
+    assert_eq!(TH1::read_root(&f, "h").unwrap(), v2, "newest cycle wins");
 }

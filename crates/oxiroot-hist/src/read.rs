@@ -16,38 +16,72 @@ use crate::tprofile3d::TProfile3D;
 
 /// Read a ROOT object of this type from an open file by key name, auto-detecting
 /// the on-disk precision where one applies (`TH1D`/`F`/`I`/`S`/`C`/`L` all read
-/// into a [`TH1`]). The idiomatic counterpart to the `read_th1`/`read_th2`/…
-/// free functions:
+/// into a [`TH1`]). This is the way to read any single object:
 ///
 /// ```no_run
 /// use oxiroot_hist::{ReadRoot, TH1};
 /// use oxiroot_io_core::RFile;
 /// let f = RFile::open("in.root")?;
 /// let h = TH1::read_root(&f, "h")?; // any of TH1D/F/I/S/C/L
+/// let s = TH1::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 pub trait ReadRoot: Sized {
-    /// Read the object stored under key `name` in `file`.
+    /// Read the object stored under key `name` in the file's top directory.
     fn read_root(file: &RFile, name: &str) -> Result<Self>;
+    /// Read the object stored under key `name` inside subdirectory `dir` (written
+    /// via [`RootFile::dir`](crate::RootFile::dir)).
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self>;
 }
 
 macro_rules! impl_read_root {
-    ($ty:ty, $read:path) => {
+    ($ty:ty, $read:path, $read_in:path) => {
         impl ReadRoot for $ty {
             fn read_root(file: &RFile, name: &str) -> Result<Self> {
                 $read(file, name)
+            }
+            fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+                $read_in(file, dir, name)
             }
         }
     };
 }
 
-impl_read_root!(TH1, crate::th1::read_th1);
-impl_read_root!(TH2, crate::th2::read_th2);
-impl_read_root!(TH3, crate::th3::read_th3);
-impl_read_root!(TProfile, crate::tprofile::read_tprofile);
-impl_read_root!(TProfile2D, crate::tprofile2d::read_tprofile2d);
-impl_read_root!(TProfile3D, crate::tprofile3d::read_tprofile3d);
-impl_read_root!(TEfficiency, crate::tefficiency::read_tefficiency);
-impl_read_root!(THnSparse, crate::thnsparse::read_thnsparse);
-impl_read_root!(TH2Poly, crate::th2poly::read_th2poly);
-impl_read_root!(TGraph, crate::graph::read_tgraph);
+impl_read_root!(TH1, crate::th1::read_th1, crate::th1::read_th1_in);
+impl_read_root!(TH2, crate::th2::read_th2, crate::th2::read_th2_in);
+impl_read_root!(TH3, crate::th3::read_th3, crate::th3::read_th3_in);
+impl_read_root!(
+    TProfile,
+    crate::tprofile::read_tprofile,
+    crate::tprofile::read_tprofile_in
+);
+impl_read_root!(
+    TProfile2D,
+    crate::tprofile2d::read_tprofile2d,
+    crate::tprofile2d::read_tprofile2d_in
+);
+impl_read_root!(
+    TProfile3D,
+    crate::tprofile3d::read_tprofile3d,
+    crate::tprofile3d::read_tprofile3d_in
+);
+impl_read_root!(
+    TEfficiency,
+    crate::tefficiency::read_tefficiency,
+    crate::tefficiency::read_tefficiency_in
+);
+impl_read_root!(
+    THnSparse,
+    crate::thnsparse::read_thnsparse,
+    crate::thnsparse::read_thnsparse_in
+);
+impl_read_root!(
+    TH2Poly,
+    crate::th2poly::read_th2poly,
+    crate::th2poly::read_th2poly_in
+);
+impl_read_root!(
+    TGraph,
+    crate::graph::read_tgraph,
+    crate::graph::read_tgraph_in
+);

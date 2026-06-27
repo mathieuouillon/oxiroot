@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_thnsparse, write_thnsparse_file, SparseBin, THnSparse};
+use oxiroot_hist::{ReadRoot, SparseBin, THnSparse, WriteRoot};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> PathBuf {
@@ -19,7 +19,7 @@ fn sorted(mut b: Vec<SparseBin>) -> Vec<SparseBin> {
 #[test]
 fn reads_root_written_thnsparse() {
     let f = RFile::open(fixture("thnsparse.root")).expect("open");
-    let h = read_thnsparse(&f, "hs").expect("read");
+    let h = THnSparse::read_root(&f, "hs").expect("read");
     assert_eq!(h.ndim(), 2);
     assert_eq!(h.entries, 4.0);
     assert_eq!(
@@ -45,9 +45,9 @@ fn thnsparse_round_trips() {
     h.fill(&[1.5, 1.5]);
     h.fill(&[1.5, 1.5]);
     let out = PathBuf::from("/tmp/oxiroot_thnsparse.root");
-    write_thnsparse_file(&out, &h, Compression::None).expect("write");
+    h.write_root(&out, Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
-    let back = read_thnsparse(&f, "hs").unwrap();
+    let back = THnSparse::read_root(&f, "hs").unwrap();
     assert_eq!(sorted(back.bins), sorted(h.bins.clone()));
     assert_eq!(back.entries, 4.0);
 }
@@ -59,8 +59,8 @@ fn empty_thnsparse_round_trips() {
     let h = THnSparse::new("hs", "", &[(3, 0.0, 3.0), (2, -1.0, 1.0)]);
     assert!(h.bins.is_empty());
     let out = PathBuf::from("/tmp/oxiroot_thnsparse_empty.root");
-    write_thnsparse_file(&out, &h, Compression::None).expect("write");
-    let back = read_thnsparse(&RFile::open(&out).unwrap(), "hs").unwrap();
+    h.write_root(&out, Compression::None).expect("write");
+    let back = THnSparse::read_root(&RFile::open(&out).unwrap(), "hs").unwrap();
     assert_eq!(back.ndim(), 2);
     assert!(back.bins.is_empty());
     assert_eq!(back.entries, 0.0);

@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th1d, TProfile, TH1};
+use oxiroot_hist::{ReadRoot, TProfile, WriteRoot, TH1};
 use oxiroot_io_core::RFile;
 
 #[test]
@@ -31,9 +31,10 @@ fn merge_then_scale_matches_root() {
     assert!((a.bin_error(1) - 52.0_f64.sqrt()).abs() < 1e-9);
 
     let out = PathBuf::from("/tmp/rootrs_merged_scaled.root");
-    oxiroot_hist::write_th1d_file(&out, &a, oxiroot_io_core::Compression::None).expect("write");
+    a.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write");
     let f = RFile::open(&out).expect("reopen");
-    assert_eq!(read_th1d(&f, "h").unwrap(), a, "round-trips");
+    assert_eq!(TH1::read_root(&f, "h").unwrap(), a, "round-trips");
 }
 
 #[test]

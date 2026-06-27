@@ -10,7 +10,9 @@ use oxiroot_io_core::streamer::skip_versioned;
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{cell_count, check_cells, object_bytes, read_tarray, read_th1_base, Precision};
+use crate::base::{
+    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_base, Precision,
+};
 use crate::tprofile::ErrorMode;
 
 /// A 3-D profile histogram (ROOT `TProfile3D`).
@@ -287,7 +289,16 @@ impl TProfile3D {
 }
 
 /// Read a `TProfile3D` named `name` from `file`.
-pub fn read_tprofile3d(file: &RFile, name: &str) -> Result<TProfile3D> {
-    let object = object_bytes(file, name, "TProfile3D")?;
-    TProfile3D::read(&mut RBuffer::new(&object))
+pub(crate) fn read_tprofile3d(file: &RFile, name: &str) -> Result<TProfile3D> {
+    TProfile3D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile3D")?))
+}
+
+/// Read a `TProfile3D` from subdirectory `subdir`.
+pub(crate) fn read_tprofile3d_in(file: &RFile, subdir: &str, name: &str) -> Result<TProfile3D> {
+    TProfile3D::read(&mut RBuffer::new(&object_bytes_in(
+        file,
+        subdir,
+        name,
+        "TProfile3D",
+    )?))
 }

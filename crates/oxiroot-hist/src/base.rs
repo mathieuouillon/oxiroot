@@ -279,12 +279,48 @@ pub(crate) fn histogram_object(
     name: &str,
     dim_prefix: &str,
 ) -> Result<(String, Vec<u8>)> {
-    let (class, object) = object_bytes_any(file, name)?;
+    check_dim(name, object_bytes_any(file, name)?, dim_prefix)
+}
+
+/// Like [`histogram_object`] but from subdirectory `subdir`.
+pub(crate) fn histogram_object_in(
+    file: &RFile,
+    subdir: &str,
+    name: &str,
+    dim_prefix: &str,
+) -> Result<(String, Vec<u8>)> {
+    check_dim(name, file.object_in(subdir, name)?, dim_prefix)
+}
+
+/// Require a looked-up `(class, object)` to be a 4-character histogram class with
+/// the given dimension prefix (e.g. `"TH1"`).
+fn check_dim(
+    name: &str,
+    (class, object): (String, Vec<u8>),
+    dim_prefix: &str,
+) -> Result<(String, Vec<u8>)> {
     if class.len() == 4 && class.starts_with(dim_prefix) {
         Ok((class, object))
     } else {
         Err(Error::Format(format!(
             "key {name:?} is a {class}, not a {dim_prefix} histogram"
+        )))
+    }
+}
+
+/// Like [`object_bytes`] but from subdirectory `subdir` (validates the class).
+pub(crate) fn object_bytes_in(
+    file: &RFile,
+    subdir: &str,
+    name: &str,
+    class: &str,
+) -> Result<Vec<u8>> {
+    let (got, object) = file.object_in(subdir, name)?;
+    if got == class {
+        Ok(object)
+    } else {
+        Err(Error::Format(format!(
+            "key {name:?} in {subdir:?} is a {got}, not {class}"
         )))
     }
 }

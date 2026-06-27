@@ -9,7 +9,7 @@ use oxiroot_io_core::error::Result;
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::RFile;
 
-use crate::base::{object_bytes, Precision};
+use crate::base::{object_bytes, object_bytes_in, Precision};
 use crate::th1::TH1;
 
 /// ROOT's default confidence level (one Gaussian sigma).
@@ -135,7 +135,16 @@ fn read_embedded_th1d(r: &mut RBuffer) -> Result<TH1> {
 }
 
 /// Read a `TEfficiency` named `name` from `file`.
-pub fn read_tefficiency(file: &RFile, name: &str) -> Result<TEfficiency> {
-    let object = object_bytes(file, name, "TEfficiency")?;
-    TEfficiency::read(&mut RBuffer::new(&object))
+pub(crate) fn read_tefficiency(file: &RFile, name: &str) -> Result<TEfficiency> {
+    TEfficiency::read(&mut RBuffer::new(&object_bytes(file, name, "TEfficiency")?))
+}
+
+/// Read a `TEfficiency` from subdirectory `subdir`.
+pub(crate) fn read_tefficiency_in(file: &RFile, subdir: &str, name: &str) -> Result<TEfficiency> {
+    TEfficiency::read(&mut RBuffer::new(&object_bytes_in(
+        file,
+        subdir,
+        name,
+        "TEfficiency",
+    )?))
 }

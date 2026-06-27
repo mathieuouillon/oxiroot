@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_tprofile2d, write_tprofile2d_file, TProfile2D};
+use oxiroot_hist::{ReadRoot, TProfile2D, WriteRoot};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> PathBuf {
@@ -16,7 +16,7 @@ fn reads_root_written_tprofile2d() {
     // fixtures/tprofile2d.root p2: bin(1,1) mean 15, (2,1) mean 5, (2,2) mean 30.
     let f = RFile::open(fixture("tprofile2d.root")).expect("open");
     assert_eq!(f.key("p2").unwrap().class_name, "TProfile2D");
-    let p = read_tprofile2d(&f, "p2").expect("read TProfile2D");
+    let p = TProfile2D::read_root(&f, "p2").expect("read TProfile2D");
     assert_eq!(p.values(), vec![vec![15.0, 0.0], vec![5.0, 30.0]]);
     assert_eq!(p.entries, 4.0);
 }
@@ -31,7 +31,7 @@ fn tprofile2d_round_trips() {
     assert_eq!(p.values(), vec![vec![15.0, 0.0], vec![5.0, 30.0]]);
 
     let out = PathBuf::from("/tmp/oxiroot_tprofile2d.root");
-    write_tprofile2d_file(&out, &p, Compression::None).expect("write");
+    p.write_root(&out, Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");
-    assert_eq!(read_tprofile2d(&f, "p2").unwrap(), p, "round-trips");
+    assert_eq!(TProfile2D::read_root(&f, "p2").unwrap(), p, "round-trips");
 }

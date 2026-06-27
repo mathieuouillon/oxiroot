@@ -94,12 +94,14 @@ cargo run -p oxiroot --example analysis
 - **Read & write** `TH1`/`TH2`/`TH3` in every precision (`D`/`F`/`I`/`S`/`C`/`L`),
   `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`, N-dimensional `THnSparse`,
   and polygon-binned `TH2Poly` (arbitrary-shape bins, with a builder API).
-- **One trait per direction**, not a function per type: `h.write_root(path,
-  compression)?` and `h.to_root_bytes()` (`WriteRoot`) for any writable object,
-  and `TH1::read_root(&file, name)?` (`ReadRoot`) for any readable one. A
-  `TH1`/`TH2`/`TH3`'s on-disk precision is a typed `Precision` set with
-  `.with_precision(Precision::Float)` (writes a `TH1F`), and `h.class_name()`
-  reconstructs the ROOT class. Profiles carry a typed `ErrorMode`.
+- **One way per operation**, not a function per type. Write one object with
+  `h.write_root(path, compression)?` and read one with
+  `TH1::read_root(&file, name)?` (the `WriteRoot`/`ReadRoot` traits; also
+  `h.to_root_bytes()` and `TH1::read_root_in(&file, dir, name)?` for a
+  subdirectory). A `TH1`/`TH2`/`TH3`'s on-disk precision is a typed `Precision`
+  set with `.with_precision(Precision::Float)` (writes a `TH1F`), and
+  `h.class_name()` reconstructs the ROOT class. Profiles carry a typed
+  `ErrorMode`.
 - Create and `fill`/`fill_weight` with ROOT's exact `Fill` semantics; uniform or
   variable (`new_variable`) bins; `sumw2()` (chains: `h.sumw2().fill(x)`) for
   weighted per-bin errors (`bin_error`).
@@ -127,11 +129,19 @@ cargo run -p oxiroot --example analysis
   `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
   with `std::thread::scope` and needs no dependency; the optional `rayon` feature
   adds a one-call `fill_par(&template, &data, |h, x| h.fill(*x))`.
-- Write one object per file (`h.write_root`), several heterogeneous objects per
-  file (`write_root_file(&[&h, &p, &g], …)`), or organized into subdirectories
-  (`write_histograms_dirs`); append to an existing file with
-  `append_histograms_file`. Written files embed a `TStreamerInfo` list, so they
-  are self-describing for any ROOT reader.
+- Write one object with `h.write_root(path, compression)`. For several objects,
+  subdirectories, or appending, use the `RootFile` builder — one entry point for
+  all file composition:
+  ```rust
+  RootFile::create("out.root")
+      .add(&h)                            // any &dyn WriteRoot: hist, profile, graph…
+      .add(&prof)
+      .dir("by_region", |d| d.add(&sig))  // a TDirectory per region
+      .write(Compression::Zstd(5))?;
+  RootFile::open("out.root")?.add(&extra).write(Compression::None)?; // append
+  ```
+  Written files embed a `TStreamerInfo` list, so they are self-describing for any
+  ROOT reader.
 
 ### Fitting (`oxiroot::hist`, `fit` feature)
 

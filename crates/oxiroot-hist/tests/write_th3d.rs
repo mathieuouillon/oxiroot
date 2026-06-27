@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th3d, TH3};
+use oxiroot_hist::{ReadRoot, WriteRoot, TH3};
 use oxiroot_io_core::RFile;
 
 fn fixture(name: &str) -> PathBuf {
@@ -25,12 +25,13 @@ fn round_trips_real_root_th3d() {
     // Read C++ ROOT-produced data, write it back out, and read it again: the
     // histogram must be identical, proving write∘read == identity on real data.
     let f = RFile::open(fixture("th3d_uncompressed.root")).expect("open fixture");
-    let h = read_th3d(&f, "h3").expect("read TH3D");
+    let h = TH3::read_root(&f, "h3").expect("read TH3D");
 
     let out = PathBuf::from("/tmp/rootrs_roundtrip_th3d.root");
-    oxiroot_hist::write_th3d_file(&out, &h, oxiroot_io_core::Compression::None).expect("write");
+    h.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write");
     let f2 = RFile::open(&out).expect("reopen");
-    let h2 = read_th3d(&f2, "h3").expect("read back");
+    let h2 = TH3::read_root(&f2, "h3").expect("read back");
     assert_eq!(h2, h, "real ROOT TH3D must survive write→read");
 }
 
@@ -50,24 +51,25 @@ fn create_fill_save_round_trips() {
     assert!((h.mean_z() - 2.5 / 3.0).abs() < 1e-12, "mean z");
 
     let out = PathBuf::from("/tmp/rootrs_filled_th3d.root");
-    oxiroot_hist::write_th3d_file(&out, &h, oxiroot_io_core::Compression::None).expect("write");
+    h.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write");
     let f = RFile::open(&out).expect("reopen");
-    let h2 = read_th3d(&f, "h3").expect("read back");
+    let h2 = TH3::read_root(&f, "h3").expect("read back");
     assert_eq!(h2, h, "filled 3-D histogram must round-trip");
 }
 
 #[test]
 fn writes_a_zstd_compressed_th3d() {
     let f = RFile::open(fixture("th3d_uncompressed.root")).expect("open fixture");
-    let h = read_th3d(&f, "h3").expect("read TH3D");
+    let h = TH3::read_root(&f, "h3").expect("read TH3D");
 
     let out = PathBuf::from("/tmp/rootrs_written_th3d_zstd.root");
-    oxiroot_hist::write_th3d_file(&out, &h, oxiroot_io_core::Compression::Zstd(5))
+    h.write_root(&out, oxiroot_io_core::Compression::Zstd(5))
         .expect("write compressed file");
 
     let f2 = RFile::open(&out).expect("reopen");
     let key = f2.key("h3").expect("h3 key");
     assert!(!key.is_uncompressed(), "object should be stored compressed");
-    let h2 = read_th3d(&f2, "h3").expect("read back compressed TH3D");
+    let h2 = TH3::read_root(&f2, "h3").expect("read back compressed TH3D");
     assert_eq!(h2, h, "compressed 3-D histogram must round-trip");
 }

@@ -10,7 +10,9 @@ use oxiroot_io_core::error::Result;
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{cell_count, check_cells, object_bytes, read_tarray, read_th1_object, Precision};
+use crate::base::{
+    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_object, Precision,
+};
 
 /// How a profile's per-bin error bar is computed (ROOT's `fErrorMode`). Shared
 /// by [`TProfile`], [`crate::TProfile2D`], and [`crate::TProfile3D`].
@@ -292,7 +294,13 @@ impl TProfile {
 }
 
 /// Read a `TProfile` from an open ROOT file.
-pub fn read_tprofile(file: &RFile, name: &str) -> Result<TProfile> {
-    let object = object_bytes(file, name, "TProfile")?;
-    TProfile::read(&mut RBuffer::new(&object))
+pub(crate) fn read_tprofile(file: &RFile, name: &str) -> Result<TProfile> {
+    TProfile::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile")?))
+}
+
+/// Read a `TProfile` from subdirectory `subdir`.
+pub(crate) fn read_tprofile_in(file: &RFile, subdir: &str, name: &str) -> Result<TProfile> {
+    TProfile::read(&mut RBuffer::new(&object_bytes_in(
+        file, subdir, name, "TProfile",
+    )?))
 }

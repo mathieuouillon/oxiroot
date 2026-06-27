@@ -1,11 +1,8 @@
-//! The idiomatic trait API (`WriteRoot`/`ReadRoot`/`Precision`) must produce
-//! byte-identical output to the legacy free functions (so ROOT compatibility is
-//! preserved) and round-trip through a real file.
+//! The idiomatic trait API (`WriteRoot`/`ReadRoot`/`Precision`) must select the
+//! correct ROOT class for each precision (so ROOT compatibility is preserved)
+//! and round-trip through a real file.
 
-use oxiroot_hist::{
-    th1d_to_bytes, th1f_to_bytes, write_root_file, Compression, Precision, ReadRoot, TProfile,
-    WriteRoot, TH1, TH2,
-};
+use oxiroot_hist::{Compression, Precision, ReadRoot, RootFile, TProfile, WriteRoot, TH1, TH2};
 use oxiroot_io_core::RFile;
 
 fn sample() -> TH1 {
@@ -18,16 +15,15 @@ fn sample() -> TH1 {
 }
 
 #[test]
-fn trait_bytes_match_legacy_functions() {
+fn trait_selects_correct_class_per_precision() {
+    // `WriteRoot` is the sole byte producer; verify it tags each object with the
+    // ROOT class its precision implies (round-trip byte correctness is covered by
+    // the `*_round_trips*` tests below and the uproot/ROOT-C++ interop matrix).
     let h = sample();
-    // Default precision (TH1D) via the trait == the legacy th1d_to_bytes.
-    assert_eq!(h.to_root_bytes(), th1d_to_bytes(&h));
     assert_eq!(h.root_class(), "TH1D");
     assert_eq!(h.precision(), Precision::Double);
 
-    // Float precision via with_precision == the legacy th1f_to_bytes.
     let hf = sample().with_precision(Precision::Float);
-    assert_eq!(hf.to_root_bytes(), th1f_to_bytes(&h));
     assert_eq!(hf.root_class(), "TH1F");
     assert_eq!(hf.precision(), Precision::Float);
 }
@@ -64,7 +60,12 @@ fn write_root_file_handles_heterogeneous_objects() {
     let h2 = TH2::new("h2", "", 4, 0.0, 4.0, 4, 0.0, 4.0);
     let p = TProfile::new("p", "", 5, 0.0, 5.0);
     let path = std::env::temp_dir().join("oxiroot_traitapi_multi.root");
-    write_root_file(&path, &[&h1, &h2, &p], Compression::None).expect("write_root_file");
+    RootFile::create(&path)
+        .add(&h1)
+        .add(&h2)
+        .add(&p)
+        .write(Compression::None)
+        .expect("write multi-object file");
 
     let f = RFile::open(&path).expect("open");
     assert!(TH1::read_root(&f, "h1").is_ok());

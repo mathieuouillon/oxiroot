@@ -9,7 +9,9 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{cell_count, check_cells, object_bytes, read_tarray, read_th1_base, Precision};
+use crate::base::{
+    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_base, Precision,
+};
 use crate::tprofile::ErrorMode;
 
 /// A 2-D profile histogram (ROOT `TProfile2D`).
@@ -281,7 +283,16 @@ impl TProfile2D {
 }
 
 /// Read a `TProfile2D` named `name` from `file`.
-pub fn read_tprofile2d(file: &RFile, name: &str) -> Result<TProfile2D> {
-    let object = object_bytes(file, name, "TProfile2D")?;
-    TProfile2D::read(&mut RBuffer::new(&object))
+pub(crate) fn read_tprofile2d(file: &RFile, name: &str) -> Result<TProfile2D> {
+    TProfile2D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile2D")?))
+}
+
+/// Read a `TProfile2D` from subdirectory `subdir`.
+pub(crate) fn read_tprofile2d_in(file: &RFile, subdir: &str, name: &str) -> Result<TProfile2D> {
+    TProfile2D::read(&mut RBuffer::new(&object_bytes_in(
+        file,
+        subdir,
+        name,
+        "TProfile2D",
+    )?))
 }

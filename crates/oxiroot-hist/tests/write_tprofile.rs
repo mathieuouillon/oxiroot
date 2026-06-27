@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_tprofile, TProfile};
+use oxiroot_hist::{ReadRoot, TProfile, WriteRoot};
 use oxiroot_io_core::RFile;
 
 fn fixture(name: &str) -> PathBuf {
@@ -15,12 +15,13 @@ fn fixture(name: &str) -> PathBuf {
 #[test]
 fn round_trips_real_root_tprofile() {
     let f = RFile::open(fixture("tprofile_uncompressed.root")).expect("open fixture");
-    let h = read_tprofile(&f, "p").expect("read TProfile");
+    let h = TProfile::read_root(&f, "p").expect("read TProfile");
 
     let out = PathBuf::from("/tmp/rootrs_roundtrip_tprofile.root");
-    oxiroot_hist::write_tprofile_file(&out, &h, oxiroot_io_core::Compression::None).expect("write");
+    h.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write");
     let f2 = RFile::open(&out).expect("reopen");
-    let h2 = read_tprofile(&f2, "p").expect("read back");
+    let h2 = TProfile::read_root(&f2, "p").expect("read back");
     assert_eq!(h2, h, "real ROOT TProfile must survive write→read");
 }
 
@@ -43,24 +44,25 @@ fn create_fill_save_round_trips() {
     assert_eq!(h.bin_entries[1..4], [2.0, 2.0, 1.0]);
 
     let out = PathBuf::from("/tmp/rootrs_filled_tprofile.root");
-    oxiroot_hist::write_tprofile_file(&out, &h, oxiroot_io_core::Compression::None).expect("write");
+    h.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write");
     let f = RFile::open(&out).expect("reopen");
-    let h2 = read_tprofile(&f, "p").expect("read back");
+    let h2 = TProfile::read_root(&f, "p").expect("read back");
     assert_eq!(h2, h, "filled profile must round-trip");
 }
 
 #[test]
 fn writes_a_zstd_compressed_tprofile() {
     let f = RFile::open(fixture("tprofile_uncompressed.root")).expect("open fixture");
-    let h = read_tprofile(&f, "p").expect("read TProfile");
+    let h = TProfile::read_root(&f, "p").expect("read TProfile");
 
     let out = PathBuf::from("/tmp/rootrs_written_tprofile_zstd.root");
-    oxiroot_hist::write_tprofile_file(&out, &h, oxiroot_io_core::Compression::Zstd(5))
+    h.write_root(&out, oxiroot_io_core::Compression::Zstd(5))
         .expect("write compressed file");
 
     let f2 = RFile::open(&out).expect("reopen");
     let key = f2.key("p").expect("p key");
     assert!(!key.is_uncompressed(), "object should be stored compressed");
-    let h2 = read_tprofile(&f2, "p").expect("read back compressed TProfile");
+    let h2 = TProfile::read_root(&f2, "p").expect("read back compressed TProfile");
     assert_eq!(h2, h, "compressed profile must round-trip");
 }

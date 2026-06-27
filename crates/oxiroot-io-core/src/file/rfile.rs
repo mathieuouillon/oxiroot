@@ -139,6 +139,14 @@ impl RFile {
     /// Return the class name and decompressed object bytes for key `name` inside
     /// subdirectory `subdir`.
     pub fn object_in(&self, subdir: &str, name: &str) -> Result<(String, Vec<u8>)> {
+        let (class, object, _keylen) = self.object_in_keyed(subdir, name)?;
+        Ok((class, object))
+    }
+
+    /// Like [`object_in`](Self::object_in) but also return the key's header
+    /// length (`fKeyLen`), needed to resolve object-reference back-references in
+    /// streamed objects (e.g. `TH2Poly`'s bins) read from a subdirectory.
+    pub fn object_in_keyed(&self, subdir: &str, name: &str) -> Result<(String, Vec<u8>, usize)> {
         let dir = self.subdir(subdir)?;
         let key = dir
             .keys
@@ -149,7 +157,7 @@ impl RFile {
         let payload = key.payload(&self.data)?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
-        Ok((key.class_name.clone(), object))
+        Ok((key.class_name.clone(), object, key.key_len as usize))
     }
 
     /// The file's free-segment list (informational).

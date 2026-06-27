@@ -394,8 +394,23 @@ fn read_poly_graph(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Vec<f64>, V
 }
 
 /// Read a `TH2Poly` named `name` from `file`.
-pub fn read_th2poly(file: &RFile, name: &str) -> Result<TH2Poly> {
+pub(crate) fn read_th2poly(file: &RFile, name: &str) -> Result<TH2Poly> {
     let (object, keylen) = object_bytes_keyed(file, name, "TH2Poly")?;
-    TH2Poly::read(&mut RBuffer::new(&object), keylen)
+    decode_th2poly(name, &object, keylen)
+}
+
+/// Read a `TH2Poly` from subdirectory `subdir`.
+pub(crate) fn read_th2poly_in(file: &RFile, subdir: &str, name: &str) -> Result<TH2Poly> {
+    let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
+    if class != "TH2Poly" {
+        return Err(Error::Format(format!(
+            "key {name:?} in {subdir:?} is a {class}, not TH2Poly"
+        )));
+    }
+    decode_th2poly(name, &object, keylen)
+}
+
+fn decode_th2poly(name: &str, object: &[u8], keylen: usize) -> Result<TH2Poly> {
+    TH2Poly::read(&mut RBuffer::new(object), keylen)
         .map_err(|e| Error::Format(format!("reading TH2Poly {name:?}: {e}")))
 }

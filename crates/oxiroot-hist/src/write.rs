@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::error::Result;
+use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
 use oxiroot_io_core::{
     update_root_file, write_root_file_with_dirs, write_root_file_with_streamers, Compression,
@@ -44,8 +44,7 @@ use crate::tprofile3d::TProfile3D;
 /// profile ([`TProfile`]/[`TProfile2D`]/[`TProfile3D`]), a [`TEfficiency`], a
 /// [`THnSparse`], a [`TH2Poly`], or a [`TGraph`].
 ///
-/// One trait replaces the per-type, per-precision `write_*_file` / `*_to_bytes`
-/// free functions:
+/// This one trait is the way to write any single object:
 ///
 /// ```no_run
 /// use oxiroot_hist::{Compression, TH1, WriteRoot};
@@ -55,10 +54,9 @@ use crate::tprofile3d::TProfile3D;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 ///
-/// The bytes are identical to those the free functions produced, so the result
-/// still reads in ROOT, uproot, and this crate. Use [`write_root_file`] to put
-/// several heterogeneous objects in one file. A `TH1`/`TH2`/`TH3`'s on-disk
-/// precision follows its [`precision`](TH1::precision) (set via
+/// The result reads in ROOT, uproot, and this crate. Use [`RootFile`] to put
+/// several objects (and/or subdirectories) in one file. A `TH1`/`TH2`/`TH3`'s
+/// on-disk precision follows its [`precision`](TH1::precision) (set via
 /// [`with_precision`](TH1::with_precision)); the other types have a fixed class.
 pub trait WriteRoot {
     /// The ROOT class name written for this object (e.g. `"TH1D"`, `"TProfile"`).
@@ -78,55 +76,14 @@ pub trait WriteRoot {
         Self: Sized,
     {
         write_named(path, |file_name| {
-            let record = ObjectRecord {
-                class_name: self.root_class(),
-                name: self.root_name().to_string(),
-                title: self.root_title().to_string(),
-                object: self.to_root_bytes(),
-            };
             write_root_file_with_streamers(
                 file_name,
-                &[record],
+                &[record_of(self)],
                 compression.setting(),
                 Some(HIST_STREAMER_INFO),
             )
         })
     }
-}
-
-/// Write several heterogeneous objects (histograms, profiles, graphs, …) into
-/// one new ROOT file, each stored under its own name. The idiomatic replacement
-/// for [`write_histograms_file`], which only accepted `TH1`/`TH2`/`TH3`.
-///
-/// ```no_run
-/// use oxiroot_hist::{write_root_file, Compression, TH1, TProfile};
-/// let h = TH1::new("h", "", 10, 0.0, 1.0);
-/// let p = TProfile::new("p", "", 10, 0.0, 1.0);
-/// write_root_file("out.root", &[&h, &p], Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-pub fn write_root_file(
-    path: impl AsRef<Path>,
-    objects: &[&dyn WriteRoot],
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let records: Vec<ObjectRecord> = objects
-            .iter()
-            .map(|o| ObjectRecord {
-                class_name: o.root_class(),
-                name: o.root_name().to_string(),
-                title: o.root_title().to_string(),
-                object: o.to_root_bytes(),
-            })
-            .collect();
-        write_root_file_with_streamers(
-            file_name,
-            &records,
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
 }
 
 /// `TH1`/`TH2`/`TH3` serialize at the precision carried by their `class_name`;
@@ -204,25 +161,6 @@ impl WriteRoot for TGraph {
     }
 }
 
-/// Write a single `TH1D` into a new ROOT file at `path`. `compression`
-/// is e.g. `Compression::None` or `Compression::Zstd(5)`.
-pub fn write_th1d_file(path: impl AsRef<Path>, h: &TH1, compression: Compression) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TH1D".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: th1d_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
-
 /// Streamer info (`TList<TStreamerInfo>`) describing the writable histogram
 /// hierarchy — `TH1/2/3{C,S,I,L,F,D}`, `TProfile`, and every base/member class —
 /// at the exact class versions this module emits (the `L` types are version 0).
@@ -262,57 +200,6 @@ pub(crate) fn write_th1f(w: &mut WBuffer, h: &TH1) {
     write_th1_obj(w, h, 3, write_tarrayf);
 }
 
-/// Serialize a `TH1D` object to a fresh byte vector.
-pub fn th1d_to_bytes(h: &TH1) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_th1d(&mut w, h);
-    w.into_vec()
-}
-
-/// Serialize a `TH1F` object to a fresh byte vector.
-pub fn th1f_to_bytes(h: &TH1) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_th1f(&mut w, h);
-    w.into_vec()
-}
-
-/// Write a single `TH1F` (float-precision histogram) into a new ROOT file.
-pub fn write_th1f_file(path: impl AsRef<Path>, h: &TH1, compression: Compression) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TH1F".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: th1f_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
-
-/// Write a single `TH2D` into a new ROOT file at `path`. `compression`
-/// is e.g. `Compression::None` or `Compression::Zstd(5)`.
-pub fn write_th2d_file(path: impl AsRef<Path>, h: &TH2, compression: Compression) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TH2D".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: th2d_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
-
 /// Serialize a `TH2D`/`TH2F` object (with its byte-count/version header) into
 /// `w`, byte-for-byte as ROOT writes it. Layout: `TH2{D,F}{ TH2{ TH1{…},
 /// fScalefactor, fTsumwy, fTsumwy2, fTsumwxy }, TArray{D,F} }`.
@@ -341,57 +228,6 @@ pub(crate) fn write_th2d(w: &mut WBuffer, h: &TH2) {
 /// Serialize a `TH2F` object (the float-precision `TH2`) into `w`.
 pub(crate) fn write_th2f(w: &mut WBuffer, h: &TH2) {
     write_th2_obj(w, h, 4, write_tarrayf);
-}
-
-/// Serialize a `TH2D` object to a fresh byte vector.
-pub fn th2d_to_bytes(h: &TH2) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_th2d(&mut w, h);
-    w.into_vec()
-}
-
-/// Serialize a `TH2F` object to a fresh byte vector.
-pub fn th2f_to_bytes(h: &TH2) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_th2f(&mut w, h);
-    w.into_vec()
-}
-
-/// Write a single `TH2F` (float-precision histogram) into a new ROOT file.
-pub fn write_th2f_file(path: impl AsRef<Path>, h: &TH2, compression: Compression) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TH2F".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: th2f_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
-
-/// Write a single `TH3D` into a new ROOT file at `path`. `compression`
-/// is e.g. `Compression::None` or `Compression::Zstd(5)`.
-pub fn write_th3d_file(path: impl AsRef<Path>, h: &TH3, compression: Compression) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TH3D".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: th3d_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
 }
 
 /// Serialize a `TH3D`/`TH3F` object (with its byte-count/version header) into
@@ -430,218 +266,32 @@ pub(crate) fn write_th3f(w: &mut WBuffer, h: &TH3) {
     write_th3_obj(w, h, 4, write_tarrayf);
 }
 
-/// Serialize a `TH3D` object to a fresh byte vector.
-pub fn th3d_to_bytes(h: &TH3) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_th3d(&mut w, h);
-    w.into_vec()
-}
-
-/// Serialize a `TH3F` object to a fresh byte vector.
-pub fn th3f_to_bytes(h: &TH3) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_th3f(&mut w, h);
-    w.into_vec()
-}
-
-/// Write a single `TH3F` (float-precision histogram) into a new ROOT file.
-pub fn write_th3f_file(path: impl AsRef<Path>, h: &TH3, compression: Compression) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TH3F".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: th3f_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
-
 /// Generate the `write_*`/`*_to_bytes`/`write_*_file` trio for one integer
 /// histogram precision (`TH1C`/`TH2S`/`TH3I`/`TH1L`/…). The object layout is
 /// identical to the same-dimension `TH*D`/`TH*F` apart from the class version
 /// `$ver` (3/4 for C/S/I, 0 for the Long64 `L`) and the data `TArray` (`$array`).
 /// The in-memory `f64` bin contents are narrowed to the integer type.
 macro_rules! int_hist {
-    ($write:ident, $bytes:ident, $file:ident, $class:literal, $htype:ty, $obj:ident, $ver:literal, $array:ident) => {
+    ($write:ident, $class:literal, $htype:ty, $obj:ident, $ver:literal, $array:ident) => {
         #[doc = concat!("Serialize a `", $class, "` object (with its byte-count/version header) into `w`.")]
         pub(crate) fn $write(w: &mut WBuffer, h: &$htype) {
             $obj(w, h, $ver, $array);
         }
-        #[doc = concat!("Serialize a `", $class, "` object to a fresh byte vector.")]
-        pub fn $bytes(h: &$htype) -> Vec<u8> {
-            let mut w = WBuffer::new();
-            $write(&mut w, h);
-            w.into_vec()
-        }
-        #[doc = concat!("Write a single `", $class, "` (integer-precision histogram) into a new ROOT file.")]
-        pub fn $file(path: impl AsRef<Path>, h: &$htype, compression: Compression) -> Result<()> {
-            write_named(path, |file_name| {
-                let record = ObjectRecord {
-                    class_name: $class.to_string(),
-                    name: h.name.clone(),
-                    title: h.title.clone(),
-                    object: $bytes(h),
-                };
-                write_root_file_with_streamers(
-                    file_name,
-                    &[record],
-                    compression.setting(),
-                    Some(HIST_STREAMER_INFO),
-                )
-            })
-        }
     };
 }
 
-int_hist!(
-    write_th1c,
-    th1c_to_bytes,
-    write_th1c_file,
-    "TH1C",
-    TH1,
-    write_th1_obj,
-    3,
-    write_tarrayc
-);
-int_hist!(
-    write_th1s,
-    th1s_to_bytes,
-    write_th1s_file,
-    "TH1S",
-    TH1,
-    write_th1_obj,
-    3,
-    write_tarrays
-);
-int_hist!(
-    write_th1i,
-    th1i_to_bytes,
-    write_th1i_file,
-    "TH1I",
-    TH1,
-    write_th1_obj,
-    3,
-    write_tarrayi
-);
-int_hist!(
-    write_th1l,
-    th1l_to_bytes,
-    write_th1l_file,
-    "TH1L",
-    TH1,
-    write_th1_obj,
-    0,
-    write_tarrayl
-);
-int_hist!(
-    write_th2c,
-    th2c_to_bytes,
-    write_th2c_file,
-    "TH2C",
-    TH2,
-    write_th2_obj,
-    4,
-    write_tarrayc
-);
-int_hist!(
-    write_th2s,
-    th2s_to_bytes,
-    write_th2s_file,
-    "TH2S",
-    TH2,
-    write_th2_obj,
-    4,
-    write_tarrays
-);
-int_hist!(
-    write_th2i,
-    th2i_to_bytes,
-    write_th2i_file,
-    "TH2I",
-    TH2,
-    write_th2_obj,
-    4,
-    write_tarrayi
-);
-int_hist!(
-    write_th2l,
-    th2l_to_bytes,
-    write_th2l_file,
-    "TH2L",
-    TH2,
-    write_th2_obj,
-    0,
-    write_tarrayl
-);
-int_hist!(
-    write_th3c,
-    th3c_to_bytes,
-    write_th3c_file,
-    "TH3C",
-    TH3,
-    write_th3_obj,
-    4,
-    write_tarrayc
-);
-int_hist!(
-    write_th3s,
-    th3s_to_bytes,
-    write_th3s_file,
-    "TH3S",
-    TH3,
-    write_th3_obj,
-    4,
-    write_tarrays
-);
-int_hist!(
-    write_th3i,
-    th3i_to_bytes,
-    write_th3i_file,
-    "TH3I",
-    TH3,
-    write_th3_obj,
-    4,
-    write_tarrayi
-);
-int_hist!(
-    write_th3l,
-    th3l_to_bytes,
-    write_th3l_file,
-    "TH3L",
-    TH3,
-    write_th3_obj,
-    0,
-    write_tarrayl
-);
-
-/// Write a single `TProfile` into a new ROOT file at `path`. `compression`
-/// is e.g. `Compression::None` or `Compression::Zstd(5)`.
-pub fn write_tprofile_file(
-    path: impl AsRef<Path>,
-    h: &TProfile,
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TProfile".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: tprofile_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
+int_hist!(write_th1c, "TH1C", TH1, write_th1_obj, 3, write_tarrayc);
+int_hist!(write_th1s, "TH1S", TH1, write_th1_obj, 3, write_tarrays);
+int_hist!(write_th1i, "TH1I", TH1, write_th1_obj, 3, write_tarrayi);
+int_hist!(write_th1l, "TH1L", TH1, write_th1_obj, 0, write_tarrayl);
+int_hist!(write_th2c, "TH2C", TH2, write_th2_obj, 4, write_tarrayc);
+int_hist!(write_th2s, "TH2S", TH2, write_th2_obj, 4, write_tarrays);
+int_hist!(write_th2i, "TH2I", TH2, write_th2_obj, 4, write_tarrayi);
+int_hist!(write_th2l, "TH2L", TH2, write_th2_obj, 0, write_tarrayl);
+int_hist!(write_th3c, "TH3C", TH3, write_th3_obj, 4, write_tarrayc);
+int_hist!(write_th3s, "TH3S", TH3, write_th3_obj, 4, write_tarrays);
+int_hist!(write_th3i, "TH3I", TH3, write_th3_obj, 4, write_tarrayi);
+int_hist!(write_th3l, "TH3L", TH3, write_th3_obj, 0, write_tarrayl);
 
 /// Serialize a `TProfile` object (including its leading byte-count/version
 /// header) into `w`. Layout: `TProfile{ TH1D{ TH1{…, fSumw2=Σwy²}, TArrayD=Σwy },
@@ -670,32 +320,10 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &TProfile) {
 }
 
 /// Serialize a `TProfile` object to a fresh byte vector.
-pub fn tprofile_to_bytes(h: &TProfile) -> Vec<u8> {
+pub(crate) fn tprofile_to_bytes(h: &TProfile) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile(&mut w, h);
     w.into_vec()
-}
-
-/// Write a single `TProfile2D` into a new ROOT file at `path`.
-pub fn write_tprofile2d_file(
-    path: impl AsRef<Path>,
-    h: &TProfile2D,
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TProfile2D".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: tprofile2d_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
 }
 
 /// Serialize a `TProfile2D` object (with its byte-count/version header) into `w`.
@@ -731,32 +359,10 @@ pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &TProfile2D) {
 }
 
 /// Serialize a `TProfile2D` object to a fresh byte vector.
-pub fn tprofile2d_to_bytes(h: &TProfile2D) -> Vec<u8> {
+pub(crate) fn tprofile2d_to_bytes(h: &TProfile2D) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile2d(&mut w, h);
     w.into_vec()
-}
-
-/// Write a single `TProfile3D` into a new ROOT file at `path`.
-pub fn write_tprofile3d_file(
-    path: impl AsRef<Path>,
-    h: &TProfile3D,
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TProfile3D".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: tprofile3d_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
 }
 
 /// Serialize a `TProfile3D` object (with its byte-count/version header) into `w`.
@@ -794,7 +400,7 @@ pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &TProfile3D) {
 }
 
 /// Serialize a `TProfile3D` object to a fresh byte vector.
-pub fn tprofile3d_to_bytes(h: &TProfile3D) -> Vec<u8> {
+pub(crate) fn tprofile3d_to_bytes(h: &TProfile3D) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile3d(&mut w, h);
     w.into_vec()
@@ -826,28 +432,6 @@ fn write_th1d_ptr(w: &mut WBuffer, h: &TH1) {
     w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
-/// Write a single `TEfficiency` into a new ROOT file at `path`.
-pub fn write_tefficiency_file(
-    path: impl AsRef<Path>,
-    h: &TEfficiency,
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TEfficiency".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: tefficiency_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
-
 /// Serialize a `TEfficiency` object (with its byte-count/version header) into `w`.
 /// Layout: `TEfficiency{ TNamed, TAttLine, TAttFill, TAttMarker, fBeta_alpha,
 /// fBeta_beta, fBeta_bin_params, fConfLevel, fFunctions, fPassedHistogram(TH1D*),
@@ -871,7 +455,7 @@ pub(crate) fn write_tefficiency(w: &mut WBuffer, h: &TEfficiency) {
 }
 
 /// Serialize a `TEfficiency` object to a fresh byte vector.
-pub fn tefficiency_to_bytes(h: &TEfficiency) -> Vec<u8> {
+pub(crate) fn tefficiency_to_bytes(h: &TEfficiency) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tefficiency(&mut w, h);
     w.into_vec()
@@ -902,28 +486,6 @@ fn write_objarray(w: &mut WBuffer, n: usize, mut elem: impl FnMut(&mut WBuffer, 
         elem(w, i);
     }
     w.end_object(oa);
-}
-
-/// Write a single `THnSparse` (`THnSparseT<TArrayD>`) into a new ROOT file.
-pub fn write_thnsparse_file(
-    path: impl AsRef<Path>,
-    h: &THnSparse,
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "THnSparseT<TArrayD>".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: thnsparse_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
 }
 
 /// Serialize a `THnSparse` object. Layout: `THnSparseT{ THnSparse{ THnBase{
@@ -977,7 +539,7 @@ pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &THnSparse) {
 }
 
 /// Serialize a `THnSparse` object to a fresh byte vector.
-pub fn thnsparse_to_bytes(h: &THnSparse) -> Vec<u8> {
+pub(crate) fn thnsparse_to_bytes(h: &THnSparse) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_thnsparse(&mut w, h);
     w.into_vec()
@@ -987,28 +549,6 @@ pub fn thnsparse_to_bytes(h: &THnSparse) -> Vec<u8> {
 const POLY_CELLS_PER_AXIS: i32 = 25;
 /// `kMustCleanup` — the `fBits` value ROOT writes for a `TGraph`'s `TNamed`.
 const GRAPH_BITS: u32 = 0x0000_0400;
-
-/// Write a single `TH2Poly` into a new ROOT file at `path`.
-pub fn write_th2poly_file(
-    path: impl AsRef<Path>,
-    h: &TH2Poly,
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: "TH2Poly".to_string(),
-            name: h.name.clone(),
-            title: h.title.clone(),
-            object: th2poly_to_bytes(h),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
 
 /// Serialize a `TH2Poly` object (with its byte-count/version header).
 ///
@@ -1166,7 +706,7 @@ fn write_tgraph_base(w: &mut WBuffer, name: &str, title: &str, x: &[f64], y: &[f
 }
 
 /// Serialize a `TH2Poly` object to a fresh byte vector.
-pub fn th2poly_to_bytes(h: &TH2Poly) -> Vec<u8> {
+pub(crate) fn th2poly_to_bytes(h: &TH2Poly) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_th2poly(&mut w, h);
     w.into_vec()
@@ -1214,160 +754,170 @@ pub(crate) fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
 }
 
 /// Serialize a [`TGraph`] object to a fresh byte vector.
-pub fn tgraph_to_bytes(g: &TGraph) -> Vec<u8> {
+pub(crate) fn tgraph_to_bytes(g: &TGraph) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tgraph(&mut w, g);
     w.into_vec()
 }
 
-/// Write a single [`TGraph`] (or error-bar variant) into a new ROOT file.
-pub fn write_tgraph_file(
-    path: impl AsRef<Path>,
-    g: &TGraph,
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let record = ObjectRecord {
-            class_name: g.class_name().to_string(),
-            name: g.name.clone(),
-            title: g.title.clone(),
-            object: tgraph_to_bytes(g),
-        };
-        write_root_file_with_streamers(
-            file_name,
-            &[record],
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
-
-/// A histogram to store in a multi-object file via [`write_histograms_file`].
-/// For new code prefer [`write_root_file`], which takes any `&dyn `[`WriteRoot`]
-/// (profiles, graphs, …), not just `TH1`/`TH2`/`TH3`.
-#[non_exhaustive]
-pub enum Hist<'a> {
-    /// A 1-D histogram (written as `TH1D`).
-    Th1(&'a TH1),
-    /// A 2-D histogram (written as `TH2D`).
-    Th2(&'a TH2),
-    /// A 3-D histogram (written as `TH3D`).
-    Th3(&'a TH3),
-}
-
-impl<'a> From<&'a TH1> for Hist<'a> {
-    fn from(h: &'a TH1) -> Hist<'a> {
-        Hist::Th1(h)
-    }
-}
-impl<'a> From<&'a TH2> for Hist<'a> {
-    fn from(h: &'a TH2) -> Hist<'a> {
-        Hist::Th2(h)
-    }
-}
-impl<'a> From<&'a TH3> for Hist<'a> {
-    fn from(h: &'a TH3) -> Hist<'a> {
-        Hist::Th3(h)
+/// The on-disk record for any writable object — its class, name, title, and
+/// streamed payload. Shared by the [`WriteRoot`] single-object path and the
+/// [`RootFile`] builder.
+fn record_of(object: &dyn WriteRoot) -> ObjectRecord {
+    ObjectRecord {
+        class_name: object.root_class(),
+        name: object.root_name().to_string(),
+        title: object.root_title().to_string(),
+        object: object.to_root_bytes(),
     }
 }
 
-impl Hist<'_> {
-    fn record(&self) -> ObjectRecord {
-        match self {
-            Hist::Th1(h) => ObjectRecord {
-                class_name: "TH1D".to_string(),
-                name: h.name.clone(),
-                title: h.title.clone(),
-                object: th1d_to_bytes(h),
-            },
-            Hist::Th2(h) => ObjectRecord {
-                class_name: "TH2D".to_string(),
-                name: h.name.clone(),
-                title: h.title.clone(),
-                object: th2d_to_bytes(h),
-            },
-            Hist::Th3(h) => ObjectRecord {
-                class_name: "TH3D".to_string(),
-                name: h.name.clone(),
-                title: h.title.clone(),
-                object: th3d_to_bytes(h),
-            },
+/// Builder for composing a ROOT file from several objects — optionally organised
+/// into subdirectories, or appended to an existing file.
+///
+/// For the common case of a single object, prefer the
+/// [`WriteRoot::write_root`] shorthand. Reach for `RootFile` when a file holds
+/// several objects, uses subdirectories, or is being appended to. Any mix of
+/// writable types (histograms, profiles, graphs, …) can go in one file:
+///
+/// ```no_run
+/// use oxiroot_hist::{Compression, RootFile, TH1, TProfile};
+/// let pt = TH1::new("pt", "", 10, 0.0, 1.0);
+/// let prof = TProfile::new("prof", "", 10, 0.0, 1.0);
+/// let signal = TH1::new("sig", "", 10, 0.0, 1.0);
+/// RootFile::create("out.root")
+///     .add(&pt)
+///     .add(&prof)
+///     .dir("by_region", |d| d.add(&signal)) // a TDirectory holding `sig`
+///     .write(Compression::Zstd(5))?;
+/// # Ok::<(), oxiroot_io_core::Error>(())
+/// ```
+///
+/// Append to an existing file with [`open`](RootFile::open):
+///
+/// ```no_run
+/// # use oxiroot_hist::{Compression, RootFile, TH1};
+/// # let extra = TH1::new("extra", "", 10, 0.0, 1.0);
+/// RootFile::open("out.root")?.add(&extra).write(Compression::None)?;
+/// # Ok::<(), oxiroot_io_core::Error>(())
+/// ```
+#[must_use = "a RootFile builder does nothing until `.write(...)` is called"]
+pub struct RootFile {
+    path: std::path::PathBuf,
+    /// `Some` in append mode (the existing file bytes); `None` for a fresh file.
+    existing: Option<Vec<u8>>,
+    root: Vec<ObjectRecord>,
+    dirs: Vec<Subdir>,
+}
+
+impl RootFile {
+    /// Start a fresh ROOT file at `path` (any existing file is overwritten on
+    /// [`write`](RootFile::write)).
+    pub fn create(path: impl AsRef<Path>) -> RootFile {
+        RootFile {
+            path: path.as_ref().to_path_buf(),
+            existing: None,
+            root: Vec::new(),
+            dirs: Vec::new(),
         }
     }
+
+    /// Open an existing ROOT file at `path` to append more objects: its current
+    /// contents are kept and the added objects appended (a new object whose name
+    /// matches an existing one lands at a higher cycle, as ROOT does).
+    /// Subdirectories are not supported in this mode. Errors if the file holds an
+    /// RNTuple (see [`update_root_file`]).
+    pub fn open(path: impl AsRef<Path>) -> Result<RootFile> {
+        let path = path.as_ref().to_path_buf();
+        let existing = std::fs::read(&path)?;
+        Ok(RootFile {
+            path,
+            existing: Some(existing),
+            root: Vec::new(),
+            dirs: Vec::new(),
+        })
+    }
+
+    /// Add an object to the file's top directory.
+    // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
+    #[allow(clippy::should_implement_trait)]
+    pub fn add(mut self, object: &dyn WriteRoot) -> RootFile {
+        self.root.push(record_of(object));
+        self
+    }
+
+    /// Add a `TDirectory` named `name` holding the objects added inside `build`
+    /// (e.g. one directory per analysis region). Only meaningful when creating a
+    /// file; see [`open`](RootFile::open).
+    pub fn dir(mut self, name: impl Into<String>, build: impl FnOnce(Dir) -> Dir) -> RootFile {
+        let dir = build(Dir {
+            objects: Vec::new(),
+        });
+        self.dirs.push(Subdir {
+            name: name.into(),
+            objects: dir.objects,
+        });
+        self
+    }
+
+    /// Build the file bytes and write them to the path. A fresh builder writes a
+    /// new file; one from [`open`](RootFile::open) rewrites the file with its
+    /// existing contents plus the additions.
+    pub fn write(self, compression: Compression) -> Result<()> {
+        let file_name = self
+            .path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file.root")
+            .to_string();
+        let setting = compression.setting();
+        let bytes = match self.existing {
+            Some(existing) => {
+                if !self.dirs.is_empty() {
+                    return Err(Error::Format(
+                        "appending into subdirectories is not supported".to_string(),
+                    ));
+                }
+                update_root_file(
+                    &existing,
+                    &file_name,
+                    &self.root,
+                    setting,
+                    Some(HIST_STREAMER_INFO),
+                )?
+            }
+            None if self.dirs.is_empty() => write_root_file_with_streamers(
+                &file_name,
+                &self.root,
+                setting,
+                Some(HIST_STREAMER_INFO),
+            )?,
+            None => write_root_file_with_dirs(
+                &file_name,
+                &self.root,
+                &self.dirs,
+                setting,
+                Some(HIST_STREAMER_INFO),
+            )?,
+        };
+        std::fs::write(&self.path, bytes)?;
+        Ok(())
+    }
 }
 
-/// Write several histograms into one ROOT file at `path` (each becomes a key in
-/// the root directory). `compression` is e.g. `Compression::None` or
-/// `Compression::Zstd(5)`.
-pub fn write_histograms_file(
-    path: impl AsRef<Path>,
-    hists: &[Hist],
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let records: Vec<ObjectRecord> = hists.iter().map(Hist::record).collect();
-        write_root_file_with_streamers(
-            file_name,
-            &records,
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
+/// A subdirectory being built inside a [`RootFile`]; see [`RootFile::dir`].
+#[must_use]
+pub struct Dir {
+    objects: Vec<ObjectRecord>,
 }
 
-/// Write histograms organized into subdirectories: `root` goes in the file's
-/// top directory, and each `(name, hists)` in `subdirs` becomes a `TDirectory`
-/// holding its own histograms (e.g. one directory per analysis region).
-pub fn write_histograms_dirs(
-    path: impl AsRef<Path>,
-    root: &[Hist],
-    subdirs: &[(&str, &[Hist])],
-    compression: Compression,
-) -> Result<()> {
-    write_named(path, |file_name| {
-        let root_objects: Vec<ObjectRecord> = root.iter().map(Hist::record).collect();
-        let dirs: Vec<Subdir> = subdirs
-            .iter()
-            .map(|(name, hists)| Subdir {
-                name: name.to_string(),
-                objects: hists.iter().map(Hist::record).collect(),
-            })
-            .collect();
-        write_root_file_with_dirs(
-            file_name,
-            &root_objects,
-            &dirs,
-            compression.setting(),
-            Some(HIST_STREAMER_INFO),
-        )
-    })
-}
-
-/// Append histograms to an existing ROOT file at `path`, rewriting it with the
-/// existing objects plus the new ones (each becomes a key). A new histogram
-/// whose name matches an existing one is stored at a higher cycle, as ROOT does.
-/// Errors if the file contains an RNTuple (see [`update_root_file`]).
-pub fn append_histograms_file(
-    path: impl AsRef<Path>,
-    hists: &[Hist],
-    compression: Compression,
-) -> Result<()> {
-    let path = path.as_ref();
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let existing = std::fs::read(path)?;
-    let records: Vec<ObjectRecord> = hists.iter().map(Hist::record).collect();
-    let bytes = update_root_file(
-        &existing,
-        file_name,
-        &records,
-        compression.setting(),
-        Some(HIST_STREAMER_INFO),
-    )?;
-    std::fs::write(path, bytes)?;
-    Ok(())
+impl Dir {
+    /// Add an object to this subdirectory.
+    #[allow(clippy::should_implement_trait)]
+    pub fn add(mut self, object: &dyn WriteRoot) -> Dir {
+        self.objects.push(record_of(object));
+        self
+    }
 }
 
 fn write_th1_base(w: &mut WBuffer, h: &TH1) {

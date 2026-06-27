@@ -72,7 +72,7 @@ fn canonical_hist() -> TH1 {
 
 fn write(dir: &Path) -> Result<()> {
     let h = canonical_hist();
-    write_th1d_file(dir.join("rust_hist.root"), &h, Compression::None)?;
+    h.write_root(dir.join("rust_hist.root"), Compression::None)?;
 
     let fields = vec![
         Field::i32("x", NTPL_X.to_vec()),
@@ -117,7 +117,7 @@ fn write(dir: &Path) -> Result<()> {
 fn read(dir: &Path) -> Result<()> {
     // Histogram written by the ROOT oracle.
     let f = RFile::open(dir.join("oracle_hist.root"))?;
-    let h = read_th1d(&f, "h")?;
+    let h = TH1::read_root(&f, "h")?;
     assert_close("hist bin contents", h.values(), &HIST_BINS);
     println!("read oracle_hist.root — bin contents match");
 

@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th1d, TH1};
+use oxiroot_hist::{ReadRoot, WriteRoot, TH1};
 use oxiroot_io_core::RFile;
 
 #[test]
@@ -21,9 +21,10 @@ fn weighted_sumw2_round_trips() {
     assert_eq!(h.bin_error(2), 1.0);
 
     let out = PathBuf::from("/tmp/rootrs_weighted.root");
-    oxiroot_hist::write_th1d_file(&out, &h, oxiroot_io_core::Compression::None).expect("write");
+    h.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write");
     let f = RFile::open(&out).expect("reopen");
-    let h2 = read_th1d(&f, "hw").expect("read back");
+    let h2 = TH1::read_root(&f, "hw").expect("read back");
     assert_eq!(h2, h, "weighted histogram (incl. Sumw2) must round-trip");
     assert_eq!(h2.sumw2[1], 13.0, "Sumw2 survived write->read");
 }
@@ -44,9 +45,10 @@ fn variable_bins_round_trip() {
     assert_eq!(h.entries, 6.0);
 
     let out = PathBuf::from("/tmp/rootrs_varbins.root");
-    oxiroot_hist::write_th1d_file(&out, &h, oxiroot_io_core::Compression::None).expect("write");
+    h.write_root(&out, oxiroot_io_core::Compression::None)
+        .expect("write");
     let f = RFile::open(&out).expect("reopen");
-    let h2 = read_th1d(&f, "hv").expect("read back");
+    let h2 = TH1::read_root(&f, "hv").expect("read back");
     assert_eq!(h2, h, "variable-bin histogram must round-trip");
     assert_eq!(h2.edges(), edges, "edges survived write->read");
 }

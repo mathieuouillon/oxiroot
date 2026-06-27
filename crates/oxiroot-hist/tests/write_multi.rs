@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th1d, read_th2d, Hist, TH1, TH2};
+use oxiroot_hist::{ReadRoot, RootFile, TH1, TH2};
 use oxiroot_io_core::RFile;
 
 #[test]
@@ -18,12 +18,11 @@ fn writes_multiple_histograms_into_one_file() {
     h2.fill(1.5, 1.5);
 
     let out = PathBuf::from("/tmp/rootrs_multi_hist.root");
-    oxiroot_hist::write_histograms_file(
-        &out,
-        &[Hist::Th1(&h1), Hist::Th2(&h2)],
-        oxiroot_io_core::Compression::None,
-    )
-    .expect("write");
+    RootFile::create(&out)
+        .add(&h1)
+        .add(&h2)
+        .write(oxiroot_io_core::Compression::None)
+        .expect("write");
 
     let f = RFile::open(&out).expect("reopen");
     let keys: Vec<(&str, &str)> = f
@@ -33,6 +32,6 @@ fn writes_multiple_histograms_into_one_file() {
         .collect();
     assert_eq!(keys, vec![("hx", "TH1D"), ("hxy", "TH2D")]);
 
-    assert_eq!(read_th1d(&f, "hx").expect("read hx"), h1);
-    assert_eq!(read_th2d(&f, "hxy").expect("read hxy"), h2);
+    assert_eq!(TH1::read_root(&f, "hx").expect("read hx"), h1);
+    assert_eq!(TH2::read_root(&f, "hxy").expect("read hxy"), h2);
 }

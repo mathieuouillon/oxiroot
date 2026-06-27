@@ -14,7 +14,7 @@ use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{object_bytes, read_tarray, Precision};
+use crate::base::{object_bytes, object_bytes_in, read_tarray, Precision};
 
 /// A filled cell: one (per-axis, flow-inclusive) bin index per dimension, and its
 /// content.
@@ -252,7 +252,20 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
 }
 
 /// Read a `THnSparse` named `name` from `file`.
-pub fn read_thnsparse(file: &RFile, name: &str) -> Result<THnSparse> {
-    let object = object_bytes(file, name, "THnSparseT<TArrayD>")?;
-    THnSparse::read(&mut RBuffer::new(&object))
+pub(crate) fn read_thnsparse(file: &RFile, name: &str) -> Result<THnSparse> {
+    THnSparse::read(&mut RBuffer::new(&object_bytes(
+        file,
+        name,
+        "THnSparseT<TArrayD>",
+    )?))
+}
+
+/// Read a `THnSparseT<TArrayD>` from subdirectory `subdir`.
+pub(crate) fn read_thnsparse_in(file: &RFile, subdir: &str, name: &str) -> Result<THnSparse> {
+    THnSparse::read(&mut RBuffer::new(&object_bytes_in(
+        file,
+        subdir,
+        name,
+        "THnSparseT<TArrayD>",
+    )?))
 }

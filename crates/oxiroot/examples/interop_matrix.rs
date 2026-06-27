@@ -171,12 +171,27 @@ fn hist1_case(id: &'static str, class: &str, comp: Compression, h: &TH1, dir: &P
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
-        "TH1C" => write_th1c_file(&path, h, comp),
-        "TH1S" => write_th1s_file(&path, h, comp),
-        "TH1I" => write_th1i_file(&path, h, comp),
-        "TH1L" => write_th1l_file(&path, h, comp),
-        "TH1F" => write_th1f_file(&path, h, comp),
-        "TH1D" => write_th1d_file(&path, h, comp),
+        "TH1C" => h
+            .clone()
+            .with_precision(Precision::Char)
+            .write_root(&path, comp),
+        "TH1S" => h
+            .clone()
+            .with_precision(Precision::Short)
+            .write_root(&path, comp),
+        "TH1I" => h
+            .clone()
+            .with_precision(Precision::Int)
+            .write_root(&path, comp),
+        "TH1L" => h
+            .clone()
+            .with_precision(Precision::Long)
+            .write_root(&path, comp),
+        "TH1F" => h
+            .clone()
+            .with_precision(Precision::Float)
+            .write_root(&path, comp),
+        "TH1D" => h.write_root(&path, comp),
         _ => unreachable!(),
     }
     .unwrap_or_else(|e| die(&format!("write {id}: {e}")));
@@ -206,12 +221,27 @@ fn hist2_case(id: &'static str, class: &str, comp: Compression, h: &TH2, dir: &P
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
-        "TH2C" => write_th2c_file(&path, h, comp),
-        "TH2S" => write_th2s_file(&path, h, comp),
-        "TH2I" => write_th2i_file(&path, h, comp),
-        "TH2L" => write_th2l_file(&path, h, comp),
-        "TH2F" => write_th2f_file(&path, h, comp),
-        "TH2D" => write_th2d_file(&path, h, comp),
+        "TH2C" => h
+            .clone()
+            .with_precision(Precision::Char)
+            .write_root(&path, comp),
+        "TH2S" => h
+            .clone()
+            .with_precision(Precision::Short)
+            .write_root(&path, comp),
+        "TH2I" => h
+            .clone()
+            .with_precision(Precision::Int)
+            .write_root(&path, comp),
+        "TH2L" => h
+            .clone()
+            .with_precision(Precision::Long)
+            .write_root(&path, comp),
+        "TH2F" => h
+            .clone()
+            .with_precision(Precision::Float)
+            .write_root(&path, comp),
+        "TH2D" => h.write_root(&path, comp),
         _ => unreachable!(),
     }
     .unwrap_or_else(|e| die(&format!("write {id}: {e}")));
@@ -255,12 +285,27 @@ fn hist3_case(id: &'static str, class: &str, comp: Compression, h: &TH3, dir: &P
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
-        "TH3C" => write_th3c_file(&path, h, comp),
-        "TH3S" => write_th3s_file(&path, h, comp),
-        "TH3I" => write_th3i_file(&path, h, comp),
-        "TH3L" => write_th3l_file(&path, h, comp),
-        "TH3F" => write_th3f_file(&path, h, comp),
-        "TH3D" => write_th3d_file(&path, h, comp),
+        "TH3C" => h
+            .clone()
+            .with_precision(Precision::Char)
+            .write_root(&path, comp),
+        "TH3S" => h
+            .clone()
+            .with_precision(Precision::Short)
+            .write_root(&path, comp),
+        "TH3I" => h
+            .clone()
+            .with_precision(Precision::Int)
+            .write_root(&path, comp),
+        "TH3L" => h
+            .clone()
+            .with_precision(Precision::Long)
+            .write_root(&path, comp),
+        "TH3F" => h
+            .clone()
+            .with_precision(Precision::Float)
+            .write_root(&path, comp),
+        "TH3D" => h.write_root(&path, comp),
         _ => unreachable!(),
     }
     .unwrap_or_else(|e| die(&format!("write {id}: {e}")));
@@ -548,7 +593,7 @@ fn write(dir: &Path) {
         p.fill(1.5, 10.0); // bin2 mean 7.5
         p.fill(2.5, 30.0); // bin3 mean 30
         let file = "m_tprofile.root".to_string();
-        write_tprofile_file(dir.join(&file), &p, none)
+        p.write_root(dir.join(&file), none)
             .unwrap_or_else(|e| die(&format!("tprofile: {e}")));
         cases.push(J::Obj(vec![
             ("id", J::Str("tprofile".into())),
@@ -563,7 +608,7 @@ fn write(dir: &Path) {
         ]));
     }
 
-    // --- Multi-object file (write_histograms_file). ---
+    // --- Multi-object file (RootFile builder). ---
     {
         let ha = th1_with(2, 0.0, 2.0, &[1.0, 2.0]);
         let hb = th2_with(2, 2, &[vec![3.0, 4.0], vec![5.0, 6.0]]);
@@ -573,7 +618,10 @@ fn write(dir: &Path) {
         let mut hb = hb;
         hb.name = "hb".into();
         let file = "m_multiobj.root".to_string();
-        write_histograms_file(dir.join(&file), &[Hist::Th1(&ha), Hist::Th2(&hb)], none)
+        RootFile::create(dir.join(&file))
+            .add(&ha)
+            .add(&hb)
+            .write(none)
             .unwrap_or_else(|e| die(&format!("multiobj: {e}")));
         cases.push(J::Obj(vec![
             ("id", J::Str("multiobj".into())),
@@ -603,7 +651,7 @@ fn write(dir: &Path) {
         ]));
     }
 
-    // --- Subdirectories (write_histograms_dirs). ---
+    // --- Subdirectories (RootFile builder with dir). ---
     {
         let mut htop = th1_with(1, 0.0, 1.0, &[7.0]);
         htop.name = "htop".into();
@@ -612,16 +660,12 @@ fn write(dir: &Path) {
         let mut hb = th1_with(1, 0.0, 1.0, &[4.0]);
         hb.name = "h".into();
         let file = "m_subdirs.root".to_string();
-        write_histograms_dirs(
-            dir.join(&file),
-            &[Hist::Th1(&htop)],
-            &[
-                ("regionA", &[Hist::Th1(&ha)]),
-                ("regionB", &[Hist::Th1(&hb)]),
-            ],
-            none,
-        )
-        .unwrap_or_else(|e| die(&format!("subdirs: {e}")));
+        RootFile::create(dir.join(&file))
+            .add(&htop)
+            .dir("regionA", |d| d.add(&ha))
+            .dir("regionB", |d| d.add(&hb))
+            .write(none)
+            .unwrap_or_else(|e| die(&format!("subdirs: {e}")));
         cases.push(J::Obj(vec![
             ("id", J::Str("subdirs".into())),
             ("kind", J::Str("hist_dirs".into())),
@@ -680,9 +724,14 @@ fn write(dir: &Path) {
         h2.name = "h2".into();
         let file = "m_append.root".to_string();
         let path = dir.join(&file);
-        write_histograms_file(&path, &[Hist::Th1(&h1)], none)
+        RootFile::create(&path)
+            .add(&h1)
+            .write(none)
             .unwrap_or_else(|e| die(&format!("append base: {e}")));
-        append_histograms_file(&path, &[Hist::Th1(&h2)], none)
+        RootFile::open(&path)
+            .unwrap_or_else(|e| die(&format!("append open: {e}")))
+            .add(&h2)
+            .write(none)
             .unwrap_or_else(|e| die(&format!("append: {e}")));
         cases.push(J::Obj(vec![
             ("id", J::Str("append".into())),

@@ -12,7 +12,7 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, histogram_object, object_bytes, precision_of, read_tarray,
+    cell_count, check_cells, histogram_object, histogram_object_in, precision_of, read_tarray,
     read_th1_base, Precision,
 };
 
@@ -312,22 +312,15 @@ impl TH3 {
 
 /// Read any 3-D histogram (`TH3D/F/I/S/C/L`), detecting the precision from the
 /// stored class.
-pub fn read_th3(file: &RFile, name: &str) -> Result<TH3> {
-    let (class, object) = histogram_object(file, name, "TH3")?;
+pub(crate) fn read_th3(file: &RFile, name: &str) -> Result<TH3> {
+    decode_th3(histogram_object(file, name, "TH3")?)
+}
+
+/// Read any 3-D histogram from subdirectory `subdir`.
+pub(crate) fn read_th3_in(file: &RFile, subdir: &str, name: &str) -> Result<TH3> {
+    decode_th3(histogram_object_in(file, subdir, name, "TH3")?)
+}
+
+fn decode_th3((class, object): (String, Vec<u8>)) -> Result<TH3> {
     TH3::read(&mut RBuffer::new(&object), precision_of(&class)?)
-}
-
-/// Read a `TH3D` (3-D double histogram) from an open ROOT file.
-pub fn read_th3d(file: &RFile, name: &str) -> Result<TH3> {
-    read_th3_named(file, name, "TH3D")
-}
-
-/// Read a `TH3F` (3-D float histogram) from an open ROOT file.
-pub fn read_th3f(file: &RFile, name: &str) -> Result<TH3> {
-    read_th3_named(file, name, "TH3F")
-}
-
-fn read_th3_named(file: &RFile, name: &str, class: &str) -> Result<TH3> {
-    let object = object_bytes(file, name, class)?;
-    TH3::read(&mut RBuffer::new(&object), precision_of(class)?)
 }

@@ -17,7 +17,7 @@
 //! let mut h = TH1::new("pt", "transverse momentum", 50, 0.0, 100.0);
 //! h.sumw2();
 //! h.fill_weight(42.0, 1.5);
-//! write_th1d_file("out.root", &h, Compression::Zstd(5))?;
+//! h.write_root("out.root", Compression::Zstd(5))?; // WriteRoot trait
 //!
 //! // Write a columnar dataset, then read it back.
 //! let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
@@ -66,18 +66,10 @@ pub mod prelude {
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     pub use oxiroot_hist::{
-        append_histograms_file, merge_all, read_tefficiency, read_tgraph, read_th1, read_th1d,
-        read_th1d_in, read_th1f, read_th2, read_th2d, read_th2f, read_th2poly, read_th3, read_th3d,
-        read_th3f, read_thnsparse, read_tprofile, read_tprofile2d, read_tprofile3d,
-        write_histograms_dirs, write_histograms_file, write_root_file, write_tefficiency_file,
-        write_tgraph_file, write_th1c_file, write_th1d_file, write_th1f_file, write_th1i_file,
-        write_th1l_file, write_th1s_file, write_th2c_file, write_th2d_file, write_th2f_file,
-        write_th2i_file, write_th2l_file, write_th2poly_file, write_th2s_file, write_th3c_file,
-        write_th3d_file, write_th3f_file, write_th3i_file, write_th3l_file, write_th3s_file,
-        write_thnsparse_file, write_tprofile2d_file, write_tprofile3d_file, write_tprofile_file,
-        Chi2TestKind, Chi2TestResult, ErrorMode, GraphErrors, Hist, Histogram, KsTestResult, Merge,
-        PolyBin, Precision, ReadRoot, SparseBin, TAxis, TEfficiency, TGraph, TH2Poly, THnSparse,
-        TProfile, TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TH1, TH2, TH3,
+        merge_all, Chi2TestKind, Chi2TestResult, Dir, ErrorMode, GraphErrors, Histogram,
+        KsTestResult, Merge, PolyBin, Precision, ReadRoot, RootFile, SparseBin, TAxis, TEfficiency,
+        TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TH1,
+        TH2, TH3,
     };
     #[cfg(feature = "fit")]
     pub use oxiroot_hist::{FitMethod, FitOptions, FitResult, TF1};

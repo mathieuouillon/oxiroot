@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th1d, read_th1d_in, Hist, TH1};
+use oxiroot_hist::{ReadRoot, RootFile, TH1};
 use oxiroot_io_core::RFile;
 
 #[test]
@@ -18,16 +18,12 @@ fn writes_histograms_into_subdirectories() {
     cr.fill(0.5);
 
     let out = PathBuf::from("/tmp/rootrs_dirs.root");
-    oxiroot_hist::write_histograms_dirs(
-        &out,
-        &[Hist::Th1(&top)],
-        &[
-            ("signal", &[Hist::Th1(&sr)]),
-            ("control", &[Hist::Th1(&cr)]),
-        ],
-        oxiroot_io_core::Compression::None,
-    )
-    .expect("write");
+    RootFile::create(&out)
+        .add(&top)
+        .dir("signal", |d| d.add(&sr))
+        .dir("control", |d| d.add(&cr))
+        .write(oxiroot_io_core::Compression::None)
+        .expect("write");
 
     let f = RFile::open(&out).expect("reopen");
 
@@ -42,9 +38,9 @@ fn writes_histograms_into_subdirectories() {
     assert!(root_keys.contains(&("control", "TDirectory")));
 
     // The top-level histogram and both subdirectory histograms read back.
-    assert_eq!(read_th1d(&f, "top").unwrap(), top);
-    assert_eq!(read_th1d_in(&f, "signal", "mll").unwrap(), sr);
-    assert_eq!(read_th1d_in(&f, "control", "mll").unwrap(), cr);
+    assert_eq!(TH1::read_root(&f, "top").unwrap(), top);
+    assert_eq!(TH1::read_root_in(&f, "signal", "mll").unwrap(), sr);
+    assert_eq!(TH1::read_root_in(&f, "control", "mll").unwrap(), cr);
 
     // The subdirectory's own key list is navigable.
     let signal = f.subdir("signal").expect("signal dir");

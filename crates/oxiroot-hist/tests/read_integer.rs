@@ -1,9 +1,9 @@
 //! Integration test for integer-typed histograms (TArrayC/S/I/L64), read via
-//! the generic `read_th1` which detects the precision from the stored class.
+//! `TH1::read_root` which detects the precision from the stored class.
 
 use std::path::PathBuf;
 
-use oxiroot_hist::read_th1;
+use oxiroot_hist::{ReadRoot, TH1};
 use oxiroot_io_core::RFile;
 
 fn open(name: &str) -> RFile {
@@ -51,7 +51,7 @@ fn reads_integer_histograms() {
     ];
 
     for (file, key, class, expected) in cases {
-        let h = read_th1(&open(file), key).expect("read integer TH1");
+        let h = TH1::read_root(&open(file), key).expect("read integer TH1");
         assert_eq!(h.class_name(), class, "{file}");
         assert_eq!(h.xaxis.nbins, 5, "{file}");
         assert_eq!(h.values(), expected, "{file}: bin contents");
@@ -59,8 +59,8 @@ fn reads_integer_histograms() {
 }
 
 #[test]
-fn read_th1_rejects_wrong_dimension() {
+fn th1_read_root_rejects_wrong_dimension() {
     // th2f holds a TH2F; asking for a TH1 must fail rather than mis-read.
-    let err = read_th1(&open("th2f_uncompressed.root"), "h2f").unwrap_err();
+    let err = TH1::read_root(&open("th2f_uncompressed.root"), "h2f").unwrap_err();
     assert!(matches!(err, oxiroot_io_core::Error::Format(_)));
 }

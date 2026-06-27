@@ -4,12 +4,12 @@
 //! [`crate::base`]; the inline `TArray` holds the bin contents.
 
 use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::error::Result;
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, histogram_object, object_bytes, precision_of, read_th1_object,
+    cell_count, check_cells, histogram_object, histogram_object_in, precision_of, read_th1_object,
     Precision,
 };
 
@@ -229,33 +229,15 @@ impl TH1 {
 
 /// Read any 1-D histogram (`TH1D/F/I/S/C/L`), detecting the precision from the
 /// stored class.
-pub fn read_th1(file: &RFile, name: &str) -> Result<TH1> {
-    let (class, object) = histogram_object(file, name, "TH1")?;
-    TH1::read(&mut RBuffer::new(&object), precision_of(&class)?)
+pub(crate) fn read_th1(file: &RFile, name: &str) -> Result<TH1> {
+    decode_th1(histogram_object(file, name, "TH1")?)
 }
 
-/// Read a `TH1D` (1-D double histogram) from an open ROOT file.
-pub fn read_th1d(file: &RFile, name: &str) -> Result<TH1> {
-    read_th1_named(file, name, "TH1D")
+/// Read any 1-D histogram from subdirectory `subdir`.
+pub(crate) fn read_th1_in(file: &RFile, subdir: &str, name: &str) -> Result<TH1> {
+    decode_th1(histogram_object_in(file, subdir, name, "TH1")?)
 }
 
-/// Read a `TH1F` (1-D float histogram) from an open ROOT file.
-pub fn read_th1f(file: &RFile, name: &str) -> Result<TH1> {
-    read_th1_named(file, name, "TH1F")
-}
-
-fn read_th1_named(file: &RFile, name: &str, class: &str) -> Result<TH1> {
-    let object = object_bytes(file, name, class)?;
-    TH1::read(&mut RBuffer::new(&object), precision_of(class)?)
-}
-
-/// Read a `TH1D` from a subdirectory of an open ROOT file.
-pub fn read_th1d_in(file: &RFile, subdir: &str, name: &str) -> Result<TH1> {
-    let (class, object) = file.object_in(subdir, name)?;
-    if class != "TH1D" {
-        return Err(Error::Format(format!(
-            "key {name:?} in {subdir:?} is a {class}, not TH1D"
-        )));
-    }
+fn decode_th1((class, object): (String, Vec<u8>)) -> Result<TH1> {
     TH1::read(&mut RBuffer::new(&object), precision_of(&class)?)
 }

@@ -10,7 +10,7 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, histogram_object, object_bytes, precision_of, read_tarray,
+    cell_count, check_cells, histogram_object, histogram_object_in, precision_of, read_tarray,
     read_th1_base, Precision,
 };
 
@@ -284,22 +284,15 @@ impl TH2 {
 
 /// Read any 2-D histogram (`TH2D/F/I/S/C/L`), detecting the precision from the
 /// stored class.
-pub fn read_th2(file: &RFile, name: &str) -> Result<TH2> {
-    let (class, object) = histogram_object(file, name, "TH2")?;
+pub(crate) fn read_th2(file: &RFile, name: &str) -> Result<TH2> {
+    decode_th2(histogram_object(file, name, "TH2")?)
+}
+
+/// Read any 2-D histogram from subdirectory `subdir`.
+pub(crate) fn read_th2_in(file: &RFile, subdir: &str, name: &str) -> Result<TH2> {
+    decode_th2(histogram_object_in(file, subdir, name, "TH2")?)
+}
+
+fn decode_th2((class, object): (String, Vec<u8>)) -> Result<TH2> {
     TH2::read(&mut RBuffer::new(&object), precision_of(&class)?)
-}
-
-/// Read a `TH2D` (2-D double histogram) from an open ROOT file.
-pub fn read_th2d(file: &RFile, name: &str) -> Result<TH2> {
-    read_th2_named(file, name, "TH2D")
-}
-
-/// Read a `TH2F` (2-D float histogram) from an open ROOT file.
-pub fn read_th2f(file: &RFile, name: &str) -> Result<TH2> {
-    read_th2_named(file, name, "TH2F")
-}
-
-fn read_th2_named(file: &RFile, name: &str, class: &str) -> Result<TH2> {
-    let object = object_bytes(file, name, class)?;
-    TH2::read(&mut RBuffer::new(&object), precision_of(class)?)
 }

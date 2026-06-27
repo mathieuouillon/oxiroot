@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th2poly, write_th2poly_file, TH2Poly};
+use oxiroot_hist::{ReadRoot, TH2Poly, WriteRoot};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> PathBuf {
@@ -19,7 +19,7 @@ fn reads_root_written_th2poly() {
     // AddBin(0,0,1,1) filled once (content 1) and AddBin(1,1,2,2) filled with
     // weight 3 (content 3).
     let f = RFile::open(fixture("th2poly.root")).expect("open");
-    let h = read_th2poly(&f, "hp").expect("read");
+    let h = TH2Poly::read_root(&f, "hp").expect("read");
 
     assert_eq!(h.name, "hp");
     assert_eq!(h.title, "poly");
@@ -47,7 +47,7 @@ fn reads_honeycomb_th2poly() {
     // map heavily: every bin must be read in full exactly once. Cross-checked
     // bit-for-bit against compiled ROOT C++ (`GetBins()` / `GetPolygon()`).
     let f = RFile::open(fixture("th2poly_honeycomb.root")).expect("open");
-    let h = read_th2poly(&f, "hc").expect("read");
+    let h = TH2Poly::read_root(&f, "hc").expect("read");
 
     assert_eq!(h.title, "honeycomb");
     assert_eq!(h.nbins(), 14);
@@ -75,10 +75,10 @@ fn reads_honeycomb_th2poly() {
 #[test]
 fn th2poly_round_trips() {
     for (file, name) in [("th2poly.root", "hp"), ("th2poly_honeycomb.root", "hc")] {
-        let h = read_th2poly(&RFile::open(fixture(file)).unwrap(), name).unwrap();
+        let h = TH2Poly::read_root(&RFile::open(fixture(file)).unwrap(), name).unwrap();
         let out = std::env::temp_dir().join(format!("oxiroot_{name}.root"));
-        write_th2poly_file(&out, &h, Compression::None).expect("write");
-        let back = read_th2poly(&RFile::open(&out).unwrap(), name).unwrap();
+        h.write_root(&out, Compression::None).expect("write");
+        let back = TH2Poly::read_root(&RFile::open(&out).unwrap(), name).unwrap();
         assert_eq!(back.bins, h.bins, "{name} bins changed across round-trip");
         assert_eq!(back.name, h.name);
         assert_eq!(back.title, h.title);
@@ -102,8 +102,8 @@ fn th2poly_build_from_scratch() {
     assert_eq!(h.fill(10.0, 10.0), 0); // outside every bin -> overflow
 
     let out = std::env::temp_dir().join("oxiroot_th2poly_scratch.root");
-    write_th2poly_file(&out, &h, Compression::Zstd(5)).expect("write");
-    let back = read_th2poly(&RFile::open(&out).unwrap(), "scratch").unwrap();
+    h.write_root(&out, Compression::Zstd(5)).expect("write");
+    let back = TH2Poly::read_root(&RFile::open(&out).unwrap(), "scratch").unwrap();
 
     assert_eq!(back.nbins(), 3);
     assert_eq!(back.bin(1).unwrap().content, 1.0);

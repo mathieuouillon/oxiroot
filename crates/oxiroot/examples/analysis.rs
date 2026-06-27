@@ -1,9 +1,9 @@
 //! A miniature analysis end-to-end: fill weighted histograms (with variable
 //! bins), combine and normalize them (`*=`, `Index`, the `Histogram` trait),
-//! write them — into subdirectories and as a flat heterogeneous file via the
-//! `WriteRoot` trait (`write_root_file`, with a float-precision `TH1F`) — write
-//! a columnar event dataset, and read it back (`TH1::read_root`) — all readable
-//! by official ROOT and uproot.
+//! write them — into subdirectories and a flat heterogeneous file via the
+//! `RootFile` builder (with a float-precision `TH1F`) — write a columnar event
+//! dataset, and read it back (`TH1::read_root`) — all readable by official ROOT
+//! and uproot.
 //!
 //! Run with: `cargo run -p oxiroot --example analysis`
 
@@ -78,21 +78,18 @@ fn main() -> Result<()> {
     println!("normalized signal integral = {:.6}", signal.integral());
     println!("{signal}"); // Display: one-line summary
 
-    // --- Save histograms into per-region subdirectories. -----------------------
+    // --- Compose a file with the `RootFile` builder: top-level objects plus -----
+    // per-region subdirectories. The one way to write more than a single object.
     let hist_path = dir.join("analysis_hists.root");
-    write_histograms_dirs(
-        &hist_path,
-        &[Hist::Th1(&pt), Hist::Th2(&eta_phi)], // top level
-        &[
-            ("signal", &[Hist::Th1(&signal)]),
-            ("background", &[Hist::Th1(&background)]),
-        ],
-        Compression::Zstd(5),
-    )?;
+    RootFile::create(&hist_path)
+        .add(&pt) // top level
+        .add(&eta_phi)
+        .dir("signal", |d| d.add(&signal)) // a TDirectory per region
+        .dir("background", |d| d.add(&background))
+        .write(Compression::Zstd(5))?;
     println!("wrote histograms -> {}", hist_path.display());
 
-    // --- Flat multi-object write: any mix of writable types in one file. -------
-    // `write_root_file` takes `&[&dyn WriteRoot]` — histograms, profiles, graphs.
+    // --- A flat file mixing any writable types — histograms, profiles, graphs. -
     let mut prof = TProfile::new("pt_prof", "<pt> per region", 5, 0.0, 5.0);
     for (region, &(p, ..)) in events.iter().enumerate() {
         prof.fill(region as f64 + 0.5, p);
@@ -100,11 +97,11 @@ fn main() -> Result<()> {
     // Write `pt` as a float-precision TH1F just by setting its on-disk precision.
     let pt_f32 = pt.clone().with_precision(Precision::Float);
     let multi_path = dir.join("analysis_multi.root");
-    write_root_file(
-        &multi_path,
-        &[&pt_f32, &eta_phi, &prof],
-        Compression::Zstd(5),
-    )?;
+    RootFile::create(&multi_path)
+        .add(&pt_f32)
+        .add(&eta_phi)
+        .add(&prof)
+        .write(Compression::Zstd(5))?;
     println!(
         "wrote {} as {} + TH2D + TProfile",
         multi_path.display(),
@@ -138,10 +135,10 @@ fn main() -> Result<()> {
     .write_root(&tree_path, Compression::Zstd(5))?;
     println!("wrote TTree   -> {}", tree_path.display());
 
-    // --- Read it all back (idiomatic `TH1::read_root`; subdir via `_in`). -------
+    // --- Read it all back (idiomatic `TH1::read_root`; subdir via `read_root_in`).
     let f = RFile::open(&hist_path)?;
     let pt_back = TH1::read_root(&f, "pt")?;
-    let sig_back = read_th1d_in(&f, "signal", "pt")?;
+    let sig_back = TH1::read_root_in(&f, "signal", "pt")?;
     println!(
         "read back: pt has {} bins, signal/pt integral = {:.6}",
         pt_back.values().len(),

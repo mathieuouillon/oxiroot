@@ -170,10 +170,20 @@ fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
 }
 
 /// Read a `TGraph`, `TGraphErrors`, or `TGraphAsymmErrors` named `name`.
-pub fn read_tgraph(file: &RFile, name: &str) -> Result<TGraph> {
+pub(crate) fn read_tgraph(file: &RFile, name: &str) -> Result<TGraph> {
     let (class, object) = object_bytes_any(file, name)?;
-    let mut r = RBuffer::new(&object);
-    match class.as_str() {
+    decode_tgraph(name, &class, &object)
+}
+
+/// Read a graph from subdirectory `subdir`.
+pub(crate) fn read_tgraph_in(file: &RFile, subdir: &str, name: &str) -> Result<TGraph> {
+    let (class, object) = file.object_in(subdir, name)?;
+    decode_tgraph(name, &class, &object)
+}
+
+fn decode_tgraph(name: &str, class: &str, object: &[u8]) -> Result<TGraph> {
+    let mut r = RBuffer::new(object);
+    match class {
         "TGraph" => read_tgraph_base(&mut r),
         "TGraphErrors" => {
             let _wrapper = r.read_version()?; // TGraphErrors v3

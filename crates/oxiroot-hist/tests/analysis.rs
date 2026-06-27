@@ -3,14 +3,14 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{read_th1d, TH1};
+use oxiroot_hist::{ReadRoot, TH1};
 use oxiroot_io_core::RFile;
 
 fn h(name: &str) -> TH1 {
     let f =
         RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/analysis.root"))
             .expect("open");
-    read_th1d(&f, name).expect("read")
+    TH1::read_root(&f, name).expect("read")
 }
 
 fn close(a: f64, b: f64) -> bool {
