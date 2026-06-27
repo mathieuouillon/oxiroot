@@ -12,6 +12,48 @@ use oxiroot_io_core::RFile;
 use crate::axis::TAxis;
 use crate::base::{cell_count, check_cells, object_bytes, read_tarray, read_th1_object, Precision};
 
+/// How a profile's per-bin error bar is computed (ROOT's `fErrorMode`). Shared
+/// by [`TProfile`], [`crate::TProfile2D`], and [`crate::TProfile3D`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum ErrorMode {
+    /// `kERRORMEAN` (0): error on the mean, `spread / sqrt(N_eff)` (the default).
+    #[default]
+    Mean,
+    /// `kERRORSPREAD` (1): the RMS spread itself.
+    Spread,
+    /// `kERRORSPREADI` (2): like `Mean`, but an empty spread uses the
+    /// uniform-bin estimate `1 / sqrt(12 N_eff)`.
+    SpreadI,
+    /// `kERRORSPREADG` (3): the weighted error `1 / sqrt(Σw)`.
+    SpreadG,
+}
+
+impl ErrorMode {
+    /// Map a ROOT `fErrorMode` code; an unrecognized code falls back to
+    /// [`Mean`](ErrorMode::Mean) (ROOT only ever writes `0..=3`).
+    #[must_use]
+    pub fn from_code(code: i32) -> ErrorMode {
+        match code {
+            1 => ErrorMode::Spread,
+            2 => ErrorMode::SpreadI,
+            3 => ErrorMode::SpreadG,
+            _ => ErrorMode::Mean,
+        }
+    }
+
+    /// The ROOT `fErrorMode` code written to disk.
+    #[must_use]
+    pub fn to_code(self) -> i32 {
+        match self {
+            ErrorMode::Mean => 0,
+            ErrorMode::Spread => 1,
+            ErrorMode::SpreadI => 2,
+            ErrorMode::SpreadG => 3,
+        }
+    }
+}
+
 /// A 1-D profile histogram (`TProfile`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TProfile {
@@ -40,7 +82,7 @@ pub struct TProfile {
     /// Per-bin entry counts / sums of weight (`fBinEntries`, length `ncells`).
     pub bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`).
-    pub error_mode: i32,
+    pub error_mode: ErrorMode,
     /// Lower y limit (`fYmin`).
     pub ymin: f64,
     /// Upper y limit (`fYmax`).
@@ -61,7 +103,7 @@ impl TProfile {
         let (core, sums) = read_th1_object(r, Precision::Double)?;
 
         let bin_entries = read_tarray(r, Precision::Double)?;
-        let error_mode = r.be_i32()?;
+        let error_mode = ErrorMode::from_code(r.be_i32()?);
         let ymin = r.be_f64()?;
         let ymax = r.be_f64()?;
         let tsumwy = r.be_f64()?;
@@ -163,19 +205,19 @@ impl TProfile {
         let variance = (sumy2 / sumw - mean * mean).abs();
         let neff = self.effective_entries(bin);
         match self.error_mode {
-            // kERRORSPREAD: the RMS spread itself.
-            1 => variance.sqrt(),
-            // kERRORSPREADI with an empty spread: the uniform-bin estimate.
-            2 if variance <= 0.0 => {
+            // The RMS spread itself.
+            ErrorMode::Spread => variance.sqrt(),
+            // SpreadI with an empty spread: the uniform-bin estimate.
+            ErrorMode::SpreadI if variance <= 0.0 => {
                 if neff > 0.0 {
                     1.0 / (12.0 * neff).sqrt()
                 } else {
                     0.0
                 }
             }
-            // kERRORSPREADG: the weighted error 1/sqrt(Σw).
-            3 => 1.0 / sumw.sqrt(),
-            // kERRORMEAN (default) and kERRORSPREADI with a non-zero spread.
+            // The weighted error 1/sqrt(Σw).
+            ErrorMode::SpreadG => 1.0 / sumw.sqrt(),
+            // Mean (default) and SpreadI with a non-zero spread.
             _ => {
                 if neff > 0.0 {
                     (variance / neff).sqrt()
@@ -203,7 +245,7 @@ impl TProfile {
             sums: vec![0.0; ncells],
             sumy2: vec![0.0; ncells],
             bin_entries: vec![0.0; ncells],
-            error_mode: 0,
+            error_mode: ErrorMode::Mean,
             ymin: 0.0,
             ymax: 0.0,
             tsumwy: 0.0,

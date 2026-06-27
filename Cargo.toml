@@ -13,6 +13,7 @@ repository = "https://github.com/mathieuouillon/oxiroot"
 # Pure-safe-Rust library: the only `unsafe` is the feature-gated mmap in
 # oxiroot-io-core (scoped `#[allow]` + SAFETY note). Deny keeps it that way.
 unsafe_code = "deny"
+missing_docs = "warn"
 
 [workspace.lints.clippy]
 all = "warn"

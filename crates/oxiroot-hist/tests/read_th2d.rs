@@ -20,7 +20,7 @@ fn reads_th2d_uncompressed() {
     assert_eq!(h.name, "h2");
     assert_eq!(h.nx(), 3);
     assert_eq!(h.ny(), 2);
-    assert_eq!(h.ncells, 20); // (3+2) * (2+2)
+    assert_eq!(h.ncells(), 20); // (3+2) * (2+2)
 
     assert_eq!(h.xaxis.xmin, 0.0);
     assert_eq!(h.xaxis.xmax, 3.0);

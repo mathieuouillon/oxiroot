@@ -13,22 +13,43 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[non_exhaustive]
 pub enum Error {
     /// A read ran past the end of the buffer.
-    UnexpectedEof { needed: usize, available: usize },
+    UnexpectedEof {
+        /// Bytes the read required.
+        needed: usize,
+        /// Bytes still available in the buffer.
+        available: usize,
+    },
     /// A ROOT string field did not contain valid UTF-8.
     InvalidUtf8,
     /// The file did not start with the `"root"` magic bytes.
     BadMagic([u8; 4]),
     /// A streamed object's byte count did not match the bytes consumed.
-    ByteCountMismatch { expected: usize, got: usize },
+    ByteCountMismatch {
+        /// Byte count the object's header declared.
+        expected: usize,
+        /// Bytes actually consumed reading it.
+        got: usize,
+    },
     /// An object class version is not supported by this reader.
-    UnsupportedVersion { class: &'static str, version: u16 },
+    UnsupportedVersion {
+        /// The ROOT class name.
+        class: &'static str,
+        /// The unsupported on-disk class version.
+        version: u16,
+    },
     /// A generic, described format violation.
     Format(String),
     /// A histogram operation was asked to combine incompatible binnings.
-    BinningMismatch { detail: String },
+    BinningMismatch {
+        /// Human-readable description of the mismatch.
+        detail: String,
+    },
     /// A streaming writer received entries whose schema differs from the
     /// schema already committed to the file.
-    SchemaChanged { detail: String },
+    SchemaChanged {
+        /// Human-readable description of the schema change.
+        detail: String,
+    },
     /// An underlying I/O error. The [`std::io::ErrorKind`] is preserved so
     /// callers can branch on it; the message is rendered to a string so `Error`
     /// stays `Clone`.

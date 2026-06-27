@@ -11,6 +11,7 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{cell_count, check_cells, object_bytes, read_tarray, read_th1_base, Precision};
+use crate::tprofile::ErrorMode;
 
 /// A 3-D profile histogram (ROOT `TProfile3D`).
 #[derive(Debug, Clone, PartialEq)]
@@ -25,8 +26,10 @@ pub struct TProfile3D {
     pub yaxis: TAxis,
     /// Z axis.
     pub zaxis: TAxis,
-    /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)*(nz+2)`).
-    pub ncells: i32,
+    /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)*(nz+2)`). Read via
+    /// [`ncells`](TProfile3D::ncells); `pub(crate)` so it cannot drift from the
+    /// per-bin vectors.
+    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -58,7 +61,7 @@ pub struct TProfile3D {
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
     pub bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`).
-    pub error_mode: i32,
+    pub error_mode: ErrorMode,
     /// Lower `t` accept bound (`fTmin`; `0` = no restriction when `tmin == tmax`).
     pub tmin: f64,
     /// Upper `t` accept bound (`fTmax`).
@@ -72,6 +75,13 @@ pub struct TProfile3D {
 }
 
 impl TProfile3D {
+    /// Total cells including the flow bins (`fNcells`), derived from the per-bin
+    /// vectors so it cannot disagree with them.
+    #[must_use]
+    pub fn ncells(&self) -> i32 {
+        self.bin_entries.len() as i32
+    }
+
     /// Create an empty `TProfile3D` with uniform x/y/z bins and no t restriction.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -110,7 +120,7 @@ impl TProfile3D {
             sums: vec![0.0; ncells],
             sumt2: vec![0.0; ncells],
             bin_entries: vec![0.0; ncells],
-            error_mode: 0,
+            error_mode: ErrorMode::Mean,
             tmin: 0.0,
             tmax: 0.0,
             tsumwt: 0.0,
@@ -227,7 +237,7 @@ impl TProfile3D {
 
         let sums = read_tarray(r, Precision::Double)?; // TH3D TArrayD = Σ(w·t)
         let bin_entries = read_tarray(r, Precision::Double)?;
-        let error_mode = r.be_i32()?;
+        let error_mode = ErrorMode::from_code(r.be_i32()?);
         let tmin = r.be_f64()?;
         let tmax = r.be_f64()?;
         let tsumwt = r.be_f64()?;

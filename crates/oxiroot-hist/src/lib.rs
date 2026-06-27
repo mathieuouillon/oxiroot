@@ -50,7 +50,7 @@ pub use thnsparse::{read_thnsparse, SparseBin, THnSparse};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;
 pub use threaded::{merge_all, Merge, ThreadedHist};
-pub use tprofile::{read_tprofile, TProfile};
+pub use tprofile::{read_tprofile, ErrorMode, TProfile};
 pub use tprofile2d::{read_tprofile2d, TProfile2D};
 pub use tprofile3d::{read_tprofile3d, TProfile3D};
 pub use write::{

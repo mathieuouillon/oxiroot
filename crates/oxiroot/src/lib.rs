@@ -75,9 +75,9 @@ pub mod prelude {
         write_th2i_file, write_th2l_file, write_th2poly_file, write_th2s_file, write_th3c_file,
         write_th3d_file, write_th3f_file, write_th3i_file, write_th3l_file, write_th3s_file,
         write_thnsparse_file, write_tprofile2d_file, write_tprofile3d_file, write_tprofile_file,
-        Chi2TestKind, Chi2TestResult, GraphErrors, Hist, KsTestResult, Merge, PolyBin, Precision,
-        ReadRoot, SparseBin, TAxis, TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D,
-        TProfile3D, ThreadedHist, WriteRoot, TH1, TH2, TH3,
+        Chi2TestKind, Chi2TestResult, ErrorMode, GraphErrors, Hist, KsTestResult, Merge, PolyBin,
+        Precision, ReadRoot, SparseBin, TAxis, TEfficiency, TGraph, TH2Poly, THnSparse, TProfile,
+        TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TH1, TH2, TH3,
     };
     #[cfg(feature = "fit")]
     pub use oxiroot_hist::{FitMethod, FitOptions, FitResult, TF1};

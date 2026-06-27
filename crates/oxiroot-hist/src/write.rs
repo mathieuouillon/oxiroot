@@ -660,7 +660,7 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &TProfile) {
     write_tarrayd(w, &h.sums); // TH1D TArrayD base: per-bin sum of w*y
     w.end_object(th1d);
     write_tarrayd(w, &h.bin_entries); // fBinEntries
-    w.be_i32(h.error_mode);
+    w.be_i32(h.error_mode.to_code());
     w.be_f64(h.ymin);
     w.be_f64(h.ymax);
     w.be_f64(h.tsumwy);
@@ -721,7 +721,7 @@ pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &TProfile2D) {
     write_tarrayd(w, &h.sums); // TH2D TArrayD base: per-cell Σ(w·z)
     w.end_object(th2d);
     write_tarrayd(w, &h.bin_entries); // fBinEntries
-    w.be_i32(h.error_mode);
+    w.be_i32(h.error_mode.to_code());
     w.be_f64(h.zmin);
     w.be_f64(h.zmax);
     w.be_f64(h.tsumwz);
@@ -784,7 +784,7 @@ pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &TProfile3D) {
     write_tarrayd(w, &h.sums); // TH3D TArrayD base: per-cell Σ(w·t)
     w.end_object(th3d);
     write_tarrayd(w, &h.bin_entries); // fBinEntries
-    w.be_i32(h.error_mode);
+    w.be_i32(h.error_mode.to_code());
     w.be_f64(h.tmin);
     w.be_f64(h.tmax);
     w.be_f64(h.tsumwt);

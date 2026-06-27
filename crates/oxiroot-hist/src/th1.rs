@@ -28,8 +28,10 @@ pub struct TH1 {
     pub yaxis: TAxis,
     /// Z axis (degenerate for 1-D).
     pub zaxis: TAxis,
-    /// Total cells, including under/overflow (`fNcells = nbins + 2`).
-    pub ncells: i32,
+    /// Total cells, including under/overflow (`fNcells = nbins + 2`). Read it
+    /// through [`ncells`](TH1::ncells); `pub(crate)` so it cannot drift from
+    /// `contents` via outside mutation.
+    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -101,6 +103,13 @@ impl TH1 {
             self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
         }
         self
+    }
+
+    /// Total cells including the under/overflow bins (`fNcells`), derived from
+    /// the contents so it can never disagree with them.
+    #[must_use]
+    pub fn ncells(&self) -> i32 {
+        self.contents.len() as i32
     }
 
     /// This histogram's on-disk [`Precision`] — the `class_name` suffix

@@ -42,7 +42,11 @@ pub struct Branch {
     /// Branch (and leaf) name.
     pub name: String,
     /// Branch values (a [`BranchValues`] variant — scalar, array, or string).
-    pub values: BranchValues,
+    /// Private: a branch is built only through the typed constructors
+    /// ([`Branch::i32`], [`Branch::jagged_f64`], …) so the payload can never
+    /// drift from the `jagged`/`stl_vector`/`split` kind that decides how it is
+    /// serialized.
+    values: BranchValues,
     /// True for a variable-length (jagged) array branch: rows may differ in
     /// length, and the writer emits a paired `n<name>` count branch plus an
     /// `fLeafCount` reference. False for scalar/fixed-array/string branches.

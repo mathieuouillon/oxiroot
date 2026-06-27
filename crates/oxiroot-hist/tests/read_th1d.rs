@@ -30,7 +30,7 @@ fn check_h1(file: &str) {
     assert_eq!(h.xaxis.xmin, -4.0);
     assert_eq!(h.xaxis.xmax, 4.0);
     assert!(h.xaxis.xbins.is_empty(), "axis should be uniform");
-    assert_eq!(h.ncells, 19); // 17 + under/overflow
+    assert_eq!(h.ncells(), 19); // 17 + under/overflow
 
     // Bin contents (excluding flow) match golden exactly (integers as f64).
     assert_eq!(h.values(), GOLDEN_VALUES, "{file}: bin contents");

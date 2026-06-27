@@ -10,6 +10,7 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{cell_count, check_cells, object_bytes, read_tarray, read_th1_base, Precision};
+use crate::tprofile::ErrorMode;
 
 /// A 2-D profile histogram (ROOT `TProfile2D`).
 #[derive(Debug, Clone, PartialEq)]
@@ -47,7 +48,7 @@ pub struct TProfile2D {
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
     pub bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`: 0=mean, 1=spread, 2=spread-i, 3=spread-g).
-    pub error_mode: i32,
+    pub error_mode: ErrorMode,
     /// Lower `z` accept bound (`fZmin`; `0` = no restriction when `zmin == zmax`).
     pub zmin: f64,
     /// Upper `z` accept bound (`fZmax`).
@@ -91,7 +92,7 @@ impl TProfile2D {
             sums: vec![0.0; ncells],
             sumz2: vec![0.0; ncells],
             bin_entries: vec![0.0; ncells],
-            error_mode: 0,
+            error_mode: ErrorMode::Mean,
             zmin: 0.0,
             zmax: 0.0,
             tsumwz: 0.0,
@@ -197,9 +198,9 @@ impl TProfile2D {
         let mean = sum / sumw;
         let var = (sum2 / sumw - mean * mean).abs();
         match self.error_mode {
-            1 => var.sqrt(),
-            3 => 1.0 / sumw.sqrt(),
-            2 => {
+            ErrorMode::Spread => var.sqrt(),
+            ErrorMode::SpreadG => 1.0 / sumw.sqrt(),
+            ErrorMode::SpreadI => {
                 if var > 0.0 {
                     (var / neff).sqrt()
                 } else if neff > 0.0 {
@@ -235,7 +236,7 @@ impl TProfile2D {
 
         let sums = read_tarray(r, Precision::Double)?; // TH2D TArrayD = Σ(w·z)
         let bin_entries = read_tarray(r, Precision::Double)?;
-        let error_mode = r.be_i32()?;
+        let error_mode = ErrorMode::from_code(r.be_i32()?);
         let zmin = r.be_f64()?;
         let zmax = r.be_f64()?;
         let tsumwz = r.be_f64()?;

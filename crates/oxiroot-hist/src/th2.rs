@@ -29,8 +29,9 @@ pub struct TH2 {
     pub yaxis: TAxis,
     /// Z axis (degenerate for 2-D).
     pub zaxis: TAxis,
-    /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)`).
-    pub ncells: i32,
+    /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)`). Read via
+    /// [`ncells`](TH2::ncells); `pub(crate)` so it cannot drift from `contents`.
+    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -183,6 +184,12 @@ impl TH2 {
             self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
         }
         self
+    }
+
+    /// Total cells including the flow bins (`fNcells`), derived from `contents`.
+    #[must_use]
+    pub fn ncells(&self) -> i32 {
+        self.contents.len() as i32
     }
 
     /// This histogram's on-disk [`Precision`] (the `class_name` suffix);

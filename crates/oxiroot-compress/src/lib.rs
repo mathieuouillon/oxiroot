@@ -19,9 +19,19 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompressError {
     /// The input was shorter than required to read a header or block payload.
-    Truncated { needed: usize, available: usize },
+    Truncated {
+        /// Bytes the codec needed.
+        needed: usize,
+        /// Bytes available in the input.
+        available: usize,
+    },
     /// Decompression produced a different number of bytes than expected.
-    SizeMismatch { expected: usize, got: usize },
+    SizeMismatch {
+        /// Uncompressed size the header declared.
+        expected: usize,
+        /// Bytes the codec actually produced.
+        got: usize,
+    },
     /// A block uses an algorithm whose codec is not compiled in yet.
     CodecUnavailable(Algorithm),
     /// The underlying codec reported an error.
