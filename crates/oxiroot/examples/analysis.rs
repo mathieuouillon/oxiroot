@@ -1,7 +1,9 @@
 //! A miniature analysis end-to-end: fill weighted histograms (with variable
-//! bins), combine and normalize them, organize the output into subdirectories,
-//! write a columnar event dataset, and read it back — all readable by official
-//! ROOT and uproot.
+//! bins), combine and normalize them (`*=`, `Index`, the `Histogram` trait),
+//! write them — into subdirectories and as a flat heterogeneous file via the
+//! `WriteRoot` trait (`write_root_file`, with a float-precision `TH1F`) — write
+//! a columnar event dataset, and read it back (`TH1::read_root`) — all readable
+//! by official ROOT and uproot.
 //!
 //! Run with: `cargo run -p oxiroot --example analysis`
 
@@ -32,10 +34,11 @@ fn main() -> Result<()> {
         eta_phi.fill(eta, phi);
     }
     println!(
-        "pt: {} entries, integral {:.2}, bin-2 = {:.2} ± {:.2}",
+        "pt: {} entries, integral {:.2}, all-cell sum {:.2}, bin-2 = {:.2} ± {:.2}",
         pt.entries,
-        pt.integral(),
-        pt.contents[2],
+        pt.integral(), // in-range bins only
+        pt.sum(),      // Histogram trait: every cell, flow included
+        pt[2],         // Index: bin content by cell index
         pt.bin_error(2),
     );
 
@@ -87,6 +90,26 @@ fn main() -> Result<()> {
         Compression::Zstd(5),
     )?;
     println!("wrote histograms -> {}", hist_path.display());
+
+    // --- Flat multi-object write: any mix of writable types in one file. -------
+    // `write_root_file` takes `&[&dyn WriteRoot]` — histograms, profiles, graphs.
+    let mut prof = TProfile::new("pt_prof", "<pt> per region", 5, 0.0, 5.0);
+    for (region, &(p, ..)) in events.iter().enumerate() {
+        prof.fill(region as f64 + 0.5, p);
+    }
+    // Write `pt` as a float-precision TH1F just by setting its on-disk precision.
+    let pt_f32 = pt.clone().with_precision(Precision::Float);
+    let multi_path = dir.join("analysis_multi.root");
+    write_root_file(
+        &multi_path,
+        &[&pt_f32, &eta_phi, &prof],
+        Compression::Zstd(5),
+    )?;
+    println!(
+        "wrote {} as {} + TH2D + TProfile",
+        multi_path.display(),
+        pt_f32.class_name(),
+    );
 
     // --- Write a columnar event dataset (ergonomic Field constructors). --------
     let ntuple_path = dir.join("analysis_events.root");

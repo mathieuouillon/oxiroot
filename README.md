@@ -94,11 +94,20 @@ cargo run -p oxiroot --example analysis
 - **Read & write** `TH1`/`TH2`/`TH3` in every precision (`D`/`F`/`I`/`S`/`C`/`L`),
   `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`, N-dimensional `THnSparse`,
   and polygon-binned `TH2Poly` (arbitrary-shape bins, with a builder API).
+- **One trait per direction**, not a function per type: `h.write_root(path,
+  compression)?` and `h.to_root_bytes()` (`WriteRoot`) for any writable object,
+  and `TH1::read_root(&file, name)?` (`ReadRoot`) for any readable one. A
+  `TH1`/`TH2`/`TH3`'s on-disk precision is a typed `Precision` set with
+  `.with_precision(Precision::Float)` (writes a `TH1F`), and `h.class_name()`
+  reconstructs the ROOT class. Profiles carry a typed `ErrorMode`.
 - Create and `fill`/`fill_weight` with ROOT's exact `Fill` semantics; uniform or
-  variable (`new_variable`) bins; `sumw2()` for weighted per-bin errors
-  (`bin_error`).
-- Arithmetic with `Sumw2` error propagation: `scale`, `add` (the bin-by-bin
-  merge used to combine job outputs), `multiply`, `divide`, `integral`.
+  variable (`new_variable`) bins; `sumw2()` (chains: `h.sumw2().fill(x)`) for
+  weighted per-bin errors (`bin_error`).
+- Arithmetic with `Sumw2` error propagation: `scale` (also `h *= c` / `h * c`),
+  `add` (the bin-by-bin merge used to combine job outputs), `multiply`, `divide`,
+  `integral`. Bins read by cell index (`h[bin]`) or iterator (`for &c in &h`);
+  a shared `Histogram` trait (`contents`/`entries`/`sum`) abstracts over `TH1/2/3`,
+  and every type implements `Display` for a one-line summary.
 - Statistics & shape accessors: `mean`/`std_dev`/`rms`, `maximum`/`minimum`/
   `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,
   `effective_entries`, `reset`, `interpolate`, `quantiles`; derived histograms
@@ -118,10 +127,11 @@ cargo run -p oxiroot --example analysis
   `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
   with `std::thread::scope` and needs no dependency; the optional `rayon` feature
   adds a one-call `fill_par(&template, &data, |h, x| h.fill(*x))`.
-- Write one histogram per file, several per file (`write_histograms_file`), or
-  organized into subdirectories (`write_histograms_dirs`); append to an existing
-  file with `append_histograms_file`. Written files embed a `TStreamerInfo` list,
-  so they are self-describing for any ROOT reader.
+- Write one object per file (`h.write_root`), several heterogeneous objects per
+  file (`write_root_file(&[&h, &p, &g], …)`), or organized into subdirectories
+  (`write_histograms_dirs`); append to an existing file with
+  `append_histograms_file`. Written files embed a `TStreamerInfo` list, so they
+  are self-describing for any ROOT reader.
 
 ### Fitting (`oxiroot::hist`, `fit` feature)
 
