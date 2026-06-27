@@ -16,8 +16,10 @@ use crate::base::{
 /// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TH1 {
-    /// The exact ROOT class (`"TH1D"` or `"TH1F"`).
-    pub class_name: String,
+    /// On-disk [`Precision`] (the class suffix). Read the class name via
+    /// [`class_name`](TH1::class_name); `pub(crate)` so the precision stays a
+    /// typed value rather than a free-form string.
+    pub(crate) precision: Precision,
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
@@ -55,7 +57,7 @@ impl TH1 {
     pub fn new(name: &str, title: &str, nbins: i32, xmin: f64, xmax: f64) -> TH1 {
         let cells = (nbins.max(0) as usize) + 2;
         TH1 {
-            class_name: "TH1D".to_string(),
+            precision: Precision::Double,
             name: name.to_string(),
             title: title.to_string(),
             xaxis: TAxis::new("xaxis", nbins, xmin, xmax),
@@ -77,7 +79,7 @@ impl TH1 {
     pub fn new_variable(name: &str, title: &str, edges: &[f64]) -> TH1 {
         let cells = edges.len() + 1; // (edges.len() - 1) bins + 2 flow
         TH1 {
-            class_name: "TH1D".to_string(),
+            precision: Precision::Double,
             name: name.to_string(),
             title: title.to_string(),
             xaxis: TAxis::variable("xaxis", edges),
@@ -112,11 +114,18 @@ impl TH1 {
         self.contents.len() as i32
     }
 
-    /// This histogram's on-disk [`Precision`] — the `class_name` suffix
+    /// The exact ROOT class name (`"TH1D"`/`"TH1F"`/…), derived from the stored
+    /// [`precision`](TH1::precision).
+    #[must_use]
+    pub fn class_name(&self) -> String {
+        self.precision.class_name("TH1")
+    }
+
+    /// This histogram's on-disk [`Precision`] — the class suffix
     /// (`TH1`**`D`**/`F`/`I`/`S`/`C`/`L`). [`Precision::Double`] by default.
     #[must_use]
     pub fn precision(&self) -> Precision {
-        precision_of(&self.class_name).unwrap_or(Precision::Double)
+        self.precision
     }
 
     /// Set the on-disk precision (the `TArray*` element type the writer emits):
@@ -124,7 +133,7 @@ impl TH1 {
     /// contents stay `f64` in memory and are narrowed only at write time.
     #[must_use]
     pub fn with_precision(mut self, precision: Precision) -> Self {
-        self.class_name = precision.class_name("TH1");
+        self.precision = precision;
         self
     }
 
@@ -164,13 +173,13 @@ impl TH1 {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer, class_name: &str, precision: Precision) -> Result<TH1> {
+    pub(crate) fn read(r: &mut RBuffer, precision: Precision) -> Result<TH1> {
         let (c, contents) = read_th1_object(r, precision)?;
         let cells = cell_count(&[c.xaxis.nbins])?;
         check_cells("TH1 contents", contents.len(), cells, false)?;
         check_cells("TH1 fSumw2", c.sumw2.len(), cells, true)?;
         Ok(TH1 {
-            class_name: class_name.to_string(),
+            precision,
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -222,7 +231,7 @@ impl TH1 {
 /// stored class.
 pub fn read_th1(file: &RFile, name: &str) -> Result<TH1> {
     let (class, object) = histogram_object(file, name, "TH1")?;
-    TH1::read(&mut RBuffer::new(&object), &class, precision_of(&class)?)
+    TH1::read(&mut RBuffer::new(&object), precision_of(&class)?)
 }
 
 /// Read a `TH1D` (1-D double histogram) from an open ROOT file.
@@ -237,7 +246,7 @@ pub fn read_th1f(file: &RFile, name: &str) -> Result<TH1> {
 
 fn read_th1_named(file: &RFile, name: &str, class: &str) -> Result<TH1> {
     let object = object_bytes(file, name, class)?;
-    TH1::read(&mut RBuffer::new(&object), class, precision_of(class)?)
+    TH1::read(&mut RBuffer::new(&object), precision_of(class)?)
 }
 
 /// Read a `TH1D` from a subdirectory of an open ROOT file.
@@ -248,5 +257,5 @@ pub fn read_th1d_in(file: &RFile, subdir: &str, name: &str) -> Result<TH1> {
             "key {name:?} in {subdir:?} is a {class}, not TH1D"
         )));
     }
-    TH1::read(&mut RBuffer::new(&object), &class, precision_of(&class)?)
+    TH1::read(&mut RBuffer::new(&object), precision_of(&class)?)
 }

@@ -28,7 +28,7 @@ fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Result<Vec<u8
 }
 
 use crate::axis::TAxis;
-use crate::base::{precision_of, Precision};
+use crate::base::Precision;
 use crate::graph::{GraphErrors, TGraph};
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
@@ -135,7 +135,7 @@ macro_rules! impl_write_root_hist {
     ($ty:ty, $d:ident, $f:ident, $i:ident, $s:ident, $c:ident, $l:ident) => {
         impl WriteRoot for $ty {
             fn root_class(&self) -> String {
-                self.class_name.clone()
+                self.class_name()
             }
             fn root_name(&self) -> &str {
                 &self.name
@@ -145,7 +145,7 @@ macro_rules! impl_write_root_hist {
             }
             fn to_root_bytes(&self) -> Vec<u8> {
                 let mut w = WBuffer::new();
-                match precision_of(&self.class_name).unwrap_or(Precision::Double) {
+                match self.precision {
                     Precision::Double => $d(&mut w, self),
                     Precision::Float => $f(&mut w, self),
                     Precision::Int => $i(&mut w, self),
@@ -1253,6 +1253,22 @@ pub enum Hist<'a> {
     Th2(&'a TH2),
     /// A 3-D histogram (written as `TH3D`).
     Th3(&'a TH3),
+}
+
+impl<'a> From<&'a TH1> for Hist<'a> {
+    fn from(h: &'a TH1) -> Hist<'a> {
+        Hist::Th1(h)
+    }
+}
+impl<'a> From<&'a TH2> for Hist<'a> {
+    fn from(h: &'a TH2) -> Hist<'a> {
+        Hist::Th2(h)
+    }
+}
+impl<'a> From<&'a TH3> for Hist<'a> {
+    fn from(h: &'a TH3) -> Hist<'a> {
+        Hist::Th3(h)
+    }
 }
 
 impl Hist<'_> {

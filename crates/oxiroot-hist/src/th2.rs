@@ -17,8 +17,9 @@ use crate::base::{
 /// A 2-D classic histogram (`TH2D` or `TH2F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TH2 {
-    /// The exact ROOT class (`"TH2D"` or `"TH2F"`).
-    pub class_name: String,
+    /// On-disk [`Precision`] (the class suffix); read the class name via
+    /// [`class_name`](TH2::class_name).
+    pub(crate) precision: Precision,
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
@@ -56,7 +57,7 @@ pub struct TH2 {
 }
 
 impl TH2 {
-    pub(crate) fn read(r: &mut RBuffer, class_name: &str, precision: Precision) -> Result<TH2> {
+    pub(crate) fn read(r: &mut RBuffer, precision: Precision) -> Result<TH2> {
         let _th2x = r.read_version()?; // TH2x wrapper
         let th2 = r.read_version()?; // TH2 wrapper (TH1 base + TH2 members)
 
@@ -77,7 +78,7 @@ impl TH2 {
         check_cells("TH2 fSumw2", c.sumw2.len(), cells, true)?;
 
         Ok(TH2 {
-            class_name: class_name.to_string(),
+            precision,
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -133,7 +134,7 @@ impl TH2 {
     ) -> TH2 {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2);
         TH2 {
-            class_name: "TH2D".to_string(),
+            precision: Precision::Double,
             name: name.to_string(),
             title: title.to_string(),
             xaxis: TAxis::new("xaxis", nx, xlo, xhi),
@@ -157,7 +158,7 @@ impl TH2 {
     pub fn new_variable(name: &str, title: &str, xedges: &[f64], yedges: &[f64]) -> TH2 {
         let ncells = (xedges.len() as i32 + 1) * (yedges.len() as i32 + 1);
         TH2 {
-            class_name: "TH2D".to_string(),
+            precision: Precision::Double,
             name: name.to_string(),
             title: title.to_string(),
             xaxis: TAxis::variable("xaxis", xedges),
@@ -192,17 +193,24 @@ impl TH2 {
         self.contents.len() as i32
     }
 
-    /// This histogram's on-disk [`Precision`] (the `class_name` suffix);
+    /// The exact ROOT class name (`"TH2D"`/`"TH2F"`/…), derived from the stored
+    /// [`precision`](TH2::precision).
+    #[must_use]
+    pub fn class_name(&self) -> String {
+        self.precision.class_name("TH2")
+    }
+
+    /// This histogram's on-disk [`Precision`] (the class suffix);
     /// [`Precision::Double`] by default. See [`crate::TH1::precision`].
     #[must_use]
     pub fn precision(&self) -> Precision {
-        precision_of(&self.class_name).unwrap_or(Precision::Double)
+        self.precision
     }
 
     /// Set the on-disk precision (e.g. `Precision::Float` writes a `TH2F`).
     #[must_use]
     pub fn with_precision(mut self, precision: Precision) -> Self {
-        self.class_name = precision.class_name("TH2");
+        self.precision = precision;
         self
     }
 
@@ -278,7 +286,7 @@ impl TH2 {
 /// stored class.
 pub fn read_th2(file: &RFile, name: &str) -> Result<TH2> {
     let (class, object) = histogram_object(file, name, "TH2")?;
-    TH2::read(&mut RBuffer::new(&object), &class, precision_of(&class)?)
+    TH2::read(&mut RBuffer::new(&object), precision_of(&class)?)
 }
 
 /// Read a `TH2D` (2-D double histogram) from an open ROOT file.
@@ -293,5 +301,5 @@ pub fn read_th2f(file: &RFile, name: &str) -> Result<TH2> {
 
 fn read_th2_named(file: &RFile, name: &str, class: &str) -> Result<TH2> {
     let object = object_bytes(file, name, class)?;
-    TH2::read(&mut RBuffer::new(&object), class, precision_of(class)?)
+    TH2::read(&mut RBuffer::new(&object), precision_of(class)?)
 }

@@ -16,7 +16,7 @@ fn open(name: &str) -> RFile {
 #[test]
 fn reads_th1f() {
     let h = read_th1f(&open("th1f_uncompressed.root"), "h1f").expect("TH1F");
-    assert_eq!(h.class_name, "TH1F");
+    assert_eq!(h.class_name(), "TH1F");
     assert_eq!(h.name, "h1f");
     assert_eq!(h.xaxis.nbins, 5);
     assert_eq!(h.values(), [1.5, 3.0, 4.5, 6.0, 7.5]);
@@ -26,7 +26,7 @@ fn reads_th1f() {
 #[test]
 fn reads_th2f() {
     let h = read_th2f(&open("th2f_uncompressed.root"), "h2f").expect("TH2F");
-    assert_eq!(h.class_name, "TH2F");
+    assert_eq!(h.class_name(), "TH2F");
     assert_eq!((h.nx(), h.ny()), (3, 2));
     assert_eq!(
         h.values(),
@@ -37,7 +37,7 @@ fn reads_th2f() {
 #[test]
 fn reads_th3d() {
     let h = read_th3d(&open("th3d_uncompressed.root"), "h3").expect("TH3D");
-    assert_eq!(h.class_name, "TH3D");
+    assert_eq!(h.class_name(), "TH3D");
     assert_eq!((h.nx(), h.ny(), h.nz()), (2, 2, 2));
     assert_eq!(h.entries, 8.0);
     let expected = vec![
@@ -51,7 +51,7 @@ fn reads_th3d() {
 fn th3f_matches_th3d_values() {
     let d = read_th3d(&open("th3d_uncompressed.root"), "h3").unwrap();
     let f = read_th3f(&open("th3f_uncompressed.root"), "h3").unwrap();
-    assert_eq!(f.class_name, "TH3F");
+    assert_eq!(f.class_name(), "TH3F");
     assert_eq!(f.values(), d.values());
 }
 

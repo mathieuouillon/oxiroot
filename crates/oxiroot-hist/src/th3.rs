@@ -19,8 +19,9 @@ use crate::base::{
 /// A 3-D classic histogram (`TH3D` or `TH3F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TH3 {
-    /// The exact ROOT class (`"TH3D"` or `"TH3F"`).
-    pub class_name: String,
+    /// On-disk [`Precision`] (the class suffix); read the class name via
+    /// [`class_name`](TH3::class_name).
+    pub(crate) precision: Precision,
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
@@ -66,7 +67,7 @@ pub struct TH3 {
 }
 
 impl TH3 {
-    pub(crate) fn read(r: &mut RBuffer, class_name: &str, precision: Precision) -> Result<TH3> {
+    pub(crate) fn read(r: &mut RBuffer, precision: Precision) -> Result<TH3> {
         let _th3x = r.read_version()?; // TH3x wrapper
         let th3 = r.read_version()?; // TH3 wrapper
 
@@ -91,7 +92,7 @@ impl TH3 {
         check_cells("TH3 fSumw2", c.sumw2.len(), cells, true)?;
 
         Ok(TH3 {
-            class_name: class_name.to_string(),
+            precision,
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -167,7 +168,7 @@ impl TH3 {
     ) -> TH3 {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2);
         TH3 {
-            class_name: "TH3D".to_string(),
+            precision: Precision::Double,
             name: name.to_string(),
             title: title.to_string(),
             xaxis: TAxis::new("xaxis", nx, xlo, xhi),
@@ -206,17 +207,24 @@ impl TH3 {
         self.contents.len() as i32
     }
 
-    /// This histogram's on-disk [`Precision`] (the `class_name` suffix);
+    /// The exact ROOT class name (`"TH3D"`/`"TH3F"`/…), derived from the stored
+    /// [`precision`](TH3::precision).
+    #[must_use]
+    pub fn class_name(&self) -> String {
+        self.precision.class_name("TH3")
+    }
+
+    /// This histogram's on-disk [`Precision`] (the class suffix);
     /// [`Precision::Double`] by default. See [`crate::TH1::precision`].
     #[must_use]
     pub fn precision(&self) -> Precision {
-        precision_of(&self.class_name).unwrap_or(Precision::Double)
+        self.precision
     }
 
     /// Set the on-disk precision (e.g. `Precision::Float` writes a `TH3F`).
     #[must_use]
     pub fn with_precision(mut self, precision: Precision) -> Self {
-        self.class_name = precision.class_name("TH3");
+        self.precision = precision;
         self
     }
 
@@ -306,7 +314,7 @@ impl TH3 {
 /// stored class.
 pub fn read_th3(file: &RFile, name: &str) -> Result<TH3> {
     let (class, object) = histogram_object(file, name, "TH3")?;
-    TH3::read(&mut RBuffer::new(&object), &class, precision_of(&class)?)
+    TH3::read(&mut RBuffer::new(&object), precision_of(&class)?)
 }
 
 /// Read a `TH3D` (3-D double histogram) from an open ROOT file.
@@ -321,5 +329,5 @@ pub fn read_th3f(file: &RFile, name: &str) -> Result<TH3> {
 
 fn read_th3_named(file: &RFile, name: &str, class: &str) -> Result<TH3> {
     let object = object_bytes(file, name, class)?;
-    TH3::read(&mut RBuffer::new(&object), class, precision_of(class)?)
+    TH3::read(&mut RBuffer::new(&object), precision_of(class)?)
 }

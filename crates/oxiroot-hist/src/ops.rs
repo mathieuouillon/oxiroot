@@ -316,14 +316,29 @@ impl_scale_ops!(TH1);
 impl_scale_ops!(TH2);
 impl_scale_ops!(TH3);
 
-impl std::ops::Index<usize> for TH1 {
-    type Output = f64;
-    /// Bin content by cell index (`0` = underflow, `1..=nbins` in range,
-    /// `nbins + 1` = overflow), the same indexing as [`TH1::bin_error`].
-    fn index(&self, bin: usize) -> &f64 {
-        &self.contents[bin]
-    }
+/// `h[cell]` reads, and `for &c in &h` iterates, bin contents by flat cell
+/// index — `0` is the first under/overflow cell, x varies fastest — the same
+/// indexing as [`TH1::bin_error`]. Both cover every cell, flow bins included.
+macro_rules! impl_index_iter {
+    ($ty:ty) => {
+        impl std::ops::Index<usize> for $ty {
+            type Output = f64;
+            fn index(&self, cell: usize) -> &f64 {
+                &self.contents[cell]
+            }
+        }
+        impl<'a> IntoIterator for &'a $ty {
+            type Item = &'a f64;
+            type IntoIter = std::slice::Iter<'a, f64>;
+            fn into_iter(self) -> std::slice::Iter<'a, f64> {
+                self.contents.iter()
+            }
+        }
+    };
 }
+impl_index_iter!(TH1);
+impl_index_iter!(TH2);
+impl_index_iter!(TH3);
 
 impl std::fmt::Display for TH1 {
     /// A one-line summary, e.g. `TH1D "pt": 100 bins [0, 100), entries=4096`.
@@ -331,11 +346,42 @@ impl std::fmt::Display for TH1 {
         write!(
             f,
             "{} {:?}: {} bins [{}, {}), entries={}",
-            self.class_name,
+            self.class_name(),
             self.name,
             self.xaxis.nbins.max(0),
             self.xaxis.xmin,
             self.xaxis.xmax,
+            self.entries
+        )
+    }
+}
+
+impl std::fmt::Display for TH2 {
+    /// A one-line summary, e.g. `TH2D "h": 100x100 bins, entries=4096`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {:?}: {}x{} bins, entries={}",
+            self.class_name(),
+            self.name,
+            self.xaxis.nbins.max(0),
+            self.yaxis.nbins.max(0),
+            self.entries
+        )
+    }
+}
+
+impl std::fmt::Display for TH3 {
+    /// A one-line summary, e.g. `TH3D "h": 20x20x20 bins, entries=4096`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {:?}: {}x{}x{} bins, entries={}",
+            self.class_name(),
+            self.name,
+            self.xaxis.nbins.max(0),
+            self.yaxis.nbins.max(0),
+            self.zaxis.nbins.max(0),
             self.entries
         )
     }

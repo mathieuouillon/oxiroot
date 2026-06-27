@@ -43,7 +43,7 @@ fn write_root_then_read_root_round_trips() {
     let back = TH1::read_root(&f, "h").expect("read_root");
     assert_eq!(back.values(), h.values());
     assert_eq!(back.name, "h");
-    assert_eq!(back.class_name, "TH1D");
+    assert_eq!(back.class_name(), "TH1D");
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn float_precision_round_trips_as_th1f() {
     h.write_root(&path, Compression::None).expect("write");
     let f = RFile::open(&path).expect("open");
     let back = TH1::read_root(&f, "h").expect("read");
-    assert_eq!(back.class_name, "TH1F"); // precision preserved on round-trip
+    assert_eq!(back.class_name(), "TH1F"); // precision preserved on round-trip
 }
 
 #[test]

@@ -131,7 +131,7 @@ fn read_embedded_th1d(r: &mut RBuffer) -> Result<TH1> {
         while r.u8()? != 0 {}
     }
     // Otherwise `tag` was a class back-reference (already consumed).
-    TH1::read(r, "TH1D", Precision::Double)
+    TH1::read(r, Precision::Double)
 }
 
 /// Read a `TEfficiency` named `name` from `file`.
