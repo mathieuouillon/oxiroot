@@ -19,5 +19,8 @@ argmin-math = { workspace = true, optional = true }
 # default; Minuit2 (always present) is the default backend.
 argmin = ["dep:argmin", "dep:argmin-math"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true

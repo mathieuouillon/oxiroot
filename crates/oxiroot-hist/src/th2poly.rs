@@ -7,7 +7,7 @@
 //! first time they appear inside `fCells`**; every later reference — in another
 //! grid cell, or in `fBins` — is an *object back-reference* into ROOT's
 //! reference map. Reading the bins therefore goes through
-//! [`TagReader`](oxiroot_io_core::object::TagReader), the shared machinery that
+//! [`TagReader`], the shared machinery that
 //! resolves ROOT's `{byte-count, class-tag}` object protocol; a plain
 //! offset-skipping reader can't, because it has no position→object map.
 //!
@@ -17,8 +17,9 @@
 //! cell, so walking `fCells` collects every bin exactly once (the first, full
 //! occurrence). Each bin's `fPoly` is a `TGraph` giving the polygon vertices.
 //!
-//! **Writing** ([`crate::write_th2poly`]) takes the simpler-but-valid route: the
-//! bins are written in full inside `fBins` and the `fCells` grid is left empty,
+//! **Writing** (via the [`WriteRoot`](crate::WriteRoot) trait) takes the
+//! simpler-but-valid route: the bins are written in full inside `fBins` and the
+//! `fCells` grid is left empty,
 //! so there are no shared objects and hence no back-references to emit. ROOT and
 //! uproot read the result correctly (verified bit-for-bit against ROOT C++); the
 //! only thing not reconstructed is the spatial fast-fill grid. The reader handles

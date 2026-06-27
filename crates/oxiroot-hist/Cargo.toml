@@ -26,5 +26,8 @@ fit = ["dep:oxiroot-fit"]
 # Add the gradient-free Nelder–Mead (`argmin`) backend to the fitter.
 argmin = ["fit", "oxiroot-fit/argmin"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true

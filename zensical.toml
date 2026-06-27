@@ -1,0 +1,115 @@
+# Zensical documentation site for oxiroot.
+#
+#   pip install zensical
+#   zensical serve            # live preview at http://localhost:8000
+#   zensical build            # static site -> ./site/
+#
+# The full API reference (rustdoc) is built separately and served under /api/;
+# see scripts/build_docs.sh and the "API reference" entry in the nav below.
+
+[project]
+site_name = "oxiroot"
+site_description = "Pure-Rust IO for the CERN ROOT file format — RNTuple, TTree, histograms, graphs, and fitting, with no libROOT or Python dependency."
+site_url = "https://mathieuouillon.github.io/oxiroot/"
+site_author = "Mathieu Ouillon"
+copyright = "Copyright &copy; 2026 Mathieu Ouillon · MIT"
+
+repo_url = "https://github.com/mathieuouillon/oxiroot"
+repo_name = "mathieuouillon/oxiroot"
+edit_uri = "edit/main/docs/"
+
+# Explicit navigation. A value that does not resolve to a Markdown page (such as
+# the rustdoc landing page) is emitted as a relative/external URL — that is how
+# the API reference is wired into the nav (populated under site/api by CI).
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = [
+    { "Installation" = "getting-started/installation.md" },
+    { "Quick start" = "getting-started/quickstart.md" },
+  ] },
+  { "Guide" = [
+    { "Reading & writing files" = "guide/reading-writing.md" },
+    { "Histograms" = "guide/histograms.md" },
+    { "Graphs" = "guide/graphs.md" },
+    { "TTree" = "guide/ttree.md" },
+    { "RNTuple" = "guide/rntuple.md" },
+    { "Fitting" = "guide/fitting.md" },
+    { "Multithreaded fill" = "guide/multithreading.md" },
+    { "Compression" = "guide/compression.md" },
+    { "ROOT / uproot interop" = "guide/interop.md" },
+  ] },
+  { "Reference" = [
+    { "Crate layout" = "reference/crates.md" },
+    { "API reference (rustdoc)" = "api/oxiroot/index.html" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "announce.dismiss",
+  "content.action.edit",
+  "content.action.view",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "toc.follow",
+]
+
+[project.theme.font]
+text = "Inter"
+code = "Jetbrains Mono"
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "deep orange"
+accent = "deep orange"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "deep orange"
+accent = "deep orange"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/mathieuouillon/oxiroot"
+
+# --- Markdown extensions ---
+[project.markdown_extensions.abbr]
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.def_list]
+[project.markdown_extensions.footnotes]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.tables]
+[project.markdown_extensions.toc]
+permalink = true
+[project.markdown_extensions.pymdownx.betterem]
+[project.markdown_extensions.pymdownx.caret]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.keys]
+[project.markdown_extensions.pymdownx.mark]
+[project.markdown_extensions.pymdownx.smartsymbols]
+[project.markdown_extensions.pymdownx.superfences]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+[project.markdown_extensions.pymdownx.tilde]

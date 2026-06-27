@@ -1,7 +1,7 @@
 //! Fitting for histograms and graphs.
 //!
-//! The fitting engine lives in the standalone [`oxiroot_fit`](oxiroot_fit)
-//! crate, which works on any 1-D data. This module just teaches it to read a
+//! The fitting engine lives in the standalone [`oxiroot_fit`] crate, which
+//! works on any 1-D data. This module just teaches it to read a
 //! [`TH1`] and a [`TGraph`] by implementing [`FitData`], so the `.fit(...)`
 //! methods (from [`FitExt`]) work directly:
 //!

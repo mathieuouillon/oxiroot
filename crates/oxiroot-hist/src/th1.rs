@@ -1,7 +1,7 @@
 //! 1-D histograms (`TH1D`, `TH1F`).
 //!
 //! Streamed layout: `TH1x{ TH1{ … }, TArray }`. The `TH1` base is shared via
-//! [`crate::base`]; the inline `TArray` holds the bin contents.
+//! the crate's `base` module; the inline `TArray` holds the bin contents.
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::Result;

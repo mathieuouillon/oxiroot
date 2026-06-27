@@ -27,5 +27,10 @@ fit = ["oxiroot-hist/fit", "dep:oxiroot-fit"]
 # Also build the gradient-free Nelder–Mead (`argmin`) minimizer backend.
 argmin = ["fit", "oxiroot-hist/argmin", "oxiroot-fit/argmin"]
 
+# Build docs.rs with every feature so fitting, the argmin backend, rayon, and
+# mmap all appear in the rendered API reference.
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true

@@ -1,7 +1,7 @@
 //! ROOT compression framing (the 9-byte block header) plus codec backends.
 //!
 //! ROOT stores compressed payloads as a sequence of independently-compressed
-//! blocks; see [`header`] for the block layout. This crate is a leaf dependency
+//! blocks, each prefixed by a 9-byte `header`. This crate is a leaf dependency
 //! of the rest of the workspace and owns the (eventually feature-gated) choice
 //! of codec backends.
 //!

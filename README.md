@@ -250,13 +250,16 @@ cargo run -p oxiroot --example fit --features fit
 
 A single `TGraph` type covers all three ROOT classes, selected by its `errors`
 field: plain (`TGraph`), symmetric (`TGraphErrors`), or asymmetric
-(`TGraphAsymmErrors`). `read_tgraph` detects the class on read.
+(`TGraphAsymmErrors`); the class is detected on read by `TGraph::read_root`.
 
 ```rust
 use oxiroot::prelude::*;
-let g = TGraph::with_errors(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
-    vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5], // ex, ey).named("res").titled("resolution");
-write_tgraph_file("graph.root", &g, Compression::None)?;
+let g = TGraph::with_errors(
+    vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
+    vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],    // ex, ey
+).named("res").titled("resolution");
+g.write_root("graph.root", Compression::None)?;             // WriteRoot, like any object
+let same = TGraph::read_root(&RFile::open("graph.root")?, "res")?;
 ```
 
 ### TTree (`oxiroot::tree`)
