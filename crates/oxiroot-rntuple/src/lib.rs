@@ -29,4 +29,4 @@ pub use header::{ColumnDescriptor, FieldDescriptor, Header, StructRole};
 pub use page::{read_column, ColumnValues};
 pub use pagelist::{ClusterPages, ClusterSummary, ColumnPages, PageInfo, PageList};
 pub use reader::RNTuple;
-pub use writer::{rntuple_file_bytes, write_rntuple_file, Column, Field, RNTupleWriter};
+pub use writer::{rntuple_file_bytes, write_rntuple_file, Column, Field, Ntuple, RNTupleWriter};

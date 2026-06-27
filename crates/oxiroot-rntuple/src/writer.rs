@@ -1380,6 +1380,60 @@ pub fn write_rntuple_file(
     Ok(())
 }
 
+/// An RNTuple to write: a name and its [`Field`]s. The method-based,
+/// write-side counterpart to the free [`write_rntuple_file`] function (and to
+/// the read-only [`RNTuple`](crate::RNTuple)) — build one, then call
+/// [`write_root`](Ntuple::write_root), mirroring `hist.write_root`:
+///
+/// ```no_run
+/// use oxiroot_rntuple::{Field, Ntuple};
+/// use oxiroot_io_core::Compression;
+///
+/// let fields = vec![
+///     Field::f64("mass", vec![91.2, 125.0]),
+///     Field::i32("charge", vec![0, -1]),
+/// ];
+/// Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
+/// # Ok::<(), oxiroot_io_core::error::Error>(())
+/// ```
+pub struct Ntuple {
+    name: String,
+    fields: Vec<Field>,
+}
+
+impl Ntuple {
+    /// Create a writable RNTuple from a name and its fields.
+    pub fn new(name: impl Into<String>, fields: Vec<Field>) -> Ntuple {
+        Ntuple {
+            name: name.into(),
+            fields,
+        }
+    }
+
+    /// The RNTuple's name (the in-file key).
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The RNTuple's fields.
+    pub fn fields(&self) -> &[Field] {
+        &self.fields
+    }
+
+    /// Write this RNTuple as a new one-RNTuple ROOT file, optionally compressing
+    /// pages. The method form of [`write_rntuple_file`].
+    pub fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
+        write_rntuple_file(path, &self.name, &self.fields, compression)
+    }
+
+    /// The complete ROOT-file bytes for this RNTuple (the method form of
+    /// [`rntuple_file_bytes`]); `file_name` is the `TFile` name recorded in the
+    /// file header.
+    pub fn to_root_bytes(&self, file_name: &str, compression: Compression) -> Result<Vec<u8>> {
+        rntuple_file_bytes(file_name, &self.name, &self.fields, compression)
+    }
+}
+
 // --- streaming, multi-cluster writer --------------------------------------
 
 /// One page's location for the page list (one page per column per cluster).

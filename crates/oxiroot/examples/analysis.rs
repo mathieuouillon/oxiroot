@@ -111,16 +111,32 @@ fn main() -> Result<()> {
         pt_f32.class_name(),
     );
 
-    // --- Write a columnar event dataset (ergonomic Field constructors). --------
+    // --- Write a columnar event dataset: build an `Ntuple`, then `write_root`. -
+    // The method form of `write_rntuple_file`, mirroring `hist.write_root`.
     let ntuple_path = dir.join("analysis_events.root");
-    let fields = vec![
-        Field::f64("mass", vec![91.2, 125.1, 173.0]),
-        Field::i32("charge", vec![0, -1, 1]),
-        Field::strings("label", vec!["Z".into(), "H".into(), "top".into()]),
-        Field::vec_f64("jet_pt", vec![vec![30.0, 25.0], vec![], vec![120.0]]),
-    ];
-    write_rntuple_file(&ntuple_path, "events", &fields, Compression::Zstd(5))?;
+    let events_ntuple = Ntuple::new(
+        "events",
+        vec![
+            Field::f64("mass", vec![91.2, 125.1, 173.0]),
+            Field::i32("charge", vec![0, -1, 1]),
+            Field::strings("label", vec!["Z".into(), "H".into(), "top".into()]),
+            Field::vec_f64("jet_pt", vec![vec![30.0, 25.0], vec![], vec![120.0]]),
+        ],
+    );
+    events_ntuple.write_root(&ntuple_path, Compression::Zstd(5))?;
     println!("wrote RNTuple -> {}", ntuple_path.display());
+
+    // --- Same events as a classic TTree: build a `Tree`, then `write_root`. ----
+    let tree_path = dir.join("analysis_tree.root");
+    Tree::new(
+        "Events",
+        vec![
+            Branch::f64("mass", vec![91.2, 125.1, 173.0]),
+            Branch::i32("charge", vec![0, -1, 1]),
+        ],
+    )
+    .write_root(&tree_path, Compression::Zstd(5))?;
+    println!("wrote TTree   -> {}", tree_path.display());
 
     // --- Read it all back (idiomatic `TH1::read_root`; subdir via `_in`). -------
     let f = RFile::open(&hist_path)?;
@@ -137,6 +153,13 @@ fn main() -> Result<()> {
     println!("RNTuple `events`: {} entries", events.num_entries());
     if let FieldValues::VecF64(jets) = events.read_field(&g, "jet_pt")? {
         println!("  jet_pt per event: {jets:?}");
+    }
+
+    let h = RFile::open(&tree_path)?;
+    let tree = TTree::open(&h, "Events")?;
+    println!("TTree `Events`: {} entries", tree.num_entries());
+    if let BranchValues::F64(mass) = tree.read_branch(&h, "mass")? {
+        println!("  mass per entry: {mass:?}");
     }
 
     Ok(())

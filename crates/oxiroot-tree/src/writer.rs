@@ -820,6 +820,78 @@ pub fn write_tree_file_baskets(
     Ok(())
 }
 
+/// A tree to write: a name and its [`Branch`]es. The method-based,
+/// write-side counterpart to the free [`write_tree_file`] function (and to the
+/// read-only [`TTree`](crate::TTree)) — build one, then call
+/// [`write_root`](Tree::write_root), mirroring `hist.write_root`:
+///
+/// ```no_run
+/// use oxiroot_tree::{Branch, Tree};
+/// use oxiroot_io_core::Compression;
+///
+/// let branches = vec![
+///     Branch::i32("event", vec![1, 2, 3]),
+///     Branch::f64("energy", vec![10.5, 20.1, 5.0]),
+/// ];
+/// Tree::new("Events", branches).write_root("tree.root", Compression::None)?;
+/// # Ok::<(), oxiroot_io_core::error::Error>(())
+/// ```
+pub struct Tree {
+    name: String,
+    branches: Vec<Branch>,
+}
+
+impl Tree {
+    /// Create a writable tree from a name and its branches.
+    pub fn new(name: impl Into<String>, branches: Vec<Branch>) -> Tree {
+        Tree {
+            name: name.into(),
+            branches,
+        }
+    }
+
+    /// The tree's name (the in-file `TTree` key).
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The tree's branches.
+    pub fn branches(&self) -> &[Branch] {
+        &self.branches
+    }
+
+    /// Write this tree as a new single-tree ROOT file (one basket per branch),
+    /// readable by ROOT and uproot. The method form of [`write_tree_file`].
+    pub fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
+        write_tree_file(path, &self.name, &self.branches, compression)
+    }
+
+    /// Like [`write_root`](Tree::write_root) but split each branch into baskets
+    /// of at most `entries_per_basket` entries (`0` = one basket per branch).
+    /// The method form of [`write_tree_file_baskets`].
+    pub fn write_root_baskets(
+        &self,
+        path: impl AsRef<Path>,
+        compression: Compression,
+        entries_per_basket: usize,
+    ) -> Result<()> {
+        write_tree_file_baskets(
+            path,
+            &self.name,
+            &self.branches,
+            compression,
+            entries_per_basket,
+        )
+    }
+
+    /// The complete ROOT-file bytes for this tree (the method form of
+    /// [`tree_file_bytes`]); `file_name` is the `TFile` name recorded in the
+    /// file header.
+    pub fn to_root_bytes(&self, file_name: &str, compression: Compression) -> Result<Vec<u8>> {
+        tree_file_bytes(file_name, &self.name, &self.branches, compression)
+    }
+}
+
 /// A column's identity, used to check that every batch shares the first batch's
 /// schema: name, value-variant, and the array/`std::vector` flags. Fixed-array
 /// width is folded into the variant via `flen` so a shape change is caught too.

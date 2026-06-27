@@ -83,11 +83,11 @@ pub mod prelude {
     pub use oxiroot_hist::{FitMethod, FitOptions, FitResult, TF1};
 
     pub use oxiroot_rntuple::{
-        write_rntuple_file, Column, Field, FieldValues, RNTuple, RNTupleWriter,
+        write_rntuple_file, Column, Field, FieldValues, Ntuple, RNTuple, RNTupleWriter,
     };
 
     pub use oxiroot_tree::{
         write_tree_file, write_tree_file_baskets, Branch, BranchValues, Jagged, LeafType,
-        SplitMember, TChain, TTree, TTreeWriter,
+        SplitMember, TChain, TTree, TTreeWriter, Tree,
     };
 }

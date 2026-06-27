@@ -68,14 +68,14 @@ let branches = vec![
     Branch::i32("n", vec![1, 2, 3]),
     Branch::f64("pt", vec![10.5, 20.1, 33.7]),
 ];
-write_tree_file("tree.root", "Events", &branches, Compression::None)?;
+Tree::new("Events", branches).write_root("tree.root", Compression::None)?;
 let f = RFile::open("tree.root")?;
 let t = TTree::open(&f, "Events")?;
 let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
 
 // Write a columnar RNTuple, then read it back.
 let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
-write_rntuple_file("data.root", "events", &fields, Compression::None)?;
+Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
 let n = RNTuple::open(&RFile::open("data.root")?, "events")?.num_entries();
 ```
 
@@ -209,7 +209,10 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
 - `Branch::{i32, f64, bools, strings, …}` for scalars, `Branch::vec_*` for
   fixed arrays, `Branch::jagged_*` for variable arrays, `Branch::vector_*` for
   `std::vector<T>`, and `Branch::split_vector` for split structs.
-  `write_tree_file_baskets` writes several baskets per branch.
+- `Tree::new(name, branches).write_root(path, compression)` is the method form
+  (mirroring `hist.write_root`); `.write_root_baskets(…, entries_per_basket)`
+  writes several baskets per branch, and `.to_root_bytes(…)` returns the file
+  bytes. The free `write_tree_file`/`write_tree_file_baskets` functions remain.
 - `TTreeWriter` streams a tree in batches (`write_batch` emits one basket per
   branch straight to disk, then `finish`), so only the current batch is held in
   memory — the way ROOT's `TTree::Fill` flushes baskets. ROOT-C++- and
@@ -245,6 +248,9 @@ write_tgraph_file("graph.root", &g, Compression::None)?;
   `truncated` / `quantized`), `std::string`, `std::vector<T>`, the nested
   collections (`Field::vec_str` / `vec_vec_*`, `Column::Record`/`Nested`), and
   `std::variant` (`Field::variant`) — optionally Zstd-compressed.
+- `Ntuple::new(name, fields).write_root(path, compression)` is the method form
+  (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
+  free `write_rntuple_file` remains.
 - `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is
   never fully held in memory.
 
