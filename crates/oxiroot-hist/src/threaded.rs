@@ -10,11 +10,16 @@
 //! histogram is identical to a serial fill (up to floating-point summation order).
 //!
 //! - [`Merge`] — the reduction trait (`merge` == `add(other, 1.0)`).
-//! - [`ThreadedHist`] — the accumulator: hand out private clones, take them back,
-//!   merge. Lock-free in the fill loop; works with [`std::thread::scope`].
+//! - [`ThreadedHist`] — the accumulator: share `&ThreadedHist`, call
+//!   [`fill`](ThreadedHist::fill) from any thread (each gets its own copy), then
+//!   [`merge`](ThreadedHist::merge) at the end. Works with [`std::thread::scope`].
 //! - [`merge_all`] — fold an iterator of histograms into one (in-memory `hadd`).
 //! - [`fill_par`] — one-call parallel fill of a slice (requires the `rayon`
 //!   feature).
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, RwLock};
+use std::thread::ThreadId;
 
 use oxiroot_io_core::error::Result;
 
@@ -72,87 +77,158 @@ where
 /// A multithreaded fill accumulator — the pure-Rust analog of ROOT's
 /// `TThreadedObject<TH1>`.
 ///
-/// Hold one *template* histogram — a binning prototype, normally **empty**. Each
-/// worker takes a private clone via [`local`](Self::local), fills it with **no
-/// locking** in the hot loop, then hands it back with [`push`](Self::push) (one
-/// brief lock per thread). [`merge`](Self::merge) folds the pushed locals into
-/// the final histogram (returning an empty clone of the template if no work was
-/// done). This mirrors ROOT exactly: `Get()` returns a copy of the model,
-/// `Merge()` combines the per-slot copies. As in ROOT, a *pre-seeded* template is
-/// replicated into every `local()`, so pass an empty histogram for a plain
-/// parallel fill.
+/// Hold one *template* histogram (a binning prototype, normally **empty**), share
+/// `&ThreadedHist` across threads, and call [`fill`](ThreadedHist::fill) from any
+/// of them: each thread transparently gets its own private copy of the template
+/// (created on first use) and fills it without contending with the others. At the
+/// end, [`merge`](Self::merge) combines every thread's copy into one — exactly as
+/// if a single histogram had been filled with all the data (up to floating-point
+/// summation order). This mirrors ROOT's `TThreadedObject` (`Fill` per thread,
+/// `Merge` at the end), without ROOT's explicit slot bookkeeping.
 ///
-/// `&ThreadedHist` is [`Sync`], so it can be shared across [`std::thread::scope`]
-/// workers without an `Arc`.
+/// `&ThreadedHist` is [`Sync`], so it is shared across [`std::thread::scope`]
+/// workers without an `Arc`. (Concurrent fills run in parallel under a shared
+/// read lock; each thread's copy is touched only by that thread, so its lock is
+/// never contended.)
 ///
 /// ```
 /// use oxiroot_hist::{ThreadedHist, TH1};
 ///
 /// let data: Vec<f64> = (0..1000).map(|i| i as f64 % 100.0).collect();
-/// let mut template = TH1::new("h", "", 100, 0.0, 100.0);
-/// template.sumw2();
+/// let hist = ThreadedHist::new(TH1::new("h", "", 100, 0.0, 100.0));
 ///
-/// let acc = ThreadedHist::new(template);
 /// std::thread::scope(|s| {
 ///     for chunk in data.chunks(data.len().div_ceil(4)) {
-///         let acc = &acc;
+///         let hist = &hist;
 ///         s.spawn(move || {
-///             let mut h = acc.local();        // private clone, no lock
 ///             for &x in chunk {
-///                 h.fill(x);                  // lock-free hot loop
+///                 hist.fill(x); // each thread fills its own copy — no setup
 ///             }
-///             acc.push(h);                    // one brief lock
 ///         });
 ///     }
 /// });
-/// let hist = acc.merge().unwrap();            // exact combine of all locals
-/// assert_eq!(hist.entries, 1000.0);
+///
+/// let merged = hist.merge().unwrap(); // combine every thread's copy
+/// assert_eq!(merged.entries, 1000.0);
 /// ```
 pub struct ThreadedHist<H: Merge> {
     template: H,
-    locals: std::sync::Mutex<Vec<H>>,
+    /// One private copy per thread, keyed by its (never-reused) [`ThreadId`].
+    /// The `Arc` lets a fill clone its slot out and drop the map lock before
+    /// touching the histogram, so a long fill never blocks other threads.
+    slots: RwLock<HashMap<ThreadId, Arc<Mutex<H>>>>,
 }
 
 impl<H: Merge> ThreadedHist<H> {
     /// Create an accumulator from a template histogram — a binning prototype,
-    /// normally empty. Every [`local`](Self::local) is a clone of it.
+    /// normally empty. Each thread's private copy is a clone of it.
     pub fn new(template: H) -> Self {
         Self {
             template,
-            locals: std::sync::Mutex::new(Vec::new()),
+            slots: RwLock::new(HashMap::new()),
         }
     }
 
-    /// A fresh private clone of the template for one worker to fill. The clone is
-    /// owned by the caller, so the fill loop touches no shared state and takes no
-    /// lock.
-    pub fn local(&self) -> H {
-        self.template.clone()
+    /// Run `f` on the calling thread's private copy of the histogram, creating it
+    /// (a clone of the template) on first use. This is the generic primitive
+    /// behind [`fill`](ThreadedHist::fill): use it to call any method, or to fill
+    /// a whole batch under a single slot acquisition:
+    ///
+    /// ```
+    /// # use oxiroot_hist::{ThreadedHist, TH1};
+    /// # let hist = ThreadedHist::new(TH1::new("h", "", 10, 0.0, 1.0));
+    /// hist.with_local(|h| {
+    ///     for x in [0.1, 0.2, 0.3] {
+    ///         h.fill(x);
+    ///     }
+    /// });
+    /// ```
+    pub fn with_local<R>(&self, f: impl FnOnce(&mut H) -> R) -> R {
+        let id = std::thread::current().id();
+        // Clone this thread's slot (an Arc) out, releasing the map lock before
+        // running `f` so a long fill never blocks other threads' first-touch.
+        let slot = {
+            let read = self.slots.read().unwrap_or_else(|e| e.into_inner());
+            if let Some(slot) = read.get(&id) {
+                Arc::clone(slot)
+            } else {
+                drop(read);
+                Arc::clone(
+                    self.slots
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .entry(id)
+                        .or_insert_with(|| Arc::new(Mutex::new(self.template.clone()))),
+                )
+            }
+        };
+        let mut local = slot.lock().unwrap_or_else(|e| e.into_inner());
+        f(&mut local)
     }
 
-    /// Hand a filled local back to the accumulator (one short lock). Call once
-    /// per worker, after its fill loop.
-    pub fn push(&self, local: H) {
-        // The only critical section is this push (which cannot panic), so the
-        // lock is never poisoned in practice; recover defensively regardless.
-        self.locals
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(local);
-    }
-
-    /// Number of locals handed back so far (diagnostic; takes the lock).
+    /// Number of threads that have filled so far (diagnostic).
     pub fn num_slots(&self) -> usize {
-        self.locals.lock().unwrap_or_else(|e| e.into_inner()).len()
+        self.slots.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
-    /// Fold every pushed local into the final histogram, consuming the
-    /// accumulator. Returns an (empty) clone of the template if no local was
-    /// pushed. Errors only if a local's binning diverged from the template
-    /// (normal fills keep it).
+    /// Combine every thread's private copy into the final histogram, consuming
+    /// the accumulator. Returns an (empty) clone of the template if no thread
+    /// filled. Call after the workers have joined. Errors only if a copy's
+    /// binning diverged from the template (normal fills keep it).
     pub fn merge(self) -> Result<H> {
-        let locals = self.locals.into_inner().unwrap_or_else(|e| e.into_inner());
+        let slots = self.slots.into_inner().unwrap_or_else(|e| e.into_inner());
+        let locals = slots.into_values().map(|arc| match Arc::try_unwrap(arc) {
+            Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
+            // A worker still holds a reference (it outlived merge): clone its copy.
+            Err(arc) => arc.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+        });
         Ok(H::merge_all(locals)?.unwrap_or(self.template))
+    }
+}
+
+/// ROOT-style `Fill`: route to the calling thread's private copy, creating it on
+/// first use. The headline convenience over [`with_local`](ThreadedHist::with_local).
+impl ThreadedHist<TH1> {
+    /// Fill the calling thread's copy with `x` (weight 1).
+    pub fn fill(&self, x: f64) {
+        self.with_local(|h| h.fill(x));
+    }
+    /// Fill the calling thread's copy with `x` and weight `w`.
+    pub fn fill_weight(&self, x: f64, w: f64) {
+        self.with_local(|h| h.fill_weight(x, w));
+    }
+}
+
+impl ThreadedHist<TH2> {
+    /// Fill the calling thread's copy at `(x, y)` (weight 1).
+    pub fn fill(&self, x: f64, y: f64) {
+        self.with_local(|h| h.fill(x, y));
+    }
+    /// Fill the calling thread's copy at `(x, y)` with weight `w`.
+    pub fn fill_weight(&self, x: f64, y: f64, w: f64) {
+        self.with_local(|h| h.fill_weight(x, y, w));
+    }
+}
+
+impl ThreadedHist<TH3> {
+    /// Fill the calling thread's copy at `(x, y, z)` (weight 1).
+    pub fn fill(&self, x: f64, y: f64, z: f64) {
+        self.with_local(|h| h.fill(x, y, z));
+    }
+    /// Fill the calling thread's copy at `(x, y, z)` with weight `w`.
+    pub fn fill_weight(&self, x: f64, y: f64, z: f64, w: f64) {
+        self.with_local(|h| h.fill_weight(x, y, z, w));
+    }
+}
+
+impl ThreadedHist<TProfile> {
+    /// Fill the calling thread's copy at `(x, y)` (weight 1).
+    pub fn fill(&self, x: f64, y: f64) {
+        self.with_local(|h| h.fill(x, y));
+    }
+    /// Fill the calling thread's copy at `(x, y)` with weight `w`.
+    pub fn fill_weight(&self, x: f64, y: f64, w: f64) {
+        self.with_local(|h| h.fill_weight(x, y, w));
     }
 }
 

@@ -137,10 +137,21 @@ cargo run -p oxiroot --example analysis
   `.fit(&model)` (Neyman/Pearson χ² or binned Poisson likelihood), returning
   parameters, parabolic + MINOS errors, covariance, and `chi2`/`ndf`.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
-  `TThreadedObject<TH1>`: each worker fills a private clone (lock-free), then
-  `merge()` combines them exactly (contents + `Sumw2` + every moment sum). Works
-  with `std::thread::scope` and needs no dependency; the optional `rayon` feature
-  adds a one-call `fill_par(&template, &data, |h, x| h.fill(*x))`.
+  `TThreadedObject<TH1>`: share `&hist`, call `hist.fill(x)` from any thread —
+  each thread transparently gets its own copy — then `hist.merge()` combines them
+  exactly (contents + `Sumw2` + every moment sum), identical to a serial fill:
+  ```rust
+  let hist = ThreadedHist::new(TH1::new("h", "", 100, 0.0, 100.0));
+  std::thread::scope(|s| for chunk in data.chunks(n) {
+      let hist = &hist;
+      s.spawn(move || for &x in chunk { hist.fill(x); });
+  });
+  let merged = hist.merge()?;
+  ```
+  No `Arc`, no manual slots; `with_local(|h| …)` batches fills or reaches any
+  method, and the optional `rayon` feature adds a one-call
+  `fill_par(&template, &data, |h, &x| h.fill(x))`. See
+  [`examples/threaded.rs`](crates/oxiroot/examples/threaded.rs).
 - Write one object with `h.write_root(path, compression)`. For several objects,
   subdirectories, or appending, use the `RootFile` builder — one entry point for
   all file composition:

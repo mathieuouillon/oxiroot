@@ -43,19 +43,18 @@ fn main() -> Result<()> {
     );
 
     // --- Multithreaded fill, ROOT's TThreadedObject pattern. -------------------
-    // Each worker fills a private clone (no locking), then `merge` combines them
-    // exactly. The result is identical to a serial fill.
+    // Share `&acc` across threads and call `fill` from any of them — each thread
+    // transparently gets its own copy; `merge` combines them exactly (identical
+    // to a serial fill).
     let samples: Vec<f64> = (0..100_000).map(|i| (i as f64 * 0.618) % 100.0).collect();
     let acc = ThreadedHist::new(TH1::new("mass", "toy mass", 100, 0.0, 100.0));
     std::thread::scope(|s| {
         for chunk in samples.chunks(samples.len().div_ceil(4)) {
             let acc = &acc;
             s.spawn(move || {
-                let mut h = acc.local();
                 for &x in chunk {
-                    h.fill(x);
+                    acc.fill(x); // routes to this thread's copy, no manual setup
                 }
-                acc.push(h);
             });
         }
     });
