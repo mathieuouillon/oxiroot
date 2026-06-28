@@ -95,7 +95,7 @@ pub mod ticker;
 pub mod transform;
 
 pub use artists::{HistType, Marker};
-pub use axes::{Axes, ErrorbarOpts, Hist2dOpts, HistOpts};
+pub use axes::{Axes, ErrorbarOpts, FnOpts, Hist2dOpts, HistOpts};
 pub use cmap::Colormap;
 pub use color::{cycle_color, Color, TAB10};
 pub use error::{Error, Result};
@@ -367,5 +367,33 @@ mod tests {
         fig.ratio(main, ratio)
             .savefig(format!("{dir}/ratio.png"))
             .unwrap();
+
+        // A shared-axis 2×2 grid with a figure title.
+        let (fig, mut axs) = subplots_grid(2, 2);
+        for ax in &mut axs {
+            ax.hist(&h);
+        }
+        axs[1].plot(&[55.0, 90.0, 125.0], &[500.0, 1500.0, 400.0]);
+        fig.sharex(true)
+            .sharey(true)
+            .suptitle("$Z\\to\\mu\\mu$ — shared grid")
+            .with_axes(axs)
+            .savefig(format!("{dir}/shared.png"))
+            .unwrap();
+
+        // A function overlay on a histogram (e.g. a fitted Gaussian).
+        let mut ax = Axes::new();
+        ax.histplot(&h, HistOpts::new().histtype(HistType::Fill).label("data"));
+        let (a, mu, sigma) = (2050.0_f64, 90.0_f64, 8.0_f64);
+        ax.function_opts(
+            move |x| a * (-0.5 * ((x - mu) / sigma).powi(2)).exp(),
+            50.0,
+            130.0,
+            FnOpts::new().color(Color::hex("#d62728")).label("fit"),
+        );
+        ax.set_xlabel("$m$ [GeV]");
+        ax.set_ylabel("Events");
+        ax.legend();
+        ax.save(format!("{dir}/overlay.png")).unwrap();
     }
 }

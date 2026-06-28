@@ -308,10 +308,15 @@ ax2.save("heatmap.svg")?;
   errorbar staircase with `√N`/Sumw2 error bars), `errorbar` (`TGraph`, all three
   error variants), `profile` (`TProfile`), `hist2d`/`hist2dplot` (`TH2` color mesh
   with a colorbar and the real matplotlib `viridis`/`plasma` colormaps), `plot`,
-  `grid`, `set_xlabel`/`set_ylabel`/`set_title`, `set_xlim`/`set_ylim`, and `legend`.
+  `function` (overlay any analytic or fitted curve), `grid`,
+  `set_xlabel`/`set_ylabel`/`set_title`, `set_xlim`/`set_ylim`, and `legend`.
+- **Overlay a fit** — `ax.function(|x| …, x0, x1)` draws any closure as a smooth
+  curve; with the `fit` feature, `ax.model(&model, x0, x1)` overlays a fitted
+  [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) `Model` directly on a histogram.
 - **Multi-panel layouts** — `subplots_grid(rows, cols)` and a custom `GridSpec`
-  (height/width ratios, spacing), plus a one-call `ratio_subplots()` for the HEP
-  main-over-ratio plot (shared x-axis, the upper panel's x labels hidden).
+  (height/width ratios, spacing) with `fig.sharex(true)`/`sharey(true)` and a
+  `suptitle`, plus a one-call `ratio_subplots()` for the HEP main-over-ratio plot
+  (shared x-axis, the upper panel's x labels hidden).
 - **Output** — `save`/`savefig` pick the format from the extension: `.png`,
   `.svg`, **and `.pdf`** (a hand-written vector PDF). `SaveOptions` sets the **DPI**
   for a sharper PNG (`save_with(path, &SaveOptions::new().dpi(300))`) or a

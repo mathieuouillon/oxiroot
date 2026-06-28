@@ -5,10 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Pure-Rust plotting for ROOT histograms and graphs — matplotlib-like API, mplhep style, SVG/PNG"
+description = "Pure-Rust plotting for ROOT histograms and graphs — matplotlib-like API, mplhep style, SVG/PNG/PDF"
 
 [dependencies]
 oxiroot-hist = { workspace = true }
+# Optional: overlay a fitted `Model` curve with `Axes::model` (the `fit` feature).
+oxiroot-fit = { workspace = true, optional = true }
 # CPU anti-aliased 2D rasterizer (resvg's own renderer); re-exports the pure-Rust
 # `png` crate, so PNG encoding needs no extra dependency. Pure, safe Rust.
 tiny-skia = "0.12"
@@ -22,6 +24,11 @@ ab_glyph = "0.2"
 rex = { git = "https://github.com/KenyC/ReX", rev = "aeccdba38f3fa54195c469319b65c423e17a77ae", default-features = false, features = ["ttfparser-fontparser"] }
 # Glyph outline extraction for ReX math glyphs (same version ab_glyph resolves).
 ttf-parser = "0.25"
+
+[features]
+# Overlay a fitted `oxiroot_fit::Model` curve via `Axes::model`. (The general
+# `Axes::function` closure overlay is always available, with no extra deps.)
+fit = ["dep:oxiroot-fit"]
 
 [package.metadata.docs.rs]
 all-features = true

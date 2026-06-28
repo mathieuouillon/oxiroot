@@ -108,6 +108,40 @@ ax.save("heatmap.svg")?;
 `Colormap` covers `Viridis`, `Plasma`, `Gray`, and `GrayReversed`. The value
 range autoscale can be overridden with `Hist2dOpts::vrange(vmin, vmax)`.
 
+## Overlaying a fitted curve
+
+`ax.function(f, x0, x1)` samples any closure `f` over `[x0, x1]` and draws it as a
+smooth line — the way to overlay an analytic curve on a histogram. To overlay a
+**fitted model**, fit it with [`oxiroot::fit`](fitting.md) and pass the curve:
+
+```rust
+use oxiroot::plot::{Axes, Color, FnOpts, HistOpts, HistType};
+use oxiroot::prelude::*;   // needs `--features plot,fit`
+use oxiroot::fit::TF1;
+
+// Fit a Gaussian to the histogram, then overlay the fitted curve.
+let model = TF1::gaussian("gaus").estimate_from(&h);
+let r = h.fit(&model);
+let fitted = model.with_params(r.params.clone());
+
+let mut ax = Axes::new();
+ax.histplot(&h, HistOpts::new().histtype(HistType::Fill).label("data"));
+ax.model_opts(                                   // the `fit` feature
+    &fitted, 50.0, 130.0,
+    FnOpts::new().color(Color::hex("#d62728"))
+        .label(format!("fit ($\\chi^2$/ndf = {:.1})", r.chi2 / r.ndf.max(1) as f64)),
+);
+ax.legend();
+ax.save("fit.png")?;
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+![A histogram with a fitted Gaussian curve overlaid](../images/plot-fit.png){ width="65%" }
+
+`ax.model`/`ax.model_opts` need the **`fit` feature** (they pull `oxiroot-fit`);
+the closure-based `ax.function`/`ax.function_opts` are always available and work
+for the same purpose (`ax.function(|x| fitted.eval(x), x0, x1)`).
+
 ## Layouts: grids and ratio plots
 
 A `GridSpec` arranges several panels with custom row/column ratios. Use
@@ -123,7 +157,11 @@ axs[0].hist(&h);
 axs[1].errorbar(&g);
 axs[2].hist2d(&h2);
 axs[3].plot(&x, &y);
-fig.with_axes(axs).savefig("grid.png")?;
+fig.sharex(true)                       // common x range, x labels on the bottom row only
+    .sharey(true)                      // common y range, y labels on the left column only
+    .suptitle("$Z \\to \\mu\\mu$")     // a figure-level title (LaTeX)
+    .with_axes(axs)
+    .savefig("grid.png")?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 

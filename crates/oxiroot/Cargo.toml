@@ -23,8 +23,9 @@ mmap = ["oxiroot-io-core/mmap"]
 # parallel TTree basket decode.
 rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
 # Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxiroot-fit` engine
-# plus the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works.
-fit = ["oxiroot-hist/fit", "dep:oxiroot-fit"]
+# plus the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works. When the
+# `plot` feature is also on, this lights up `Axes::model` (fit-curve overlay).
+fit = ["oxiroot-hist/fit", "dep:oxiroot-fit", "oxiroot-plot?/fit"]
 # Also build the gradient-free Nelder–Mead (`argmin`) minimizer backend.
 argmin = ["fit", "oxiroot-hist/argmin", "oxiroot-fit/argmin"]
 # Enable plotting (`oxiroot::plot`): render TH1/TH2/TGraph/TProfile to SVG/PNG

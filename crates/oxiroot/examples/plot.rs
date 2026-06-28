@@ -158,6 +158,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // --- 5. A shared-axis 2x2 subplot grid with a figure title. ---
+    use oxiroot::plot::subplots_grid;
+    let (gfig, mut axs) = subplots_grid(2, 2);
+    axs[0].hist(&mc);
+    axs[0].set_ylabel("Events");
+    axs[1].histplot(&mc, HistOpts::new().histtype(HistType::Fill));
+    axs[2].errorbar(&data);
+    axs[2].set_ylabel("Events");
+    axs[3].plot(&dx, &dy);
+    let gfig = gfig
+        .sharex(true)
+        .sharey(true)
+        .suptitle("$Z \\rightarrow \\mu\\mu$ — subplot grid")
+        .with_axes(axs);
+    gfig.savefig(out.join("grid.png"))?;
+    println!("wrote {}", out.join("grid.png").display());
+
+    // --- 6. Fit a Gaussian to the MC and overlay the fitted curve. ---
+    // (Needs `--features plot,fit`; skipped otherwise.)
+    #[cfg(feature = "fit")]
+    {
+        use oxiroot::fit::TF1;
+        let model = TF1::gaussian("gaus").estimate_from(&mc);
+        let r = mc.fit(&model);
+        let fitted = model.with_params(r.params.clone());
+        let mut ax = Axes::new();
+        ax.histplot(
+            &mc,
+            HistOpts::new()
+                .histtype(HistType::Fill)
+                .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
+                .label("data"),
+        );
+        ax.model_opts(
+            &fitted,
+            50.0,
+            130.0,
+            oxiroot::plot::FnOpts::new()
+                .color(Color::hex("#d62728"))
+                .linewidth(2.0)
+                .label(format!(
+                    "Gaussian fit ($\\chi^2$/ndf = {:.1})",
+                    r.chi2 / r.ndf.max(1) as f64
+                )),
+        );
+        ax.set_xlabel("$m_{\\mu\\mu}$ [GeV]");
+        ax.set_ylabel("Events / 2 GeV");
+        ax.legend();
+        save_both(&ax, &out, "fit")?;
+    }
+
     Ok(())
 }
 

@@ -55,6 +55,8 @@ pub struct Figure {
     grid: GridSpec,
     axes: Vec<Axes>,
     sharex: bool,
+    sharey: bool,
+    suptitle: Option<String>,
 }
 
 impl Figure {
@@ -73,16 +75,43 @@ impl Figure {
             grid,
             axes: Vec::new(),
             sharex: false,
+            sharey: false,
+            suptitle: None,
         }
     }
 
-    fn with_grid(style: Style, grid: GridSpec, sharex: bool) -> Self {
+    fn with_grid(style: Style, grid: GridSpec, sharex: bool, sharey: bool) -> Self {
         Figure {
             style,
             grid,
             axes: Vec::new(),
             sharex,
+            sharey,
+            suptitle: None,
         }
+    }
+
+    /// Share the x-axis across all panels (common x range; only the bottom row
+    /// keeps its x tick labels and x-axis label).
+    #[must_use]
+    pub fn sharex(mut self, on: bool) -> Self {
+        self.sharex = on;
+        self
+    }
+
+    /// Share the y-axis across all panels (common y range; only the left column
+    /// keeps its y tick labels and y-axis label).
+    #[must_use]
+    pub fn sharey(mut self, on: bool) -> Self {
+        self.sharey = on;
+        self
+    }
+
+    /// Set a figure-level title centered above the panels (supports `$…$` math).
+    #[must_use]
+    pub fn suptitle(mut self, s: impl Into<String>) -> Self {
+        self.suptitle = Some(s.into());
+        self
     }
 
     /// Add a single axes (placed in the first cell).
@@ -98,26 +127,38 @@ impl Figure {
         self
     }
 
-    /// Place a list of axes into the grid, row-major. When the figure shares its
-    /// x-axis (e.g. a ratio plot), the panels are given a common x range and the
-    /// upper panels' x tick labels are hidden.
+    /// Place a list of axes into the grid, row-major. With a shared x- or y-axis
+    /// the panels are given a common range and the inner tick labels are hidden
+    /// (only the bottom row keeps x labels, only the left column keeps y labels).
     #[must_use]
     pub fn with_axes(mut self, mut axes: Vec<Axes>) -> Self {
+        let ncols = self.grid.ncols.max(1);
         if self.sharex && !axes.is_empty() {
-            // A common x range = the union of every panel's resolved x-limits.
             let (mut lo, mut hi) = axes[0].resolved_xlim();
             for ax in &axes[1..] {
                 let (l, h) = ax.resolved_xlim();
                 lo = lo.min(l);
                 hi = hi.max(h);
             }
-            let ncols = self.grid.ncols.max(1);
             let last_row = axes.len().saturating_sub(1) / ncols;
             for (i, ax) in axes.iter_mut().enumerate() {
                 ax.set_xlim(lo, hi);
-                // Only the lowest row keeps its x tick labels + x-axis label.
                 if i / ncols < last_row {
                     ax.set_xticklabels_visible(false);
+                }
+            }
+        }
+        if self.sharey && !axes.is_empty() {
+            let (mut lo, mut hi) = axes[0].resolved_ylim();
+            for ax in &axes[1..] {
+                let (l, h) = ax.resolved_ylim();
+                lo = lo.min(l);
+                hi = hi.max(h);
+            }
+            for (i, ax) in axes.iter_mut().enumerate() {
+                ax.set_ylim(lo, hi);
+                if i % ncols != 0 {
+                    ax.set_yticklabels_visible(false);
                 }
             }
         }
@@ -158,6 +199,27 @@ impl Figure {
             };
             groups.extend(axr.render_at(box_));
         }
+
+        // Figure-level title, centered near the top of the figure.
+        if let Some(text) = &self.suptitle {
+            let s = &self.style;
+            let size = s.title_size_pt * 1.1 * dpi / 72.0;
+            let y = (1.0 - s.margins_frac.3) * h as f32 * 0.45;
+            let mut g = DrawGroup::new(None);
+            crate::mathtext::layout_label(
+                &mut g,
+                text,
+                w as f32 / 2.0,
+                y,
+                size,
+                s.fg_color,
+                crate::text::HAlign::Center,
+                crate::text::VAlign::Middle,
+                0.0,
+            );
+            groups.push(g);
+        }
+
         let bg = if opts.transparent {
             Color::TRANSPARENT
         } else {
@@ -213,7 +275,7 @@ pub fn subplots_grid_with(style: Style, grid: GridSpec) -> (Figure, Vec<Axes>) {
         grid
     };
     let axes = (0..n).map(|_| Axes::with_style(style.clone())).collect();
-    (Figure::with_grid(style, grid, false), axes)
+    (Figure::with_grid(style, grid, false, false), axes)
 }
 
 /// A two-panel ratio plot: a main panel over a shorter ratio panel sharing the
@@ -245,7 +307,7 @@ pub fn ratio_subplots_with(style: Style) -> (Figure, Axes, Axes) {
         .height_ratios(vec![3.0, 1.0])
         .hspace(0.0)
         .margins(style.margins_frac);
-    let fig = Figure::with_grid(style.clone(), grid, true);
+    let fig = Figure::with_grid(style.clone(), grid, true, false);
     let main = Axes::with_style(style.clone());
     let mut ratio = Axes::with_style(style);
     // Drop the ratio panel's top y label so it doesn't collide with the main

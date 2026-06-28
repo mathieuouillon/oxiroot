@@ -85,16 +85,17 @@ pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
                 });
             }
         }
-        g.extend(text::layout(
+        // Labels go through the math layout so `$…$` renders like axis labels.
+        crate::mathtext::layout_label(
+            g,
             &it.label,
             hx1 + gap,
             cy,
             fs,
-            FontStyle::Regular,
             s.fg_color,
             HAlign::Left,
             VAlign::Middle,
             0.0,
-        ));
+        );
     }
 }

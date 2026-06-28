@@ -34,6 +34,9 @@ pub struct Axes {
     /// Whether the x tick labels and x-axis label are drawn (hidden on the upper
     /// panel of a shared-x layout such as a ratio plot).
     show_xticklabels: bool,
+    /// Whether the y tick labels and y-axis label are drawn (hidden on the
+    /// non-left columns of a shared-y grid).
+    show_yticklabels: bool,
     /// Drop the `(bottom, top)` y tick labels (avoids overlap at a shared seam).
     ylabel_prune: (bool, bool),
 }
@@ -56,6 +59,7 @@ impl Axes {
             colorbar: None,
             grid_minor: false,
             show_xticklabels: true,
+            show_yticklabels: true,
             ylabel_prune: (false, false),
         }
     }
@@ -151,11 +155,25 @@ impl Axes {
         self
     }
 
+    /// Show or hide the y tick labels and y-axis label (used internally for the
+    /// non-left columns of a shared-y grid).
+    pub fn set_yticklabels_visible(&mut self, on: bool) -> &mut Self {
+        self.show_yticklabels = on;
+        self
+    }
+
     /// The resolved x-axis limits (for sharing the x-axis across panels).
     #[must_use]
     pub(crate) fn resolved_xlim(&self) -> (f64, f64) {
         let (xmin, xmax, _, _) = self.limits();
         (xmin, xmax)
+    }
+
+    /// The resolved y-axis limits (for sharing the y-axis across panels).
+    #[must_use]
+    pub(crate) fn resolved_ylim(&self) -> (f64, f64) {
+        let (_, _, ymin, ymax) = self.limits();
+        (ymin, ymax)
     }
 
     /// Render this single axes as a full figure and save to `path` (`.png`,
@@ -417,6 +435,68 @@ impl Axes {
         self
     }
 
+    /// Plot a function `f` sampled over `[x0, x1]` as a smooth curve — e.g. to
+    /// overlay a fitted model on a histogram.
+    ///
+    /// # Examples
+    /// ```
+    /// # use oxiroot_plot::Axes;
+    /// let mut ax = Axes::new();
+    /// // Overlay a Gaussian curve.
+    /// ax.function(|x| 1000.0 * (-(x - 5.0_f64).powi(2) / 2.0).exp(), 0.0, 10.0);
+    /// ```
+    pub fn function<F: Fn(f64) -> f64>(&mut self, f: F, x0: f64, x1: f64) -> &mut Self {
+        self.function_opts(f, x0, x1, FnOpts::default())
+    }
+
+    /// Plot a function with explicit options (color, label, line width, samples).
+    pub fn function_opts<F: Fn(f64) -> f64>(
+        &mut self,
+        f: F,
+        x0: f64,
+        x1: f64,
+        opts: FnOpts,
+    ) -> &mut Self {
+        let n = opts.samples.max(2);
+        let (x0, x1) = if x0 <= x1 { (x0, x1) } else { (x1, x0) };
+        let xs: Vec<f64> = (0..n)
+            .map(|i| x0 + (x1 - x0) * i as f64 / (n - 1) as f64)
+            .collect();
+        let ys: Vec<f64> = xs.iter().map(|&x| f(x)).collect();
+        let color = opts.color.unwrap_or_else(|| self.next_color());
+        self.add_artist(Artist::Line(LineArtist {
+            xs,
+            ys,
+            color,
+            width_pt: opts.linewidth_pt.unwrap_or(self.style.line_width_pt),
+            dash: opts.dash,
+            marker: Marker::None,
+            marker_size_pt: self.style.marker_size_pt,
+            label: opts.label,
+        }));
+        self
+    }
+
+    /// Overlay a fitted [`oxiroot_fit::Model`] curve over `[x0, x1]` (the `fit`
+    /// feature). The model is evaluated with its current parameters, so fit it
+    /// first (`let r = h.fit(&model)`, then pass `model.with_params(r.params)`).
+    #[cfg(feature = "fit")]
+    pub fn model(&mut self, model: &oxiroot_fit::Model, x0: f64, x1: f64) -> &mut Self {
+        self.function_opts(|x| model.eval(x), x0, x1, FnOpts::default())
+    }
+
+    /// Overlay a fitted [`oxiroot_fit::Model`] curve with explicit options.
+    #[cfg(feature = "fit")]
+    pub fn model_opts(
+        &mut self,
+        model: &oxiroot_fit::Model,
+        x0: f64,
+        x1: f64,
+        opts: FnOpts,
+    ) -> &mut Self {
+        self.function_opts(|x| model.eval(x), x0, x1, opts)
+    }
+
     /// Resolve the data limits, honoring explicit limits and autoscaling the rest.
     fn limits(&self) -> (f64, f64, f64, f64) {
         let auto = self
@@ -674,24 +754,26 @@ impl Axes {
         let mut max_ylabel_w = 0.0_f32;
         let label_x = box_.x - out_len.max(0.0) - pad;
         let nyt = yticks.len();
-        for (i, (&yv, lab)) in yticks.iter().zip(&ylabels).enumerate() {
-            let py = t.y(yv);
-            max_ylabel_w = max_ylabel_w.max(text::measure(lab, tlab, FontStyle::Regular).width);
-            // yticks are ascending: index 0 is the bottom-most, last is the top.
-            if (self.ylabel_prune.0 && i == 0) || (self.ylabel_prune.1 && i + 1 == nyt) {
-                continue;
+        if self.show_yticklabels {
+            for (i, (&yv, lab)) in yticks.iter().zip(&ylabels).enumerate() {
+                let py = t.y(yv);
+                max_ylabel_w = max_ylabel_w.max(text::measure(lab, tlab, FontStyle::Regular).width);
+                // yticks are ascending: index 0 is the bottom-most, last is the top.
+                if (self.ylabel_prune.0 && i == 0) || (self.ylabel_prune.1 && i + 1 == nyt) {
+                    continue;
+                }
+                axis.extend(text::layout(
+                    lab,
+                    label_x,
+                    py,
+                    tlab,
+                    FontStyle::Regular,
+                    fg,
+                    HAlign::Right,
+                    VAlign::Middle,
+                    0.0,
+                ));
             }
-            axis.extend(text::layout(
-                lab,
-                label_x,
-                py,
-                tlab,
-                FontStyle::Regular,
-                fg,
-                HAlign::Right,
-                VAlign::Middle,
-                0.0,
-            ));
         }
 
         // Axis labels.
@@ -711,7 +793,7 @@ impl Axes {
                 0.0,
             );
         }
-        if let Some(yl) = &self.ylabel {
+        if let (Some(yl), true) = (&self.ylabel, self.show_yticklabels) {
             let x = label_x - max_ylabel_w - s.px(4.0);
             crate::mathtext::layout_label(
                 &mut axis,
@@ -933,6 +1015,71 @@ impl Hist2dOpts {
     #[must_use]
     pub fn label(mut self, s: impl Into<String>) -> Self {
         self.label = Some(s.into());
+        self
+    }
+}
+
+/// Options for [`Axes::function`]/[`Axes::function_opts`].
+#[derive(Debug, Clone)]
+pub struct FnOpts {
+    /// Override the color (default: next cycle color).
+    pub color: Option<Color>,
+    /// Legend label.
+    pub label: Option<String>,
+    /// Override the line width in points.
+    pub linewidth_pt: Option<f32>,
+    /// Optional dash pattern (in points).
+    pub dash: Option<Vec<f32>>,
+    /// Number of sample points (default 256).
+    pub samples: usize,
+}
+
+impl Default for FnOpts {
+    fn default() -> Self {
+        FnOpts {
+            color: None,
+            label: None,
+            linewidth_pt: None,
+            dash: None,
+            samples: 256,
+        }
+    }
+}
+
+impl FnOpts {
+    /// New default options.
+    #[must_use]
+    pub fn new() -> Self {
+        FnOpts::default()
+    }
+    /// Set the color.
+    #[must_use]
+    pub fn color(mut self, c: Color) -> Self {
+        self.color = Some(c);
+        self
+    }
+    /// Set the legend label.
+    #[must_use]
+    pub fn label(mut self, s: impl Into<String>) -> Self {
+        self.label = Some(s.into());
+        self
+    }
+    /// Set the line width in points.
+    #[must_use]
+    pub fn linewidth(mut self, pt: f32) -> Self {
+        self.linewidth_pt = Some(pt);
+        self
+    }
+    /// Set a dash pattern (points).
+    #[must_use]
+    pub fn dashed(mut self, pattern: Vec<f32>) -> Self {
+        self.dash = Some(pattern);
+        self
+    }
+    /// Set the number of sample points.
+    #[must_use]
+    pub fn samples(mut self, n: usize) -> Self {
+        self.samples = n;
         self
     }
 }
