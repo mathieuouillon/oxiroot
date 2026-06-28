@@ -4,6 +4,12 @@ Render histograms and graphs to **SVG and PNG** with a matplotlib-like API and a
 mplhep histogram style — pure Rust, no matplotlib, no system fonts. Plotting is
 behind the **`plot` feature** and exposed as `oxiroot::plot`.
 
+<figure markdown="span">
+  ![A filled MC histogram with data points overlaid, and a 2-D viridis heatmap](../images/plot-mass.png){ width="49%" }
+  ![viridis heatmap with colorbar](../images/plot-heatmap.png){ width="49%" }
+  <figcaption>Both produced by the bundled <code>plot</code> example, as PNG and SVG.</figcaption>
+</figure>
+
 ```toml
 [dependencies]
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", features = ["plot"] }

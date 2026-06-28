@@ -275,6 +275,13 @@ DejaVu Sans (matplotlib's own default font) is bundled, and `$…$` labels are
 typeset as real LaTeX math by the pure-Rust [ReX](https://github.com/KenyC/ReX)
 TeX engine into the same IR.
 
+<p align="center">
+  <img src="docs/images/plot-mass.png" alt="Z to mu mu candidates: filled MC template with data points overlaid" width="46%">
+  <img src="docs/images/plot-heatmap.png" alt="2-D TH2 rendered as a viridis heatmap with a colorbar" width="46%">
+</p>
+
+<sub>Both figures are produced by `cargo run -p oxiroot --example plot --features plot` (PNG **and** SVG).</sub>
+
 ```rust
 use oxiroot::plot::{Axes, HistType, HistOpts, ErrorbarOpts, Hist2dOpts, Color};
 use oxiroot::prelude::*; // needs `--features plot`
