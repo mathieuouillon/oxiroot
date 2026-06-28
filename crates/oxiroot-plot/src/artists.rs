@@ -314,14 +314,19 @@ impl StepArtist {
                     marker: self.marker,
                     marker_size_pt: self.marker_size_pt,
                 },
-                HistType::Fill | HistType::Band => LegendHandle::Patch {
-                    face: Some(self.fill_color.unwrap_or(self.color)),
-                    edge: Some(self.color),
+                // mplhep represents step/fill histograms in the legend with a
+                // short horizontal line in the histogram's color (not a matplotlib
+                // bar patch). The shaded uncertainty band stays a filled swatch.
+                HistType::Step | HistType::Fill => LegendHandle::Line {
+                    color: self.color,
                     width_pt: self.width_pt,
+                    dash: None,
+                    marker: Marker::None,
+                    marker_size_pt: 0.0,
                 },
-                HistType::Step => LegendHandle::Patch {
-                    face: None,
-                    edge: Some(self.color),
+                HistType::Band => LegendHandle::Patch {
+                    face: Some(self.fill_color.unwrap_or(self.color.with_alpha(0.3))),
+                    edge: None,
                     width_pt: self.width_pt,
                 },
             };
