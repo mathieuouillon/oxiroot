@@ -37,22 +37,6 @@ impl Bounds {
             ymax: self.ymax.max(other.ymax),
         }
     }
-
-    /// Expand x and y ranges by a fractional margin on each side.
-    #[must_use]
-    pub fn padded(self, frac_x: f64, frac_y: f64) -> Bounds {
-        let dx = (self.xmax - self.xmin) * frac_x;
-        let dy = (self.ymax - self.ymin) * frac_y;
-        // Guard against a degenerate (zero-width) range.
-        let dx = if dx.abs() < f64::EPSILON { 0.5 } else { dx };
-        let dy = if dy.abs() < f64::EPSILON { 0.5 } else { dy };
-        Bounds {
-            xmin: self.xmin - dx,
-            xmax: self.xmax + dx,
-            ymin: self.ymin - dy,
-            ymax: self.ymax + dy,
-        }
-    }
 }
 
 /// Maps data coordinates to pixel coordinates within an axes box. The y axis is
@@ -107,11 +91,5 @@ impl Transform {
     #[must_use]
     pub fn pt(&self, p: (f64, f64)) -> Pt {
         (self.x(p.0), self.y(p.1))
-    }
-
-    /// The axes box in pixels.
-    #[must_use]
-    pub fn box_(&self) -> Rect {
-        self.box_
     }
 }

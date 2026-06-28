@@ -23,8 +23,7 @@ fn main() {
 #[cfg(feature = "plot")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use oxiroot::plot::{
-        ratio_subplots, Axes, Color, ErrorbarOpts, Hist2dOpts, HistOpts, HistType, SaveOptions,
-        Style,
+        ratio_subplots, Axes, Color, ErrorbarOpts, Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
     };
     use oxiroot::prelude::*;
 
@@ -52,30 +51,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- 1. Filled MC + data overlay, default matplotlib look. ---
     let mut ax = Axes::new();
-    ax.histplot(
+    ax.hist_with(
         &mc,
         HistOpts::new()
             .histtype(HistType::Fill)
             .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
             .label("MC"),
     );
-    ax.errorbar_opts(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
-    ax.set_xlabel("$m_{\\mu\\mu}$ [GeV]");
-    ax.set_ylabel("Events / 2 GeV");
-    ax.set_title("$Z \\rightarrow \\mu\\mu$ candidates");
+    ax.errorbar_with(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+    ax.xlabel("$m_{\\mu\\mu}$ [GeV]");
+    ax.ylabel("Events / 2 GeV");
+    ax.title("$Z \\rightarrow \\mu\\mu$ candidates");
     ax.legend();
     save_both(&ax, &out, "mass")?;
 
     // Also save the first figure at a higher DPI for a sharper raster.
-    ax.save_with(out.join("mass_hi.png"), &SaveOptions::new().dpi(220.0))?;
+    ax.save_with(out.join("mass_hi.png"), SaveOpts::new().dpi(220.0))?;
     println!("wrote {} (220 dpi)", out.join("mass_hi.png").display());
 
     // --- 2. The same histogram as a step + error bars + grid, mplhep style. ---
     let mut hep = Axes::with_style(Style::mplhep());
-    hep.histplot(&mc, HistOpts::new().yerr(true).label("MC"));
-    hep.grid(true);
-    hep.set_xlabel("$m_{\\mu\\mu}$ [GeV]");
-    hep.set_ylabel("Events / 2 GeV");
+    hep.hist_with(&mc, HistOpts::new().yerr().label("MC"));
+    hep.grid();
+    hep.xlabel("$m_{\\mu\\mu}$ [GeV]");
+    hep.ylabel("Events / 2 GeV");
     hep.legend();
     save_both(&hep, &out, "mplhep")?;
 
@@ -91,10 +90,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let mut ax2 = Axes::new();
-    ax2.hist2dplot(&h2, Hist2dOpts::new().label("entries"));
-    ax2.set_xlabel("$x$");
-    ax2.set_ylabel("$y$");
-    ax2.set_title("two Gaussians");
+    ax2.hist2d_with(&h2, Hist2dOpts::new().label("entries"));
+    ax2.xlabel("$x$");
+    ax2.ylabel("$y$");
+    ax2.title("two Gaussians");
     save_both(&ax2, &out, "heatmap")?;
 
     // --- 4. A ratio plot: filled MC + data over a data/MC ratio panel. ---
@@ -132,25 +131,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rgraph = TGraph::with_errors(dx.clone(), ratio_y, vec![0.0; dx.len()], ratio_ey).named("r");
 
     let (fig, mut main, mut ratio) = ratio_subplots();
-    main.histplot(
+    main.hist_with(
         &mc,
         HistOpts::new()
             .histtype(HistType::Fill)
             .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
             .label("MC"),
     );
-    main.errorbar_opts(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
-    main.set_ylabel("Events / 2 GeV");
+    main.errorbar_with(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+    main.ylabel("Events / 2 GeV");
     main.legend();
-    ratio.errorbar_opts(&rgraph, ErrorbarOpts::new().color(Color::BLACK));
-    ratio.set_ylim(0.5, 1.5);
-    ratio.set_ylabel("data/MC");
-    ratio.set_xlabel("$m_{\\mu\\mu}$ [GeV]");
-    ratio.grid(true);
+    ratio.errorbar_with(&rgraph, ErrorbarOpts::new().color(Color::BLACK));
+    ratio.ylim(0.5..1.5);
+    ratio.ylabel("data/MC");
+    ratio.xlabel("$m_{\\mu\\mu}$ [GeV]");
+    ratio.grid();
     let figr = fig.ratio(main, ratio);
     for ext in ["png", "svg", "pdf"] {
         let path = out.join(format!("ratio.{ext}"));
-        figr.savefig(&path)?;
+        figr.save(&path)?;
         println!(
             "wrote {} ({} bytes)",
             path.display(),
@@ -162,17 +161,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use oxiroot::plot::subplots_grid;
     let (gfig, mut axs) = subplots_grid(2, 2);
     axs[0].hist(&mc);
-    axs[0].set_ylabel("Events");
-    axs[1].histplot(&mc, HistOpts::new().histtype(HistType::Fill));
+    axs[0].ylabel("Events");
+    axs[1].hist_with(&mc, HistOpts::new().histtype(HistType::Fill));
     axs[2].errorbar(&data);
-    axs[2].set_ylabel("Events");
+    axs[2].ylabel("Events");
     axs[3].plot(&dx, &dy);
     let gfig = gfig
-        .sharex(true)
-        .sharey(true)
+        .sharex()
+        .sharey()
         .suptitle("$Z \\rightarrow \\mu\\mu$ — subplot grid")
         .with_axes(axs);
-    gfig.savefig(out.join("grid.png"))?;
+    gfig.save(out.join("grid.png"))?;
     println!("wrote {}", out.join("grid.png").display());
 
     // --- 6. Fit a Gaussian to the MC and overlay the fitted curve. ---
@@ -184,18 +183,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let r = mc.fit(&model);
         let fitted = model.with_params(r.params.clone());
         let mut ax = Axes::new();
-        ax.histplot(
+        ax.hist_with(
             &mc,
             HistOpts::new()
                 .histtype(HistType::Fill)
                 .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
                 .label("data"),
         );
-        ax.model_opts(
+        ax.model_with(
             &fitted,
-            50.0,
-            130.0,
-            oxiroot::plot::FnOpts::new()
+            50.0..130.0,
+            oxiroot::plot::CurveOpts::new()
                 .color(Color::hex("#d62728"))
                 .linewidth(2.0)
                 .label(format!(
@@ -203,8 +201,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     r.chi2 / r.ndf.max(1) as f64
                 )),
         );
-        ax.set_xlabel("$m_{\\mu\\mu}$ [GeV]");
-        ax.set_ylabel("Events / 2 GeV");
+        ax.xlabel("$m_{\\mu\\mu}$ [GeV]");
+        ax.ylabel("Events / 2 GeV");
         ax.legend();
         save_both(&ax, &out, "fit")?;
     }

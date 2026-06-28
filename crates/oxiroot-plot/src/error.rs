@@ -8,9 +8,9 @@ use std::fmt;
 pub enum Error {
     /// An I/O error while writing an image file.
     Io(std::io::Error),
-    /// The PNG encoder failed.
+    /// An image encoder failed.
     Encode(String),
-    /// The output path had an extension other than `.png` or `.svg`.
+    /// The output path had an extension other than `.png`, `.svg`, or `.pdf`.
     UnknownFormat(String),
     /// A figure dimension was zero or absurdly large.
     BadSize(String),
@@ -20,9 +20,12 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Io(e) => write!(f, "io error: {e}"),
-            Error::Encode(m) => write!(f, "png encode error: {m}"),
+            Error::Encode(m) => write!(f, "image encode error: {m}"),
             Error::UnknownFormat(ext) => {
-                write!(f, "unknown image format `{ext}` (use a .png or .svg path)")
+                write!(
+                    f,
+                    "unknown image format `{ext}` (use a .png, .svg, or .pdf path)"
+                )
             }
             Error::BadSize(m) => write!(f, "invalid figure size: {m}"),
         }

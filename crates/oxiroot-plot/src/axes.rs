@@ -1,6 +1,8 @@
 //! The `Axes` — a single plot panel: data limits, the frame, ticks, labels, and
 //! the artists drawn within it. Mirrors matplotlib's `Axes` API.
 
+use std::ops::Range;
+
 use oxiroot_hist::{GraphErrors, TGraph, TProfile, TH1, TH2};
 
 use crate::artists::{
@@ -10,6 +12,7 @@ use crate::cmap::Colormap;
 use crate::color::Color;
 use crate::colorbar::ColorbarSpec;
 use crate::draw::{DrawCommand, DrawGroup, Rect, Stroke};
+use crate::figure::SaveOpts;
 use crate::style::{Style, TickDir};
 use crate::text::{self, FontStyle, HAlign, VAlign};
 use crate::ticker;
@@ -27,7 +30,7 @@ pub struct Axes {
     pub(crate) artists: Vec<Artist>,
     color_idx: usize,
     show_legend: bool,
-    /// When set (by `hist`/`histplot`), the y autoscale starts at 0.
+    /// When set (by `hist`/`hist_with`), the y autoscale starts at 0.
     pub(crate) y_from_zero: bool,
     colorbar: Option<ColorbarSpec>,
     grid_minor: bool,
@@ -92,28 +95,28 @@ impl Axes {
     }
 
     /// Set the x-axis label (supports `$…$` math).
-    pub fn set_xlabel(&mut self, s: impl Into<String>) -> &mut Self {
+    pub fn xlabel(&mut self, s: impl Into<String>) -> &mut Self {
         self.xlabel = Some(s.into());
         self
     }
     /// Set the y-axis label.
-    pub fn set_ylabel(&mut self, s: impl Into<String>) -> &mut Self {
+    pub fn ylabel(&mut self, s: impl Into<String>) -> &mut Self {
         self.ylabel = Some(s.into());
         self
     }
     /// Set the title.
-    pub fn set_title(&mut self, s: impl Into<String>) -> &mut Self {
+    pub fn title(&mut self, s: impl Into<String>) -> &mut Self {
         self.title = Some(s.into());
         self
     }
-    /// Set the x-axis limits.
-    pub fn set_xlim(&mut self, lo: f64, hi: f64) -> &mut Self {
-        self.xlim = Some((lo, hi));
+    /// Set the x-axis limits, e.g. `ax.xlim(0.0..100.0)`.
+    pub fn xlim(&mut self, range: Range<f64>) -> &mut Self {
+        self.xlim = Some((range.start, range.end));
         self
     }
-    /// Set the y-axis limits.
-    pub fn set_ylim(&mut self, lo: f64, hi: f64) -> &mut Self {
-        self.ylim = Some((lo, hi));
+    /// Set the y-axis limits, e.g. `ax.ylim(0.5..1.5)`.
+    pub fn ylim(&mut self, range: Range<f64>) -> &mut Self {
+        self.ylim = Some((range.start, range.end));
         self
     }
     /// Enable the legend.
@@ -130,35 +133,33 @@ impl Axes {
     /// # use oxiroot_plot::Axes;
     /// let mut ax = Axes::new();
     /// ax.plot(&[0.0, 1.0, 2.0], &[0.0, 1.0, 0.5]);
-    /// ax.grid(true);
+    /// ax.grid();
     /// ```
-    pub fn grid(&mut self, on: bool) -> &mut Self {
-        self.style.grid = on;
+    pub fn grid(&mut self) -> &mut Self {
+        self.style.grid = true;
         self
     }
 
     /// Also show fainter grid lines at the minor tick positions (implies the
     /// major grid and minor ticks).
-    pub fn grid_minor(&mut self, on: bool) -> &mut Self {
-        self.grid_minor = on;
-        if on {
-            self.style.grid = true;
-            self.style.minor_ticks = true;
-        }
+    pub fn grid_minor(&mut self) -> &mut Self {
+        self.grid_minor = true;
+        self.style.grid = true;
+        self.style.minor_ticks = true;
         self
     }
 
-    /// Show or hide the x tick labels and x-axis label (used internally to hide
-    /// them on the upper panel of a shared-x layout).
-    pub fn set_xticklabels_visible(&mut self, on: bool) -> &mut Self {
-        self.show_xticklabels = on;
+    /// Hide the x tick labels and the x-axis label (e.g. on the upper panel of a
+    /// shared-x layout). The tick marks themselves stay.
+    pub fn hide_xticklabels(&mut self) -> &mut Self {
+        self.show_xticklabels = false;
         self
     }
 
-    /// Show or hide the y tick labels and y-axis label (used internally for the
-    /// non-left columns of a shared-y grid).
-    pub fn set_yticklabels_visible(&mut self, on: bool) -> &mut Self {
-        self.show_yticklabels = on;
+    /// Hide the y tick labels and the y-axis label (e.g. on the non-left columns
+    /// of a shared-y grid). The tick marks themselves stay.
+    pub fn hide_yticklabels(&mut self) -> &mut Self {
+        self.show_yticklabels = false;
         self
     }
 
@@ -179,7 +180,7 @@ impl Axes {
     /// Render this single axes as a full figure and save to `path` (`.png`,
     /// `.svg`, or `.pdf`) — the convenient path for a one-panel plot.
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> crate::error::Result<()> {
-        self.save_with(path, &crate::figure::SaveOptions::default())
+        self.save_with(path, SaveOpts::default())
     }
 
     /// Like [`Axes::save`] with explicit options (e.g. a higher DPI for a sharper
@@ -187,18 +188,55 @@ impl Axes {
     ///
     /// # Examples
     /// ```no_run
-    /// use oxiroot_plot::{Axes, SaveOptions};
+    /// use oxiroot_plot::{Axes, SaveOpts};
     /// let mut ax = Axes::new();
     /// ax.plot(&[0.0, 1.0], &[0.0, 1.0]);
-    /// ax.save_with("plot.png", &SaveOptions::new().dpi(300.0)).unwrap();
+    /// ax.save_with("plot.png", SaveOpts::new().dpi(300.0)).unwrap();
     /// ```
     pub fn save_with(
         &self,
         path: impl AsRef<std::path::Path>,
-        opts: &crate::figure::SaveOptions,
+        opts: SaveOpts,
     ) -> crate::error::Result<()> {
+        let (groups, w, h) = self.groups(opts.dpi);
+        let bg = self.background(opts.transparent);
+        crate::figure::write_groups(&groups, w, h, bg, path.as_ref())
+    }
+
+    /// Render to an in-memory PNG (honoring [`SaveOpts`] DPI/transparency) instead
+    /// of writing a file.
+    pub fn to_png_bytes(&self, opts: SaveOpts) -> crate::error::Result<Vec<u8>> {
+        let (groups, w, h) = self.groups(opts.dpi);
+        crate::render::raster::render_png(&groups, w, h, self.background(opts.transparent))
+    }
+
+    /// Render to an in-memory SVG string.
+    #[must_use]
+    pub fn to_svg_string(&self) -> String {
+        let (groups, w, h) = self.groups(None);
+        crate::render::svg::render(&groups, w, h, self.background(false))
+    }
+
+    /// Render to in-memory PDF bytes.
+    #[must_use]
+    pub fn to_pdf_bytes(&self) -> Vec<u8> {
+        let (groups, w, h) = self.groups(None);
+        crate::render::pdf::render(&groups, w, h, self.background(false))
+    }
+
+    /// The page background color (`face_color`, or fully transparent).
+    fn background(&self, transparent: bool) -> Color {
+        if transparent {
+            Color::TRANSPARENT
+        } else {
+            self.style.face_color
+        }
+    }
+
+    /// Build the draw groups at an optional DPI override, with the pixel size used.
+    fn groups(&self, dpi: Option<f32>) -> (Vec<DrawGroup>, u32, u32) {
         let mut tmp;
-        let ax = match opts.dpi {
+        let ax = match dpi {
             Some(dpi) => {
                 tmp = self.clone();
                 tmp.style.dpi = dpi;
@@ -207,18 +245,12 @@ impl Axes {
             None => self,
         };
         let (w, h) = ax.style.figsize_px();
-        let groups = ax.render(w, h);
-        let bg = if opts.transparent {
-            crate::color::Color::TRANSPARENT
-        } else {
-            ax.style.face_color
-        };
-        crate::figure::write_groups(&groups, w, h, bg, path.as_ref())
+        (ax.render(w, h), w, h)
     }
 
     /// Plot a `TH1` as an mplhep step staircase (the matplotlib `hist` analog).
     pub fn hist(&mut self, h: &TH1) -> &mut Self {
-        self.histplot(h, HistOpts::default())
+        self.hist_with(h, HistOpts::default())
     }
 
     /// Plot a `TH1` with explicit options (histtype, error bars, color, label).
@@ -229,10 +261,10 @@ impl Axes {
     /// use oxiroot_hist::TH1;
     /// let h = TH1::new(20, 0.0, 10.0).named("h");
     /// let mut ax = Axes::new();
-    /// ax.histplot(&h, HistOpts::new().histtype(HistType::Step).yerr(true).label("MC"));
+    /// ax.hist_with(&h, HistOpts::new().histtype(HistType::Step).yerr().label("MC"));
     /// ax.save("h.svg").unwrap();
     /// ```
-    pub fn histplot(&mut self, h: &TH1, opts: HistOpts) -> &mut Self {
+    pub fn hist_with(&mut self, h: &TH1, opts: HistOpts) -> &mut Self {
         let edges = h.edges();
         let values = h.values().to_vec();
         let n = values.len();
@@ -279,11 +311,11 @@ impl Axes {
     /// ax.save("g.png").unwrap();
     /// ```
     pub fn errorbar(&mut self, g: &TGraph) -> &mut Self {
-        self.errorbar_opts(g, ErrorbarOpts::default())
+        self.errorbar_with(g, ErrorbarOpts::default())
     }
 
     /// Plot a `TGraph` with explicit options.
-    pub fn errorbar_opts(&mut self, g: &TGraph, opts: ErrorbarOpts) -> &mut Self {
+    pub fn errorbar_with(&mut self, g: &TGraph, opts: ErrorbarOpts) -> &mut Self {
         let n = g.len();
         let xs = g.x[..n].to_vec();
         let ys = g.y[..n].to_vec();
@@ -365,7 +397,7 @@ impl Axes {
 
     /// Plot a `TH2` as a color mesh with a colorbar (matplotlib `pcolormesh`).
     pub fn hist2d(&mut self, h: &TH2) -> &mut Self {
-        self.hist2dplot(h, Hist2dOpts::default())
+        self.hist2d_with(h, Hist2dOpts::default())
     }
 
     /// Plot a `TH2` with explicit options (colormap, value range, colorbar label).
@@ -376,10 +408,10 @@ impl Axes {
     /// use oxiroot_hist::TH2;
     /// let h = TH2::new(10, 0.0, 1.0, 10, 0.0, 1.0).named("h2");
     /// let mut ax = Axes::new();
-    /// ax.hist2dplot(&h, Hist2dOpts::new().cmap(Colormap::Viridis).label("entries"));
+    /// ax.hist2d_with(&h, Hist2dOpts::new().cmap(Colormap::Viridis).label("entries"));
     /// ax.save("h2.png").unwrap();
     /// ```
-    pub fn hist2dplot(&mut self, h: &TH2, opts: Hist2dOpts) -> &mut Self {
+    pub fn hist2d_with(&mut self, h: &TH2, opts: Hist2dOpts) -> &mut Self {
         let xedges = h.xaxis.edges();
         let yedges = h.yaxis.edges();
         let values = h.values();
@@ -435,30 +467,33 @@ impl Axes {
         self
     }
 
-    /// Plot a function `f` sampled over `[x0, x1]` as a smooth curve — e.g. to
+    /// Plot a function `f` sampled over `range` as a smooth curve — e.g. to
     /// overlay a fitted model on a histogram.
     ///
     /// # Examples
     /// ```
     /// # use oxiroot_plot::Axes;
     /// let mut ax = Axes::new();
-    /// // Overlay a Gaussian curve.
-    /// ax.function(|x| 1000.0 * (-(x - 5.0_f64).powi(2) / 2.0).exp(), 0.0, 10.0);
+    /// // Overlay a Gaussian curve over x ∈ [0, 10].
+    /// ax.function(|x| 1000.0 * (-(x - 5.0_f64).powi(2) / 2.0).exp(), 0.0..10.0);
     /// ```
-    pub fn function<F: Fn(f64) -> f64>(&mut self, f: F, x0: f64, x1: f64) -> &mut Self {
-        self.function_opts(f, x0, x1, FnOpts::default())
+    pub fn function<F: Fn(f64) -> f64>(&mut self, f: F, range: Range<f64>) -> &mut Self {
+        self.function_with(f, range, CurveOpts::default())
     }
 
     /// Plot a function with explicit options (color, label, line width, samples).
-    pub fn function_opts<F: Fn(f64) -> f64>(
+    pub fn function_with<F: Fn(f64) -> f64>(
         &mut self,
         f: F,
-        x0: f64,
-        x1: f64,
-        opts: FnOpts,
+        range: Range<f64>,
+        opts: CurveOpts,
     ) -> &mut Self {
         let n = opts.samples.max(2);
-        let (x0, x1) = if x0 <= x1 { (x0, x1) } else { (x1, x0) };
+        let (x0, x1) = if range.start <= range.end {
+            (range.start, range.end)
+        } else {
+            (range.end, range.start)
+        };
         let xs: Vec<f64> = (0..n)
             .map(|i| x0 + (x1 - x0) * i as f64 / (n - 1) as f64)
             .collect();
@@ -477,24 +512,23 @@ impl Axes {
         self
     }
 
-    /// Overlay a fitted [`oxiroot_fit::Model`] curve over `[x0, x1]` (the `fit`
+    /// Overlay a fitted [`oxiroot_fit::Model`] curve over `range` (the `fit`
     /// feature). The model is evaluated with its current parameters, so fit it
     /// first (`let r = h.fit(&model)`, then pass `model.with_params(r.params)`).
     #[cfg(feature = "fit")]
-    pub fn model(&mut self, model: &oxiroot_fit::Model, x0: f64, x1: f64) -> &mut Self {
-        self.function_opts(|x| model.eval(x), x0, x1, FnOpts::default())
+    pub fn model(&mut self, model: &oxiroot_fit::Model, range: Range<f64>) -> &mut Self {
+        self.function_with(|x| model.eval(x), range, CurveOpts::default())
     }
 
     /// Overlay a fitted [`oxiroot_fit::Model`] curve with explicit options.
     #[cfg(feature = "fit")]
-    pub fn model_opts(
+    pub fn model_with(
         &mut self,
         model: &oxiroot_fit::Model,
-        x0: f64,
-        x1: f64,
-        opts: FnOpts,
+        range: Range<f64>,
+        opts: CurveOpts,
     ) -> &mut Self {
-        self.function_opts(|x| model.eval(x), x0, x1, opts)
+        self.function_with(|x| model.eval(x), range, opts)
     }
 
     /// Resolve the data limits, honoring explicit limits and autoscaling the rest.
@@ -842,22 +876,17 @@ impl Default for Axes {
     }
 }
 
-/// Options for [`Axes::histplot`]. Defaults to an mplhep step outline with no
-/// error bars and the next cycle color.
+/// Options for [`Axes::hist_with`]. Build with [`HistOpts::new`] and the chained
+/// setters. Defaults to an mplhep step outline with no error bars and the next
+/// cycle color.
 #[derive(Debug, Clone, Default)]
 pub struct HistOpts {
-    /// How the histogram is drawn.
-    pub histtype: HistType,
-    /// Draw `√N`/Sumw2 error bars at bin centers.
-    pub yerr: bool,
-    /// Override the line/edge color (default: next cycle color).
-    pub color: Option<Color>,
-    /// Fill color for `Fill`/`Band` (default: the line color).
-    pub fill_color: Option<Color>,
-    /// Legend label.
-    pub label: Option<String>,
-    /// Override the line width in points.
-    pub linewidth_pt: Option<f32>,
+    pub(crate) histtype: HistType,
+    pub(crate) yerr: bool,
+    pub(crate) color: Option<Color>,
+    pub(crate) fill_color: Option<Color>,
+    pub(crate) label: Option<String>,
+    pub(crate) linewidth_pt: Option<f32>,
 }
 
 impl HistOpts {
@@ -872,10 +901,10 @@ impl HistOpts {
         self.histtype = t;
         self
     }
-    /// Enable/disable error bars.
+    /// Draw `√N`/Sumw2 error bars at the bin centers.
     #[must_use]
-    pub fn yerr(mut self, on: bool) -> Self {
-        self.yerr = on;
+    pub fn yerr(mut self) -> Self {
+        self.yerr = true;
         self
     }
     /// Set the color.
@@ -904,22 +933,17 @@ impl HistOpts {
     }
 }
 
-/// Options for [`Axes::errorbar`]. Defaults to the HEP data-point look: round
-/// markers, vertical/horizontal error bars, no caps, no connecting line.
+/// Options for [`Axes::errorbar_with`]. Build with [`ErrorbarOpts::new`] and the
+/// chained setters. Defaults to the HEP data-point look: round markers,
+/// vertical/horizontal error bars, no caps, no connecting line.
 #[derive(Debug, Clone)]
 pub struct ErrorbarOpts {
-    /// Override the color (default: next cycle color).
-    pub color: Option<Color>,
-    /// Marker shape.
-    pub marker: Marker,
-    /// Marker size in points (default: ~0.8× the style marker size).
-    pub marker_size_pt: Option<f32>,
-    /// Error-bar cap size in points (0 = no caps, matplotlib default).
-    pub capsize_pt: f32,
-    /// Draw a connecting line through the points.
-    pub line: bool,
-    /// Legend label.
-    pub label: Option<String>,
+    pub(crate) color: Option<Color>,
+    pub(crate) marker: Marker,
+    pub(crate) marker_size_pt: Option<f32>,
+    pub(crate) capsize_pt: f32,
+    pub(crate) line: bool,
+    pub(crate) label: Option<String>,
 }
 
 impl Default for ErrorbarOpts {
@@ -965,10 +989,10 @@ impl ErrorbarOpts {
         self.capsize_pt = pt;
         self
     }
-    /// Draw a connecting line.
+    /// Draw a connecting line through the points.
     #[must_use]
-    pub fn line(mut self, on: bool) -> Self {
-        self.line = on;
+    pub fn line(mut self) -> Self {
+        self.line = true;
         self
     }
     /// Set the legend label.
@@ -979,17 +1003,14 @@ impl ErrorbarOpts {
     }
 }
 
-/// Options for [`Axes::hist2dplot`].
+/// Options for [`Axes::hist2d_with`]. Build with [`Hist2dOpts::new`] and the
+/// chained setters.
 #[derive(Debug, Clone, Default)]
 pub struct Hist2dOpts {
-    /// Colormap (default: viridis).
-    pub cmap: Colormap,
-    /// Lower value bound (default: data minimum).
-    pub vmin: Option<f64>,
-    /// Upper value bound (default: data maximum).
-    pub vmax: Option<f64>,
-    /// Colorbar label.
-    pub label: Option<String>,
+    pub(crate) cmap: Colormap,
+    pub(crate) vmin: Option<f64>,
+    pub(crate) vmax: Option<f64>,
+    pub(crate) label: Option<String>,
 }
 
 impl Hist2dOpts {
@@ -1004,11 +1025,11 @@ impl Hist2dOpts {
         self.cmap = c;
         self
     }
-    /// Set the value range.
+    /// Set the value (color) range, e.g. `Hist2dOpts::new().vrange(0.0..100.0)`.
     #[must_use]
-    pub fn vrange(mut self, vmin: f64, vmax: f64) -> Self {
-        self.vmin = Some(vmin);
-        self.vmax = Some(vmax);
+    pub fn vrange(mut self, range: Range<f64>) -> Self {
+        self.vmin = Some(range.start);
+        self.vmax = Some(range.end);
         self
     }
     /// Set the colorbar label.
@@ -1019,24 +1040,20 @@ impl Hist2dOpts {
     }
 }
 
-/// Options for [`Axes::function`]/[`Axes::function_opts`].
+/// Options for [`Axes::function_with`] / `Axes::model_with` — a sampled analytic
+/// curve. Build with [`CurveOpts::new`] and the chained setters.
 #[derive(Debug, Clone)]
-pub struct FnOpts {
-    /// Override the color (default: next cycle color).
-    pub color: Option<Color>,
-    /// Legend label.
-    pub label: Option<String>,
-    /// Override the line width in points.
-    pub linewidth_pt: Option<f32>,
-    /// Optional dash pattern (in points).
-    pub dash: Option<Vec<f32>>,
-    /// Number of sample points (default 256).
-    pub samples: usize,
+pub struct CurveOpts {
+    pub(crate) color: Option<Color>,
+    pub(crate) label: Option<String>,
+    pub(crate) linewidth_pt: Option<f32>,
+    pub(crate) dash: Option<Vec<f32>>,
+    pub(crate) samples: usize,
 }
 
-impl Default for FnOpts {
+impl Default for CurveOpts {
     fn default() -> Self {
-        FnOpts {
+        CurveOpts {
             color: None,
             label: None,
             linewidth_pt: None,
@@ -1046,11 +1063,11 @@ impl Default for FnOpts {
     }
 }
 
-impl FnOpts {
+impl CurveOpts {
     /// New default options.
     #[must_use]
     pub fn new() -> Self {
-        FnOpts::default()
+        CurveOpts::default()
     }
     /// Set the color.
     #[must_use]

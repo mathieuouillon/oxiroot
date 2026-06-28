@@ -2,6 +2,9 @@
 //! owns its data in data-coordinates and knows how to compute its data bounds
 //! (for autoscaling) and how to draw itself through a [`Transform`].
 
+use std::fmt;
+use std::str::FromStr;
+
 use crate::color::Color;
 use crate::draw::{DrawCommand, DrawGroup, Rect, Stroke};
 use crate::style::Style;
@@ -20,6 +23,52 @@ pub enum Marker {
     /// Upward triangle (`^`).
     TriangleUp,
 }
+
+impl Marker {
+    /// The matplotlib marker spec (`"none"`, `"o"`, `"s"`, `"^"`).
+    #[must_use]
+    pub fn spec(self) -> &'static str {
+        match self {
+            Marker::None => "none",
+            Marker::Circle => "o",
+            Marker::Square => "s",
+            Marker::TriangleUp => "^",
+        }
+    }
+}
+
+impl fmt::Display for Marker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.spec())
+    }
+}
+
+/// Parse a matplotlib marker spec, e.g. `"o"`, `"s"`, `"^"`, or `"none"`.
+impl FromStr for Marker {
+    type Err = ParseMarkerError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "" | "none" | "None" => Ok(Marker::None),
+            "o" => Ok(Marker::Circle),
+            "s" => Ok(Marker::Square),
+            "^" => Ok(Marker::TriangleUp),
+            _ => Err(ParseMarkerError(s.to_string())),
+        }
+    }
+}
+
+/// The error returned when a string cannot be parsed as a [`Marker`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseMarkerError(String);
+
+impl fmt::Display for ParseMarkerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown marker `{}`", self.0)
+    }
+}
+
+impl std::error::Error for ParseMarkerError {}
 
 /// A legend handle describing how to draw a sample swatch.
 #[derive(Debug, Clone)]
@@ -168,6 +217,52 @@ pub enum HistType {
     /// A shaded band spanning `y ± yerr` (uncertainty band).
     Band,
 }
+
+impl HistType {
+    /// The mplhep histogram-type name (`"step"`, `"fill"`, `"errorbar"`, `"band"`).
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            HistType::Step => "step",
+            HistType::Fill => "fill",
+            HistType::Errorbar => "errorbar",
+            HistType::Band => "band",
+        }
+    }
+}
+
+impl fmt::Display for HistType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// Parse an mplhep histogram-type name, e.g. `"step"` or `"fill"`.
+impl FromStr for HistType {
+    type Err = ParseHistTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "step" => Ok(HistType::Step),
+            "fill" => Ok(HistType::Fill),
+            "errorbar" => Ok(HistType::Errorbar),
+            "band" => Ok(HistType::Band),
+            _ => Err(ParseHistTypeError(s.to_string())),
+        }
+    }
+}
+
+/// The error returned when a string cannot be parsed as a [`HistType`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseHistTypeError(String);
+
+impl fmt::Display for ParseHistTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown histtype `{}`", self.0)
+    }
+}
+
+impl std::error::Error for ParseHistTypeError {}
 
 /// Build the staircase vertices for `edges`/`values` (data coords). When
 /// `baseline` is set, the first and last points drop to `y = 0`.

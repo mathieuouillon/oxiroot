@@ -3,7 +3,7 @@
 //! `oxiroot-plot` renders [`oxiroot_hist`] objects (`TH1`/`TH2`/`TGraph`/
 //! `TProfile`) to **SVG, PNG, and PDF** with a matplotlib-like API and an
 //! mplhep-style histogram look — no ROOT, no matplotlib, no system fonts.
-//! Everything is drawn through one backend-independent [`draw`] IR that fans out
+//! Everything is drawn through one backend-independent draw IR that fans out
 //! to a tiny-skia raster (PNG), a hand-written SVG, and a hand-written PDF, so
 //! the three outputs share identical geometry. DejaVu Sans (matplotlib's own
 //! default font) is bundled, and `$…$` math is typeset with the ReX TeX engine
@@ -11,21 +11,24 @@
 //!
 //! # What it can draw
 //!
-//! - **Histograms** — [`Axes::hist`]/[`Axes::histplot`] draw a `TH1` as an mplhep
+//! - **Histograms** — [`Axes::hist`]/[`Axes::hist_with`] draw a `TH1` as an mplhep
 //!   staircase ([`HistType::Step`]/`Fill`/`Band`/`Errorbar`) with `√N`/Sumw2
 //!   error bars.
 //! - **Graphs & profiles** — [`Axes::errorbar`] (`TGraph`, any error variant) and
 //!   [`Axes::profile`] (`TProfile`); [`Axes::plot`] for raw `(x, y)`.
-//! - **2-D histograms** — [`Axes::hist2d`]/[`Axes::hist2dplot`] render a `TH2` as
+//! - **2-D histograms** — [`Axes::hist2d`]/[`Axes::hist2d_with`] render a `TH2` as
 //!   a color mesh with a colorbar and the real matplotlib `viridis`/`plasma`
 //!   [`Colormap`]s.
-//! - **Decoration** — `set_xlabel`/`set_ylabel`/`set_title` (with LaTeX),
-//!   `set_xlim`/`set_ylim`, [`Axes::legend`], and [`Axes::grid`].
+//! - **Curves** — [`Axes::function`] overlays any analytic closure; with the
+//!   `fit` feature, `Axes::model` overlays a fitted `oxiroot_fit::Model`.
+//! - **Decoration** — `xlabel`/`ylabel`/`title` (with LaTeX), `xlim`/`ylim`,
+//!   [`Axes::legend`], and [`Axes::grid`].
 //! - **Layouts** — [`subplots_grid`] and a custom [`GridSpec`] for multi-panel
 //!   figures, and [`ratio_subplots`] for the HEP main-over-ratio plot.
-//! - **Output** — [`Axes::save`]/[`Figure::savefig`] choose the format from the
-//!   file extension (`.png`, `.svg`, `.pdf`); [`SaveOptions`] sets the DPI for a
-//!   sharper PNG or a transparent background.
+//! - **Output** — [`Axes::save`]/[`Figure::save`] choose the format from the
+//!   file extension (`.png`, `.svg`, `.pdf`); [`SaveOpts`] sets the DPI for a
+//!   sharper PNG or a transparent background, and `to_png_bytes`/`to_svg_string`
+//!   render in memory.
 //!
 //! The default look reproduces a plain matplotlib figure; [`Style::mplhep`]
 //! switches to the in-pointing, all-sides, minor-tick HEP style.
@@ -44,12 +47,12 @@
 //! let data = TGraph::with_errors(vec![50.0], vec![3.0], vec![0.0], vec![1.7]).named("d");
 //!
 //! let mut ax = Axes::new();
-//! ax.histplot(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
-//! ax.errorbar_opts(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
-//! ax.set_xlabel("$p_T$ [GeV]");   // LaTeX math via ReX
-//! ax.set_ylabel("Events");
+//! ax.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
+//! ax.errorbar_with(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+//! ax.xlabel("$p_T$ [GeV]");   // LaTeX math via ReX
+//! ax.ylabel("Events");
 //! ax.legend();
-//! ax.save("pt.png")?;             // or "pt.svg" / "pt.pdf"
+//! ax.save("pt.png")?;         // or "pt.svg" / "pt.pdf"
 //! # Ok::<(), oxiroot_plot::Error>(())
 //! ```
 //!
@@ -63,45 +66,49 @@
 //! let ratio_points = TGraph::with_errors(vec![50.0], vec![1.0], vec![0.0], vec![0.1]).named("r");
 //!
 //! let (fig, mut main, mut ratio) = ratio_subplots();
-//! main.histplot(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
-//! main.set_ylabel("Events");
+//! main.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
+//! main.ylabel("Events");
 //! main.legend();
-//! ratio.errorbar_opts(&ratio_points, ErrorbarOpts::new().color(Color::BLACK));
-//! ratio.set_ylim(0.5, 1.5);
-//! ratio.set_ylabel("data/MC");
-//! ratio.set_xlabel("$p_T$ [GeV]");
-//! fig.ratio(main, ratio).savefig("ratio.pdf")?;
+//! ratio.errorbar_with(&ratio_points, ErrorbarOpts::new().color(Color::BLACK));
+//! ratio.ylim(0.5..1.5);
+//! ratio.ylabel("data/MC");
+//! ratio.xlabel("$p_T$ [GeV]");
+//! fig.ratio(main, ratio).save("ratio.pdf")?;
 //! # Ok::<(), oxiroot_plot::Error>(())
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/oxiroot-plot")]
 
-pub mod artists;
+// User-facing modules.
 pub mod axes;
 pub mod cmap;
-mod cmap_data;
 pub mod color;
-mod colorbar;
-pub mod draw;
 pub mod error;
 pub mod figure;
 pub mod gridspec;
-pub mod legend;
-pub mod mathtext;
-pub mod render;
 pub mod style;
-pub mod text;
-pub mod ticker;
-pub mod transform;
 
-pub use artists::{HistType, Marker};
-pub use axes::{Axes, ErrorbarOpts, FnOpts, Hist2dOpts, HistOpts};
-pub use cmap::Colormap;
-pub use color::{cycle_color, Color, TAB10};
+// Implementation details (the draw IR, text/math layout, tickers, transforms,
+// and the render backends) — private; the public types are re-exported below.
+mod artists;
+mod cmap_data;
+mod colorbar;
+mod draw;
+mod legend;
+mod mathtext;
+mod render;
+mod text;
+mod ticker;
+mod transform;
+
+pub use artists::{HistType, Marker, ParseHistTypeError, ParseMarkerError};
+pub use axes::{Axes, CurveOpts, ErrorbarOpts, Hist2dOpts, HistOpts};
+pub use cmap::{Colormap, ParseColormapError};
+pub use color::{Color, ParseColorError, TAB10};
 pub use error::{Error, Result};
 pub use figure::{
     ratio_subplots, ratio_subplots_with, subplots, subplots_grid, subplots_grid_with,
-    subplots_with, Figure, SaveOptions,
+    subplots_with, Figure, SaveOpts,
 };
 pub use gridspec::GridSpec;
 pub use style::Style;
@@ -109,6 +116,9 @@ pub use style::Style;
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The render IR, text/math layout, and backends are private to the crate;
+    // the tests reach them through `crate::` (still accessible in-crate).
+    use crate::{draw, mathtext, render, text};
     use oxiroot_hist::{TGraph, TH1, TH2};
 
     fn is_png(bytes: &[u8]) -> bool {
@@ -167,7 +177,7 @@ mod tests {
         let ys: Vec<f64> = xs.iter().map(|x| x.sin()).collect();
         let mut ax = Axes::new();
         ax.plot(&xs, &ys);
-        ax.set_xlabel("$x$ [rad]");
+        ax.xlabel("$x$ [rad]");
         let (w, h) = ax.style.figsize_px();
         assert!(is_png(
             &render::raster::render_png(&ax.render(w, h), w, h, Color::WHITE).unwrap()
@@ -178,7 +188,7 @@ mod tests {
     fn hist_step_and_errorbar() {
         let h = gauss_hist();
         let mut ax = Axes::new();
-        ax.histplot(&h, HistOpts::new().yerr(true));
+        ax.hist_with(&h, HistOpts::new().yerr());
         let (w, hh) = ax.style.figsize_px();
         let groups = ax.render(w, hh);
         assert!(is_png(
@@ -199,7 +209,7 @@ mod tests {
         let e: Vec<f64> = y.iter().map(|v| v.sqrt().max(10.0)).collect();
         let g = TGraph::with_errors(x.clone(), y, vec![6.0; x.len()], e).named("g");
         let mut ax = Axes::new();
-        ax.errorbar_opts(&g, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+        ax.errorbar_with(&g, ErrorbarOpts::new().color(Color::BLACK).label("data"));
         ax.legend();
         let (w, h) = ax.style.figsize_px();
         assert!(is_png(
@@ -218,7 +228,7 @@ mod tests {
             }
         }
         let mut ax = Axes::new();
-        ax.hist2dplot(&h2, Hist2dOpts::new().label("entries"));
+        ax.hist2d_with(&h2, Hist2dOpts::new().label("entries"));
         let (w, h) = ax.style.figsize_px();
         assert!(is_png(
             &render::raster::render_png(&ax.render(w, h), w, h, Color::WHITE).unwrap()
@@ -281,7 +291,7 @@ mod tests {
     fn pdf_output_is_structurally_valid() {
         let mut ax = Axes::new();
         ax.plot(&[0.0, 1.0, 2.0, 3.0], &[0.0, 1.0, 0.4, 0.8]);
-        ax.set_xlabel("x");
+        ax.xlabel("x");
         let dir = std::env::temp_dir();
         let path = dir.join("oxiroot_plot_test.pdf");
         ax.save(&path).unwrap();
@@ -323,12 +333,12 @@ mod tests {
         // A single plot with a grid.
         let mut ax = Axes::new();
         ax.hist(&h);
-        ax.grid(true);
-        ax.set_xlabel("$m$ [GeV]");
-        ax.set_ylabel("Events");
+        ax.grid();
+        ax.xlabel("$m$ [GeV]");
+        ax.ylabel("Events");
         ax.save(format!("{dir}/grid.png")).unwrap();
         ax.save(format!("{dir}/grid.pdf")).unwrap();
-        ax.save_with(format!("{dir}/grid_hi.png"), &SaveOptions::new().dpi(220.0))
+        ax.save_with(format!("{dir}/grid_hi.png"), SaveOpts::new().dpi(220.0))
             .unwrap();
 
         // A 2×2 grid.
@@ -336,16 +346,16 @@ mod tests {
         axs[0].hist(&h);
         axs[1].plot(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 2.0, 4.0]);
         axs[2].hist(&h);
-        axs[2].grid(true);
+        axs[2].grid();
         axs[3].plot(&[0.0, 1.0, 2.0], &[2.0, 1.0, 3.0]);
         fig.with_axes(axs)
-            .savefig(format!("{dir}/grid2x2.png"))
+            .save(format!("{dir}/grid2x2.png"))
             .unwrap();
 
         // A ratio plot.
         let (fig, mut main, mut ratio) = ratio_subplots();
-        main.histplot(&h, HistOpts::new().histtype(HistType::Fill).label("MC"));
-        main.set_ylabel("Events");
+        main.hist_with(&h, HistOpts::new().histtype(HistType::Fill).label("MC"));
+        main.ylabel("Events");
         main.legend();
         let edges = h.edges();
         let centers: Vec<f64> = (0..h.values().len())
@@ -359,13 +369,13 @@ mod tests {
             vec![0.08; centers.len()],
         )
         .named("r");
-        ratio.errorbar_opts(&r, ErrorbarOpts::new().color(Color::BLACK));
-        ratio.set_ylim(0.5, 1.5);
-        ratio.set_ylabel("data/MC");
-        ratio.set_xlabel("$m$ [GeV]");
-        ratio.grid(true);
+        ratio.errorbar_with(&r, ErrorbarOpts::new().color(Color::BLACK));
+        ratio.ylim(0.5..1.5);
+        ratio.ylabel("data/MC");
+        ratio.xlabel("$m$ [GeV]");
+        ratio.grid();
         fig.ratio(main, ratio)
-            .savefig(format!("{dir}/ratio.png"))
+            .save(format!("{dir}/ratio.png"))
             .unwrap();
 
         // A shared-axis 2×2 grid with a figure title.
@@ -374,25 +384,24 @@ mod tests {
             ax.hist(&h);
         }
         axs[1].plot(&[55.0, 90.0, 125.0], &[500.0, 1500.0, 400.0]);
-        fig.sharex(true)
-            .sharey(true)
+        fig.sharex()
+            .sharey()
             .suptitle("$Z\\to\\mu\\mu$ — shared grid")
             .with_axes(axs)
-            .savefig(format!("{dir}/shared.png"))
+            .save(format!("{dir}/shared.png"))
             .unwrap();
 
         // A function overlay on a histogram (e.g. a fitted Gaussian).
         let mut ax = Axes::new();
-        ax.histplot(&h, HistOpts::new().histtype(HistType::Fill).label("data"));
+        ax.hist_with(&h, HistOpts::new().histtype(HistType::Fill).label("data"));
         let (a, mu, sigma) = (2050.0_f64, 90.0_f64, 8.0_f64);
-        ax.function_opts(
+        ax.function_with(
             move |x| a * (-0.5 * ((x - mu) / sigma).powi(2)).exp(),
-            50.0,
-            130.0,
-            FnOpts::new().color(Color::hex("#d62728")).label("fit"),
+            50.0..130.0,
+            CurveOpts::new().color(Color::hex("#d62728")).label("fit"),
         );
-        ax.set_xlabel("$m$ [GeV]");
-        ax.set_ylabel("Events");
+        ax.xlabel("$m$ [GeV]");
+        ax.ylabel("Events");
         ax.legend();
         ax.save(format!("{dir}/overlay.png")).unwrap();
     }

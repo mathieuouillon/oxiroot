@@ -12,39 +12,38 @@ use crate::gridspec::GridSpec;
 use crate::render::{pdf, raster, svg};
 use crate::style::Style;
 
-/// Options for saving a figure.
+/// Options for saving a figure. Build with [`SaveOpts::new`] and the chained
+/// setters.
 ///
 /// # Examples
 /// ```
-/// use oxiroot_plot::SaveOptions;
-/// let opts = SaveOptions::new().dpi(300.0).transparent(true);
+/// use oxiroot_plot::SaveOpts;
+/// let opts = SaveOpts::new().dpi(300.0).transparent();
 /// ```
 #[derive(Debug, Clone, Default)]
-pub struct SaveOptions {
-    /// Override the dots-per-inch (raster resolution). `None` uses the style's
-    /// dpi (100). Higher values give a sharper PNG; vector outputs (SVG/PDF) are
-    /// resolution-independent but their coordinate scale follows the dpi.
-    pub dpi: Option<f32>,
-    /// Render with a transparent background (no opaque page fill).
-    pub transparent: bool,
+pub struct SaveOpts {
+    pub(crate) dpi: Option<f32>,
+    pub(crate) transparent: bool,
 }
 
-impl SaveOptions {
+impl SaveOpts {
     /// New default options.
     #[must_use]
     pub fn new() -> Self {
-        SaveOptions::default()
+        SaveOpts::default()
     }
-    /// Set the output DPI (raster resolution).
+    /// Set the output DPI (raster resolution). `None` uses the style's dpi (100).
+    /// Higher values give a sharper PNG; vector outputs (SVG/PDF) are
+    /// resolution-independent but their coordinate scale follows the dpi.
     #[must_use]
     pub fn dpi(mut self, dpi: f32) -> Self {
         self.dpi = Some(dpi);
         self
     }
-    /// Render with a transparent background.
+    /// Render with a transparent background (no opaque page fill).
     #[must_use]
-    pub fn transparent(mut self, on: bool) -> Self {
-        self.transparent = on;
+    pub fn transparent(mut self) -> Self {
+        self.transparent = true;
         self
     }
 }
@@ -94,16 +93,16 @@ impl Figure {
     /// Share the x-axis across all panels (common x range; only the bottom row
     /// keeps its x tick labels and x-axis label).
     #[must_use]
-    pub fn sharex(mut self, on: bool) -> Self {
-        self.sharex = on;
+    pub fn sharex(mut self) -> Self {
+        self.sharex = true;
         self
     }
 
     /// Share the y-axis across all panels (common y range; only the left column
     /// keeps its y tick labels and y-axis label).
     #[must_use]
-    pub fn sharey(mut self, on: bool) -> Self {
-        self.sharey = on;
+    pub fn sharey(mut self) -> Self {
+        self.sharey = true;
         self
     }
 
@@ -114,24 +113,13 @@ impl Figure {
         self
     }
 
-    /// Add a single axes (placed in the first cell).
+    /// Place axes into the grid, row-major. Accepts anything iterable — a single
+    /// `[ax]`, a `Vec<Axes>`, etc. With a shared x- or y-axis the panels are
+    /// given a common range and the inner tick labels are hidden (only the bottom
+    /// row keeps x labels, only the left column keeps y labels).
     #[must_use]
-    pub fn with(mut self, ax: Axes) -> Self {
-        self.axes.push(ax);
-        self
-    }
-
-    /// Add a single axes by mutable reference.
-    pub fn add(&mut self, ax: Axes) -> &mut Self {
-        self.axes.push(ax);
-        self
-    }
-
-    /// Place a list of axes into the grid, row-major. With a shared x- or y-axis
-    /// the panels are given a common range and the inner tick labels are hidden
-    /// (only the bottom row keeps x labels, only the left column keeps y labels).
-    #[must_use]
-    pub fn with_axes(mut self, mut axes: Vec<Axes>) -> Self {
+    pub fn with_axes(mut self, axes: impl IntoIterator<Item = Axes>) -> Self {
+        let mut axes: Vec<Axes> = axes.into_iter().collect();
         let ncols = self.grid.ncols.max(1);
         if self.sharex && !axes.is_empty() {
             let (mut lo, mut hi) = axes[0].resolved_xlim();
@@ -142,9 +130,9 @@ impl Figure {
             }
             let last_row = axes.len().saturating_sub(1) / ncols;
             for (i, ax) in axes.iter_mut().enumerate() {
-                ax.set_xlim(lo, hi);
+                ax.xlim(lo..hi);
                 if i / ncols < last_row {
-                    ax.set_xticklabels_visible(false);
+                    ax.hide_xticklabels();
                 }
             }
         }
@@ -156,9 +144,9 @@ impl Figure {
                 hi = hi.max(h);
             }
             for (i, ax) in axes.iter_mut().enumerate() {
-                ax.set_ylim(lo, hi);
+                ax.ylim(lo..hi);
                 if i % ncols != 0 {
-                    ax.set_yticklabels_visible(false);
+                    ax.hide_yticklabels();
                 }
             }
         }
@@ -169,17 +157,60 @@ impl Figure {
     /// Convenience for a ratio plot: place the main and ratio panels.
     #[must_use]
     pub fn ratio(self, main: Axes, ratio: Axes) -> Self {
-        self.with_axes(vec![main, ratio])
+        self.with_axes([main, ratio])
     }
 
     /// Render every panel and save to `path` (`.png`, `.svg`, or `.pdf`).
-    pub fn savefig(&self, path: impl AsRef<Path>) -> Result<()> {
-        self.savefig_with(path, &SaveOptions::default())
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
+        self.save_with(path, SaveOpts::default())
     }
 
     /// Render and save with explicit options (DPI, transparency).
-    pub fn savefig_with(&self, path: impl AsRef<Path>, opts: &SaveOptions) -> Result<()> {
-        let dpi = opts.dpi.unwrap_or(self.style.dpi);
+    pub fn save_with(&self, path: impl AsRef<Path>, opts: SaveOpts) -> Result<()> {
+        let (groups, w, h) = self.render_groups(opts.dpi);
+        write_groups(
+            &groups,
+            w,
+            h,
+            self.background(opts.transparent),
+            path.as_ref(),
+        )
+    }
+
+    /// Render to an in-memory PNG (honoring [`SaveOpts`] DPI/transparency) instead
+    /// of writing a file.
+    pub fn to_png_bytes(&self, opts: SaveOpts) -> Result<Vec<u8>> {
+        let (groups, w, h) = self.render_groups(opts.dpi);
+        raster::render_png(&groups, w, h, self.background(opts.transparent))
+    }
+
+    /// Render to an in-memory SVG string.
+    #[must_use]
+    pub fn to_svg_string(&self) -> String {
+        let (groups, w, h) = self.render_groups(None);
+        svg::render(&groups, w, h, self.background(false))
+    }
+
+    /// Render to in-memory PDF bytes.
+    #[must_use]
+    pub fn to_pdf_bytes(&self) -> Vec<u8> {
+        let (groups, w, h) = self.render_groups(None);
+        pdf::render(&groups, w, h, self.background(false))
+    }
+
+    /// The page background color (`face_color`, or fully transparent).
+    fn background(&self, transparent: bool) -> Color {
+        if transparent {
+            Color::TRANSPARENT
+        } else {
+            self.style.face_color
+        }
+    }
+
+    /// Render all panels (and the suptitle) into draw groups at the effective
+    /// dpi, returning them plus the pixel size used.
+    fn render_groups(&self, dpi: Option<f32>) -> (Vec<DrawGroup>, u32, u32) {
+        let dpi = dpi.unwrap_or(self.style.dpi);
         let w = (self.style.figsize_in.0 * dpi).round() as u32;
         let h = (self.style.figsize_in.1 * dpi).round() as u32;
         let ncols = self.grid.ncols.max(1);
@@ -219,13 +250,7 @@ impl Figure {
             );
             groups.push(g);
         }
-
-        let bg = if opts.transparent {
-            Color::TRANSPARENT
-        } else {
-            self.style.face_color
-        };
-        write_groups(&groups, w, h, bg, path.as_ref())
+        (groups, w, h)
     }
 }
 
@@ -258,7 +283,7 @@ pub fn subplots_with(style: Style) -> (Figure, Axes) {
 /// let (fig, mut axs) = subplots_grid(1, 2);
 /// axs[0].plot(&[0.0, 1.0], &[0.0, 1.0]);
 /// axs[1].plot(&[0.0, 1.0], &[1.0, 0.0]);
-/// fig.with_axes(axs).savefig("two.png").unwrap();
+/// fig.with_axes(axs).save("two.png").unwrap();
 /// ```
 #[must_use]
 pub fn subplots_grid(nrows: usize, ncols: usize) -> (Figure, Vec<Axes>) {
@@ -280,7 +305,7 @@ pub fn subplots_grid_with(style: Style, grid: GridSpec) -> (Figure, Vec<Axes>) {
 
 /// A two-panel ratio plot: a main panel over a shorter ratio panel sharing the
 /// x-axis (height ratios 3:1, touching). Returns `(figure, main, ratio)`; fill
-/// both panels, then `fig.ratio(main, ratio).savefig(...)`.
+/// both panels, then `fig.ratio(main, ratio).save(...)`.
 ///
 /// # Examples
 /// ```no_run
@@ -289,11 +314,11 @@ pub fn subplots_grid_with(style: Style, grid: GridSpec) -> (Figure, Vec<Axes>) {
 /// let h = TH1::new(20, 0.0, 10.0).named("h");
 /// let (fig, mut main, mut ratio) = ratio_subplots();
 /// main.hist(&h);
-/// main.set_ylabel("Events");
-/// ratio.set_ylim(0.5, 1.5);
-/// ratio.set_ylabel("data/MC");
-/// ratio.set_xlabel("x");
-/// fig.ratio(main, ratio).savefig("ratio.svg").unwrap();
+/// main.ylabel("Events");
+/// ratio.ylim(0.5..1.5);
+/// ratio.ylabel("data/MC");
+/// ratio.xlabel("x");
+/// fig.ratio(main, ratio).save("ratio.svg").unwrap();
 /// ```
 #[must_use]
 pub fn ratio_subplots() -> (Figure, Axes, Axes) {

@@ -24,6 +24,19 @@ oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", features = ["plot
     [ReX](https://github.com/KenyC/ReX) TeX engine into the same IR. The `plot`
     feature pulls a pinned git dependency on ReX (it is not on crates.io).
 
+## API conventions
+
+The API mirrors matplotlib but reads as idiomatic Rust:
+
+- **No `set_` prefix** on the chainable setters — `ax.xlabel(…)`, `ax.title(…)`.
+- **One options convention** — every artist has a bare method that uses defaults
+  (`ax.hist(&h)`) and a `*_with` sibling that takes an options builder
+  (`ax.hist_with(&h, HistOpts::new()…)`).
+- **Ranges, not pairs** — limits and sampling intervals take a `Range`:
+  `ax.xlim(0.0..100.0)`, `ax.function(f, 0.0..10.0)`.
+- **No-arg toggles** — `ax.grid()`, `ax.legend()`, `fig.sharex()`, like
+  matplotlib's own no-argument forms.
+
 ## A first plot
 
 `Axes` mirrors matplotlib's `Axes`. Build it, add artists, label the axes, and
@@ -38,15 +51,15 @@ h.fill(42.0);
 
 let mut ax = Axes::new();
 ax.hist(&h);                       // mplhep step staircase
-ax.set_xlabel("$p_T$ [GeV]");      // LaTeX math via ReX
-ax.set_ylabel("Events");
+ax.xlabel("$p_T$ [GeV]");          // LaTeX math via ReX
+ax.ylabel("Events");
 ax.save("pt.png")?;                // or "pt.svg" / "pt.pdf"
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
 ## Histograms (mplhep style)
 
-`hist` draws a `TH1` as an mplhep staircase. `histplot` takes a `HistOpts`
+`hist` draws a `TH1` as an mplhep staircase. `hist_with` takes a `HistOpts`
 builder for control over the type, error bars, color, fill, and legend label.
 
 | `HistType` | Look |
@@ -60,18 +73,18 @@ builder for control over the type, error bars, color, fill, and legend label.
 use oxiroot::plot::{Axes, HistType, HistOpts, Color};
 
 let mut ax = Axes::new();
-ax.histplot(
+ax.hist_with(
     &mc,
     HistOpts::new()
         .histtype(HistType::Fill)
         .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
         .label("MC"),
 );
-ax.histplot(&data_hist, HistOpts::new().yerr(true).label("data")); // √N / Sumw2 bars
+ax.hist_with(&data_hist, HistOpts::new().yerr().label("data")); // √N / Sumw2 bars
 ```
 
 Error bars come from `√N` (or the Sumw2 per-bin error when the histogram tracks
-it). `hist`/`histplot` snap the x-axis to the bin edges and start the y-axis at
+it). `hist`/`hist_with` snap the x-axis to the bin edges and start the y-axis at
 zero, the mplhep convention.
 
 ## Graphs and profiles
@@ -84,38 +97,39 @@ marker, color, caps, and an optional connecting line.
 use oxiroot::plot::{Axes, ErrorbarOpts, Color};
 
 let mut ax = Axes::new();
-ax.errorbar_opts(&graph, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+ax.errorbar_with(&graph, ErrorbarOpts::new().color(Color::BLACK).label("data"));
 ax.profile(&prof);
 ax.legend();
 ```
 
 ## 2-D histograms
 
-`hist2d`/`hist2dplot` render a `TH2` as a `pcolormesh`-style color grid with a
+`hist2d`/`hist2d_with` render a `TH2` as a `pcolormesh`-style color grid with a
 colorbar, using the real matplotlib `viridis`/`plasma` colormaps.
 
 ```rust
 use oxiroot::plot::{Axes, Hist2dOpts, Colormap};
 
 let mut ax = Axes::new();
-ax.hist2dplot(&th2, Hist2dOpts::new().cmap(Colormap::Viridis).label("entries"));
-ax.set_xlabel("$x$");
-ax.set_ylabel("$y$");
+ax.hist2d_with(&th2, Hist2dOpts::new().cmap(Colormap::Viridis).label("entries"));
+ax.xlabel("$x$");
+ax.ylabel("$y$");
 ax.save("heatmap.svg")?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
-`Colormap` covers `Viridis`, `Plasma`, `Gray`, and `GrayReversed`. The value
-range autoscale can be overridden with `Hist2dOpts::vrange(vmin, vmax)`.
+`Colormap` covers `Viridis`, `Plasma`, `Gray`, and `GrayR` (matplotlib's
+`gray_r`), and parses from a name (`"viridis".parse()`). The value range
+autoscale can be overridden with `Hist2dOpts::vrange(vmin..vmax)`.
 
 ## Overlaying a fitted curve
 
-`ax.function(f, x0, x1)` samples any closure `f` over `[x0, x1]` and draws it as a
+`ax.function(f, x0..x1)` samples any closure `f` over the range and draws it as a
 smooth line — the way to overlay an analytic curve on a histogram. To overlay a
 **fitted model**, fit it with [`oxiroot::fit`](fitting.md) and pass the curve:
 
 ```rust
-use oxiroot::plot::{Axes, Color, FnOpts, HistOpts, HistType};
+use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType};
 use oxiroot::prelude::*;   // needs `--features plot,fit`
 use oxiroot::fit::TF1;
 
@@ -125,10 +139,10 @@ let r = h.fit(&model);
 let fitted = model.with_params(r.params.clone());
 
 let mut ax = Axes::new();
-ax.histplot(&h, HistOpts::new().histtype(HistType::Fill).label("data"));
-ax.model_opts(                                   // the `fit` feature
-    &fitted, 50.0, 130.0,
-    FnOpts::new().color(Color::hex("#d62728"))
+ax.hist_with(&h, HistOpts::new().histtype(HistType::Fill).label("data"));
+ax.model_with(                                   // the `fit` feature
+    &fitted, 50.0..130.0,
+    CurveOpts::new().color(Color::hex("#d62728"))
         .label(format!("fit ($\\chi^2$/ndf = {:.1})", r.chi2 / r.ndf.max(1) as f64)),
 );
 ax.legend();
@@ -138,9 +152,9 @@ ax.save("fit.png")?;
 
 ![A histogram with a fitted Gaussian curve overlaid](../images/plot-fit.png){ width="65%" }
 
-`ax.model`/`ax.model_opts` need the **`fit` feature** (they pull `oxiroot-fit`);
-the closure-based `ax.function`/`ax.function_opts` are always available and work
-for the same purpose (`ax.function(|x| fitted.eval(x), x0, x1)`).
+`ax.model`/`ax.model_with` need the **`fit` feature** (they pull `oxiroot-fit`);
+the closure-based `ax.function`/`ax.function_with` are always available and work
+for the same purpose (`ax.function(|x| fitted.eval(x), 50.0..130.0)`).
 
 ## Layouts: grids and ratio plots
 
@@ -157,11 +171,11 @@ axs[0].hist(&h);
 axs[1].errorbar(&g);
 axs[2].hist2d(&h2);
 axs[3].plot(&x, &y);
-fig.sharex(true)                       // common x range, x labels on the bottom row only
-    .sharey(true)                      // common y range, y labels on the left column only
+fig.sharex()                           // common x range, x labels on the bottom row only
+    .sharey()                          // common y range, y labels on the left column only
     .suptitle("$Z \\to \\mu\\mu$")     // a figure-level title (LaTeX)
     .with_axes(axs)
-    .savefig("grid.png")?;
+    .save("grid.png")?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
@@ -176,37 +190,40 @@ the union of both panels'.
 use oxiroot::plot::{ratio_subplots, HistOpts, HistType, ErrorbarOpts, Color};
 
 let (fig, mut main, mut ratio) = ratio_subplots();
-main.histplot(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
-main.set_ylabel("Events");
+main.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
+main.ylabel("Events");
 main.legend();
-ratio.errorbar_opts(&data_over_mc, ErrorbarOpts::new().color(Color::BLACK));
-ratio.set_ylim(0.5, 1.5);
-ratio.set_ylabel("data/MC");
-ratio.set_xlabel("$m$ [GeV]");
-ratio.grid(true);
-fig.ratio(main, ratio).savefig("ratio.png")?;
+ratio.errorbar_with(&data_over_mc, ErrorbarOpts::new().color(Color::BLACK));
+ratio.ylim(0.5..1.5);
+ratio.ylabel("data/MC");
+ratio.xlabel("$m$ [GeV]");
+ratio.grid();
+fig.ratio(main, ratio).save("ratio.png")?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
 ## Grid, output formats, and DPI
 
-`ax.grid(true)` draws a matplotlib-style light-grey grid at the major ticks
-(behind the data); `ax.grid_minor(true)` adds fainter lines at the minor ticks.
+`ax.grid()` draws a matplotlib-style light-grey grid at the major ticks (behind
+the data); `ax.grid_minor()` adds fainter lines at the minor ticks.
 
-`save`/`savefig` pick the format from the file extension — `.png`, `.svg`, or
-`.pdf` (a hand-written vector PDF). `SaveOptions` sets the DPI for a sharper PNG,
-or a transparent background:
+`save`/`save_with` pick the format from the file extension — `.png`, `.svg`, or
+`.pdf` (a hand-written vector PDF). `SaveOpts` sets the DPI for a sharper PNG, or
+a transparent background:
 
 ```rust
-use oxiroot::plot::SaveOptions;
+use oxiroot::plot::SaveOpts;
 
 ax.save("plot.pdf")?;                                       // vector PDF
-ax.save_with("plot.png", &SaveOptions::new().dpi(300.0))?;  // 300-DPI raster
-ax.save_with("plot.png", &SaveOptions::new().transparent(true))?;
+ax.save_with("plot.png", SaveOpts::new().dpi(300.0))?;      // 300-DPI raster
+ax.save_with("plot.png", SaveOpts::new().transparent())?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
-SVG and PDF are resolution-independent; DPI only affects the PNG raster.
+SVG and PDF are resolution-independent; DPI only affects the PNG raster. To
+render without touching the filesystem, `ax.to_svg_string()`,
+`ax.to_png_bytes(SaveOpts::new())`, and `ax.to_pdf_bytes()` return the bytes
+directly (and the same three methods exist on `Figure`).
 
 ## Style
 
@@ -226,10 +243,11 @@ if you need to customize further.
 
 ## Math labels
 
-Any axis label, title, or colorbar label may contain `$…$` math, typeset by ReX:
-fractions, radicals, big operators with limits, sub/superscripts, and Greek all
-render, e.g. `"$\\frac{1}{\\sigma}\\frac{d\\sigma}{dp_T}$"` or `"$\\sqrt{s} = 13\\,\\mathrm{TeV}$"`.
-A malformed math run falls back to plain text rather than failing.
+Any axis label, title, colorbar label, or legend entry may contain `$…$` math,
+typeset by ReX: fractions, radicals, big operators with limits, sub/superscripts,
+and Greek all render, e.g. `"$\\frac{1}{\\sigma}\\frac{d\\sigma}{dp_T}$"` or
+`"$\\sqrt{s} = 13\\,\\mathrm{TeV}$"`. A malformed math run falls back to plain
+text rather than failing.
 
 ## Figures and saving
 
@@ -241,7 +259,7 @@ use oxiroot::plot::subplots;
 
 let (fig, mut ax) = subplots();
 ax.hist(&h);
-fig.with(ax).savefig("pt.png")?;
+fig.with_axes([ax]).save("pt.png")?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
@@ -260,3 +278,5 @@ and a ratio plot — each as PNG, SVG, and PDF (and the first at 220 DPI).
 - [Graphs](graphs.md) — the `TGraph` family
 - [Fitting](fitting.md) — fit a model to the same data
 - [Reading & writing files](reading-writing.md) — persist the histograms first
+```
+

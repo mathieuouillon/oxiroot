@@ -289,38 +289,40 @@ use oxiroot::prelude::*; // needs `--features plot`
 
 // A filled MC histogram with "data" points overlaid + a legend.
 let mut ax = Axes::new();
-ax.histplot(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));   // mplhep staircase
-ax.errorbar_opts(&data, ErrorbarOpts::new().color(Color::BLACK).label("data")); // a TGraph
-ax.set_xlabel("$m_{\\mu\\mu}$ [GeV]");   // LaTeX math axis label
-ax.set_ylabel("Events / 2 GeV");
+ax.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));   // mplhep staircase
+ax.errorbar_with(&data, ErrorbarOpts::new().color(Color::BLACK).label("data")); // a TGraph
+ax.xlabel("$m_{\\mu\\mu}$ [GeV]");       // LaTeX math axis label
+ax.ylabel("Events / 2 GeV");
 ax.legend();
 ax.save("mass.png")?;                    // format chosen by extension
 ax.save("mass.svg")?;
 
 // A TH2 as a viridis heatmap with a colorbar.
 let mut ax2 = Axes::new();
-ax2.hist2dplot(&th2, Hist2dOpts::new().label("entries"));
+ax2.hist2d_with(&th2, Hist2dOpts::new().label("entries"));
 ax2.save("heatmap.svg")?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
-- **`Axes`** mirrors matplotlib: `hist`/`histplot` (`TH1`, mplhep step/fill/band/
-  errorbar staircase with `√N`/Sumw2 error bars), `errorbar` (`TGraph`, all three
-  error variants), `profile` (`TProfile`), `hist2d`/`hist2dplot` (`TH2` color mesh
-  with a colorbar and the real matplotlib `viridis`/`plasma` colormaps), `plot`,
-  `function` (overlay any analytic or fitted curve), `grid`,
-  `set_xlabel`/`set_ylabel`/`set_title`, `set_xlim`/`set_ylim`, and `legend`.
-- **Overlay a fit** — `ax.function(|x| …, x0, x1)` draws any closure as a smooth
-  curve; with the `fit` feature, `ax.model(&model, x0, x1)` overlays a fitted
+- **`Axes`** mirrors matplotlib (with Rust-idiomatic names): `hist`/`hist_with`
+  (`TH1`, mplhep step/fill/band/errorbar staircase with `√N`/Sumw2 error bars),
+  `errorbar`/`errorbar_with` (`TGraph`, all three error variants), `profile`
+  (`TProfile`), `hist2d`/`hist2d_with` (`TH2` color mesh with a colorbar and the
+  real matplotlib `viridis`/`plasma` colormaps), `plot`, `function` (overlay any
+  analytic or fitted curve), `grid`, `xlabel`/`ylabel`/`title`, `xlim`/`ylim`
+  (taking a `Range`, e.g. `ax.xlim(0.0..100.0)`), and `legend`. The `*_with`
+  methods take an options builder; the bare ones use defaults.
+- **Overlay a fit** — `ax.function(|x| …, x0..x1)` draws any closure as a smooth
+  curve; with the `fit` feature, `ax.model(&model, x0..x1)` overlays a fitted
   [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) `Model` directly on a histogram.
 - **Multi-panel layouts** — `subplots_grid(rows, cols)` and a custom `GridSpec`
-  (height/width ratios, spacing) with `fig.sharex(true)`/`sharey(true)` and a
-  `suptitle`, plus a one-call `ratio_subplots()` for the HEP main-over-ratio plot
-  (shared x-axis, the upper panel's x labels hidden).
-- **Output** — `save`/`savefig` pick the format from the extension: `.png`,
-  `.svg`, **and `.pdf`** (a hand-written vector PDF). `SaveOptions` sets the **DPI**
-  for a sharper PNG (`save_with(path, &SaveOptions::new().dpi(300))`) or a
-  transparent background.
+  (height/width ratios, spacing) with `fig.sharex()`/`sharey()` and a `suptitle`,
+  plus a one-call `ratio_subplots()` for the HEP main-over-ratio plot (shared
+  x-axis, the upper panel's x labels hidden).
+- **Output** — `save`/`save_with` pick the format from the extension: `.png`,
+  `.svg`, **and `.pdf`** (a hand-written vector PDF). `SaveOpts` sets the **DPI**
+  for a sharper PNG (`save_with(path, SaveOpts::new().dpi(300.0))`) or a
+  transparent background; `to_png_bytes`/`to_svg_string` render in memory.
 - The default look reproduces a plain matplotlib figure (640×480, DejaVu Sans, the
   `tab10` color cycle, out-pointing ticks, 5 % margins, light grey grid);
   `Style::mplhep()` switches to in-pointing ticks on all four sides with minor ticks.

@@ -17,9 +17,13 @@ pub enum FontStyle {
     /// Upright regular.
     #[default]
     Regular,
-    /// Bold.
+    /// Bold (bundled DejaVu Sans Bold). Supported by the layout engine; no
+    /// current artist requests it.
+    #[allow(dead_code)]
     Bold,
-    /// Oblique/italic.
+    /// Oblique/italic (bundled DejaVu Sans Oblique). Supported by the layout
+    /// engine; no current artist requests it.
+    #[allow(dead_code)]
     Italic,
 }
 

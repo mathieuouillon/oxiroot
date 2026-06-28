@@ -49,7 +49,9 @@ pub enum LineCap {
     Butt,
     /// Rounded cap (matplotlib default for data lines).
     Round,
-    /// Projecting square cap.
+    /// Projecting square cap. Part of the complete stroke model; no current
+    /// artist emits it.
+    #[allow(dead_code)]
     Square,
 }
 
@@ -61,7 +63,9 @@ pub enum LineJoin {
     /// Rounded corner (matplotlib default).
     #[default]
     Round,
-    /// Beveled corner.
+    /// Beveled corner. Part of the complete stroke model; no current artist
+    /// emits it.
+    #[allow(dead_code)]
     Bevel,
 }
 
@@ -103,13 +107,6 @@ impl Stroke {
             join: LineJoin::Miter,
             dash: None,
         }
-    }
-
-    /// Set a dash pattern.
-    #[must_use]
-    pub fn dashed(mut self, pattern: Vec<f32>) -> Self {
-        self.dash = Some(pattern);
-        self
     }
 }
 
