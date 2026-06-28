@@ -1,25 +1,76 @@
 //! Pure-Rust plotting for ROOT histograms and graphs.
 //!
 //! `oxiroot-plot` renders [`oxiroot_hist`] objects (`TH1`/`TH2`/`TGraph`/
-//! `TProfile`) to **SVG and PNG** with a matplotlib-like API and an mplhep-style
-//! histogram look — no ROOT, no matplotlib, no system fonts. Everything is drawn
-//! through one backend-independent [`draw`] IR that fans out to a tiny-skia
-//! raster (PNG) and a hand-written SVG, so the two outputs share identical
-//! geometry. DejaVu Sans (matplotlib's own default font) is bundled, and `$…$`
-//! math is typeset with the ReX TeX engine into the same IR.
+//! `TProfile`) to **SVG, PNG, and PDF** with a matplotlib-like API and an
+//! mplhep-style histogram look — no ROOT, no matplotlib, no system fonts.
+//! Everything is drawn through one backend-independent [`draw`] IR that fans out
+//! to a tiny-skia raster (PNG), a hand-written SVG, and a hand-written PDF, so
+//! the three outputs share identical geometry. DejaVu Sans (matplotlib's own
+//! default font) is bundled, and `$…$` math is typeset with the ReX TeX engine
+//! into the same IR.
+//!
+//! # What it can draw
+//!
+//! - **Histograms** — [`Axes::hist`]/[`Axes::histplot`] draw a `TH1` as an mplhep
+//!   staircase ([`HistType::Step`]/`Fill`/`Band`/`Errorbar`) with `√N`/Sumw2
+//!   error bars.
+//! - **Graphs & profiles** — [`Axes::errorbar`] (`TGraph`, any error variant) and
+//!   [`Axes::profile`] (`TProfile`); [`Axes::plot`] for raw `(x, y)`.
+//! - **2-D histograms** — [`Axes::hist2d`]/[`Axes::hist2dplot`] render a `TH2` as
+//!   a color mesh with a colorbar and the real matplotlib `viridis`/`plasma`
+//!   [`Colormap`]s.
+//! - **Decoration** — `set_xlabel`/`set_ylabel`/`set_title` (with LaTeX),
+//!   `set_xlim`/`set_ylim`, [`Axes::legend`], and [`Axes::grid`].
+//! - **Layouts** — [`subplots_grid`] and a custom [`GridSpec`] for multi-panel
+//!   figures, and [`ratio_subplots`] for the HEP main-over-ratio plot.
+//! - **Output** — [`Axes::save`]/[`Figure::savefig`] choose the format from the
+//!   file extension (`.png`, `.svg`, `.pdf`); [`SaveOptions`] sets the DPI for a
+//!   sharper PNG or a transparent background.
+//!
+//! The default look reproduces a plain matplotlib figure; [`Style::mplhep`]
+//! switches to the in-pointing, all-sides, minor-tick HEP style.
+//!
+//! # A histogram with data points
 //!
 //! ```no_run
-//! use oxiroot_plot::Axes;
-//! use oxiroot_hist::TH1;
+//! use oxiroot_plot::{Axes, Color, ErrorbarOpts, HistOpts, HistType};
+//! use oxiroot_hist::{TGraph, TH1};
 //!
-//! let mut h = TH1::new(50, 0.0, 100.0).named("pt");
-//! h.fill(42.0);
+//! let mut mc = TH1::new(50, 0.0, 100.0).named("mc");
+//! mc.sumw2();
+//! for x in [40.0, 48.0, 50.0, 52.0, 60.0] {
+//!     mc.fill(x);
+//! }
+//! let data = TGraph::with_errors(vec![50.0], vec![3.0], vec![0.0], vec![1.7]).named("d");
 //!
 //! let mut ax = Axes::new();
-//! ax.hist(&h);                       // mplhep step staircase
-//! ax.set_xlabel("$p_T$ [GeV]");      // LaTeX math via ReX
+//! ax.histplot(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
+//! ax.errorbar_opts(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+//! ax.set_xlabel("$p_T$ [GeV]");   // LaTeX math via ReX
 //! ax.set_ylabel("Events");
-//! ax.save("pt.png")?;                // or "pt.svg"
+//! ax.legend();
+//! ax.save("pt.png")?;             // or "pt.svg" / "pt.pdf"
+//! # Ok::<(), oxiroot_plot::Error>(())
+//! ```
+//!
+//! # A ratio plot
+//!
+//! ```no_run
+//! use oxiroot_plot::{ratio_subplots, Color, ErrorbarOpts, HistOpts, HistType};
+//! use oxiroot_hist::{TGraph, TH1};
+//!
+//! let mc = TH1::new(50, 0.0, 100.0).named("mc");
+//! let ratio_points = TGraph::with_errors(vec![50.0], vec![1.0], vec![0.0], vec![0.1]).named("r");
+//!
+//! let (fig, mut main, mut ratio) = ratio_subplots();
+//! main.histplot(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
+//! main.set_ylabel("Events");
+//! main.legend();
+//! ratio.errorbar_opts(&ratio_points, ErrorbarOpts::new().color(Color::BLACK));
+//! ratio.set_ylim(0.5, 1.5);
+//! ratio.set_ylabel("data/MC");
+//! ratio.set_xlabel("$p_T$ [GeV]");
+//! fig.ratio(main, ratio).savefig("ratio.pdf")?;
 //! # Ok::<(), oxiroot_plot::Error>(())
 //! ```
 

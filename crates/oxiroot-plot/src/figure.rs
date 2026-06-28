@@ -13,6 +13,12 @@ use crate::render::{pdf, raster, svg};
 use crate::style::Style;
 
 /// Options for saving a figure.
+///
+/// # Examples
+/// ```
+/// use oxiroot_plot::SaveOptions;
+/// let opts = SaveOptions::new().dpi(300.0).transparent(true);
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct SaveOptions {
     /// Override the dots-per-inch (raster resolution). `None` uses the style's
@@ -183,6 +189,15 @@ pub fn subplots_with(style: Style) -> (Figure, Axes) {
 
 /// Create a figure with an `nrows × ncols` grid of axes (row-major), matplotlib
 /// `subplots(nrows, ncols)`. Fill the returned axes, then `fig.with_axes(axes)`.
+///
+/// # Examples
+/// ```no_run
+/// use oxiroot_plot::subplots_grid;
+/// let (fig, mut axs) = subplots_grid(1, 2);
+/// axs[0].plot(&[0.0, 1.0], &[0.0, 1.0]);
+/// axs[1].plot(&[0.0, 1.0], &[1.0, 0.0]);
+/// fig.with_axes(axs).savefig("two.png").unwrap();
+/// ```
 #[must_use]
 pub fn subplots_grid(nrows: usize, ncols: usize) -> (Figure, Vec<Axes>) {
     subplots_grid_with(Style::default(), GridSpec::new(nrows, ncols))
@@ -204,6 +219,20 @@ pub fn subplots_grid_with(style: Style, grid: GridSpec) -> (Figure, Vec<Axes>) {
 /// A two-panel ratio plot: a main panel over a shorter ratio panel sharing the
 /// x-axis (height ratios 3:1, touching). Returns `(figure, main, ratio)`; fill
 /// both panels, then `fig.ratio(main, ratio).savefig(...)`.
+///
+/// # Examples
+/// ```no_run
+/// use oxiroot_plot::ratio_subplots;
+/// use oxiroot_hist::TH1;
+/// let h = TH1::new(20, 0.0, 10.0).named("h");
+/// let (fig, mut main, mut ratio) = ratio_subplots();
+/// main.hist(&h);
+/// main.set_ylabel("Events");
+/// ratio.set_ylim(0.5, 1.5);
+/// ratio.set_ylabel("data/MC");
+/// ratio.set_xlabel("x");
+/// fig.ratio(main, ratio).savefig("ratio.svg").unwrap();
+/// ```
 #[must_use]
 pub fn ratio_subplots() -> (Figure, Axes, Axes) {
     ratio_subplots_with(Style::default())

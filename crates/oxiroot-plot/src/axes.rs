@@ -120,6 +120,14 @@ impl Axes {
 
     /// Show a matplotlib-style grid at the major tick positions (light grey
     /// solid lines behind the data).
+    ///
+    /// # Examples
+    /// ```
+    /// # use oxiroot_plot::Axes;
+    /// let mut ax = Axes::new();
+    /// ax.plot(&[0.0, 1.0, 2.0], &[0.0, 1.0, 0.5]);
+    /// ax.grid(true);
+    /// ```
     pub fn grid(&mut self, on: bool) -> &mut Self {
         self.style.grid = on;
         self
@@ -158,6 +166,14 @@ impl Axes {
 
     /// Like [`Axes::save`] with explicit options (e.g. a higher DPI for a sharper
     /// PNG, or a transparent background).
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use oxiroot_plot::{Axes, SaveOptions};
+    /// let mut ax = Axes::new();
+    /// ax.plot(&[0.0, 1.0], &[0.0, 1.0]);
+    /// ax.save_with("plot.png", &SaveOptions::new().dpi(300.0)).unwrap();
+    /// ```
     pub fn save_with(
         &self,
         path: impl AsRef<std::path::Path>,
@@ -188,6 +204,16 @@ impl Axes {
     }
 
     /// Plot a `TH1` with explicit options (histtype, error bars, color, label).
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use oxiroot_plot::{Axes, HistOpts, HistType};
+    /// use oxiroot_hist::TH1;
+    /// let h = TH1::new(20, 0.0, 10.0).named("h");
+    /// let mut ax = Axes::new();
+    /// ax.histplot(&h, HistOpts::new().histtype(HistType::Step).yerr(true).label("MC"));
+    /// ax.save("h.svg").unwrap();
+    /// ```
     pub fn histplot(&mut self, h: &TH1, opts: HistOpts) -> &mut Self {
         let edges = h.edges();
         let values = h.values().to_vec();
@@ -224,6 +250,16 @@ impl Axes {
     }
 
     /// Plot a `TGraph` (any error variant) as data points with error bars.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use oxiroot_plot::Axes;
+    /// use oxiroot_hist::TGraph;
+    /// let g = TGraph::with_errors(vec![1.0, 2.0], vec![3.0, 4.0], vec![0.1, 0.1], vec![0.2, 0.3]);
+    /// let mut ax = Axes::new();
+    /// ax.errorbar(&g);
+    /// ax.save("g.png").unwrap();
+    /// ```
     pub fn errorbar(&mut self, g: &TGraph) -> &mut Self {
         self.errorbar_opts(g, ErrorbarOpts::default())
     }
@@ -273,6 +309,16 @@ impl Axes {
     }
 
     /// Plot a `TProfile` as data points with y error bars at bin centers.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use oxiroot_plot::Axes;
+    /// use oxiroot_hist::TProfile;
+    /// let tp = TProfile::new(10, 0.0, 10.0).named("p");
+    /// let mut ax = Axes::new();
+    /// ax.profile(&tp);
+    /// ax.save("profile.png").unwrap();
+    /// ```
     pub fn profile(&mut self, tp: &TProfile) -> &mut Self {
         let edges = tp.edges();
         let vals = tp.values();
@@ -305,6 +351,16 @@ impl Axes {
     }
 
     /// Plot a `TH2` with explicit options (colormap, value range, colorbar label).
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use oxiroot_plot::{Axes, Colormap, Hist2dOpts};
+    /// use oxiroot_hist::TH2;
+    /// let h = TH2::new(10, 0.0, 1.0, 10, 0.0, 1.0).named("h2");
+    /// let mut ax = Axes::new();
+    /// ax.hist2dplot(&h, Hist2dOpts::new().cmap(Colormap::Viridis).label("entries"));
+    /// ax.save("h2.png").unwrap();
+    /// ```
     pub fn hist2dplot(&mut self, h: &TH2, opts: Hist2dOpts) -> &mut Self {
         let xedges = h.xaxis.edges();
         let yedges = h.yaxis.edges();
