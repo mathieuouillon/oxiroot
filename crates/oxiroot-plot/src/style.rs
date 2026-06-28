@@ -122,7 +122,10 @@ impl Default for Style {
             grid_color: Color::rgb(0xb0, 0xb0, 0xb0),
             grid_width_pt: 0.8,
             color_cycle: TAB10.to_vec(),
-            margins_frac: (0.125, 0.9, 0.11, 0.88),
+            // Slightly more generous than matplotlib's (0.125, 0.9, 0.11, 0.88)
+            // bottom/left, because `$…$` axis labels (with subscript descenders)
+            // are taller than plain text; right/top widen to keep the plot area.
+            margins_frac: (0.135, 0.93, 0.145, 0.91),
             legend_frame: true,
         }
     }
