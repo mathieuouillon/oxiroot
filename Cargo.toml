@@ -26,6 +26,7 @@ oxiroot-hist = { path = "crates/oxiroot-hist" }
 oxiroot-tree = { path = "crates/oxiroot-tree" }
 oxiroot-stat = { path = "crates/oxiroot-stat" }
 oxiroot-fit = { path = "crates/oxiroot-fit" }
+oxiroot-plot = { path = "crates/oxiroot-plot" }
 minuit2 = "0.5"
 argmin = { version = "0.11", default-features = false }
 argmin-math = { version = "0.5", features = ["vec"] }

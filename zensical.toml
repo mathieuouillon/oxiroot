@@ -34,6 +34,7 @@ nav = [
     { "TTree" = "guide/ttree.md" },
     { "RNTuple" = "guide/rntuple.md" },
     { "Fitting" = "guide/fitting.md" },
+    { "Plotting" = "guide/plotting.md" },
     { "Multithreaded fill" = "guide/multithreading.md" },
     { "Compression" = "guide/compression.md" },
     { "ROOT / uproot interop" = "guide/interop.md" },

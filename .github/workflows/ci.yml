@@ -42,6 +42,7 @@ jobs:
           cargo run -q -p oxiroot --example analysis
           cargo run -q -p oxiroot --example tree
           cargo run -q -p oxiroot --example rntuple_nested
+          cargo run -q -p oxiroot --example plot --features plot
 
   fuzz-build:
     name: fuzz targets build

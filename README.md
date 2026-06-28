@@ -32,6 +32,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
   `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
+- 🎨 **Plotting** (optional) — render `TH1`/`TH2`/`TGraph`/`TProfile` to **SVG and
+  PNG** with a matplotlib-like API and an mplhep histogram style, including
+  LaTeX (`$…$`) math labels — all pure Rust, no matplotlib, no system fonts.
 - 🛡 **Robust by construction** — readers never panic on malformed input
   (fuzz-tested), and writers refuse to silently corrupt a file past the 2 GiB
   32-bit limit.
@@ -262,6 +265,50 @@ g.write_root("graph.root", Compression::None)?;             // WriteRoot, like a
 let same = TGraph::read_root(&RFile::open("graph.root")?, "res")?;
 ```
 
+### Plotting (`oxiroot::plot`, `plot` feature)
+
+Render histograms and graphs to **SVG and PNG** with a matplotlib-like API and an
+mplhep histogram style — **pure Rust**, no matplotlib, no system fonts. One
+backend-independent draw IR fans out to a [`tiny-skia`](https://crates.io/crates/tiny-skia)
+raster (PNG) and a hand-written SVG, so the two outputs share identical geometry;
+DejaVu Sans (matplotlib's own default font) is bundled, and `$…$` labels are
+typeset as real LaTeX math by the pure-Rust [ReX](https://github.com/KenyC/ReX)
+TeX engine into the same IR.
+
+```rust
+use oxiroot::plot::{Axes, HistType, HistOpts, ErrorbarOpts, Hist2dOpts, Color};
+use oxiroot::prelude::*; // needs `--features plot`
+
+// A filled MC histogram with "data" points overlaid + a legend.
+let mut ax = Axes::new();
+ax.histplot(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));   // mplhep staircase
+ax.errorbar_opts(&data, ErrorbarOpts::new().color(Color::BLACK).label("data")); // a TGraph
+ax.set_xlabel("$m_{\\mu\\mu}$ [GeV]");   // LaTeX math axis label
+ax.set_ylabel("Events / 2 GeV");
+ax.legend();
+ax.save("mass.png")?;                    // format chosen by extension
+ax.save("mass.svg")?;
+
+// A TH2 as a viridis heatmap with a colorbar.
+let mut ax2 = Axes::new();
+ax2.hist2dplot(&th2, Hist2dOpts::new().label("entries"));
+ax2.save("heatmap.svg")?;
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+- **`Axes`** mirrors matplotlib: `hist`/`histplot` (`TH1`, mplhep step/fill/band/
+  errorbar staircase with `√N`/Sumw2 error bars), `errorbar` (`TGraph`, all three
+  error variants), `profile` (`TProfile`), `hist2d`/`hist2dplot` (`TH2` color mesh
+  with a colorbar and the real matplotlib `viridis`/`plasma` colormaps), `plot`,
+  `set_xlabel`/`set_ylabel`/`set_title`, `set_xlim`/`set_ylim`, and `legend`.
+- The default look reproduces a plain matplotlib figure (640×480, DejaVu Sans, the
+  `tab10` color cycle, out-pointing ticks, 5 % margins); `Style::mplhep()` switches
+  to in-pointing ticks on all four sides with minor ticks.
+- A worked example renders a Z → μμ overlay and a 2-D heatmap to PNG **and** SVG:
+  ```sh
+  cargo run -p oxiroot --example plot --features plot
+  ```
+
 ### TTree (`oxiroot::tree`)
 
 - **Read & write** scalar, fixed-size array (`x[N]`, incl. multidimensional
@@ -355,6 +402,7 @@ verified on read.
 | `oxiroot-tree` | Classic `TTree` read/write |
 | `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | `oxiroot-stat` | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
+| `oxiroot-plot` | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
 
 Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib),
@@ -370,8 +418,9 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 | `rayon` | Data-parallel histogram fill (`hist::fill_par`); adds `rayon`. |
 | `fit` | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
+| `plot` | Plotting (`oxiroot::plot`): SVG/PNG rendering of `TH1`/`TH2`/`TGraph`/`TProfile`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
 
-Both are off by default, so the default build stays pure safe Rust.
+All are off by default, so the default build stays pure safe Rust.
 
 ## Build & test
 
@@ -436,14 +485,13 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
   (`TTreeWriter`) also ships.
 - **Append mode** — `update` into files that contain subdirectories or an
   RNTuple (currently rejected).
-- **Plotting** — render histograms and graphs to static images (SVG / PNG) from
-  pure Rust, behind an optional feature, so a `TH1` / `TH2` / `TGraph` can be
-  visualized without ROOT or matplotlib.
+- **Plotting** (shipped behind the `plot` feature) — next: per-experiment mplhep
+  style presets (ATLAS/CMS/LHCb labels), subplot grids, and overlaying a fitted
+  `Model` curve on a histogram.
 
 Out of scope: ROOT 7 `RHist` (no persistable on-disk format — its `Streamer`
 throws) and reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) —
-the plotting item above renders the data, it does not (de)serialize ROOT
-graphics.
+the `plot` feature renders the data, it does not (de)serialize ROOT graphics.
 
 ## License
 

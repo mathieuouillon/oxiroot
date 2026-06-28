@@ -1,0 +1,30 @@
+[package]
+name = "oxiroot-plot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure-Rust plotting for ROOT histograms and graphs — matplotlib-like API, mplhep style, SVG/PNG"
+
+[dependencies]
+oxiroot-hist = { workspace = true }
+# CPU anti-aliased 2D rasterizer (resvg's own renderer); re-exports the pure-Rust
+# `png` crate, so PNG encoding needs no extra dependency. Pure, safe Rust.
+tiny-skia = "0.12"
+# Pure-Rust glyph outlines + rasterization for axis/tick/title text. No system
+# fonts: the DejaVu Sans faces are bundled and loaded from memory.
+ab_glyph = "0.2"
+# ReX — a pure-Rust TeX *math* layout engine — typesets `$…$` spans in labels.
+# Git-only (unpublished); pinned to a commit for reproducibility. Only the
+# pure-Rust `ttfparser-fontparser` feature is enabled (no Cairo/femtovg/etc.);
+# a custom backend turns ReX's draw calls into the crate's own DrawCommand IR.
+rex = { git = "https://github.com/KenyC/ReX", rev = "aeccdba38f3fa54195c469319b65c423e17a77ae", default-features = false, features = ["ttfparser-fontparser"] }
+# Glyph outline extraction for ReX math glyphs (same version ab_glyph resolves).
+ttf-parser = "0.25"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true

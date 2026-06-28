@@ -14,6 +14,7 @@ oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }
 oxiroot-tree = { workspace = true }
 oxiroot-fit = { workspace = true, optional = true }
+oxiroot-plot = { workspace = true, optional = true }
 
 [features]
 # Enable the memory-mapped read path (`RFile::open_mmap`).
@@ -26,6 +27,10 @@ rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
 fit = ["oxiroot-hist/fit", "dep:oxiroot-fit"]
 # Also build the gradient-free Nelder–Mead (`argmin`) minimizer backend.
 argmin = ["fit", "oxiroot-hist/argmin", "oxiroot-fit/argmin"]
+# Enable plotting (`oxiroot::plot`): render TH1/TH2/TGraph/TProfile to SVG/PNG
+# with a matplotlib-like API and mplhep style. Pulls tiny-skia, ab_glyph, and
+# the ReX TeX engine (git dependency) for `$…$` math labels.
+plot = ["dep:oxiroot-plot"]
 
 # Build docs.rs with every feature so fitting, the argmin backend, rayon, and
 # mmap all appear in the rendered API reference.

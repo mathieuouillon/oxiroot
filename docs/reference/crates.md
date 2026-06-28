@@ -14,6 +14,7 @@ surface, or pull in a single leaf crate to compile only what you use.
 | [`oxiroot-tree`](../api/oxiroot_tree/index.html) | Classic `TTree` read/write |
 | [`oxiroot-fit`](../api/oxiroot_fit/index.html) | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | [`oxiroot-stat`](../api/oxiroot_stat/index.html) | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
+| [`oxiroot-plot`](../api/oxiroot_plot/index.html) | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
 
 ## Dependency graph
 

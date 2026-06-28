@@ -46,6 +46,7 @@ let h = TH1::read_root(&RFile::open("hist.root")?, "pt")?;
 | RNTuple (scalars, strings, vectors, nested, records) | ✅ | ✅ |
 | Compression Zstd / zlib / LZ4 / LZMA | ✅ | ✅ (no LZMA) |
 | Curve fitting (Minuit2, optional argmin) | — | — |
+| Plotting → SVG / PNG (matplotlib look, LaTeX) | — | ✅ |
 
 ## Where to go next
 
@@ -56,7 +57,8 @@ let h = TH1::read_root(&RFile::open("hist.root")?, "pt")?;
 - **Guide** — a page per area:
   [Histograms](guide/histograms.md), [Graphs](guide/graphs.md),
   [TTree](guide/ttree.md), [RNTuple](guide/rntuple.md),
-  [Fitting](guide/fitting.md), [Multithreaded fill](guide/multithreading.md),
+  [Fitting](guide/fitting.md), [Plotting](guide/plotting.md),
+  [Multithreaded fill](guide/multithreading.md),
   [Compression](guide/compression.md), and
   [ROOT / uproot interop](guide/interop.md).
 - **[API reference (rustdoc)](api/oxiroot/index.html)** — the full type-level

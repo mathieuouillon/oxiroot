@@ -1,0 +1,41 @@
+//! Error type for the plotting crate.
+
+use std::fmt;
+
+/// Errors that can occur while building or saving a figure.
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum Error {
+    /// An I/O error while writing an image file.
+    Io(std::io::Error),
+    /// The PNG encoder failed.
+    Encode(String),
+    /// The output path had an extension other than `.png` or `.svg`.
+    UnknownFormat(String),
+    /// A figure dimension was zero or absurdly large.
+    BadSize(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Io(e) => write!(f, "io error: {e}"),
+            Error::Encode(m) => write!(f, "png encode error: {m}"),
+            Error::UnknownFormat(ext) => {
+                write!(f, "unknown image format `{ext}` (use a .png or .svg path)")
+            }
+            Error::BadSize(m) => write!(f, "invalid figure size: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Io(e)
+    }
+}
+
+/// Crate result alias.
+pub type Result<T> = std::result::Result<T, Error>;

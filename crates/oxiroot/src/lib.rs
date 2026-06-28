@@ -64,6 +64,15 @@ pub mod fit {
     pub use oxiroot_fit::*;
 }
 
+/// Plotting — render histograms and graphs to SVG/PNG with a matplotlib-like
+/// API and an mplhep histogram style (from `oxiroot-plot`). `Axes::hist`/
+/// `errorbar`/`hist2d` draw `TH1`/`TGraph`/`TH2`; `$…$` labels are typeset as
+/// LaTeX math. Enabled by the `plot` feature.
+#[cfg(feature = "plot")]
+pub mod plot {
+    pub use oxiroot_plot::*;
+}
+
 /// The common types and functions for reading and writing ROOT files.
 ///
 /// `use oxiroot::prelude::*;` brings in the container ([`RFile`],
