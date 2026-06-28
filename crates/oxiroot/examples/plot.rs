@@ -6,13 +6,14 @@
 //! cargo run -p oxiroot --example plot --features plot
 //! ```
 //!
-//! It renders three figures, each as both PNG and SVG:
+//! It renders four figures, each as PNG, SVG, and PDF:
 //!
 //! 1. `mass` — a filled MC template with "data" points overlaid, a legend, and a
-//!    LaTeX axis label (the default matplotlib look).
+//!    LaTeX axis label (the default matplotlib look). Also saved at 220 DPI.
 //! 2. `mplhep` — the same histogram as a step staircase with error bars in the
-//!    mplhep style (in-pointing ticks, minors, all four sides).
+//!    mplhep style (in-pointing ticks, minors, all four sides) and a grid.
 //! 3. `heatmap` — a 2-D TH2 as a viridis color mesh with a colorbar.
+//! 4. `ratio` — a main panel over a data/MC ratio panel sharing the x-axis.
 
 #[cfg(not(feature = "plot"))]
 fn main() {
@@ -21,7 +22,10 @@ fn main() {
 
 #[cfg(feature = "plot")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use oxiroot::plot::{Axes, Color, ErrorbarOpts, Hist2dOpts, HistOpts, HistType, Style};
+    use oxiroot::plot::{
+        ratio_subplots, Axes, Color, ErrorbarOpts, Hist2dOpts, HistOpts, HistType, SaveOptions,
+        Style,
+    };
     use oxiroot::prelude::*;
 
     let out = std::env::temp_dir().join("oxiroot-plots");
@@ -44,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|x| 2000.0 * (-0.5 * ((x - 91.0) / 7.5).powi(2)).exp())
         .collect();
     let dey: Vec<f64> = dy.iter().map(|y| y.sqrt().max(15.0)).collect();
-    let data = TGraph::with_errors(dx.clone(), dy, vec![5.0; dx.len()], dey).named("data");
+    let data = TGraph::with_errors(dx.clone(), dy.clone(), vec![5.0; dx.len()], dey).named("data");
 
     // --- 1. Filled MC + data overlay, default matplotlib look. ---
     let mut ax = Axes::new();
@@ -62,9 +66,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ax.legend();
     save_both(&ax, &out, "mass")?;
 
-    // --- 2. The same histogram as a step + error bars in the mplhep style. ---
+    // Also save the first figure at a higher DPI for a sharper raster.
+    ax.save_with(out.join("mass_hi.png"), &SaveOptions::new().dpi(220.0))?;
+    println!("wrote {} (220 dpi)", out.join("mass_hi.png").display());
+
+    // --- 2. The same histogram as a step + error bars + grid, mplhep style. ---
     let mut hep = Axes::with_style(Style::mplhep());
     hep.histplot(&mc, HistOpts::new().yerr(true).label("MC"));
+    hep.grid(true);
     hep.set_xlabel("$m_{\\mu\\mu}$ [GeV]");
     hep.set_ylabel("Events / 2 GeV");
     hep.legend();
@@ -88,6 +97,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ax2.set_title("two Gaussians");
     save_both(&ax2, &out, "heatmap")?;
 
+    // --- 4. A ratio plot: filled MC + data over a data/MC ratio panel. ---
+    let mc_vals = mc.values();
+    let bin_content = |x: f64| -> f64 {
+        mc_vals
+            .get(mc.find_bin(x).wrapping_sub(1))
+            .copied()
+            .unwrap_or(0.0)
+    };
+    let ratio_y: Vec<f64> = dx
+        .iter()
+        .zip(&dy)
+        .map(|(&x, &y)| {
+            let c = bin_content(x);
+            if c > 0.0 {
+                y / c
+            } else {
+                1.0
+            }
+        })
+        .collect();
+    let ratio_ey: Vec<f64> = dx
+        .iter()
+        .zip(&dy)
+        .map(|(&x, &y)| {
+            let c = bin_content(x);
+            if c > 0.0 {
+                y.sqrt() / c
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    let rgraph = TGraph::with_errors(dx.clone(), ratio_y, vec![0.0; dx.len()], ratio_ey).named("r");
+
+    let (fig, mut main, mut ratio) = ratio_subplots();
+    main.histplot(
+        &mc,
+        HistOpts::new()
+            .histtype(HistType::Fill)
+            .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
+            .label("MC"),
+    );
+    main.errorbar_opts(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+    main.set_ylabel("Events / 2 GeV");
+    main.legend();
+    ratio.errorbar_opts(&rgraph, ErrorbarOpts::new().color(Color::BLACK));
+    ratio.set_ylim(0.5, 1.5);
+    ratio.set_ylabel("data/MC");
+    ratio.set_xlabel("$m_{\\mu\\mu}$ [GeV]");
+    ratio.grid(true);
+    let figr = fig.ratio(main, ratio);
+    for ext in ["png", "svg", "pdf"] {
+        let path = out.join(format!("ratio.{ext}"));
+        figr.savefig(&path)?;
+        println!(
+            "wrote {} ({} bytes)",
+            path.display(),
+            std::fs::metadata(&path)?.len()
+        );
+    }
+
     Ok(())
 }
 
@@ -97,7 +167,7 @@ fn save_both(
     dir: &std::path::Path,
     stem: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for ext in ["png", "svg"] {
+    for ext in ["png", "svg", "pdf"] {
         let path = dir.join(format!("{stem}.{ext}"));
         ax.save(&path)?;
         let len = std::fs::metadata(&path)?.len();

@@ -1,13 +1,13 @@
 # Plotting
 
-Render histograms and graphs to **SVG and PNG** with a matplotlib-like API and an
+Render histograms and graphs to **SVG, PNG, and PDF** with a matplotlib-like API and an
 mplhep histogram style — pure Rust, no matplotlib, no system fonts. Plotting is
 behind the **`plot` feature** and exposed as `oxiroot::plot`.
 
 <figure markdown="span">
   ![A filled MC histogram with data points overlaid, and a 2-D viridis heatmap](../images/plot-mass.png){ width="49%" }
   ![viridis heatmap with colorbar](../images/plot-heatmap.png){ width="49%" }
-  <figcaption>Both produced by the bundled <code>plot</code> example, as PNG and SVG.</figcaption>
+  <figcaption>Both produced by the bundled <code>plot</code> example (PNG, SVG, and PDF).</figcaption>
 </figure>
 
 ```toml
@@ -27,7 +27,7 @@ oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", features = ["plot
 ## A first plot
 
 `Axes` mirrors matplotlib's `Axes`. Build it, add artists, label the axes, and
-`save` — the format is chosen by the file extension (`.png` or `.svg`).
+`save` — the format is chosen by the file extension (`.png`, `.svg`, or `.pdf`).
 
 ```rust
 use oxiroot::plot::Axes;
@@ -40,7 +40,7 @@ let mut ax = Axes::new();
 ax.hist(&h);                       // mplhep step staircase
 ax.set_xlabel("$p_T$ [GeV]");      // LaTeX math via ReX
 ax.set_ylabel("Events");
-ax.save("pt.png")?;                // or "pt.svg"
+ax.save("pt.png")?;                // or "pt.svg" / "pt.pdf"
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
@@ -108,6 +108,68 @@ ax.save("heatmap.svg")?;
 `Colormap` covers `Viridis`, `Plasma`, `Gray`, and `GrayReversed`. The value
 range autoscale can be overridden with `Hist2dOpts::vrange(vmin, vmax)`.
 
+## Layouts: grids and ratio plots
+
+A `GridSpec` arranges several panels with custom row/column ratios. Use
+`subplots_grid(rows, cols)` for a uniform grid (row-major), or build a custom
+`GridSpec` and pass it to `subplots_grid_with`. Fill the returned axes, then hand
+them back to the figure.
+
+```rust
+use oxiroot::plot::subplots_grid;
+
+let (fig, mut axs) = subplots_grid(2, 2);
+axs[0].hist(&h);
+axs[1].errorbar(&g);
+axs[2].hist2d(&h2);
+axs[3].plot(&x, &y);
+fig.with_axes(axs).savefig("grid.png")?;
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+`ratio_subplots()` is the one-call HEP ratio plot: a main panel over a shorter
+ratio panel (height ratios 3:1) sharing the x-axis. The panels touch, only the
+bottom panel shows x tick labels and the x-axis label, and the common x range is
+the union of both panels'.
+
+![A filled MC histogram with data points over a data/MC ratio panel](../images/plot-ratio.png){ width="65%" }
+
+```rust
+use oxiroot::plot::{ratio_subplots, HistOpts, HistType, ErrorbarOpts, Color};
+
+let (fig, mut main, mut ratio) = ratio_subplots();
+main.histplot(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
+main.set_ylabel("Events");
+main.legend();
+ratio.errorbar_opts(&data_over_mc, ErrorbarOpts::new().color(Color::BLACK));
+ratio.set_ylim(0.5, 1.5);
+ratio.set_ylabel("data/MC");
+ratio.set_xlabel("$m$ [GeV]");
+ratio.grid(true);
+fig.ratio(main, ratio).savefig("ratio.png")?;
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+## Grid, output formats, and DPI
+
+`ax.grid(true)` draws a matplotlib-style light-grey grid at the major ticks
+(behind the data); `ax.grid_minor(true)` adds fainter lines at the minor ticks.
+
+`save`/`savefig` pick the format from the file extension — `.png`, `.svg`, or
+`.pdf` (a hand-written vector PDF). `SaveOptions` sets the DPI for a sharper PNG,
+or a transparent background:
+
+```rust
+use oxiroot::plot::SaveOptions;
+
+ax.save("plot.pdf")?;                                       // vector PDF
+ax.save_with("plot.png", &SaveOptions::new().dpi(300.0))?;  // 300-DPI raster
+ax.save_with("plot.png", &SaveOptions::new().transparent(true))?;
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+SVG and PDF are resolution-independent; DPI only affects the PNG raster.
+
 ## Style
 
 The default look reproduces a plain matplotlib figure: 640×480 px, DejaVu Sans,
@@ -151,8 +213,8 @@ fig.with(ax).savefig("pt.png")?;
 cargo run -p oxiroot --example plot --features plot
 ```
 
-It renders a Z → μμ overlay (filled MC + data points + legend + LaTeX labels) and
-a 2-D heatmap, each to both PNG and SVG.
+It renders a Z → μμ overlay, an mplhep step plot with a grid, a 2-D heatmap,
+and a ratio plot — each as PNG, SVG, and PDF (and the first at 220 DPI).
 
 ## See also
 

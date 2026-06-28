@@ -32,9 +32,10 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
   `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
-- 🎨 **Plotting** (optional) — render `TH1`/`TH2`/`TGraph`/`TProfile` to **SVG and
-  PNG** with a matplotlib-like API and an mplhep histogram style, including
-  LaTeX (`$…$`) math labels — all pure Rust, no matplotlib, no system fonts.
+- 🎨 **Plotting** (optional) — render `TH1`/`TH2`/`TGraph`/`TProfile` to **SVG,
+  PNG, and PDF** with a matplotlib-like API and an mplhep histogram style —
+  grids, ratio plots, LaTeX (`$…$`) math labels — all pure Rust, no matplotlib,
+  no system fonts.
 - 🛡 **Robust by construction** — readers never panic on malformed input
   (fuzz-tested), and writers refuse to silently corrupt a file past the 2 GiB
   32-bit limit.
@@ -267,7 +268,7 @@ let same = TGraph::read_root(&RFile::open("graph.root")?, "res")?;
 
 ### Plotting (`oxiroot::plot`, `plot` feature)
 
-Render histograms and graphs to **SVG and PNG** with a matplotlib-like API and an
+Render histograms and graphs to **SVG, PNG, and PDF** with a matplotlib-like API and an
 mplhep histogram style — **pure Rust**, no matplotlib, no system fonts. One
 backend-independent draw IR fans out to a [`tiny-skia`](https://crates.io/crates/tiny-skia)
 raster (PNG) and a hand-written SVG, so the two outputs share identical geometry;
@@ -307,10 +308,17 @@ ax2.save("heatmap.svg")?;
   errorbar staircase with `√N`/Sumw2 error bars), `errorbar` (`TGraph`, all three
   error variants), `profile` (`TProfile`), `hist2d`/`hist2dplot` (`TH2` color mesh
   with a colorbar and the real matplotlib `viridis`/`plasma` colormaps), `plot`,
-  `set_xlabel`/`set_ylabel`/`set_title`, `set_xlim`/`set_ylim`, and `legend`.
+  `grid`, `set_xlabel`/`set_ylabel`/`set_title`, `set_xlim`/`set_ylim`, and `legend`.
+- **Multi-panel layouts** — `subplots_grid(rows, cols)` and a custom `GridSpec`
+  (height/width ratios, spacing), plus a one-call `ratio_subplots()` for the HEP
+  main-over-ratio plot (shared x-axis, the upper panel's x labels hidden).
+- **Output** — `save`/`savefig` pick the format from the extension: `.png`,
+  `.svg`, **and `.pdf`** (a hand-written vector PDF). `SaveOptions` sets the **DPI**
+  for a sharper PNG (`save_with(path, &SaveOptions::new().dpi(300))`) or a
+  transparent background.
 - The default look reproduces a plain matplotlib figure (640×480, DejaVu Sans, the
-  `tab10` color cycle, out-pointing ticks, 5 % margins); `Style::mplhep()` switches
-  to in-pointing ticks on all four sides with minor ticks.
+  `tab10` color cycle, out-pointing ticks, 5 % margins, light grey grid);
+  `Style::mplhep()` switches to in-pointing ticks on all four sides with minor ticks.
 - A worked example renders a Z → μμ overlay and a 2-D heatmap to PNG **and** SVG:
   ```sh
   cargo run -p oxiroot --example plot --features plot

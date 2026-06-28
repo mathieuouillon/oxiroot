@@ -16,6 +16,7 @@ use crate::ticker;
 use crate::transform::{Bounds, Transform};
 
 /// A single plot panel.
+#[derive(Clone)]
 pub struct Axes {
     pub(crate) style: Style,
     xlim: Option<(f64, f64)>,
@@ -29,6 +30,12 @@ pub struct Axes {
     /// When set (by `hist`/`histplot`), the y autoscale starts at 0.
     pub(crate) y_from_zero: bool,
     colorbar: Option<ColorbarSpec>,
+    grid_minor: bool,
+    /// Whether the x tick labels and x-axis label are drawn (hidden on the upper
+    /// panel of a shared-x layout such as a ratio plot).
+    show_xticklabels: bool,
+    /// Drop the `(bottom, top)` y tick labels (avoids overlap at a shared seam).
+    ylabel_prune: (bool, bool),
 }
 
 impl Axes {
@@ -47,7 +54,16 @@ impl Axes {
             show_legend: false,
             y_from_zero: false,
             colorbar: None,
+            grid_minor: false,
+            show_xticklabels: true,
+            ylabel_prune: (false, false),
         }
+    }
+
+    /// Drop the bottom-most and/or top-most y tick label (used to avoid overlap
+    /// at the shared seam of a ratio plot).
+    pub(crate) fn prune_ylabels(&mut self, bottom: bool, top: bool) {
+        self.ylabel_prune = (bottom, top);
     }
 
     /// A new empty axes with the default (matplotlib) style.
@@ -102,12 +118,68 @@ impl Axes {
         self
     }
 
-    /// Render this single axes as a full figure and save to `path` (`.png` or
-    /// `.svg`) — the convenient path for a one-panel plot.
+    /// Show a matplotlib-style grid at the major tick positions (light grey
+    /// solid lines behind the data).
+    pub fn grid(&mut self, on: bool) -> &mut Self {
+        self.style.grid = on;
+        self
+    }
+
+    /// Also show fainter grid lines at the minor tick positions (implies the
+    /// major grid and minor ticks).
+    pub fn grid_minor(&mut self, on: bool) -> &mut Self {
+        self.grid_minor = on;
+        if on {
+            self.style.grid = true;
+            self.style.minor_ticks = true;
+        }
+        self
+    }
+
+    /// Show or hide the x tick labels and x-axis label (used internally to hide
+    /// them on the upper panel of a shared-x layout).
+    pub fn set_xticklabels_visible(&mut self, on: bool) -> &mut Self {
+        self.show_xticklabels = on;
+        self
+    }
+
+    /// The resolved x-axis limits (for sharing the x-axis across panels).
+    #[must_use]
+    pub(crate) fn resolved_xlim(&self) -> (f64, f64) {
+        let (xmin, xmax, _, _) = self.limits();
+        (xmin, xmax)
+    }
+
+    /// Render this single axes as a full figure and save to `path` (`.png`,
+    /// `.svg`, or `.pdf`) — the convenient path for a one-panel plot.
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> crate::error::Result<()> {
-        let (w, h) = self.style.figsize_px();
-        let groups = self.render(w, h);
-        crate::figure::write_groups(&groups, w, h, self.style.face_color, path.as_ref())
+        self.save_with(path, &crate::figure::SaveOptions::default())
+    }
+
+    /// Like [`Axes::save`] with explicit options (e.g. a higher DPI for a sharper
+    /// PNG, or a transparent background).
+    pub fn save_with(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        opts: &crate::figure::SaveOptions,
+    ) -> crate::error::Result<()> {
+        let mut tmp;
+        let ax = match opts.dpi {
+            Some(dpi) => {
+                tmp = self.clone();
+                tmp.style.dpi = dpi;
+                &tmp
+            }
+            None => self,
+        };
+        let (w, h) = ax.style.figsize_px();
+        let groups = ax.render(w, h);
+        let bg = if opts.transparent {
+            crate::color::Color::TRANSPARENT
+        } else {
+            ax.style.face_color
+        };
+        crate::figure::write_groups(&groups, w, h, bg, path.as_ref())
     }
 
     /// Plot a `TH1` as an mplhep step staircase (the matplotlib `hist` analog).
@@ -342,10 +414,16 @@ impl Axes {
         )
     }
 
-    /// Build the draw groups for this axes given the figure pixel size.
+    /// Build the draw groups using the default (margins-based) axes box.
     pub(crate) fn render(&self, fig_w: u32, fig_h: u32) -> Vec<DrawGroup> {
+        let box_ = self.axes_box(fig_w as f32, fig_h as f32);
+        self.render_at(box_)
+    }
+
+    /// Build the draw groups with the data area placed at an explicit pixel box
+    /// (used by [`crate::figure::Figure`] for grid/ratio layouts).
+    pub(crate) fn render_at(&self, mut box_: Rect) -> Vec<DrawGroup> {
         let s = &self.style;
-        let mut box_ = self.axes_box(fig_w as f32, fig_h as f32);
         // Reserve space on the right for a colorbar, if present.
         let cb_rect = self.colorbar.as_ref().map(|_| {
             let cb_w = s.px(14.0);
@@ -393,6 +471,27 @@ impl Axes {
                     p1: (box_.right(), py),
                     stroke: gstroke.clone(),
                 });
+            }
+            // Fainter grid lines at the minor ticks.
+            if self.grid_minor {
+                let gminor =
+                    Stroke::line(s.grid_color.with_alpha(0.5), s.px(s.grid_width_pt * 0.7));
+                for &xv in &ticker::minor_ticks(xmin, xmax, &xticks, 5) {
+                    let px = t.x(xv);
+                    grid.push(DrawCommand::Line {
+                        p0: (px, box_.y),
+                        p1: (px, box_.bottom()),
+                        stroke: gminor.clone(),
+                    });
+                }
+                for &yv in &ticker::minor_ticks(ymin, ymax, &yticks, 5) {
+                    let py = t.y(yv);
+                    grid.push(DrawCommand::Line {
+                        p0: (box_.x, py),
+                        p1: (box_.right(), py),
+                        stroke: gminor.clone(),
+                    });
+                }
             }
         }
 
@@ -497,28 +596,35 @@ impl Axes {
             }
         }
 
-        // X tick labels (below the bottom spine).
+        // X tick labels (below the bottom spine); hidden on shared-x upper panels.
         let label_y = box_.bottom() + out_len.max(0.0) + pad;
-        for (&xv, lab) in xticks.iter().zip(&xlabels) {
-            let px = t.x(xv);
-            axis.extend(text::layout(
-                lab,
-                px,
-                label_y,
-                tlab,
-                FontStyle::Regular,
-                fg,
-                HAlign::Center,
-                VAlign::Top,
-                0.0,
-            ));
+        if self.show_xticklabels {
+            for (&xv, lab) in xticks.iter().zip(&xlabels) {
+                let px = t.x(xv);
+                axis.extend(text::layout(
+                    lab,
+                    px,
+                    label_y,
+                    tlab,
+                    FontStyle::Regular,
+                    fg,
+                    HAlign::Center,
+                    VAlign::Top,
+                    0.0,
+                ));
+            }
         }
         // Y tick labels (left of the left spine); track max width for the ylabel.
         let mut max_ylabel_w = 0.0_f32;
         let label_x = box_.x - out_len.max(0.0) - pad;
-        for (&yv, lab) in yticks.iter().zip(&ylabels) {
+        let nyt = yticks.len();
+        for (i, (&yv, lab)) in yticks.iter().zip(&ylabels).enumerate() {
             let py = t.y(yv);
             max_ylabel_w = max_ylabel_w.max(text::measure(lab, tlab, FontStyle::Regular).width);
+            // yticks are ascending: index 0 is the bottom-most, last is the top.
+            if (self.ylabel_prune.0 && i == 0) || (self.ylabel_prune.1 && i + 1 == nyt) {
+                continue;
+            }
             axis.extend(text::layout(
                 lab,
                 label_x,
@@ -534,7 +640,7 @@ impl Axes {
 
         // Axis labels.
         let labsize = s.px(s.label_size_pt);
-        if let Some(xl) = &self.xlabel {
+        if let (Some(xl), true) = (&self.xlabel, self.show_xticklabels) {
             let tick_h = text::measure("0", tlab, FontStyle::Regular).height();
             let y = label_y + tick_h + s.px(4.0);
             crate::mathtext::layout_label(
