@@ -7,11 +7,12 @@
 //! ```
 //!
 //! It renders three figures, each as both PNG and SVG:
-//!   1. `mass`    — a filled MC template with "data" points overlaid, a legend,
-//!                  and a LaTeX axis label (the default matplotlib look).
-//!   2. `mplhep`  — the same histogram as a step staircase with error bars in the
-//!                  mplhep style (in-pointing ticks, minors, all four sides).
-//!   3. `heatmap` — a 2-D TH2 as a viridis color mesh with a colorbar.
+//!
+//! 1. `mass` — a filled MC template with "data" points overlaid, a legend, and a
+//!    LaTeX axis label (the default matplotlib look).
+//! 2. `mplhep` — the same histogram as a step staircase with error bars in the
+//!    mplhep style (in-pointing ticks, minors, all four sides).
+//! 3. `heatmap` — a 2-D TH2 as a viridis color mesh with a colorbar.
 
 #[cfg(not(feature = "plot"))]
 fn main() {
