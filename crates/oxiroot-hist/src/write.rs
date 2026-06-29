@@ -29,7 +29,7 @@ fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Result<Vec<u8
 
 use crate::axis::TAxis;
 use crate::base::Precision;
-use crate::graph::{GraphErrors, TGraph};
+use crate::graph::{GraphErrors, GraphFunction, TGraph};
 use crate::graph2d::TGraph2D;
 use crate::graphmultierrors::TGraphMultiErrors;
 use crate::tefficiency::TEfficiency;
@@ -672,7 +672,7 @@ fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
     w.u8(1); // fChanged
     w.be_i32(b.number);
     write_object_ptr(w, "TGraph", |w| {
-        write_tgraph_base(w, "Graph", "Graph", &b.x, &b.y, None)
+        write_tgraph_base(w, "Graph", "Graph", &b.x, &b.y, None, &[])
     }); // fPoly
     w.be_f64(b.area);
     w.be_f64(b.content);
@@ -684,10 +684,10 @@ fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
 }
 
 /// Serialize a `TGraph` base object (version 5): `TNamed`, the three `TAtt`
-/// bases, `fNpoints`/`fX`/`fY`, and the trailer ROOT writes for a freshly
-/// created graph (an empty `fFunctions`, a null `fHistogram`, `fMinimum`/
-/// `fMaximum` of `-1111`, and an empty `fOption`). Shared by the standalone
-/// graph writer and `TH2Poly`'s polygon `fPoly`.
+/// bases, `fNpoints`/`fX`/`fY`, and the trailer ROOT writes for a graph (the
+/// `fFunctions` list, the `fHistogram` display frame or a null pointer,
+/// `fMinimum`/`fMaximum` of `-1111`, and an empty `fOption`). Shared by the
+/// standalone graph writer and `TH2Poly`'s polygon `fPoly`.
 fn write_tgraph_base(
     w: &mut WBuffer,
     name: &str,
@@ -695,6 +695,7 @@ fn write_tgraph_base(
     x: &[f64],
     y: &[f64],
     histogram: Option<&TH1>,
+    functions: &[GraphFunction],
 ) {
     let g = w.begin_object(5); // TGraph version 5
     write_tnamed(w, GRAPH_BITS, name, title);
@@ -724,7 +725,11 @@ fn write_tgraph_base(
     for &v in &y[..npoints] {
         w.be_f64(v);
     }
-    write_object_ptr(w, "TList", write_empty_tlist); // fFunctions
+    if functions.is_empty() {
+        write_object_ptr(w, "TList", write_empty_tlist); // fFunctions (empty)
+    } else {
+        write_functions(w, functions); // fFunctions (TList<TF1>)
+    }
     match histogram {
         Some(h) => write_th1f_ptr(w, h), // fHistogram (real TH1F* display frame)
         None => w.be_u32(0),             // fHistogram (null TH1F*)
@@ -733,6 +738,126 @@ fn write_tgraph_base(
     w.be_f64(-1111.0); // fMaximum
     w.string(""); // fOption
     w.end_object(g);
+}
+
+/// Write a non-empty `fFunctions` `TList`, each element a `TF1` object pointer
+/// followed by its (empty) option `TString`.
+fn write_functions(w: &mut WBuffer, functions: &[GraphFunction]) {
+    write_object_ptr(w, "TList", |w| {
+        let tl = w.begin_object(5); // TList version 5
+        write_tobject(w, 0); // ROOT writes 0 bits for an embedded fFunctions list
+        w.string(""); // fName
+        w.be_i32(functions.len() as i32); // fSize
+        for f in functions {
+            write_object_ptr(w, "TF1", |w| write_tf1(w, f));
+            w.string(""); // per-element option string
+        }
+        w.end_object(tl);
+    });
+}
+
+/// Write a `TF1` object body (version 12): the `TNamed`/`TAtt*` bases, the
+/// scalar members, the parameter `vector<double>`s, then the `fFormula`
+/// `TFormula*` and null `fParams`/`fComposition` pointers.
+fn write_tf1(w: &mut WBuffer, f: &GraphFunction) {
+    let npar = f.npar();
+    let obj = w.begin_object(12); // TF1 version 12
+    write_tnamed(w, 0, &f.name, &f.title);
+
+    let line = w.begin_object(2); // TAttLine
+    w.be_i16(1); // fLineColor
+    w.be_i16(1); // fLineStyle
+    w.be_i16(1); // fLineWidth
+    w.end_object(line);
+    let fill = w.begin_object(2); // TAttFill
+    w.be_i16(19); // fFillColor (ROOT's TF1 default)
+    w.be_i16(0); // fFillStyle
+    w.end_object(fill);
+    let marker = w.begin_object(3); // TAttMarker
+    w.be_i16(1); // fMarkerColor
+    w.be_i16(1); // fMarkerStyle
+    w.be_f32(1.0); // fMarkerSize
+    w.end_object(marker);
+
+    w.be_f64(f.xmin); // fXmin
+    w.be_f64(f.xmax); // fXmax
+    w.be_i32(npar as i32); // fNpar
+    w.be_i32(1); // fNdim
+    w.be_i32(100); // fNpx (ROOT default)
+    w.be_i32(0); // fType (kFormula)
+    w.be_i32(0); // fNpfits
+    w.be_i32(f.ndf); // fNDF
+    w.be_f64(f.chi2); // fChisquare
+    w.be_f64(-1111.0); // fMinimum
+    w.be_f64(-1111.0); // fMaximum
+    write_vector_f64(w, &f.par_errors); // fParErrors
+    write_vector_f64(w, &f.par_min); // fParMin
+    write_vector_f64(w, &f.par_max); // fParMax
+    write_vector_f64(w, &[]); // fSave (empty)
+    w.u8(0); // fNormalized
+    w.be_f64(0.0); // fNormIntegral
+    write_object_ptr(w, "TFormula", |w| write_tformula(w, f)); // fFormula
+    w.be_u32(0); // fParams (TF1Parameters*) = null
+    w.be_u32(0); // fComposition (TF1AbsComposition*) = null
+    w.end_object(obj);
+}
+
+/// `TFormula::kNotGlobal` (`BIT(10)`): set on a formula owned by another object so
+/// that, on read, ROOT does *not* register it in `gROOT`'s global function list
+/// (which would re-JIT it and crash in a headless/JIT-less context). ROOT sets
+/// this on every embedded `TFormula`; omitting it makes ROOT segfault on read.
+const FORMULA_NOT_GLOBAL: u32 = 0x0000_0400;
+
+/// Write a `TFormula` object body (version 14): `TNamed`, `fClingParameters`,
+/// `fAllParametersSetted`, the `fParams` name→index map, the `[pN]`-form formula
+/// string, and the trailing scalars/empty `fLinearParts`.
+fn write_tformula(w: &mut WBuffer, f: &GraphFunction) {
+    let npar = f.npar();
+    let obj = w.begin_object(14); // TFormula version 14
+    write_tnamed(w, FORMULA_NOT_GLOBAL, &f.name, &f.title);
+    write_vector_f64(w, &f.params); // fClingParameters
+    w.u8(1); // fAllParametersSetted
+    write_param_map(w, npar); // fParams (map<TString,int>)
+    w.string(&f.formula); // fFormula (in [pN] form)
+    w.be_i32(1); // fNdim
+    w.be_i32(0); // fNumber
+                 // fLinearParts: an empty objectwise vector<TObject*>.
+    let lp = w.reserve(4);
+    let start = w.len();
+    w.be_i16(0x000a); // streamer version
+    w.be_i32(0); // count
+    let len = (w.len() - start) as u32;
+    w.patch_be_u32(lp, 0x4000_0000 | len);
+    w.u8(0); // fVectorized
+    w.end_object(obj);
+}
+
+/// Write an objectwise `vector<double>`: `{byte count}{ver 0x000a}{count}{f64s}`.
+fn write_vector_f64(w: &mut WBuffer, data: &[f64]) {
+    let bc = w.reserve(4);
+    let start = w.len();
+    w.be_i16(0x000a); // streamer version
+    w.be_i32(data.len() as i32);
+    for &d in data {
+        w.be_f64(d);
+    }
+    let len = (w.len() - start) as u32;
+    w.patch_be_u32(bc, 0x4000_0000 | len);
+}
+
+/// Write a `TFormula::fParams` `map<TString,int>` for `n` parameters: the entries
+/// `p0→0, p1→1, …` in index order (ROOT re-sorts on read by its own comparator).
+fn write_param_map(w: &mut WBuffer, n: usize) {
+    let bc = w.reserve(4);
+    let start = w.len();
+    w.be_i16(0x000a); // streamer version
+    w.be_i32(n as i32); // count
+    for i in 0..n {
+        w.string(&format!("p{i}"));
+        w.be_i32(i as i32);
+    }
+    let len = (w.len() - start) as u32;
+    w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
 /// Serialize a `TH2Poly` object to a fresh byte vector.
@@ -758,10 +883,26 @@ pub(crate) fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
     let x = &g.x[..n];
     let y = &g.y[..n];
     match &g.errors {
-        GraphErrors::None => write_tgraph_base(w, &g.name, &g.title, x, y, g.histogram.as_ref()),
+        GraphErrors::None => write_tgraph_base(
+            w,
+            &g.name,
+            &g.title,
+            x,
+            y,
+            g.histogram.as_ref(),
+            &g.functions,
+        ),
         GraphErrors::Symmetric { ex, ey } => {
             let t = w.begin_object(3); // TGraphErrors version 3
-            write_tgraph_base(w, &g.name, &g.title, x, y, g.histogram.as_ref());
+            write_tgraph_base(
+                w,
+                &g.name,
+                &g.title,
+                x,
+                y,
+                g.histogram.as_ref(),
+                &g.functions,
+            );
             write_basic_array(w, ex, n);
             write_basic_array(w, ey, n);
             w.end_object(t);
@@ -773,7 +914,15 @@ pub(crate) fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
             ey_high,
         } => {
             let t = w.begin_object(3); // TGraphAsymmErrors version 3
-            write_tgraph_base(w, &g.name, &g.title, x, y, g.histogram.as_ref());
+            write_tgraph_base(
+                w,
+                &g.name,
+                &g.title,
+                x,
+                y,
+                g.histogram.as_ref(),
+                &g.functions,
+            );
             write_basic_array(w, ex_low, n);
             write_basic_array(w, ex_high, n);
             write_basic_array(w, ey_low, n);
@@ -889,7 +1038,7 @@ fn write_tgraphmultierrors(w: &mut WBuffer, g: &TGraphMultiErrors) {
     let n = g.len();
     let layers = g.ey_low.len();
     let obj = w.begin_object(1); // TGraphMultiErrors version 1
-    write_tgraph_base(w, &g.name, &g.title, &g.x[..n], &g.y[..n], None);
+    write_tgraph_base(w, &g.name, &g.title, &g.x[..n], &g.y[..n], None, &[]);
     w.be_i32(layers as i32); // fNYErrors
     w.be_i32(g.sum_errors_mode); // fSumErrorsMode
     write_basic_array(w, &g.ex_low, n); // fExL

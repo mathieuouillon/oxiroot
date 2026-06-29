@@ -44,7 +44,7 @@ pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 pub use fit::{
     FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points, TF1,
 };
-pub use graph::{GraphErrors, TGraph};
+pub use graph::{GraphErrors, GraphFunction, TGraph};
 pub use graph2d::TGraph2D;
 pub use graphmultierrors::TGraphMultiErrors;
 pub use ops::Histogram;

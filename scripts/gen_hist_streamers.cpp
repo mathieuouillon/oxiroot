@@ -25,6 +25,7 @@
 #include <TGraphAsymmErrors.h>
 #include <TGraph2D.h>
 #include <TGraphMultiErrors.h>
+#include <TF1.h>
 
 int main() {
   TFile f("/tmp/alltypes.root", "RECREATE");
@@ -64,6 +65,7 @@ int main() {
   TGraphMultiErrors gme("gme","",2,gx,gy,ge,ge,ge,ge);
   gme.AddYError(2,ge,ge); // a second y-error layer
   gme.Write();
+  TF1 ftf("ftf","[0]+[1]*x",0,1); ftf.SetParameters(1,2); ftf.Write(); // bakes TF1+TFormula
 
   f.Close();
   return 0;

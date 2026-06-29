@@ -491,8 +491,6 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 Experimental (`0.0.x`). On the list — each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 
-- **Graphs** — `TGraph2D` and `TGraphMultiErrors`; persisting a graph's fitted
-  functions (`fFunctions`) and display frame (`fHistogram`), written empty today.
 - **RNTuple**:
   - *Associative containers* (`std::map`, `std::set`) — they instantiate as a
     collection of records / a collection, so they should fall out of the existing

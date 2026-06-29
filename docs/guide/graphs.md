@@ -188,6 +188,50 @@ let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     σ. See [Fitting](fitting.md) for models, options, and the choice of minimizer
     backend.
 
+## Attached functions (`fFunctions`)
+
+When ROOT fits a graph, it stores the resulting `TF1` in the graph's `fFunctions`
+list so the curve travels with the points. oxiroot reads those functions into
+`TGraph::functions` (a `Vec<GraphFunction>`) and writes them back as faithful
+`TF1`/`TFormula` objects — the file reads in ROOT and uproot, and ROOT can
+re-evaluate the formula:
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::RFile;
+
+let f = RFile::open("graph_function.root")?;
+let g = TGraph::read_root(&f, "gfit")?;
+
+for fun in &g.functions {
+    // `formula` is in ROOT's `[pN]` form; `params` are the current values.
+    println!("{}: {} {:?}", fun.name, fun.formula, fun.params);
+}
+```
+
+Build one from scratch with `GraphFunction::new(name, formula, params, xmin, xmax)`
+and attach it with `with_function`. The formula may use either `[0]`/`[1]` or
+`[p0]`/`[p1]` to reference parameters; it is stored in ROOT's `[pN]` form.
+
+```rust
+use oxiroot::prelude::*;
+
+let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])
+    .named("gfit")
+    .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
+
+assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
+g.write_root("graph_function.root", Compression::None)?;
+```
+
+`GraphFunction` also carries the per-parameter fit errors and limits
+(`par_errors`/`par_min`/`par_max`), the function range (`xmin`/`xmax`), and the
+fit quality (`chi2`/`ndf`) — all of which round-trip.
+
+!!! note
+    Only formula-based `TF1`s are supported. ROOT objects of other classes in the
+    `fFunctions` list (e.g. a `TPaveStats`) are skipped on read.
+
 ## 3-D graphs: `TGraph2D`
 
 A `TGraph2D` is a set of `(x, y, z)` points — a 3-D scatter or the input to a
