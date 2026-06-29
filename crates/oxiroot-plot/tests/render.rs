@@ -365,6 +365,36 @@ fn hist2d_draws_a_mesh_and_colorbar() {
     );
 }
 
+#[test]
+fn hist2d_leaves_empty_bins_as_background() {
+    // A fully-filled mesh draws every cell; a mostly-empty one draws far fewer,
+    // because empty bins (no data) are not painted — they show the page
+    // background instead of the colormap's value-0 color.
+    let rects = |h: &TH2| {
+        let mut ax = Axes::new();
+        ax.hist2d(h);
+        occurrences(&ax.to_svg_string(), "<rect")
+    };
+
+    let mut full = TH2::new(10, 0.0, 1.0, 10, 0.0, 1.0).named("full");
+    for ix in 0..10 {
+        for iy in 0..10 {
+            full.fill_weight(0.05 + ix as f64 * 0.1, 0.05 + iy as f64 * 0.1, 1.0);
+        }
+    }
+    let mut sparse = TH2::new(10, 0.0, 1.0, 10, 0.0, 1.0).named("sparse");
+    sparse.fill_weight(0.05, 0.05, 5.0);
+    sparse.fill_weight(0.55, 0.55, 3.0); // only two filled cells
+
+    let (nf, ns) = (rects(&full), rects(&sparse));
+    // Background, frame, and colorbar rects are identical between the two; the
+    // ~98-cell difference is exactly the skipped empty bins.
+    assert!(
+        nf >= ns + 90,
+        "empty bins must be skipped: full={nf} rects, sparse={ns} rects"
+    );
+}
+
 // --- figures and layouts -------------------------------------------------------
 
 #[test]

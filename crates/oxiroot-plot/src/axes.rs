@@ -415,14 +415,20 @@ impl Axes {
         let xedges = h.xaxis.edges();
         let yedges = h.yaxis.edges();
         let values = h.values();
+        // Autoscale over the bins that actually hold data. Empty bins (content
+        // exactly 0) are not drawn — they show the page background, like ROOT's
+        // COLZ — so they must not anchor the color scale at 0 either.
         let (mut dmin, mut dmax) = (f64::INFINITY, f64::NEG_INFINITY);
         for row in &values {
             for &v in row {
-                dmin = dmin.min(v);
-                dmax = dmax.max(v);
+                if v != 0.0 {
+                    dmin = dmin.min(v);
+                    dmax = dmax.max(v);
+                }
             }
         }
         if !dmin.is_finite() {
+            // No filled bins at all.
             dmin = 0.0;
             dmax = 1.0;
         }

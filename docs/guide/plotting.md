@@ -122,6 +122,12 @@ ax.save("heatmap.svg")?;
 `gray_r`), and parses from a name (`"viridis".parse()`). The value range
 autoscale can be overridden with `Hist2dOpts::vrange(vmin..vmax)`.
 
+**Empty bins** (content exactly 0 — no entries) are left as the page background
+rather than painted the colormap's lowest color, and they are excluded from the
+autoscale, so the color range spans only the bins that hold data. This is the
+ROOT `COLZ` / matplotlib `cmin` convention; with a transparent background the
+empty cells become transparent.
+
 ## Overlaying a fitted curve
 
 `ax.function(f, x0..x1)` samples any closure `f` over the range and draws it as a

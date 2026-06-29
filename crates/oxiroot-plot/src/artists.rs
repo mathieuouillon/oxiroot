@@ -619,6 +619,12 @@ impl MeshArtist {
                 if self.yedges.len() < iy + 2 {
                     break;
                 }
+                // Empty bins (no data) are left undrawn so the page background
+                // shows through, instead of being painted the colormap's value-0
+                // color (ROOT COLZ / mplhep `cmin` behavior).
+                if col[iy] == 0.0 {
+                    continue;
+                }
                 let color = self.cmap.sample((col[iy] - self.vmin) / span);
                 let y0 = t.y(self.yedges[iy]);
                 let y1 = t.y(self.yedges[iy + 1]);
