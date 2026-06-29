@@ -440,6 +440,18 @@ fn write_th1d_ptr(w: &mut WBuffer, h: &TH1) {
     w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
+/// Write an embedded `TH1F*` object pointer (a graph's `fHistogram` display
+/// frame): `{byte count}{kNewClassTag}{"TH1F"}{TH1F object}`.
+fn write_th1f_ptr(w: &mut WBuffer, h: &TH1) {
+    let bc = w.reserve(4);
+    let start = w.len();
+    w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
+    w.bytes(b"TH1F\0");
+    write_th1f(w, h);
+    let len = (w.len() - start) as u32;
+    w.patch_be_u32(bc, 0x4000_0000 | len);
+}
+
 /// Serialize a `TEfficiency` object (with its byte-count/version header) into `w`.
 /// Layout: `TEfficiency{ TNamed, TAttLine, TAttFill, TAttMarker, fBeta_alpha,
 /// fBeta_beta, fBeta_bin_params, fConfLevel, fFunctions, fPassedHistogram(TH1D*),
@@ -660,7 +672,7 @@ fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
     w.u8(1); // fChanged
     w.be_i32(b.number);
     write_object_ptr(w, "TGraph", |w| {
-        write_tgraph_base(w, "Graph", "Graph", &b.x, &b.y)
+        write_tgraph_base(w, "Graph", "Graph", &b.x, &b.y, None)
     }); // fPoly
     w.be_f64(b.area);
     w.be_f64(b.content);
@@ -676,7 +688,14 @@ fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
 /// created graph (an empty `fFunctions`, a null `fHistogram`, `fMinimum`/
 /// `fMaximum` of `-1111`, and an empty `fOption`). Shared by the standalone
 /// graph writer and `TH2Poly`'s polygon `fPoly`.
-fn write_tgraph_base(w: &mut WBuffer, name: &str, title: &str, x: &[f64], y: &[f64]) {
+fn write_tgraph_base(
+    w: &mut WBuffer,
+    name: &str,
+    title: &str,
+    x: &[f64],
+    y: &[f64],
+    histogram: Option<&TH1>,
+) {
     let g = w.begin_object(5); // TGraph version 5
     write_tnamed(w, GRAPH_BITS, name, title);
 
@@ -706,7 +725,10 @@ fn write_tgraph_base(w: &mut WBuffer, name: &str, title: &str, x: &[f64], y: &[f
         w.be_f64(v);
     }
     write_object_ptr(w, "TList", write_empty_tlist); // fFunctions
-    w.be_u32(0); // fHistogram (null TH1F*)
+    match histogram {
+        Some(h) => write_th1f_ptr(w, h), // fHistogram (real TH1F* display frame)
+        None => w.be_u32(0),             // fHistogram (null TH1F*)
+    }
     w.be_f64(-1111.0); // fMinimum
     w.be_f64(-1111.0); // fMaximum
     w.string(""); // fOption
@@ -736,10 +758,10 @@ pub(crate) fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
     let x = &g.x[..n];
     let y = &g.y[..n];
     match &g.errors {
-        GraphErrors::None => write_tgraph_base(w, &g.name, &g.title, x, y),
+        GraphErrors::None => write_tgraph_base(w, &g.name, &g.title, x, y, g.histogram.as_ref()),
         GraphErrors::Symmetric { ex, ey } => {
             let t = w.begin_object(3); // TGraphErrors version 3
-            write_tgraph_base(w, &g.name, &g.title, x, y);
+            write_tgraph_base(w, &g.name, &g.title, x, y, g.histogram.as_ref());
             write_basic_array(w, ex, n);
             write_basic_array(w, ey, n);
             w.end_object(t);
@@ -751,7 +773,7 @@ pub(crate) fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
             ey_high,
         } => {
             let t = w.begin_object(3); // TGraphAsymmErrors version 3
-            write_tgraph_base(w, &g.name, &g.title, x, y);
+            write_tgraph_base(w, &g.name, &g.title, x, y, g.histogram.as_ref());
             write_basic_array(w, ex_low, n);
             write_basic_array(w, ex_high, n);
             write_basic_array(w, ey_low, n);
@@ -867,7 +889,7 @@ fn write_tgraphmultierrors(w: &mut WBuffer, g: &TGraphMultiErrors) {
     let n = g.len();
     let layers = g.ey_low.len();
     let obj = w.begin_object(1); // TGraphMultiErrors version 1
-    write_tgraph_base(w, &g.name, &g.title, &g.x[..n], &g.y[..n]);
+    write_tgraph_base(w, &g.name, &g.title, &g.x[..n], &g.y[..n], None);
     w.be_i32(layers as i32); // fNYErrors
     w.be_i32(g.sum_errors_mode); // fSumErrorsMode
     write_basic_array(w, &g.ex_low, n); // fExL

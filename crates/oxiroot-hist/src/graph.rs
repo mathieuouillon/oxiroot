@@ -15,7 +15,8 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::RFile;
 
-use crate::base::object_bytes_any;
+use crate::base::{object_bytes_any, precision_of, Precision};
+use crate::th1::TH1;
 
 /// Error bars attached to a graph's points.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +58,11 @@ pub struct TGraph {
     pub y: Vec<f64>,
     /// Error bars, selecting the concrete ROOT class.
     pub errors: GraphErrors,
+    /// Optional display frame (`fHistogram`, a `TH1F`): the axis frame ROOT
+    /// builds when a graph is drawn. `None` (the default) writes a null pointer,
+    /// matching a freshly-created ROOT graph; set one with
+    /// [`with_histogram`](TGraph::with_histogram) to persist axis ranges/titles.
+    pub histogram: Option<TH1>,
 }
 
 impl TGraph {
@@ -69,6 +75,7 @@ impl TGraph {
             x,
             y,
             errors: GraphErrors::None,
+            histogram: None,
         }
     }
 
@@ -80,6 +87,7 @@ impl TGraph {
             x,
             y,
             errors: GraphErrors::Symmetric { ex, ey },
+            histogram: None,
         }
     }
 
@@ -104,7 +112,17 @@ impl TGraph {
                 ey_low,
                 ey_high,
             },
+            histogram: None,
         }
+    }
+
+    /// Attach a display frame (`fHistogram`) — the axis-frame ROOT would build on
+    /// draw. Stored (and persisted) as a `TH1F`, ROOT's declared type for
+    /// `fHistogram`, so the precision is coerced to `Float`. Chainable.
+    #[must_use]
+    pub fn with_histogram(mut self, histogram: TH1) -> Self {
+        self.histogram = Some(histogram.with_precision(Precision::Float));
+        self
     }
 
     /// Number of points (`fNpoints`).
@@ -138,8 +156,10 @@ fn read_tgraph_base(r: &mut RBuffer) -> Result<TGraph> {
     let npoints = r.be_i32()?.max(0) as usize;
     let x = read_basic_array(r, npoints)?;
     let y = read_basic_array(r, npoints)?;
+    skip_object_ptr(r)?; // fFunctions (TList) — display/fit objects, not kept here
+    let histogram = read_opt_th1(r)?; // fHistogram (TH1F*, or null)
     if let Some(end) = base.end {
-        r.seek(end)?; // skip fFunctions/fHistogram/fMinimum/fMaximum/fOption
+        r.seek(end)?; // skip fMinimum/fMaximum/fOption
     }
     Ok(TGraph {
         name: named.name,
@@ -147,7 +167,40 @@ fn read_tgraph_base(r: &mut RBuffer) -> Result<TGraph> {
         x,
         y,
         errors: GraphErrors::None,
+        histogram,
     })
+}
+
+/// Skip a byte-counted object pointer (`{kByteCountMask | len}{len bytes}`),
+/// used for the `fFunctions` `TList`.
+fn skip_object_ptr(r: &mut RBuffer) -> Result<()> {
+    let bc = r.be_i32()? as u32;
+    r.skip((bc & 0x3fff_ffff) as usize)
+}
+
+/// Read an optional embedded `TH1*` (the `fHistogram` display frame). A null
+/// pointer is a 4-byte zero; otherwise `{byte count}{class tag}{TH1 object}`.
+fn read_opt_th1(r: &mut RBuffer) -> Result<Option<TH1>> {
+    let bc = r.be_i32()? as u32;
+    if bc == 0 {
+        return Ok(None); // null pointer
+    }
+    let tag = r.be_i32()? as u32;
+    let precision = if tag == 0xFFFF_FFFF {
+        // kNewClassTag: a NUL-terminated class name follows (e.g. "TH1F").
+        let mut class = String::new();
+        loop {
+            let b = r.u8()?;
+            if b == 0 {
+                break;
+            }
+            class.push(b as char);
+        }
+        precision_of(&class)?
+    } else {
+        Precision::Float // a back-reference: fHistogram is always a TH1F
+    };
+    Ok(Some(TH1::read(r, precision)?))
 }
 
 /// Read a `Double_t* //[n]` member: a presence-marker byte then (if present)

@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{GraphErrors, ReadRoot, TGraph, WriteRoot};
+use oxiroot_hist::{GraphErrors, ReadRoot, TGraph, WriteRoot, TH1};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> PathBuf {
@@ -112,4 +112,43 @@ fn empty_graphs_round_trip() {
         let back = TGraph::read_root(&RFile::open(&out).unwrap(), &g.name).unwrap();
         assert_eq!(back, *g);
     }
+}
+
+/// A graph ROOT drew before writing carries a real `fHistogram` display frame;
+/// we read it back as a `TH1F` (previously this member was skipped).
+#[test]
+fn reads_root_graph_histogram() {
+    let f = RFile::open(fixture("graph_hist.root")).expect("open");
+    let g = TGraph::read_root(&f, "g").expect("read g");
+    let h = g
+        .histogram
+        .expect("graph carries an fHistogram display frame");
+    assert_eq!(h.class_name(), "TH1F"); // ROOT's fHistogram is a TH1F
+    assert_eq!(h.xaxis.nbins, 100); // ROOT's default frame binning
+                                    // The plain graphs in graphs.root were never drawn, so they have no frame.
+    let g0 = TGraph::read_root(&RFile::open(fixture("graphs.root")).unwrap(), "g").unwrap();
+    assert!(g0.histogram.is_none());
+}
+
+/// A user-attached display frame round-trips (and is persisted as a `TH1F`).
+#[test]
+fn graph_histogram_round_trips() {
+    let frame = TH1::new(20, -5.0, 5.0).named("Graph").titled("frame;x;y");
+    let g = TGraph::with_errors(
+        vec![1.0, 2.0],
+        vec![3.0, 4.0],
+        vec![0.1, 0.1],
+        vec![0.5, 0.5],
+    )
+    .named("g")
+    .titled("framed")
+    .with_histogram(frame);
+    assert!(g.histogram.is_some());
+
+    let out = std::env::temp_dir().join("oxiroot_graph_hist_rt.root");
+    g.write_root(&out, Compression::Zstd(3)).expect("write");
+    let back = TGraph::read_root(&RFile::open(&out).unwrap(), "g").unwrap();
+    assert_eq!(back, g); // exact round-trip, including the TH1F frame
+    assert_eq!(back.histogram.unwrap().xaxis.nbins, 20);
+    let _ = std::fs::remove_file(&out);
 }
