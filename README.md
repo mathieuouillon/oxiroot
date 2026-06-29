@@ -28,8 +28,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; multi-basket
   via a bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
-  vectors, **nested vectors and vectors of records**), compressed, multi-cluster
-  via a streaming writer.
+  vectors, **nested vectors and vectors of records**, fixed-size
+  `std::array`/`std::bitset`, user classes, `std::set`/`std::map`), read
+  *unsplit* streamer fields, compressed, multi-cluster via a streaming writer.
 - 🗜 **Compression** — decode Zstd / zlib / LZ4 / LZMA; encode Zstd / zlib /
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
@@ -507,16 +508,6 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 Experimental (`0.0.x`). On the list — each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 
-- **RNTuple**:
-  - *Associative containers* (`std::map`, `std::set`) — they instantiate as a
-    collection of records / a collection, so they should fall out of the existing
-    field-tree reader, but the local ROOT build can't write them via RNTuple (its
-    collection proxy aborts), so there's no fixture to ground against yet.
-  - *Streamer field role* — a class stored *unsplit* as a single serialized blob
-    (rather than split into a record of members); reading it needs
-    `TStreamerInfo` interpretation of the page bytes.
-  - Write support for the fixed-size (`std::array`/`std::bitset`) and user-class
-    field types (read is done).
 - **`TTree`** — richer object/STL branches beyond split `std::vector<MyStruct>`
   and `std::vector<std::string>` (nested structs, `std::vector<std::vector<T>>`,
   `TClonesArray`). The streamer-info work is done end to end: the reader parses
