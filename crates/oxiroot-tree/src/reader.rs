@@ -35,6 +35,49 @@ pub struct TTree {
     /// schema this tree was written against; surfaced via
     /// [`TTree::streamer_classes`]. Empty if the file has no streamer info.
     streamer_classes: Vec<(String, i32)>,
+    /// Friend trees recorded by `TTree::AddFriend` (read from `fFriends`);
+    /// surfaced via [`TTree::friends`].
+    friends: Vec<Friend>,
+}
+
+/// A friend tree attached to a `TTree` via `TTree::AddFriend`, persisted in the
+/// main tree's `fFriends` list. Friends are read **positionally**: entry *i* of
+/// the main tree pairs with entry *i* of the friend (the standard way HEP
+/// analyses join per-event datasets without copying columns).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Friend {
+    /// The friend tree's key name (`fTreeName`) — what to open in its file.
+    tree_name: String,
+    /// The file holding the friend, or empty when it lives in the same file as
+    /// the main tree (`AddFriend` with no explicit file name).
+    file_name: String,
+    /// The alias the friend is referred to by (`TFriendElement`'s name);
+    /// defaults to the tree name.
+    alias: String,
+}
+
+impl Friend {
+    /// The friend tree's key name (`fTreeName`).
+    pub fn tree_name(&self) -> &str {
+        &self.tree_name
+    }
+
+    /// The file holding the friend, or `""` when it is in the same file as the
+    /// main tree.
+    pub fn file_name(&self) -> &str {
+        &self.file_name
+    }
+
+    /// The alias the friend is referred to by.
+    pub fn alias(&self) -> &str {
+        &self.alias
+    }
+
+    /// Whether the friend lives in the same file as the main tree (`AddFriend`
+    /// called without an explicit file name stores an empty file name).
+    pub fn is_same_file(&self) -> bool {
+        self.file_name.is_empty()
+    }
 }
 
 /// One branch's metadata: its leaf type and the location of its baskets.
@@ -124,6 +167,16 @@ impl TTree {
     /// The names of the (readable) branches, in tree order.
     pub fn branch_names(&self) -> Vec<&str> {
         self.branches.iter().map(|b| b.name.as_str()).collect()
+    }
+
+    /// The friend trees attached with `TTree::AddFriend` (persisted in the main
+    /// tree's `fFriends`). A friend is read positionally — entry *i* of this tree
+    /// pairs with entry *i* of the friend. Open a friend with
+    /// [`TTree::open`]`(file, friend.tree_name())` (the same `file` when
+    /// [`Friend::is_same_file`]) and read its branches as usual; the columns line
+    /// up by entry.
+    pub fn friends(&self) -> &[Friend] {
+        &self.friends
     }
 
     /// The element type of branch `name` (without reading its data), or `None`
@@ -710,14 +763,39 @@ fn read_tree(
     let mut out = Members::new();
     let mut branches = Vec::new();
     let mut unsupported = Vec::new();
+    let mut friends = Vec::new();
     {
         let mut on_object = |name: &str, rb: &mut RBuffer| -> Result<()> {
-            // fBranches holds the tree's branches; fLeaves (not reached — we stop
-            // after fBranches) and every other object member are skipped.
-            if name == "fBranches" {
-                branches = read_branch_array(rb, &mut tags, &mut unsupported, reg)?;
-            } else {
-                skip_object(rb)?;
+            // The TTree streamer order (after the scalar members) is fBranches,
+            // fLeaves, fAliases, fIndexValues, fIndex, fTreeIndex, fFriends, ….
+            // We read the two we consume (fBranches, fFriends) and step over the
+            // rest — each with its correct on-disk framing so the cursor stays
+            // aligned all the way to fFriends.
+            match name {
+                "fBranches" => branches = read_branch_array(rb, &mut tags, &mut unsupported, reg)?,
+                "fFriends" => friends = read_friends(rb, &mut tags)?,
+                // `TArrayD`/`TArrayI` (the legacy inline index): `[Int_t n][n
+                // elements]`, with no version header.
+                "fIndexValues" => {
+                    let n = rb.be_i32()?.max(0) as usize;
+                    rb.skip(n * 8)?;
+                }
+                "fIndex" => {
+                    let n = rb.be_i32()?.max(0) as usize;
+                    rb.skip(n * 4)?;
+                }
+                // `TList*` / `TVirtualIndex*` are object pointers (ROOT's object
+                // protocol); a null pointer is a bare 4-byte 0, which the tag
+                // header consumes.
+                "fAliases" | "fTreeIndex" => {
+                    let h = tags.read_header(rb)?;
+                    if let Some(end) = h.end {
+                        rb.seek(end)?;
+                    }
+                }
+                // Inline objects carrying a version header (fLeaves `TObjArray`,
+                // fIOFeatures).
+                _ => skip_object(rb)?,
             }
             Ok(())
         };
@@ -727,13 +805,13 @@ fn read_tree(
             &info.elements,
             &mut out,
             &mut on_object,
-            "fBranches",
+            "fFriends",
         )?;
     }
 
-    // Everything after fBranches is unneeded; jump to the object's end (the
-    // outer subclass wrapper's end for a TNtuple, so its trailing fNvar is
-    // skipped; otherwise the TTree header's end).
+    // Everything after fFriends is unneeded; jump to the object's end (the outer
+    // subclass wrapper's end for a TNtuple, so its trailing fNvar is skipped;
+    // otherwise the TTree header's end).
     if let Some(end) = outer.and_then(|o| o.end).or(tree_hdr.end) {
         r.seek(end)?;
     }
@@ -744,7 +822,48 @@ fn read_tree(
         branches,
         unsupported,
         streamer_classes: Vec::new(),
+        friends,
     })
+}
+
+/// Read a `TTree`'s `fFriends` (`TList<TFriendElement>` — the friends added with
+/// `TTree::AddFriend`). The cursor is positioned at the `fFriends` object pointer;
+/// a null pointer (no friends) reads as an empty list. Each `TFriendElement`
+/// carries the friend's tree name (`fTreeName`), the alias (`TNamed::fName`), and
+/// the file it lives in (`TNamed::fTitle`, empty for a same-file friend).
+fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
+    let header = tags.read_header(r)?;
+    if header.class_name.is_none() {
+        return Ok(Vec::new()); // null pointer: the tree has no friends
+    }
+    // TList body: version header, TObject, list name, then the element count.
+    read_version_tobject_header(r)?;
+    let n = r.be_i32()?.max(0);
+    let mut friends = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let elem = tags.read_header(r)?;
+        if elem.class_name.as_deref() == Some("TFriendElement") {
+            let vh = r.read_version()?;
+            let named = read_tnamed(r)?; // fName = alias, fTitle = file name
+            let tree_name = r.string()?; // fTreeName
+            friends.push(Friend {
+                tree_name,
+                file_name: named.title,
+                alias: named.name,
+            });
+            if let Some(end) = vh.end {
+                r.seek(end)?;
+            }
+        }
+        if let Some(end) = elem.end {
+            r.seek(end)?;
+        }
+        r.string()?; // the per-object option string TList writes after each entry
+    }
+    if let Some(end) = header.end {
+        r.seek(end)?;
+    }
+    Ok(friends)
 }
 
 /// Read a `TObjArray` of `TBranch`es. Branch classes we don't yet handle are

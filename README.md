@@ -27,8 +27,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
-  `std::set`/`std::map` branches, and `TNtuple`/`TNtupleD`; multi-basket via a
-  bounded-memory streaming writer.
+  `std::set`/`std::map` branches, `TNtuple`/`TNtupleD`, and **friend trees**
+  (`AddFriend`, read entry-aligned); multi-basket via a bounded-memory streaming
+  writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**, fixed-size
   `std::array`/`std::bitset`, user classes, `std::set`/`std::map`), read
@@ -383,6 +384,10 @@ ax2.save("heatmap.svg")?;
   files (optional `rayon` decodes baskets in parallel). Introspect with
   `branch_type`/`branch_shape`/`branch_title`, and see what was skipped via
   `unsupported_branches()`. Worked example: `cargo run -p oxiroot --example tree`.
+- `friends()` returns the friend trees attached with `TTree::AddFriend` (read
+  from the persisted `fFriends` list). A friend is read **positionally** — entry
+  *i* of the main tree pairs with entry *i* of the friend — so opening the friend
+  tree and reading its branches yields columns that line up by entry.
 - The reader is **streamer-info-driven**: it parses `TTree`/`TBranch`/
   `TBranchElement` by walking the member list in the file's own `TStreamerInfo`
   (`TTree::streamer_classes` exposes it), so a schema change is absorbed instead
@@ -515,9 +520,10 @@ already ships: byte-level round-trips verified against both ROOT and uproot.
 Grouped by the ROOT feature each fills.
 
 - **`TTree`**
-  - **Friend trees** (`TTree::AddFriend`) — read a friend tree's branches
-    aligned to the main tree by entry (the standard way HEP analyses join
-    per-event datasets), and the index-based join (`BuildIndex`).
+  - **Index-based friend join** (`TTree::BuildIndex`) — read the persisted
+    `fTreeIndex` (`TTreeIndex`) so friends can be joined on a `(major, minor)`
+    key instead of by entry. (Positional friends — `AddFriend`, read
+    entry-aligned — already work.)
   - **Aliases & selections** — `TTree::SetAlias` (named branch expressions) and
     `TEntryList` (a saved set of selected entries), plus older non-split
     `TBranchObject` branches.
