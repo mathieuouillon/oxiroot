@@ -23,6 +23,7 @@
 #include <TGraph.h>
 #include <TGraphErrors.h>
 #include <TGraphAsymmErrors.h>
+#include <TGraph2D.h>
 
 int main() {
   TFile f("/tmp/alltypes.root", "RECREATE");
@@ -57,6 +58,8 @@ int main() {
   TGraph gr(2,gx,gy); gr.SetName("gr"); gr.Write();
   TGraphErrors gre(2,gx,gy,ge,ge); gre.SetName("gre"); gre.Write();
   TGraphAsymmErrors grae(2,gx,gy,ge,ge,ge,ge); grae.SetName("grae"); grae.Write();
+  Double_t gz[2] = {0,1};
+  TGraph2D gr2(2,gx,gy,gz); gr2.SetName("gr2"); gr2.SetTitle(""); gr2.Write();
 
   f.Close();
   return 0;

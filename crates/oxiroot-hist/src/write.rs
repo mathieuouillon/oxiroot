@@ -30,6 +30,7 @@ fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Result<Vec<u8
 use crate::axis::TAxis;
 use crate::base::Precision;
 use crate::graph::{GraphErrors, TGraph};
+use crate::graph2d::TGraph2D;
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
 use crate::th2::TH2;
@@ -764,6 +765,67 @@ pub(crate) fn tgraph_to_bytes(g: &TGraph) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tgraph(&mut w, g);
     w.into_vec()
+}
+
+/// Serialize a [`TGraph2D`] (version 1): the three `TAtt` bases, the scalar
+/// display parameters at ROOT's defaults, the `fX`/`fY`/`fZ` arrays, and an empty
+/// `fFunctions` (the `fHistogram` frame is transient and not persisted).
+fn write_tgraph2d(w: &mut WBuffer, g: &TGraph2D) {
+    let n = g.len();
+    let obj = w.begin_object(1); // TGraph2D version 1
+    write_tnamed(w, GRAPH_BITS, &g.name, &g.title);
+
+    let line = w.begin_object(2); // TAttLine
+    w.be_i16(1);
+    w.be_i16(1);
+    w.be_i16(1);
+    w.end_object(line);
+    let fill = w.begin_object(2); // TAttFill
+    w.be_i16(0);
+    w.be_i16(1000);
+    w.end_object(fill);
+    let marker = w.begin_object(3); // TAttMarker
+    w.be_i16(1);
+    w.be_i16(1);
+    w.be_f32(1.0);
+    w.end_object(marker);
+
+    w.be_i32(n as i32); // fNpoints
+    w.be_i32(40); // fNpx (ROOT default)
+    w.be_i32(40); // fNpy
+    w.be_i32(100_000); // fMaxIter
+    write_basic_array(w, &g.x, n); // fX
+    write_basic_array(w, &g.y, n); // fY
+    write_basic_array(w, &g.z, n); // fZ
+    w.be_f64(-1111.0); // fMinimum
+    w.be_f64(-1111.0); // fMaximum
+    w.be_f64(0.0); // fMargin
+    w.be_f64(0.0); // fZout
+    write_object_ptr(w, "TList", write_empty_tlist); // fFunctions
+    w.u8(0); // fUserHisto (false)
+    w.end_object(obj);
+}
+
+/// Serialize a [`TGraph2D`] object to a fresh byte vector.
+pub(crate) fn tgraph2d_to_bytes(g: &TGraph2D) -> Vec<u8> {
+    let mut w = WBuffer::new();
+    write_tgraph2d(&mut w, g);
+    w.into_vec()
+}
+
+impl WriteRoot for TGraph2D {
+    fn root_class(&self) -> String {
+        "TGraph2D".to_string()
+    }
+    fn root_name(&self) -> &str {
+        &self.name
+    }
+    fn root_title(&self) -> &str {
+        &self.title
+    }
+    fn to_root_bytes(&self) -> Vec<u8> {
+        tgraph2d_to_bytes(self)
+    }
 }
 
 /// The on-disk record for any writable object — its class, name, title, and

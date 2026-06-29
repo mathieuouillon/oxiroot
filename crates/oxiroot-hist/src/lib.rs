@@ -20,6 +20,7 @@ mod derive;
 #[cfg(feature = "fit")]
 pub mod fit;
 pub mod graph;
+pub mod graph2d;
 mod stats;
 pub mod tefficiency;
 pub mod th1;
@@ -43,6 +44,7 @@ pub use fit::{
     FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points, TF1,
 };
 pub use graph::{GraphErrors, TGraph};
+pub use graph2d::TGraph2D;
 pub use ops::Histogram;
 pub use read::ReadRoot;
 pub use tefficiency::TEfficiency;

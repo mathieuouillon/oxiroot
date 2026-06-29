@@ -4,6 +4,7 @@ use oxiroot_io_core::error::Result;
 use oxiroot_io_core::RFile;
 
 use crate::graph::TGraph;
+use crate::graph2d::TGraph2D;
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
 use crate::th2::TH2;
@@ -84,4 +85,9 @@ impl_read_root!(
     TGraph,
     crate::graph::read_tgraph,
     crate::graph::read_tgraph_in
+);
+impl_read_root!(
+    TGraph2D,
+    crate::graph2d::read_tgraph2d,
+    crate::graph2d::read_tgraph2d_in
 );

@@ -188,6 +188,34 @@ let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     σ. See [Fitting](fitting.md) for models, options, and the choice of minimizer
     backend.
 
+## 3-D graphs: `TGraph2D`
+
+A `TGraph2D` is a set of `(x, y, z)` points — a 3-D scatter or the input to a
+surface. It is a separate Rust type with the same read/write traits:
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::RFile;
+
+let g = TGraph2D::new(
+    vec![1.0, 2.0, 3.0],       // x
+    vec![10.0, 20.0, 30.0],    // y
+    vec![100.0, 200.0, 300.0], // z
+)
+.named("surface")
+.titled("a 3-D scatter");
+
+g.write_root("g2d.root", Compression::Zstd(5))?;
+
+let back = TGraph2D::read_root(&RFile::open("g2d.root")?, "surface")?;
+assert_eq!(back.len(), 3);
+```
+
+The point data (`x`/`y`/`z`) round-trips with ROOT and uproot. ROOT's display
+parameters (the binning of the lazily-built `fHistogram`, the Delaunay iteration
+count) are written at ROOT's defaults, and the `fHistogram` frame itself is
+transient in ROOT and not persisted.
+
 ## See also
 
 - [Reading & writing files](reading-writing.md) — the `RootFile` builder, append mode, and `ReadRoot`.

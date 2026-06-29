@@ -8,7 +8,8 @@
 //! object, or two with the same name in one directory, is a loud error.
 
 use crate::{
-    TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3,
+    TEfficiency, TGraph, TGraph2D, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TH1, TH2,
+    TH3,
 };
 
 macro_rules! impl_named {
@@ -43,4 +44,5 @@ impl_named!(
     THnSparse,
     TH2Poly,
     TGraph,
+    TGraph2D,
 );
