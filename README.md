@@ -519,6 +519,9 @@ Grouped by the ROOT feature each fills.
   - **`std::map` / `std::set` branches** — they read through the existing
     streamer-info member walker, but ROOT 6.40's collection proxy aborts when
     *writing* one, so there is no fixture to ground against locally yet.
+  - **Aliases & selections** — `TTree::SetAlias` (named branch expressions) and
+    `TEntryList` (a saved set of selected entries), plus older non-split
+    `TBranchObject` branches.
 - **RNTuple**
   - **An RNTuple inside a `TDirectory`, and several per file** — today the writer
     emits one RNTuple in the root directory.
@@ -528,10 +531,29 @@ Grouped by the ROOT feature each fills.
   - **Schema late extension** — append fields/columns to an existing RNTuple via
     the footer's schema-extension record.
 - **More persistable objects** — the small classes constantly stored alongside
-  histograms: `TObjString`, `TParameter<T>` (named scalars), standalone `TF1` /
-  `TF2` / `TF3` (formula functions; `TF1` already round-trips *inside* a graph's
-  `fFunctions`), `TMultiGraph`, and a `TList` / `TObjArray` / `TMap` of objects
-  as a top-level key.
+  histograms: `TObjString`, `TParameter<T>` (named scalars), `TMultiGraph`,
+  `THStack` (a stacked-histogram collection), a `TList` / `TObjArray` / `TMap` of
+  objects as a top-level key, and the linear-algebra objects fit results carry —
+  `TVectorD`, `TMatrixD`, `TMatrixDSym` (covariance matrices).
+- **Functions** — standalone `TF1` / `TF2` / `TF3` keys and a real `TFormula`
+  expression engine (arbitrary formulas like `[0]+[1]*sin(x)`, `gaus(0)`,
+  `expo`), with `Eval` / `Integral` / `Derivative`. Today the `fit` crate's
+  `Model` has fixed gaussian/exponential/polynomial built-ins, and a `TF1` only
+  round-trips *inside* a graph's `fFunctions`.
+- **Histogram sampling** — `TH1::GetRandom` / `FillRandom` (draw from a histogram
+  or function) and `TH1::Smooth`.
+- **Merging (`hadd`)** — combine several ROOT files the way the `hadd` CLI does:
+  histograms summed (the bin-wise `add`/`merge_all` already exists), `TTree`s and
+  RNTuples concatenated (`TFileMerger` / `RNTupleMerger`). The single most-used
+  ROOT command-line tool.
+- **Generic object reader** — read *any* class in a file driven by its
+  `TStreamerInfo` into a dynamic value tree (the streamer-info member walker
+  already powers the `TTree` reader), so oxiroot can inspect arbitrary ROOT files
+  (`rootls` / `rootprint`-style), not only the typed hist/graph/tree/RNTuple
+  models.
+- **Remote reads** — open a file over HTTP(S) range requests (and, longer term,
+  XRootD `root://`) so a file can be read without downloading it whole, as ROOT
+  and uproot do.
 - **`TFile` container**
   - **Arbitrary-depth `TDirectory` write** — the builder nests one level today.
   - **Delete / compact in update mode** — append mode ships; rewriting a key at
