@@ -1158,11 +1158,13 @@ impl RootFile {
         }
     }
 
-    /// Open an existing ROOT file at `path` to append more objects: its current
-    /// contents are kept and the added objects appended (a new object whose name
-    /// matches an existing one lands at a higher cycle, as ROOT does).
-    /// Subdirectories are not supported in this mode. Errors if the file holds an
-    /// RNTuple (see [`update_root_file`]).
+    /// Open an existing ROOT file at `path` to append more objects to its top
+    /// directory: the current contents are kept (appended in place, so existing
+    /// objects never move) and the added objects written after them. A new object
+    /// whose name matches an existing one lands at a higher cycle, as ROOT does.
+    /// Files that contain subdirectories or an RNTuple are preserved — only
+    /// *adding* new subdirectories in this mode is unsupported. See
+    /// [`update_root_file`].
     pub fn open(path: impl AsRef<Path>) -> Result<RootFile> {
         let path = path.as_ref().to_path_buf();
         let existing = std::fs::read(&path)?;
@@ -1217,7 +1219,10 @@ impl RootFile {
             Some(existing) => {
                 if !self.dirs.is_empty() {
                     return Err(Error::Format(
-                        "appending into subdirectories is not supported".to_string(),
+                        "adding new subdirectories while appending is not supported \
+                         (append adds objects to the top directory; existing \
+                         subdirectories are preserved)"
+                            .to_string(),
                     ));
                 }
                 update_root_file(

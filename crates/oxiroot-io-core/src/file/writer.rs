@@ -4,8 +4,8 @@
 //! key + `TDirectory` record, one `TKey` + object per supplied object, an
 //! optional streamer-info record, and the directory key list. The free list is
 //! kept empty. All offsets are back-patched once the layout is known.
-//! [`update_root_file`] re-reads an existing file and rewrites it with extra
-//! objects appended.
+//! [`update_root_file`] appends extra objects to an existing file *in place*,
+//! leaving its existing bytes (objects, subdirectories, an RNTuple) untouched.
 
 use crate::buffer::WBuffer;
 use crate::error::{Error, Result};
@@ -376,9 +376,16 @@ pub fn write_root_file_with_streamers(
 /// The file's existing streamer info is preserved unless `streamer_info` is
 /// given, in which case that replaces it.
 ///
-/// This rewrites the whole file rather than appending in place, so it does not
-/// support files containing an RNTuple (whose anchor stores absolute file
-/// offsets that a rewrite would invalidate); such files return an error.
+/// This appends *in place*: the existing bytes are left untouched, the new
+/// objects and a relocated root key list are written after them, and only the
+/// file header and directory record are patched. Because nothing existing moves,
+/// it preserves files that contain subdirectories and an RNTuple (whose anchor
+/// and page locators hold absolute file offsets). Only the small (32-bit) TFile
+/// form is supported; a big-format file returns an error.
+///
+/// The file's existing streamer info is kept (the appended standard objects are
+/// read via ROOT/uproot's built-in dictionaries); `streamer_info` is only used
+/// when the file has none.
 pub fn update_root_file(
     existing: &[u8],
     file_name: &str,
@@ -387,52 +394,187 @@ pub fn update_root_file(
     streamer_info: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
     let file = RFile::from_bytes(existing.to_vec())?;
-
-    // Copy existing objects, ordered by ascending cycle so the cycle-by-position
-    // assignment in the rewrite reproduces (or extends) their cycles. Deleted
-    // keys (negative fNbytes) point at freed space and must be skipped.
-    let mut keys: Vec<&TKey> = file.keys().iter().filter(|k| !k.is_deleted()).collect();
-    keys.sort_by_key(|k| k.cycle);
-
-    let mut objects: Vec<ObjectRecord> = Vec::with_capacity(keys.len() + new_objects.len());
-    for key in keys {
-        if key.class_name == "ROOT::RNTuple" {
-            return Err(Error::Format(
-                "updating a file that contains an RNTuple is not supported \
-                 (its anchor holds absolute file offsets)"
-                    .into(),
-            ));
-        }
-        if key.class_name == "TDirectory" || key.class_name == "TDirectoryFile" {
-            return Err(Error::Format(
-                "updating a file that contains subdirectories is not supported \
-                 (the subdirectory record and its keys are not relocated)"
-                    .into(),
-            ));
-        }
-        let payload = key.payload(file.data())?;
-        let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
-            .map_err(|e| Error::Format(format!("decompressing {:?}: {e}", key.name)))?;
-        objects.push(ObjectRecord {
-            class_name: key.class_name.clone(),
-            name: key.name.clone(),
-            title: key.title.clone(),
-            object,
-        });
+    let header = file.header().clone();
+    if header.is_big() {
+        return Err(Error::Format(
+            "appending to a big-format (>2 GiB) TFile is not supported".into(),
+        ));
     }
-    for o in new_objects {
-        objects.push(ObjectRecord {
-            class_name: o.class_name.clone(),
-            name: o.name.clone(),
-            title: o.title.clone(),
-            object: o.object.clone(),
-        });
+    let begin = header.begin;
+    let end = header.end as usize;
+    if existing.len() < end {
+        return Err(Error::Format(format!(
+            "file is truncated: fEND={end} but only {} bytes present",
+            existing.len()
+        )));
     }
 
-    let existing_si = file.streamer_info_object()?;
-    let si = streamer_info.or(existing_si.as_deref());
+    // Existing (non-deleted) root keys keep their byte positions and cycles; they
+    // are relisted, pointing at their unchanged offsets, in the new key list.
+    let existing_keys: Vec<&TKey> = file.keys().iter().filter(|k| !k.is_deleted()).collect();
 
-    write_root_file_with_streamers(file_name, &objects, compression, si)
+    // A new object whose name matches an existing key (or an earlier new object)
+    // gets the next-higher cycle, as ROOT does.
+    let mut max_cycle: std::collections::HashMap<&str, u16> = std::collections::HashMap::new();
+    for k in &existing_keys {
+        let e = max_cycle.entry(k.name.as_str()).or_insert(0);
+        *e = (*e).max(k.cycle);
+    }
+
+    // The output starts as the existing content (everything up to fEND); new
+    // records are appended after it.
+    let mut out = existing[..end].to_vec();
+
+    // --- Append the new objects' keys + payloads. ---
+    struct NewKey {
+        class: String,
+        name: String,
+        title: String,
+        obj_len: u32,
+        payload_len: u32,
+        seek: u64,
+        cycle: u16,
+    }
+    let mut new_keys = Vec::with_capacity(new_objects.len());
+    for obj in new_objects {
+        let cycle = {
+            let e = max_cycle.entry(obj.name.as_str()).or_insert(0);
+            *e += 1;
+            *e
+        };
+        let payload = on_disk_payload(&obj.object, compression);
+        let seek = out.len() as u64;
+        let mut w = WBuffer::new();
+        write_key_header_cycle(
+            &mut w,
+            &obj.class_name,
+            &obj.name,
+            &obj.title,
+            obj.object.len() as u32,
+            payload.len() as u32,
+            seek,
+            begin,
+            cycle,
+        );
+        out.extend_from_slice(&w.into_vec());
+        out.extend_from_slice(&payload);
+        new_keys.push(NewKey {
+            class: obj.class_name.clone(),
+            name: obj.name.clone(),
+            title: obj.title.clone(),
+            obj_len: obj.object.len() as u32,
+            payload_len: payload.len() as u32,
+            seek,
+            cycle,
+        });
+    }
+
+    // --- Append a streamer info record only if the file has none. ---
+    let (seek_info, nbytes_info) = if header.seek_info != 0 {
+        (header.seek_info as u32, header.nbytes_info) // keep existing
+    } else if let Some(si) = streamer_info {
+        let payload = on_disk_payload(si, compression);
+        let seek = out.len() as u64;
+        let mut w = WBuffer::new();
+        write_key_header(
+            &mut w,
+            TLIST_CLASS,
+            STREAMER_INFO_NAME,
+            STREAMER_INFO_TITLE,
+            si.len() as u32,
+            payload.len() as u32,
+            seek,
+            begin,
+        );
+        out.extend_from_slice(&w.into_vec());
+        out.extend_from_slice(&payload);
+        let klen = key_len(TLIST_CLASS, STREAMER_INFO_NAME, STREAMER_INFO_TITLE) as u32;
+        (seek as u32, klen + payload.len() as u32)
+    } else {
+        (0, 0)
+    };
+
+    // --- Append the new root key list (existing keys + new keys). ---
+    let keylist_seek = out.len() as u64;
+    let entry_headers: usize = existing_keys
+        .iter()
+        .map(|k| key_len(&k.class_name, &k.name, &k.title) as usize)
+        .chain(
+            new_keys
+                .iter()
+                .map(|k| key_len(&k.class, &k.name, &k.title) as usize),
+        )
+        .sum();
+    let keylist_obj_len = (4 + entry_headers) as u32;
+    let mut w = WBuffer::new();
+    write_key_header(
+        &mut w,
+        DIR_CLASS,
+        file_name,
+        "",
+        keylist_obj_len,
+        keylist_obj_len,
+        keylist_seek,
+        begin,
+    );
+    let nkeys = existing_keys.len() + new_keys.len();
+    w.be_i32(nkeys as i32);
+    for k in &existing_keys {
+        let klen = k.key_len as u32;
+        let payload_len = (k.nbytes as u32).saturating_sub(klen);
+        write_key_header_cycle(
+            &mut w,
+            &k.class_name,
+            &k.name,
+            &k.title,
+            k.obj_len,
+            payload_len,
+            k.seek_key,
+            begin,
+            k.cycle,
+        );
+    }
+    for k in &new_keys {
+        write_key_header_cycle(
+            &mut w,
+            &k.class,
+            &k.name,
+            &k.title,
+            k.obj_len,
+            k.payload_len,
+            k.seek,
+            begin,
+            k.cycle,
+        );
+    }
+    out.extend_from_slice(&w.into_vec());
+    let keylist_nbytes = key_len(DIR_CLASS, file_name, "") as u32 + keylist_obj_len;
+
+    let f_end = out.len();
+    guard_small_format(f_end)?;
+
+    // --- Patch the header pointers and the directory record in place. ---
+    // Small-format header field offsets: fEND=12, fSeekFree=16, fNbytesFree=20,
+    // nfree=24, fSeekInfo=37, fNbytesInfo=41.
+    patch_be_u32(&mut out, 12, f_end as u32); // fEND
+    patch_be_u32(&mut out, 16, 0); // fSeekFree (drop the stale free list)
+    patch_be_u32(&mut out, 20, 0); // fNbytesFree
+    patch_be_u32(&mut out, 24, 0); // nfree
+    patch_be_u32(&mut out, 37, seek_info); // fSeekInfo
+    patch_be_u32(&mut out, 41, nbytes_info); // fNbytesInfo
+
+    // The root directory record sits at fBEGIN + fNbytesName; patch its fSeekKeys
+    // / fNbytesKeys (small-format offsets 26 / 10 within the record).
+    let dir_record = begin as usize + header.nbytes_name as usize;
+    patch_be_u32(&mut out, dir_record + 10, keylist_nbytes); // fNbytesKeys
+    patch_be_u32(&mut out, dir_record + 26, keylist_seek as u32); // fSeekKeys
+
+    Ok(out)
+}
+
+/// Overwrite a big-endian `u32` at absolute `offset` in `buf`.
+fn patch_be_u32(buf: &mut [u8], offset: usize, value: u32) {
+    buf[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
 }
 
 /// A subdirectory to create in the file's root directory, holding its own

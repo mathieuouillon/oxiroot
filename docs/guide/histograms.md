@@ -341,8 +341,10 @@ RootFile::create("out.root")
     .write(Compression::Zstd(5))?;
 ```
 
-Append to an existing file with `RootFile::open` (subdirectories are not
-supported in append mode):
+Append to an existing file with `RootFile::open`. The append is *in place* —
+existing objects never move — so files that already contain subdirectories or an
+RNTuple are preserved (added objects land in the top directory; only *creating*
+new subdirectories while appending is unsupported):
 
 ```rust
 use oxiroot::prelude::*;

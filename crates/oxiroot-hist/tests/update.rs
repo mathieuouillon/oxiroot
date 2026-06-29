@@ -1,11 +1,12 @@
-//! M6: append histograms to an existing ROOT file (update mode). The rewritten
+//! M6: append histograms to an existing ROOT file (update mode). The append is
+//! in place — existing objects (including subdirectories) never move — and the
 //! file must hold the original objects plus the new ones, readable by our reader
 //! (and, as separately verified, by official ROOT and uproot).
 
 use std::path::PathBuf;
 
 use oxiroot_hist::{ReadRoot, RootFile, WriteRoot, TH1, TH2};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::{Compression, RFile};
 
 #[test]
 fn appends_objects_to_an_existing_file() {
@@ -78,4 +79,66 @@ fn re_adding_a_name_bumps_the_cycle() {
     assert!(cycles.contains(&1) && cycles.contains(&2), "{cycles:?}");
     // Our reader returns the highest cycle (newest) -> v2.
     assert_eq!(TH1::read_root(&f, "h").unwrap(), v2, "newest cycle wins");
+}
+
+/// Appending into a file that already holds a subdirectory keeps the
+/// subdirectory and its objects intact (append-in-place never moves them).
+/// Verified separately against ROOT C++ and uproot.
+#[test]
+fn appends_to_a_file_with_a_subdirectory() {
+    let out = PathBuf::from("/tmp/rootrs_update_subdir.root");
+
+    let mut a = TH1::new(4, 0.0, 4.0).named("a").titled("root");
+    a.fill(0.5);
+    let mut s = TH1::new(3, 0.0, 3.0).named("s").titled("in subdir");
+    s.fill(1.5);
+    RootFile::create(&out)
+        .add(&a)
+        .dir("region", |d| d.add(&s))
+        .write(Compression::None)
+        .expect("create with subdir");
+
+    let mut b = TH1::new(2, 0.0, 2.0).named("b").titled("appended");
+    b.fill(0.5);
+    RootFile::open(&out)
+        .expect("open for append")
+        .add(&b)
+        .write(Compression::None)
+        .expect("append");
+
+    let f = RFile::open(&out).expect("reopen");
+    let names: Vec<&str> = f.keys().iter().map(|k| k.name.as_str()).collect();
+    assert!(
+        names.contains(&"a") && names.contains(&"region") && names.contains(&"b"),
+        "{names:?}"
+    );
+    assert_eq!(
+        TH1::read_root(&f, "a").unwrap(),
+        a,
+        "original root object survived"
+    );
+    assert_eq!(TH1::read_root(&f, "b").unwrap(), b, "appended object");
+    assert_eq!(
+        TH1::read_root_in(&f, "region", "s").unwrap(),
+        s,
+        "subdirectory object survived"
+    );
+}
+
+/// Adding a *new* subdirectory while appending is rejected (only top-directory
+/// objects can be appended; existing subdirectories are preserved untouched).
+#[test]
+fn adding_a_new_subdir_during_append_is_rejected() {
+    let out = PathBuf::from("/tmp/rootrs_update_newdir.root");
+    let mut a = TH1::new(4, 0.0, 4.0).named("a");
+    a.fill(0.5);
+    a.write_root(&out, Compression::None).expect("write");
+
+    let s = TH1::new(2, 0.0, 2.0).named("s");
+    let err = RootFile::open(&out)
+        .expect("open")
+        .dir("new", |d| d.add(&s))
+        .write(Compression::None)
+        .unwrap_err();
+    assert!(format!("{err}").contains("new subdirectories"), "{err}");
 }
