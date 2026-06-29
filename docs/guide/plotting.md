@@ -237,7 +237,14 @@ The default font is **STIX Two** — a LaTeX-like serif (STIX Two Text) paired w
 STIX Two Math for the `$…$` spans — so plots have a publication look out of the
 box, with text and math sharing one typeface. Both faces are bundled (OFL).
 
-Pick a different font with [`Axes::fonts`] (per panel) or `Style::with_fonts`:
+<figure markdown="span">
+  ![The same histogram rendered with STIX Two and with DejaVu Sans](../images/plot-font-stix.png){ width="49%" }
+  ![DejaVu Sans rendering](../images/plot-font-dejavu.png){ width="49%" }
+  <figcaption>The default STIX Two serif (left) vs. the matplotlib DejaVu Sans look (right, <code>FontSet::dejavu()</code>).</figcaption>
+</figure>
+
+Pick a different font per panel with `ax.fonts(…)`, or figure-wide with
+`Style::with_fonts(…)`:
 
 ```rust
 use oxiroot::plot::{Axes, FontSet};

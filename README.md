@@ -271,10 +271,10 @@ let same = TGraph::read_root(&RFile::open("graph.root")?, "res")?;
 Render histograms and graphs to **SVG, PNG, and PDF** with a matplotlib-like API and an
 mplhep histogram style — **pure Rust**, no matplotlib, no system fonts. One
 backend-independent draw IR fans out to a [`tiny-skia`](https://crates.io/crates/tiny-skia)
-raster (PNG) and a hand-written SVG, so the two outputs share identical geometry;
-DejaVu Sans (matplotlib's own default font) is bundled, and `$…$` labels are
-typeset as real LaTeX math by the pure-Rust [ReX](https://github.com/KenyC/ReX)
-TeX engine into the same IR.
+raster (PNG) and a hand-written SVG, so the two outputs share identical geometry.
+The default font is the bundled **STIX Two** (a LaTeX-like serif), and `$…$`
+labels are typeset as real LaTeX math by the pure-Rust
+[ReX](https://github.com/KenyC/ReX) TeX engine into the same IR.
 
 <p align="center">
   <img src="docs/images/plot-mass.png" alt="Z to mu mu candidates: filled MC template with data points overlaid" width="46%">
