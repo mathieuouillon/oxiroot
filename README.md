@@ -21,7 +21,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 📊 **Histograms & profiles** — `TH1`/`TH2`/`TH3` (every precision),
   `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`, N-dimensional `THnSparse`,
   and polygon-binned `TH2Poly` — all read **and** write.
-- 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, read and write.
+- 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, plus `TGraph2D`
+  and `TGraphMultiErrors` — read and write, including a graph's display frame
+  (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `TF1`).
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; multi-basket
   via a bounded-memory streaming writer.
@@ -255,6 +257,8 @@ cargo run -p oxiroot --example fit --features fit
 A single `TGraph` type covers all three ROOT classes, selected by its `errors`
 field: plain (`TGraph`), symmetric (`TGraphErrors`), or asymmetric
 (`TGraphAsymmErrors`); the class is detected on read by `TGraph::read_root`.
+`TGraph2D` (3-D scatter) and `TGraphMultiErrors` (several y-error layers) are
+separate types with the same read/write traits.
 
 ```rust
 use oxiroot::prelude::*;
@@ -264,6 +268,18 @@ let g = TGraph::with_errors(
 ).named("res").titled("resolution");
 g.write_root("graph.root", Compression::None)?;             // WriteRoot, like any object
 let same = TGraph::read_root(&RFile::open("graph.root")?, "res")?;
+```
+
+A graph also round-trips ROOT's display frame (`fHistogram`) and the fitted
+functions ROOT stores in `fFunctions` — read back as `GraphFunction`s (faithful
+`TF1`/`TFormula`) and re-evaluable in ROOT:
+
+```rust
+use oxiroot::prelude::*;
+let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])
+    .named("gfit")
+    .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
+g.write_root("gfit.root", Compression::None)?;
 ```
 
 ### Plotting (`oxiroot::plot`, `plot` feature)
