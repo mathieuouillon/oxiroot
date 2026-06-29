@@ -25,8 +25,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   and `TGraphMultiErrors` — read and write, including a graph's display frame
   (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `TF1`).
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
-  `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; multi-basket
-  via a bounded-memory streaming writer.
+  `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
+  structs, `std::vector<std::vector<T>>`, `TClonesArray`, and split single
+  objects; multi-basket via a bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**, fixed-size
   `std::array`/`std::bitset`, user classes, `std::set`/`std::map`), read
@@ -508,13 +509,6 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 Experimental (`0.0.x`). On the list — each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 
-- **`TTree`** — richer object/STL branches beyond split `std::vector<MyStruct>`
-  and `std::vector<std::string>` (nested structs, `std::vector<std::vector<T>>`,
-  `TClonesArray`). The streamer-info work is done end to end: the reader parses
-  `TTree`/`TBranch`/`TBranchElement` by walking the file's `TStreamerInfo` member
-  list (not fixed offsets), and the writer generates that streamer info from a
-  declarative table (no baked blobs); a bounded-memory streaming writer
-  (`TTreeWriter`) also ships.
 - **Append mode** — `update` into files that contain subdirectories or an
   RNTuple (currently rejected).
 - **Plotting** (shipped behind the `plot` feature) — next: per-experiment mplhep
