@@ -16,6 +16,7 @@ pub mod header;
 pub mod page;
 pub mod pagelist;
 pub mod reader;
+pub mod streamer;
 pub mod writer;
 
 pub use oxiroot_io_core::Compression;

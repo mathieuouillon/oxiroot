@@ -290,6 +290,36 @@ impl RNTuple {
                 }
                 Ok(FieldValues::Record(out))
             }
+            StructRole::Streamer => {
+                // An unsplit class blob: a per-entry Index column over a single
+                // Byte column. Interpret each blob with the class TStreamerInfo.
+                let index_ci = self.index_column(&columns).ok_or_else(|| {
+                    Error::Format(format!("streamer field {:?} has no index column", fld.name))
+                })?;
+                let byte_ci = *columns
+                    .iter()
+                    .find(|&&ci| !self.header.columns[ci].column_type.is_index())
+                    .ok_or_else(|| {
+                        Error::Format(format!("streamer field {:?} has no byte column", fld.name))
+                    })?;
+                let offsets = self.read_offsets(file, index_ci)?;
+                let bytes = match self.read_column(file, byte_ci)? {
+                    ColumnValues::Bytes(v) => v,
+                    other => {
+                        return Err(Error::Format(format!(
+                            "streamer field bytes decoded as {other:?}"
+                        )))
+                    }
+                };
+                let registry = file.streamer_registry()?;
+                let info = registry.get(&fld.type_name).ok_or_else(|| {
+                    Error::Format(format!(
+                        "streamer field {:?} has no TStreamerInfo for class {:?}",
+                        fld.name, fld.type_name
+                    ))
+                })?;
+                crate::streamer::decode(info, &offsets, &bytes)
+            }
             StructRole::Variant => {
                 // The variant field carries one Switch column of (index, tag);
                 // each sub-field is one densely-packed alternative.

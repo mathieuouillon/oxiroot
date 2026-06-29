@@ -156,6 +156,13 @@ fn parse_element_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Stre
 /// version wraps the `TStreamerElement` base, which carries the common members.
 fn parse_one_element(r: &mut RBuffer, element_class: &str) -> Result<StreamerElement> {
     let _subclass_version = r.read_version()?;
+    // `TStreamerSTLstring` wraps `TStreamerSTL`, which wraps `TStreamerElement`,
+    // so it carries one more version level than the other element subclasses
+    // (which wrap `TStreamerElement` directly). Skip the intermediate version so
+    // the `TStreamerElement` base lines up.
+    if element_class == "TStreamerSTLstring" {
+        let _stl_version = r.read_version()?;
+    }
     let element_base = r.read_version()?;
 
     let named = read_tnamed(r)?;
