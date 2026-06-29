@@ -509,10 +509,6 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 Experimental (`0.0.x`). On the list — each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 
-- **Plotting** (shipped behind the `plot` feature) — next: per-experiment mplhep
-  style presets (ATLAS/CMS/LHCb labels), subplot grids, and overlaying a fitted
-  `Model` curve on a histogram.
-
 Out of scope: ROOT 7 `RHist` (no persistable on-disk format — its `Streamer`
 throws) and reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) —
 the `plot` feature renders the data, it does not (de)serialize ROOT graphics.
