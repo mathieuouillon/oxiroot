@@ -323,7 +323,12 @@ ax2.save("heatmap.svg")?;
   `.svg`, **and `.pdf`** (a hand-written vector PDF). `SaveOpts` sets the **DPI**
   for a sharper PNG (`save_with(path, SaveOpts::new().dpi(300.0))`) or a
   transparent background; `to_png_bytes`/`to_svg_string` render in memory.
-- The default look reproduces a plain matplotlib figure (640×480, DejaVu Sans, the
+- **Fonts** — the default is **STIX Two** (a LaTeX-like serif: STIX Two Text +
+  STIX Two Math) for a publication look with text and math in one typeface.
+  `ax.fonts(FontSet::dejavu())` switches to the matplotlib sans-serif look, and
+  `FontSet::from_path("MyFont.otf")` / `from_paths(text, math)` plug in any
+  TrueType/OpenType font (the math font needs a `MATH` table).
+- The default look otherwise reproduces a plain matplotlib figure (640×480, the
   `tab10` color cycle, out-pointing ticks, 5 % margins, light grey grid);
   `Style::mplhep()` switches to in-pointing ticks on all four sides with minor ticks.
 - A worked example renders a Z → μμ overlay and a 2-D heatmap to PNG **and** SVG:

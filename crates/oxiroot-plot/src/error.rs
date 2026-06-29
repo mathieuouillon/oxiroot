@@ -14,6 +14,8 @@ pub enum Error {
     UnknownFormat(String),
     /// A figure dimension was zero or absurdly large.
     BadSize(String),
+    /// A custom font could not be parsed.
+    Font(String),
 }
 
 impl fmt::Display for Error {
@@ -28,6 +30,7 @@ impl fmt::Display for Error {
                 )
             }
             Error::BadSize(m) => write!(f, "invalid figure size: {m}"),
+            Error::Font(m) => write!(f, "font error: {m}"),
         }
     }
 }

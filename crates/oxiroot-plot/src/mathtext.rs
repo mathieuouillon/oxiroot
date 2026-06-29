@@ -1,12 +1,13 @@
 //! Label typesetting with `$…$` math spans.
 //!
 //! A label is split into plain-text and math runs. Plain text is laid out with
-//! the bundled DejaVu Sans; each `$…$` run is typeset by the ReX TeX engine
-//! (using the bundled Fira Math font) through a custom [`Backend`] that turns
-//! ReX's glyph/rule draw calls into the crate's own [`Path`]/polygon IR. Both
-//! kinds of run share one baseline, then the whole block is anchored and rotated
-//! exactly like [`crate::text::layout`]. A malformed math run falls back to a
-//! stripped plain-text rendering rather than failing.
+//! the active [`FontSet`]'s text face; each `$…$` run is typeset by the ReX TeX
+//! engine (using the `FontSet`'s OpenType MATH font, STIX Two Math by default)
+//! through a custom [`Backend`] that turns ReX's glyph/rule draw calls into the
+//! crate's own [`Path`]/polygon IR. Both kinds of run share one baseline, then
+//! the whole block is anchored and rotated exactly like [`crate::text::layout`].
+//! A malformed math run falls back to a stripped plain-text rendering rather than
+//! failing.
 
 use rex::font::backend::ttf_parser::TtfMathFont;
 use rex::font::common::GlyphId;
@@ -16,9 +17,8 @@ use rex::render::{Backend, Cursor, FontBackend, GraphicsBackend, Renderer, RGBA}
 
 use crate::color::Color;
 use crate::draw::{DrawCommand, DrawGroup, Path, Pt, Seg};
+use crate::fonts::FontSet;
 use crate::text::{self, FontStyle, HAlign, VAlign};
-
-static FIRA_MATH: &[u8] = include_bytes!("../assets/FiraMath-Regular.otf");
 
 /// A glyph outline or filled rule in a math run's local frame (baseline y = 0).
 enum LocalPrim {
@@ -61,6 +61,7 @@ impl LocalPrim {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn layout_label(
     g: &mut DrawGroup,
+    fonts: &FontSet,
     label: &str,
     x: f32,
     y: f32,
@@ -72,6 +73,7 @@ pub(crate) fn layout_label(
 ) {
     if !label.contains('$') {
         g.extend(text::layout(
+            fonts,
             label,
             x,
             y,
@@ -96,7 +98,7 @@ pub(crate) fn layout_label(
             continue;
         }
         if is_math {
-            if let Some((mut mp, w, a, d)) = render_math(&part, size_px) {
+            if let Some((mut mp, w, a, d)) = render_math(fonts, &part, size_px) {
                 for p in &mut mp {
                     p.offset_x(pen);
                 }
@@ -108,14 +110,14 @@ pub(crate) fn layout_label(
             }
             // Fallback: render the math source as plain text.
             let plain = strip_math(&part);
-            push_text_run(&mut prims, &plain, pen, size_px);
-            let ext = text::measure(&plain, size_px, FontStyle::Regular);
+            push_text_run(&mut prims, fonts, &plain, pen, size_px);
+            let ext = text::measure(fonts, &plain, size_px, FontStyle::Regular);
             pen += ext.width;
             ascent = ascent.max(ext.ascent);
             descent = descent.max(ext.descent);
         } else {
-            push_text_run(&mut prims, &part, pen, size_px);
-            let ext = text::measure(&part, size_px, FontStyle::Regular);
+            push_text_run(&mut prims, fonts, &part, pen, size_px);
+            let ext = text::measure(fonts, &part, size_px, FontStyle::Regular);
             pen += ext.width;
             ascent = ascent.max(ext.ascent);
             descent = descent.max(ext.descent);
@@ -157,8 +159,8 @@ pub(crate) fn layout_label(
     }
 }
 
-fn push_text_run(prims: &mut Vec<LocalPrim>, text: &str, pen: f32, size_px: f32) {
-    for mut p in text::glyph_paths_local(text, size_px, FontStyle::Regular) {
+fn push_text_run(prims: &mut Vec<LocalPrim>, fonts: &FontSet, text: &str, pen: f32, size_px: f32) {
+    for mut p in text::glyph_paths_local(fonts, text, size_px, FontStyle::Regular) {
         let mut lp = LocalPrim::Fill(std::mem::take(&mut p));
         lp.offset_x(pen);
         prims.push(lp);
@@ -208,8 +210,12 @@ fn split_runs(s: &str) -> Vec<(bool, String)> {
 
 /// Typeset one math run with ReX, returning local prims plus `(width, ascent,
 /// descent)` in pixels. `None` on a font or parse error.
-fn render_math(tex: &str, size_px: f32) -> Option<(Vec<LocalPrim>, f32, f32, f32)> {
-    let face = ttf_parser::Face::parse(FIRA_MATH, 0).ok()?;
+fn render_math(
+    fonts: &FontSet,
+    tex: &str,
+    size_px: f32,
+) -> Option<(Vec<LocalPrim>, f32, f32, f32)> {
+    let face = ttf_parser::Face::parse(fonts.math_bytes(), 0).ok()?;
     let font = TtfMathFont::new(face).ok()?;
     let engine = LayoutBuilder::new(&font)
         .font_size(f64::from(size_px))

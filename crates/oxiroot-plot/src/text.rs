@@ -1,51 +1,29 @@
-//! Text layout and rendering via bundled DejaVu Sans (matplotlib's default font).
+//! Text layout via the configured [`FontSet`] (STIX Two by default).
 //!
 //! Text is converted to filled glyph-outline [`Path`]s in pixel coordinates, so
 //! the raster (tiny-skia) and SVG renderers draw identical glyphs — the output
 //! is self-contained and font-independent on the viewer's side.
 
-use std::sync::OnceLock;
-
-use ab_glyph::{Font, FontRef, OutlineCurve};
+use ab_glyph::{Font, OutlineCurve};
 
 use crate::color::Color;
 use crate::draw::{DrawCommand, Path, Pt, Seg};
+use crate::fonts::FontSet;
 
-/// Font weight/slant, mirroring matplotlib's `normal`/`bold`/`italic`.
+/// Font weight/slant, mirroring matplotlib's `normal`/`bold`/`italic`. The face
+/// for each is taken from the active [`FontSet`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FontStyle {
     /// Upright regular.
     #[default]
     Regular,
-    /// Bold (bundled DejaVu Sans Bold). Supported by the layout engine; no
-    /// current artist requests it.
+    /// Bold. Supported by the layout engine; no current artist requests it.
     #[allow(dead_code)]
     Bold,
-    /// Oblique/italic (bundled DejaVu Sans Oblique). Supported by the layout
-    /// engine; no current artist requests it.
+    /// Oblique/italic. Supported by the layout engine; no current artist
+    /// requests it.
     #[allow(dead_code)]
     Italic,
-}
-
-static DEJAVU_REGULAR: &[u8] = include_bytes!("../assets/DejaVuSans.ttf");
-static DEJAVU_BOLD: &[u8] = include_bytes!("../assets/DejaVuSans-Bold.ttf");
-static DEJAVU_OBLIQUE: &[u8] = include_bytes!("../assets/DejaVuSans-Oblique.ttf");
-
-fn face(style: FontStyle) -> &'static FontRef<'static> {
-    fn load(
-        bytes: &'static [u8],
-        cell: &'static OnceLock<FontRef<'static>>,
-    ) -> &'static FontRef<'static> {
-        cell.get_or_init(|| FontRef::try_from_slice(bytes).expect("bundled DejaVu Sans is valid"))
-    }
-    static REG: OnceLock<FontRef<'static>> = OnceLock::new();
-    static BOLD: OnceLock<FontRef<'static>> = OnceLock::new();
-    static OBL: OnceLock<FontRef<'static>> = OnceLock::new();
-    match style {
-        FontStyle::Regular => load(DEJAVU_REGULAR, &REG),
-        FontStyle::Bold => load(DEJAVU_BOLD, &BOLD),
-        FontStyle::Italic => load(DEJAVU_OBLIQUE, &OBL),
-    }
 }
 
 /// Horizontal anchor of a text block relative to its draw position.
@@ -95,8 +73,8 @@ impl TextExtents {
 
 /// Measure a single-line string rendered at `size_px` in the given style.
 #[must_use]
-pub fn measure(text: &str, size_px: f32, style: FontStyle) -> TextExtents {
-    let font = face(style);
+pub fn measure(fonts: &FontSet, text: &str, size_px: f32, style: FontStyle) -> TextExtents {
+    let font = fonts.face(style);
     let upem = font.units_per_em().unwrap_or(2048.0);
     let f = size_px / upem;
     let mut width = 0.0;
@@ -124,6 +102,7 @@ pub fn measure(text: &str, size_px: f32, style: FontStyle) -> TextExtents {
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn layout(
+    fonts: &FontSet,
     text: &str,
     x: f32,
     y: f32,
@@ -134,10 +113,10 @@ pub fn layout(
     valign: VAlign,
     rotation_deg: f32,
 ) -> Vec<DrawCommand> {
-    let font = face(style);
+    let font = fonts.face(style);
     let upem = font.units_per_em().unwrap_or(2048.0);
     let f = size_px / upem;
-    let ext = measure(text, size_px, style);
+    let ext = measure(fonts, text, size_px, style);
 
     // Pen start (local x of the first glyph origin) from the horizontal anchor.
     let mut pen = match halign {
@@ -185,8 +164,13 @@ pub fn layout(
 
 /// Glyph outline paths for a string in a **local** frame: baseline at `y = 0`,
 /// pen starting at `x = 0`. Used by the mixed text+math label layout.
-pub(crate) fn glyph_paths_local(text: &str, size_px: f32, style: FontStyle) -> Vec<Path> {
-    let font = face(style);
+pub(crate) fn glyph_paths_local(
+    fonts: &FontSet,
+    text: &str,
+    size_px: f32,
+    style: FontStyle,
+) -> Vec<Path> {
+    let font = fonts.face(style);
     let upem = font.units_per_em().unwrap_or(2048.0);
     let f = size_px / upem;
     let mut pen = 0.0;

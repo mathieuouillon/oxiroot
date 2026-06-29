@@ -6,7 +6,7 @@
 
 use oxiroot_hist::{TGraph, TProfile, TH1, TH2};
 use oxiroot_plot::{
-    ratio_subplots, subplots, subplots_grid, Axes, Color, CurveOpts, Error, ErrorbarOpts,
+    ratio_subplots, subplots, subplots_grid, Axes, Color, CurveOpts, Error, ErrorbarOpts, FontSet,
     Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
 };
 
@@ -492,4 +492,71 @@ fn mplhep_style_renders() {
     ax.grid_minor();
     ax.legend();
     assert!(ax.to_svg_string().contains("<svg"));
+}
+
+// --- fonts ---------------------------------------------------------------------
+
+#[test]
+fn builtin_font_sets_render() {
+    let h = gauss_hist();
+    for fonts in [FontSet::stix(), FontSet::dejavu(), FontSet::default()] {
+        let mut ax = Axes::new();
+        ax.fonts(fonts);
+        ax.hist(&h);
+        ax.xlabel("$\\Sigma$ [GeV]");
+        let svg = ax.to_svg_string();
+        assert!(svg.starts_with("<svg") && svg.contains("<path"));
+    }
+}
+
+#[test]
+fn font_choice_changes_the_glyphs() {
+    // Switching the font set must actually change the rendered glyph paths.
+    let render = |fonts: FontSet| {
+        let mut ax = Axes::new();
+        ax.fonts(fonts);
+        ax.xlabel("Events / 2 GeV");
+        ax.hist(&gauss_hist());
+        ax.to_svg_string()
+    };
+    assert_ne!(
+        render(FontSet::stix()),
+        render(FontSet::dejavu()),
+        "STIX and DejaVu should produce different glyph outlines"
+    );
+}
+
+#[test]
+fn custom_text_font_from_bytes_renders() {
+    // A real font, embedded from the crate's own assets (so the test is
+    // environment-independent), drives the custom-font path.
+    static DEJAVU: &[u8] = include_bytes!("../assets/DejaVuSans.ttf");
+    let fonts = FontSet::from_font(DEJAVU).expect("DejaVu is a valid font");
+    let mut ax = Axes::new();
+    ax.fonts(fonts);
+    ax.hist(&gauss_hist());
+    ax.xlabel("custom font");
+    assert!(ax.to_svg_string().contains("<path"));
+}
+
+#[test]
+fn custom_text_and_math_fonts_render() {
+    static DEJAVU: &[u8] = include_bytes!("../assets/DejaVuSans.ttf");
+    static MATH: &[u8] = include_bytes!("../assets/STIXTwoMath-Regular.otf");
+    let fonts = FontSet::from_fonts(DEJAVU, MATH).expect("valid text + math fonts");
+    let mut ax = Axes::new();
+    ax.fonts(fonts);
+    ax.xlabel("$\\frac{1}{\\sqrt{2}}$"); // exercises the custom math font
+    ax.hist(&gauss_hist());
+    assert!(ax.to_svg_string().contains("<path"));
+}
+
+#[test]
+fn custom_font_rejects_garbage() {
+    assert!(FontSet::from_font(b"definitely not a font").is_err());
+    static DEJAVU: &[u8] = include_bytes!("../assets/DejaVuSans.ttf");
+    assert!(
+        FontSet::from_fonts(DEJAVU, b"not a math font").is_err(),
+        "a non-font math argument must be rejected"
+    );
 }

@@ -62,8 +62,9 @@ pub(crate) fn draw_colorbar(g: &mut DrawGroup, rect: Rect, spec: &ColorbarSpec, 
             p1: (rect.right() + tlen, py),
             stroke: tickstroke.clone(),
         });
-        max_w = max_w.max(text::measure(lab, tlab, FontStyle::Regular).width);
+        max_w = max_w.max(text::measure(&s.fonts, lab, tlab, FontStyle::Regular).width);
         g.extend(text::layout(
+            &s.fonts,
             lab,
             rect.right() + tlen + pad,
             py,
@@ -81,6 +82,7 @@ pub(crate) fn draw_colorbar(g: &mut DrawGroup, rect: Rect, spec: &ColorbarSpec, 
         let x = rect.right() + tlen + pad + max_w + s.px(6.0);
         crate::mathtext::layout_label(
             g,
+            &s.fonts,
             lbl,
             x,
             rect.y + rect.h / 2.0,

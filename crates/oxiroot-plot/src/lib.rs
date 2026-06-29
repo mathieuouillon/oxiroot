@@ -5,9 +5,9 @@
 //! mplhep-style histogram look — no ROOT, no matplotlib, no system fonts.
 //! Everything is drawn through one backend-independent draw IR that fans out
 //! to a tiny-skia raster (PNG), a hand-written SVG, and a hand-written PDF, so
-//! the three outputs share identical geometry. DejaVu Sans (matplotlib's own
-//! default font) is bundled, and `$…$` math is typeset with the ReX TeX engine
-//! into the same IR.
+//! the three outputs share identical geometry. The default font is STIX Two (a
+//! LaTeX-like serif; see [`FontSet`]), and `$…$` math is typeset with the ReX
+//! TeX engine into the same IR.
 //!
 //! # What it can draw
 //!
@@ -85,6 +85,7 @@ pub mod cmap;
 pub mod color;
 pub mod error;
 pub mod figure;
+pub mod fonts;
 pub mod gridspec;
 pub mod style;
 
@@ -110,6 +111,7 @@ pub use figure::{
     ratio_subplots, ratio_subplots_with, subplots, subplots_grid, subplots_grid_with,
     subplots_with, Figure, SaveOpts,
 };
+pub use fonts::FontSet;
 pub use gridspec::GridSpec;
 pub use style::Style;
 
@@ -152,7 +154,9 @@ mod tests {
             fill: None,
             stroke: Some(Stroke::line(Color::BLACK, 1.0)),
         });
+        let fonts = FontSet::stix();
         g.extend(text::layout(
+            &fonts,
             "oxiroot 0123",
             20.0,
             60.0,
@@ -238,9 +242,11 @@ mod tests {
     #[test]
     fn math_label_emits_glyph_paths() {
         use draw::{DrawCommand, DrawGroup};
+        let fonts = FontSet::stix();
         let mut g = DrawGroup::new(None);
         mathtext::layout_label(
             &mut g,
+            &fonts,
             "$\\frac{1}{\\sqrt{2\\pi}}\\, e^{-x^2/2}$",
             10.0,
             40.0,

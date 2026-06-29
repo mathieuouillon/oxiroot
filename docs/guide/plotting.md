@@ -18,8 +18,8 @@ oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", features = ["plot
 !!! note "How it works"
     One backend-independent draw IR fans out to a [`tiny-skia`](https://crates.io/crates/tiny-skia)
     raster (PNG) and a hand-written SVG, so the two outputs share identical
-    geometry. DejaVu Sans (matplotlib's own default font) is bundled and
-    text is reduced to glyph outlines, so the SVG is self-contained. `$…$`
+    geometry. The fonts (STIX Two by default — see [Fonts](#fonts)) are bundled
+    and text is reduced to glyph outlines, so the SVG is self-contained. `$…$`
     labels are typeset as real LaTeX math by the pure-Rust
     [ReX](https://github.com/KenyC/ReX) TeX engine into the same IR. The `plot`
     feature pulls a pinned git dependency on ReX (it is not on crates.io).
@@ -231,12 +231,45 @@ render without touching the filesystem, `ax.to_svg_string()`,
 `ax.to_png_bytes(SaveOpts::new())`, and `ax.to_pdf_bytes()` return the bytes
 directly (and the same three methods exist on `Figure`).
 
+## Fonts
+
+The default font is **STIX Two** — a LaTeX-like serif (STIX Two Text) paired with
+STIX Two Math for the `$…$` spans — so plots have a publication look out of the
+box, with text and math sharing one typeface. Both faces are bundled (OFL).
+
+Pick a different font with [`Axes::fonts`] (per panel) or `Style::with_fonts`:
+
+```rust
+use oxiroot::plot::{Axes, FontSet};
+
+// The matplotlib sans-serif look (DejaVu Sans text, STIX Two Math for `$…$`):
+let mut ax = Axes::new();
+ax.fonts(FontSet::dejavu());
+
+// A custom font from disk — STIX Two Math is kept for the math spans:
+let mut ax = Axes::new();
+ax.fonts(FontSet::from_path("/path/to/MyFont.otf")?);
+
+// A custom text font *and* a custom OpenType MATH font:
+let mut ax = Axes::new();
+ax.fonts(FontSet::from_paths("Text.otf", "Math.otf")?);
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+`FontSet` accepts any TrueType/OpenType text font; the math font must be an
+OpenType font with a `MATH` table (e.g. STIX Two Math, XITS Math, Latin Modern
+Math). `FontSet::from_font(bytes)` / `from_fonts(text, math)` take raw bytes if
+you embed your own. For a whole figure, set the font on the `Style` passed to
+`subplots_grid_with` (`Style::default().with_fonts(FontSet::dejavu())`).
+
 ## Style
 
-The default look reproduces a plain matplotlib figure: 640×480 px, DejaVu Sans,
-the `tab10` color cycle, a black rectangular frame, out-pointing major ticks on
-the bottom and left, and 5 % data margins. `Style::mplhep()` switches to
-in-pointing ticks on all four sides with minor ticks and a frameless legend.
+The default look reproduces a plain matplotlib figure: 640×480 px, the `tab10`
+color cycle, a black rectangular frame, out-pointing major ticks on the bottom
+and left, and 5 % data margins — but with the STIX Two LaTeX font (use
+`FontSet::dejavu()` for the matplotlib sans-serif look). `Style::mplhep()`
+switches to in-pointing ticks on all four sides with minor ticks and a frameless
+legend.
 
 ```rust
 use oxiroot::plot::{Axes, Style};
@@ -244,8 +277,8 @@ use oxiroot::plot::{Axes, Style};
 let mut ax = Axes::with_style(Style::mplhep());
 ```
 
-A `Style` exposes the figure size, dpi, fonts, colors, tick geometry, and margins
-if you need to customize further.
+A `Style` exposes the figure size, dpi, [`fonts`](#fonts), colors, tick geometry,
+and margins if you need to customize further.
 
 ## Math labels
 

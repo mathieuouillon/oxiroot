@@ -7,6 +7,7 @@
 //! `tab10` color cycle, no grid, no minor ticks, and a 5 % data margin.
 
 use crate::color::{Color, TAB10};
+use crate::fonts::FontSet;
 
 /// Tick direction (matplotlib `xtick.direction`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -88,6 +89,8 @@ pub struct Style {
     pub margins_frac: (f32, f32, f32, f32),
     /// Whether the legend draws a frame box.
     pub legend_frame: bool,
+    /// Text + math fonts (default: STIX Two — a LaTeX-like serif).
+    pub fonts: FontSet,
 }
 
 impl Default for Style {
@@ -127,11 +130,25 @@ impl Default for Style {
             // are taller than plain text; right/top widen to keep the plot area.
             margins_frac: (0.135, 0.93, 0.145, 0.91),
             legend_frame: true,
+            fonts: FontSet::stix(),
         }
     }
 }
 
 impl Style {
+    /// Set the font set (text + math), returning the modified style.
+    ///
+    /// # Examples
+    /// ```
+    /// use oxiroot_plot::{FontSet, Style};
+    /// let style = Style::default().with_fonts(FontSet::dejavu()); // matplotlib look
+    /// ```
+    #[must_use]
+    pub fn with_fonts(mut self, fonts: FontSet) -> Self {
+        self.fonts = fonts;
+        self
+    }
+
     /// Convert a point size to device pixels at this style's dpi.
     #[must_use]
     pub fn px(&self, pt: f32) -> f32 {

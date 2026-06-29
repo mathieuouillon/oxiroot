@@ -163,6 +163,20 @@ impl Axes {
         self
     }
 
+    /// Set the text + math fonts (e.g. `FontSet::dejavu()` for the matplotlib
+    /// look, or a custom font from `FontSet::from_path`).
+    ///
+    /// # Examples
+    /// ```
+    /// # use oxiroot_plot::{Axes, FontSet};
+    /// let mut ax = Axes::new();
+    /// ax.fonts(FontSet::dejavu());
+    /// ```
+    pub fn fonts(&mut self, fonts: crate::fonts::FontSet) -> &mut Self {
+        self.style.fonts = fonts;
+        self
+    }
+
     /// The resolved x-axis limits (for sharing the x-axis across panels).
     #[must_use]
     pub(crate) fn resolved_xlim(&self) -> (f64, f64) {
@@ -778,6 +792,7 @@ impl Axes {
             for (&xv, lab) in xticks.iter().zip(&xlabels) {
                 let px = t.x(xv);
                 axis.extend(text::layout(
+                    &s.fonts,
                     lab,
                     px,
                     label_y,
@@ -797,12 +812,14 @@ impl Axes {
         if self.show_yticklabels {
             for (i, (&yv, lab)) in yticks.iter().zip(&ylabels).enumerate() {
                 let py = t.y(yv);
-                max_ylabel_w = max_ylabel_w.max(text::measure(lab, tlab, FontStyle::Regular).width);
+                max_ylabel_w =
+                    max_ylabel_w.max(text::measure(&s.fonts, lab, tlab, FontStyle::Regular).width);
                 // yticks are ascending: index 0 is the bottom-most, last is the top.
                 if (self.ylabel_prune.0 && i == 0) || (self.ylabel_prune.1 && i + 1 == nyt) {
                     continue;
                 }
                 axis.extend(text::layout(
+                    &s.fonts,
                     lab,
                     label_x,
                     py,
@@ -819,10 +836,11 @@ impl Axes {
         // Axis labels.
         let labsize = s.px(s.label_size_pt);
         if let (Some(xl), true) = (&self.xlabel, self.show_xticklabels) {
-            let tick_h = text::measure("0", tlab, FontStyle::Regular).height();
+            let tick_h = text::measure(&s.fonts, "0", tlab, FontStyle::Regular).height();
             let y = label_y + tick_h + s.px(4.0);
             crate::mathtext::layout_label(
                 &mut axis,
+                &s.fonts,
                 xl,
                 box_.x + box_.w / 2.0,
                 y,
@@ -837,6 +855,7 @@ impl Axes {
             let x = label_x - max_ylabel_w - s.px(4.0);
             crate::mathtext::layout_label(
                 &mut axis,
+                &s.fonts,
                 yl,
                 x,
                 box_.y + box_.h / 2.0,
@@ -851,6 +870,7 @@ impl Axes {
             let y = box_.y - s.px(6.0);
             crate::mathtext::layout_label(
                 &mut axis,
+                &s.fonts,
                 tt,
                 box_.x + box_.w / 2.0,
                 y,

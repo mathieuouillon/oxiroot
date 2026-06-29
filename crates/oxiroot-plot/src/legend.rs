@@ -22,7 +22,7 @@ pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
 
     let max_w = items
         .iter()
-        .map(|it| text::measure(&it.label, fs, FontStyle::Regular).width)
+        .map(|it| text::measure(&s.fonts, &it.label, fs, FontStyle::Regular).width)
         .fold(0.0_f32, f32::max);
 
     let box_w = pad + handle_w + gap + max_w + pad;
@@ -88,6 +88,7 @@ pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
         // Labels go through the math layout so `$…$` renders like axis labels.
         crate::mathtext::layout_label(
             g,
+            &s.fonts,
             &it.label,
             hx1 + gap,
             cy,

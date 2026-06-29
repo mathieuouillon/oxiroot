@@ -239,6 +239,7 @@ impl Figure {
             let mut g = DrawGroup::new(None);
             crate::mathtext::layout_label(
                 &mut g,
+                &s.fonts,
                 text,
                 w as f32 / 2.0,
                 y,
