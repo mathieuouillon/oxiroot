@@ -126,5 +126,33 @@ fn concat_values(parts: Vec<BranchValues>, name: &str) -> Result<BranchValues> {
         VecF64(mut v) => cat!(VecF64, v),
         Str(mut v) => cat!(Str, v),
         VecStr(mut v) => cat!(VecStr, v),
+        Nested {
+            offsets: mut acc_off,
+            items,
+        } => {
+            // Concatenate offsets (rebased onto the running total) and recurse to
+            // concatenate the flattened inner collections.
+            let mut acc_items = vec![*items];
+            for p in it {
+                match p {
+                    Nested { offsets, items } => {
+                        let base = acc_off.last().copied().unwrap_or(0);
+                        acc_off.extend(offsets.iter().skip(1).map(|&o| o + base));
+                        acc_items.push(*items);
+                    }
+                    other => {
+                        return Err(Error::Format(format!(
+                            "branch {name:?} has inconsistent types across the chain \
+                             (got {:?})",
+                            other.leaf_type()
+                        )))
+                    }
+                }
+            }
+            Nested {
+                offsets: acc_off,
+                items: Box::new(concat_values(acc_items, name)?),
+            }
+        }
     })
 }

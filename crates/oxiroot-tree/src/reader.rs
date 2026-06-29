@@ -64,6 +64,10 @@ struct Branch {
     /// `[N, M]` for a multidimensional `x[N][M]`, empty for a scalar. The data is
     /// stored row-major flat (`fLen` = the product); this records the split.
     dims: Vec<usize>,
+    /// Set for a `std::vector<std::vector<T>>` branch: `T`'s element type. The
+    /// entry data is decoded as a doubly-nested collection ([`BranchValues::Nested`])
+    /// rather than a flat jagged array.
+    nested_elem: Option<LeafType>,
 }
 
 /// One `TLeaf` of a branch: its name/title, element type, fixed length, and byte
@@ -368,6 +372,13 @@ fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<BranchValues> {
         return decode_scalar(branch.leaf_type, &bytes);
     }
 
+    // A `std::vector<std::vector<T>>`: each entry's region is the outer vector's
+    // 10-byte streamer header (whose last 4 bytes are the outer count) followed
+    // by the inner vectors, each a `{count, elements}` block.
+    if let Some(elem) = branch.nested_elem {
+        return decode_nested_vec(&entry_regions_variable(baskets)?, elem);
+    }
+
     let variable = baskets.iter().any(|b| b.entry_offsets.is_some());
     if branch.leaf_type == LeafType::Str {
         // A `std::vector<std::string>` branch carries a 10-byte streamer header
@@ -446,6 +457,21 @@ fn slice_values(bv: BranchValues, offset: usize, len: usize) -> BranchValues {
         VecF64(v) => sl!(VecF64, v),
         Str(v) => sl!(Str, v),
         VecStr(v) => sl!(VecStr, v),
+        Nested { offsets, items } => {
+            // Slice the entry range, then slice `items` to the covered inner
+            // vectors and rebase the offsets to start at 0.
+            let n = offsets.len().saturating_sub(1);
+            let end = offset.saturating_add(len).min(n);
+            let start = offset.min(end);
+            let item_start = offsets[start] as usize;
+            let item_end = offsets[end] as usize;
+            let base = offsets[start];
+            let new_offsets = offsets[start..=end].iter().map(|&o| o - base).collect();
+            BranchValues::Nested {
+                offsets: new_offsets,
+                items: Box::new(slice_values(*items, item_start, item_end - item_start)),
+            }
+        }
     }
 }
 
@@ -838,6 +864,7 @@ fn read_branch(
             elem_header: 0,
             leaflist: None,
             dims: parse_dims(&leaf.title),
+            nested_elem: None,
         }]);
     }
 
@@ -861,6 +888,7 @@ fn read_branch(
             elem_header: 0,
             leaflist: Some((leaf.offset, stride)),
             dims: parse_dims(&leaf.title),
+            nested_elem: None,
         })
         .collect();
     Ok(out)
@@ -906,11 +934,21 @@ fn read_branch_element(
         return Ok(sub);
     }
 
+    // An unsplit `std::vector<std::vector<T>>` (`0`) reads as a doubly-nested
+    // collection: the inner element type drives a [`BranchValues::Nested`].
+    let nested_elem = if f_type == 0 {
+        parse_nested_vector_elem(&class_name)
+    } else {
+        None
+    };
+
     // A member sub-branch (STL `41`, TClonesArray `31`) is a jagged array typed
     // by fStreamerType, with no per-entry header. An unsplit branch (`0`) is the
     // whole `std::vector<T>` typed by fClassName, with the 10-byte header.
     let member = f_type == 41 || f_type == 31;
-    let leaf_type = if member {
+    let leaf_type = if let Some(elem) = nested_elem {
+        Some(elem) // the flat element type backing the nested collection
+    } else if member {
         streamer_type_to_leaf(f_streamer_type)
     } else {
         parse_vector_elem(&class_name)
@@ -933,6 +971,7 @@ fn read_branch_element(
         elem_header: if member { 0 } else { 10 },
         leaflist: None,
         dims: Vec::new(),
+        nested_elem,
     }])
 }
 
@@ -955,15 +994,21 @@ fn streamer_type_to_leaf(st: i32) -> Option<LeafType> {
     })
 }
 
-/// Map a `std::vector<T>` class name to its element [`LeafType`], or `None` for
-/// an unsupported element type.
-fn parse_vector_elem(class_name: &str) -> Option<LeafType> {
-    let inner = class_name
-        .strip_prefix("vector<")
-        .or_else(|| class_name.strip_prefix("std::vector<"))?
-        .strip_suffix('>')?
-        .trim();
-    Some(match inner {
+/// Strip a `vector<...>` / `std::vector<...>` wrapper, returning the (trimmed)
+/// element type spelling.
+fn strip_vector(class_name: &str) -> Option<&str> {
+    Some(
+        class_name
+            .strip_prefix("vector<")
+            .or_else(|| class_name.strip_prefix("std::vector<"))?
+            .strip_suffix('>')?
+            .trim(),
+    )
+}
+
+/// Map a C++ fundamental type name to its [`LeafType`], or `None` if unsupported.
+fn basic_leaf_type(name: &str) -> Option<LeafType> {
+    Some(match name {
         "float" => LeafType::F32,
         "double" => LeafType::F64,
         "int" | "Int_t" => LeafType::I32,
@@ -979,6 +1024,25 @@ fn parse_vector_elem(class_name: &str) -> Option<LeafType> {
         "string" | "std::string" => LeafType::Str,
         _ => return None,
     })
+}
+
+/// Map a `std::vector<T>` class name to its element [`LeafType`], or `None` for
+/// an unsupported element type.
+fn parse_vector_elem(class_name: &str) -> Option<LeafType> {
+    basic_leaf_type(strip_vector(class_name)?)
+}
+
+/// Map a `std::vector<std::vector<T>>` class name to `T`'s element [`LeafType`],
+/// or `None` if it is not a doubly-nested vector of a supported basic type.
+/// `std::vector<std::vector<std::string>>` is excluded (the inner string
+/// decoding does not compose with the nested reader).
+fn parse_nested_vector_elem(class_name: &str) -> Option<LeafType> {
+    let inner = strip_vector(class_name)?; // e.g. "vector<int>"
+    let elem = basic_leaf_type(strip_vector(inner)?)?;
+    if elem == LeafType::Str {
+        return None;
+    }
+    Some(elem)
 }
 
 /// Read a `TObjArray` of `TLeaf`s, returning `(type, fLen)` for each supported
@@ -1143,6 +1207,51 @@ fn decode_array(leaf: LeafType, regions: &[&[u8]]) -> Result<BranchValues> {
         LeafType::F64 => be!(VecF64, f64, 8),
         LeafType::Str => return Err(Error::Format("string branch decoded as array".into())),
     })
+}
+
+/// Decode `std::vector<std::vector<T>>` entries into a [`BranchValues::Nested`].
+/// Each region is the outer vector's 10-byte streamer header (byte count +
+/// version + outer count) followed by that many inner vectors, each a `u32`
+/// element count then the contiguous big-endian elements. The flattened inner
+/// vectors become `items` (a `Vec*` of element type `elem`), partitioned per
+/// entry by the cumulative `offsets`.
+fn decode_nested_vec(regions: &[&[u8]], elem: LeafType) -> Result<BranchValues> {
+    let size = elem.size();
+    let mut offsets = Vec::with_capacity(regions.len() + 1);
+    offsets.push(0u64);
+    let mut total = 0u64;
+    let mut inner: Vec<&[u8]> = Vec::new();
+    for region in regions {
+        if region.len() >= 10 {
+            // The outer count is the last 4 bytes of the 10-byte header.
+            let outer = u32::from_be_bytes(region[6..10].try_into().unwrap()) as usize;
+            let mut pos = 10;
+            for _ in 0..outer {
+                let count = u32::from_be_bytes(
+                    region
+                        .get(pos..pos + 4)
+                        .ok_or_else(short_entry)?
+                        .try_into()
+                        .unwrap(),
+                ) as usize;
+                pos += 4;
+                let nbytes = count * size;
+                inner.push(region.get(pos..pos + nbytes).ok_or_else(short_entry)?);
+                pos += nbytes;
+            }
+            total += outer as u64;
+        }
+        offsets.push(total);
+    }
+    Ok(BranchValues::Nested {
+        offsets,
+        items: Box::new(decode_array(elem, &inner)?),
+    })
+}
+
+/// Error for a `std::vector<std::vector<T>>` entry that ends mid-element.
+fn short_entry() -> Error {
+    Error::Format("nested vector entry truncated".into())
 }
 
 /// Decode `std::vector<std::string>` entries: each region is a 10-byte streamer

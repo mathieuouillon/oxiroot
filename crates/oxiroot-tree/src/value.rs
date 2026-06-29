@@ -118,6 +118,17 @@ pub enum BranchValues {
     Str(Vec<String>),
     /// Per-entry `std::vector<std::string>`.
     VecStr(Vec<Vec<String>>),
+    /// A doubly-nested collection (`std::vector<std::vector<T>>`): the cumulative
+    /// `offsets` (one per entry, plus a leading `0`) partition the flattened
+    /// `items`, whose own per-element values are the inner vectors. Entry `i`'s
+    /// value is `items[offsets[i] .. offsets[i+1]]` — a list of inner vectors.
+    Nested {
+        /// Cumulative per-entry boundaries into `items`, with a leading `0`.
+        offsets: Vec<u64>,
+        /// The flattened inner collections (a `Vec*` variant, one element per
+        /// inner vector across all entries).
+        items: Box<BranchValues>,
+    },
 }
 
 /// A jagged (or array) branch viewed as cumulative `offsets` over one flat
@@ -179,6 +190,7 @@ impl BranchValues {
             VecF64(v) => v.len(),
             Str(v) => v.len(),
             VecStr(v) => v.len(),
+            Nested { offsets, .. } => offsets.len().saturating_sub(1),
         }
     }
 
@@ -205,6 +217,7 @@ impl BranchValues {
             F32(_) | VecF32(_) => LeafType::F32,
             F64(_) | VecF64(_) => LeafType::F64,
             Str(_) | VecStr(_) => LeafType::Str,
+            Nested { items, .. } => items.leaf_type(),
         }
     }
 }

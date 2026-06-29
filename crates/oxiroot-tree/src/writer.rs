@@ -35,6 +35,11 @@ const K_MAP_OFFSET: u32 = 2;
 /// back to it the way ROOT does.
 type LeafRefs = HashMap<String, u32>;
 
+/// A write [`Branch`] is only ever built through the typed constructors, none of
+/// which produce a [`BranchValues::Nested`] (a read-only doubly-nested
+/// collection), so the writer's value matches never see one.
+const NESTED_NOT_WRITABLE: &str = "a write Branch is never built with a Nested value";
+
 /// One named branch to write. Use the typed constructors: [`Branch::i32`] … for
 /// scalars, [`Branch::vec_f64`] … for fixed-size arrays, [`Branch::jagged_f64`] …
 /// for variable-length arrays, [`Branch::strings`] for strings.
@@ -426,6 +431,7 @@ impl Branch {
             VecF64(r) => r.len(),
             Str(v) => v.len(),
             VecStr(v) => v.len(),
+            Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
         };
         n as u32
     }
@@ -448,6 +454,7 @@ impl Branch {
             F64(_) | VecF64(_) => ("TLeafD", 'D', 8, false),
             // vector<string> is read-only; it never reaches the writer.
             Str(_) | VecStr(_) => ("TLeafC", 'C', 1, false),
+            Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
         };
         let len_type = if matches!(self.values, Str(_)) || self.stl_vector() {
             0
@@ -732,6 +739,7 @@ impl Branch {
             }
             // vector<string> is read-only; the writer never receives one.
             VecStr(_) => unreachable!("vector<string> branches cannot be written"),
+            Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
         };
         // A jagged numeric branch is variable-length too: emit the byte offset
         // after each row (element count × element width).
@@ -1670,6 +1678,7 @@ fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> BranchValues {
         VecF64(v) => sl!(VecF64, v),
         Str(v) => sl!(Str, v),
         VecStr(v) => sl!(VecStr, v),
+        Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
     }
 }
 
