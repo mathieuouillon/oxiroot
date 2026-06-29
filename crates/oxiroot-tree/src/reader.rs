@@ -86,7 +86,9 @@ impl TTree {
         let key = file
             .key(name)
             .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
-        if key.class_name != "TTree" {
+        // `TNtuple` / `TNtupleD` are `TTree` subclasses (a `TTree` base wrapped in
+        // one extra header plus a trailing `Int_t fNvar`); read them as trees too.
+        if !matches!(key.class_name.as_str(), "TTree" | "TNtuple" | "TNtupleD") {
             return Err(Error::Format(format!(
                 "key {name:?} is a {}, not a TTree",
                 key.class_name
@@ -100,7 +102,7 @@ impl TTree {
         let payload = key.payload(file.data())?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing TTree: {e}")))?;
-        let mut tree = read_tree(&object, key.key_len as usize, &registry)?;
+        let mut tree = read_tree(&object, key.key_len as usize, &registry, &key.class_name)?;
         tree.streamer_classes = registry
             .infos()
             .iter()
@@ -684,13 +686,26 @@ fn read_base(
 
 /// Parse a decompressed `TTree` object (`keylen` is its key's header length),
 /// driving the member layout from the file's `TStreamerInfo`.
-fn read_tree(object: &[u8], keylen: usize, reg: &StreamerRegistry) -> Result<TTree> {
+fn read_tree(
+    object: &[u8],
+    keylen: usize,
+    reg: &StreamerRegistry,
+    class_name: &str,
+) -> Result<TTree> {
     let info = reg.get("TTree").ok_or_else(|| {
         Error::Format("file has no TStreamerInfo for TTree; cannot parse the tree".to_string())
     })?;
     let mut r = RBuffer::new(object);
     let mut tags = TagReader::new(keylen);
 
+    // A `TNtuple`/`TNtupleD` object is a `TTree` base wrapped in one extra
+    // `{byte count, version}` header (plus a trailing `Int_t fNvar`). Peel that
+    // outer header first; the inner `TTree` base is then read like a plain tree.
+    let outer = if class_name == "TNtuple" || class_name == "TNtupleD" {
+        Some(r.read_version()?)
+    } else {
+        None
+    };
     let tree_hdr = r.read_version()?; // TTree
     let mut out = Members::new();
     let mut branches = Vec::new();
@@ -716,8 +731,10 @@ fn read_tree(object: &[u8], keylen: usize, reg: &StreamerRegistry) -> Result<TTr
         )?;
     }
 
-    // Everything after fBranches is unneeded; jump to the tree's end.
-    if let Some(end) = tree_hdr.end {
+    // Everything after fBranches is unneeded; jump to the object's end (the
+    // outer subclass wrapper's end for a TNtuple, so its trailing fNvar is
+    // skipped; otherwise the TTree header's end).
+    if let Some(end) = outer.and_then(|o| o.end).or(tree_hdr.end) {
         r.seek(end)?;
     }
 
