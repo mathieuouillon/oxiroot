@@ -928,9 +928,11 @@ fn read_branch_element(
     let f_streamer_type = member_int(&out, "fStreamerType") as i32;
     let (write_basket, basket_entry, basket_seek) = basket_locators(&out);
 
-    // A split collection (STL `4`, TClonesArray `3`) holds no data itself — its
-    // member sub-branches do, and they were just parsed into `sub`.
-    if f_type == 3 || f_type == 4 {
+    // Any branch with sub-branches is a split parent — an STL/clones collection
+    // (`fType` 3/4), or a split single object or its sub-object member (`fType`
+    // 0/2). It holds no data itself; its members do, and they were just parsed
+    // into `sub`.
+    if !sub.is_empty() {
         return Ok(sub);
     }
 
@@ -942,16 +944,24 @@ fn read_branch_element(
         None
     };
 
-    // A member sub-branch (STL `41`, TClonesArray `31`) is a jagged array typed
-    // by fStreamerType, with no per-entry header. An unsplit branch (`0`) is the
-    // whole `std::vector<T>` typed by fClassName, with the 10-byte header.
+    // Pick the element type and per-entry header for a data-bearing leaf branch:
+    // - a member sub-branch (STL `41`, TClonesArray `31`) — a jagged array typed
+    //   by `fStreamerType`, no header;
+    // - an unsplit `std::vector<T>` (`0`, class `vector<...>`) — typed by the
+    //   class, each entry prefixed by the 10-byte streamer header;
+    // - a scalar member of a split single object (`0`, a plain class) — one value
+    //   per entry, typed by `fStreamerType`, no header.
     let member = f_type == 41 || f_type == 31;
-    let leaf_type = if let Some(elem) = nested_elem {
-        Some(elem) // the flat element type backing the nested collection
+    let (leaf_type, elem_header) = if let Some(elem) = nested_elem {
+        (Some(elem), 10) // the 10-byte header carries the outer count
     } else if member {
-        streamer_type_to_leaf(f_streamer_type)
+        (streamer_type_to_leaf(f_streamer_type), 0)
+    } else if let Some(elem) = parse_vector_elem(&class_name) {
+        (Some(elem), 10)
+    } else if f_type == 0 {
+        (streamer_type_to_leaf(f_streamer_type), 0)
     } else {
-        parse_vector_elem(&class_name)
+        (None, 0)
     };
     let Some(leaf_type) = leaf_type else {
         diag.push((
@@ -968,7 +978,7 @@ fn read_branch_element(
         n_baskets: write_basket,
         basket_seek,
         basket_entry,
-        elem_header: if member { 0 } else { 10 },
+        elem_header,
         leaflist: None,
         dims: Vec::new(),
         nested_elem,
