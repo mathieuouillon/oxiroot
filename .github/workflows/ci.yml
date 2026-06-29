@@ -33,6 +33,16 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      - name: Test (plotting feature combos)
+        # `cargo test --workspace` exercises the plot crate's tests with its
+        # default features, so it skips the `fit`-gated cases. Run those: the
+        # plot crate with `fit` (the Model-overlay test) and the facade with
+        # `plot,fit` (the high-level `tests/plot.rs`, which only compiles under
+        # the `plot` feature).
+        run: |
+          cargo test -p oxiroot-plot --features fit
+          cargo test -p oxiroot --features plot,fit
+
       - name: Run examples (smoke)
         # The showcase examples drive the method-based read/write API end to end —
         # the RootFile builder (multi-object, subdirectory, append), read_root_in,

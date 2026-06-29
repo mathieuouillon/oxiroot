@@ -405,4 +405,32 @@ mod tests {
         ax.legend();
         ax.save(format!("{dir}/overlay.png")).unwrap();
     }
+
+    /// Overlaying a fitted `Model` adds a curve (one polyline) on top of the
+    /// histogram. Lives in-crate because it needs the optional `oxiroot_fit`
+    /// dependency, which is only present under the `fit` feature.
+    #[cfg(feature = "fit")]
+    #[test]
+    fn model_overlay_adds_a_curve() {
+        use oxiroot_fit::TF1;
+        let h = gauss_hist();
+        let model = TF1::gaussian("g").with_params(vec![4000.0, 90.0, 8.0]);
+
+        let mut base = Axes::new();
+        base.hist(&h);
+        let polylines_before = base.to_svg_string().matches("<polyline").count();
+
+        let mut overlaid = Axes::new();
+        overlaid.hist(&h);
+        overlaid.model(&model, 50.0..130.0);
+        let svg = overlaid.to_svg_string();
+        let polylines_after = svg.matches("<polyline").count();
+
+        assert_eq!(
+            polylines_after,
+            polylines_before + 1,
+            "the model overlay should add exactly one curve polyline"
+        );
+        assert!(svg.starts_with("<svg") && svg.ends_with("</svg>"));
+    }
 }

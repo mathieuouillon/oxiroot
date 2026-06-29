@@ -30,6 +30,12 @@ ttf-parser = "0.25"
 # `Axes::function` closure overlay is always available, with no extra deps.)
 fit = ["dep:oxiroot-fit"]
 
+[dev-dependencies]
+# The integration tests in `tests/` build real TH1/TGraph/TH2/TProfile objects to
+# plot; as a separate crate they need the hist crate explicitly (the in-crate unit
+# tests reach it through the regular dependency above).
+oxiroot-hist = { workspace = true }
+
 [package.metadata.docs.rs]
 all-features = true
 
