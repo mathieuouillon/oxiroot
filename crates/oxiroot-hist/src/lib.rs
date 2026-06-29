@@ -21,6 +21,7 @@ mod derive;
 pub mod fit;
 pub mod graph;
 pub mod graph2d;
+pub mod graphmultierrors;
 mod stats;
 pub mod tefficiency;
 pub mod th1;
@@ -45,6 +46,7 @@ pub use fit::{
 };
 pub use graph::{GraphErrors, TGraph};
 pub use graph2d::TGraph2D;
+pub use graphmultierrors::TGraphMultiErrors;
 pub use ops::Histogram;
 pub use read::ReadRoot;
 pub use tefficiency::TEfficiency;

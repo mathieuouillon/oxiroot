@@ -31,6 +31,7 @@ use crate::axis::TAxis;
 use crate::base::Precision;
 use crate::graph::{GraphErrors, TGraph};
 use crate::graph2d::TGraph2D;
+use crate::graphmultierrors::TGraphMultiErrors;
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
 use crate::th2::TH2;
@@ -825,6 +826,80 @@ impl WriteRoot for TGraph2D {
     }
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraph2d_to_bytes(self)
+    }
+}
+
+/// Write an *objectwise* `vector<TArrayD>` (version `0x000a`): a count, then each
+/// layer as a `TArrayD` (`fN` + `fN` doubles), zero-padded to `n`.
+fn write_vector_tarrayd(w: &mut WBuffer, layers: &[Vec<f64>], n: usize) {
+    let t = w.begin_object(0x000a);
+    w.be_i32(layers.len() as i32);
+    for layer in layers {
+        w.be_i32(n as i32);
+        for i in 0..n {
+            w.be_f64(layer.get(i).copied().unwrap_or(0.0));
+        }
+    }
+    w.end_object(t);
+}
+
+/// Write a *memberwise* `vector<TAtt*>` (version `0x400a` — the `0x4000`
+/// `kStreamedMemberWise` bit set): the element class version, a count, then each
+/// `i16` member emitted across all `count` elements in turn. `members` lists the
+/// per-element value for each member (all layers share ROOT's default attrs).
+fn write_memberwise_att(w: &mut WBuffer, elem_version: i16, count: usize, members: &[i16]) {
+    let t = w.begin_object(0x400a);
+    w.be_i16(elem_version);
+    w.be_i32(count as i32);
+    for &m in members {
+        for _ in 0..count {
+            w.be_i16(m);
+        }
+    }
+    w.end_object(t);
+}
+
+/// Serialize a [`TGraphMultiErrors`] (version 1): the full `TGraph` base, the
+/// `fNYErrors`/`fSumErrorsMode` scalars, the `fExL`/`fExH` arrays, the `fEyL`/
+/// `fEyH` objectwise `vector<TArrayD>`, and the `fAttFill`/`fAttLine` memberwise
+/// attribute vectors at ROOT's per-layer defaults.
+fn write_tgraphmultierrors(w: &mut WBuffer, g: &TGraphMultiErrors) {
+    let n = g.len();
+    let layers = g.ey_low.len();
+    let obj = w.begin_object(1); // TGraphMultiErrors version 1
+    write_tgraph_base(w, &g.name, &g.title, &g.x[..n], &g.y[..n]);
+    w.be_i32(layers as i32); // fNYErrors
+    w.be_i32(g.sum_errors_mode); // fSumErrorsMode
+    write_basic_array(w, &g.ex_low, n); // fExL
+    write_basic_array(w, &g.ex_high, n); // fExH
+    write_vector_tarrayd(w, &g.ey_low, n); // fEyL
+    write_vector_tarrayd(w, &g.ey_high, n); // fEyH
+                                            // fAttFill: fFillColor, fFillStyle (ROOT's per-layer defaults 19 / 1001).
+    write_memberwise_att(w, 2, layers, &[19, 1001]);
+    // fAttLine: fLineColor, fLineStyle, fLineWidth (defaults 1 / 1 / 1).
+    write_memberwise_att(w, 2, layers, &[1, 1, 1]);
+    w.end_object(obj);
+}
+
+/// Serialize a [`TGraphMultiErrors`] object to a fresh byte vector.
+pub(crate) fn tgraphmultierrors_to_bytes(g: &TGraphMultiErrors) -> Vec<u8> {
+    let mut w = WBuffer::new();
+    write_tgraphmultierrors(&mut w, g);
+    w.into_vec()
+}
+
+impl WriteRoot for TGraphMultiErrors {
+    fn root_class(&self) -> String {
+        "TGraphMultiErrors".to_string()
+    }
+    fn root_name(&self) -> &str {
+        &self.name
+    }
+    fn root_title(&self) -> &str {
+        &self.title
+    }
+    fn to_root_bytes(&self) -> Vec<u8> {
+        tgraphmultierrors_to_bytes(self)
     }
 }
 

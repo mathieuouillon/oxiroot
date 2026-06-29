@@ -24,6 +24,7 @@
 #include <TGraphErrors.h>
 #include <TGraphAsymmErrors.h>
 #include <TGraph2D.h>
+#include <TGraphMultiErrors.h>
 
 int main() {
   TFile f("/tmp/alltypes.root", "RECREATE");
@@ -60,6 +61,9 @@ int main() {
   TGraphAsymmErrors grae(2,gx,gy,ge,ge,ge,ge); grae.SetName("grae"); grae.Write();
   Double_t gz[2] = {0,1};
   TGraph2D gr2(2,gx,gy,gz); gr2.SetName("gr2"); gr2.SetTitle(""); gr2.Write();
+  TGraphMultiErrors gme("gme","",2,gx,gy,ge,ge,ge,ge);
+  gme.AddYError(2,ge,ge); // a second y-error layer
+  gme.Write();
 
   f.Close();
   return 0;

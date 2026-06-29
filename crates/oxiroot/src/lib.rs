@@ -4,7 +4,7 @@
 //! format), classic [`TTree`](oxiroot_tree), the [histogram](oxiroot_hist)
 //! family (`TH1`/`TH2`/`TH3`, `TProfile`/`2D`/`3D`, `TEfficiency`, `THnSparse`,
 //! `TH2Poly`), and [graphs](oxiroot_hist::graph) (`TGraph`/`TGraphErrors`/
-//! `TGraphAsymmErrors`, plus `TGraph2D`) in the ROOT (`TFile`) container, with no C++/libROOT
+//! `TGraphAsymmErrors`, plus `TGraph2D` and `TGraphMultiErrors`) in the ROOT (`TFile`) container, with no C++/libROOT
 //! dependency. Files written here are read by official ROOT and uproot, and
 //! vice versa.
 //!
@@ -90,8 +90,8 @@ pub mod prelude {
     pub use oxiroot_hist::{
         merge_all, Chi2TestKind, Chi2TestResult, Dir, ErrorMode, GraphErrors, Histogram,
         KsTestResult, Merge, PolyBin, Precision, ReadRoot, RootFile, SparseBin, TAxis, TEfficiency,
-        TGraph, TGraph2D, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, ThreadedHist,
-        WriteRoot, TH1, TH2, TH3,
+        TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D,
+        ThreadedHist, WriteRoot, TH1, TH2, TH3,
     };
 
     pub use oxiroot_rntuple::{

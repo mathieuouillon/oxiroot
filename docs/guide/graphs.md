@@ -216,6 +216,39 @@ parameters (the binning of the lazily-built `fHistogram`, the Delaunay iteration
 count) are written at ROOT's defaults, and the `fHistogram` frame itself is
 transient in ROOT and not persisted.
 
+## Multiple error sources: `TGraphMultiErrors`
+
+A `TGraphMultiErrors` carries asymmetric x errors and **several independent
+layers** of asymmetric y errors — e.g. a statistical and a systematic band on the
+same points. Start from the first y-error layer and chain `add_y_error`:
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::RFile;
+
+let g = TGraphMultiErrors::new(
+    vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
+    vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5],    // x errors (low, high)
+    vec![1.0, 2.0, 3.0], vec![1.0, 2.0, 3.0],    // statistical y error (low, high)
+)
+.add_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5]) // systematic layer
+.named("spectrum");
+
+assert_eq!(g.n_y_errors(), 2);
+g.write_root("multi.root", Compression::Zstd(5))?;
+let back = TGraphMultiErrors::read_root(&RFile::open("multi.root")?, "spectrum")?;
+```
+
+The `ey_low`/`ey_high` fields are `Vec<Vec<f64>>` (one inner `Vec` per layer).
+The point and error data round-trips through ROOT; the per-layer draw attributes
+are written at ROOT's defaults.
+
+!!! note
+    uproot cannot decode `TGraphMultiErrors` — ROOT serializes its per-layer
+    attribute vectors *memberwise*, which uproot does not implement. oxiroot reads
+    and writes it (cross-checked against ROOT C++), but the file won't open in
+    uproot.
+
 ## See also
 
 - [Reading & writing files](reading-writing.md) — the `RootFile` builder, append mode, and `ReadRoot`.
