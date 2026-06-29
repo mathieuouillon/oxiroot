@@ -508,10 +508,45 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 
 Experimental (`0.0.x`). On the list — each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
+Grouped by the ROOT feature each fills.
+
+- **`TTree`**
+  - **Friend trees** (`TTree::AddFriend`) — read a friend tree's branches
+    aligned to the main tree by entry (the standard way HEP analyses join
+    per-event datasets), and the index-based join (`BuildIndex`).
+  - **`TNtuple` / `TNtupleD`** — the all-`float`/`double` `TTree` subclasses;
+    read them as ordinary trees (currently a non-`TTree` class is rejected).
+  - **`std::map` / `std::set` branches** — they read through the existing
+    streamer-info member walker, but ROOT 6.40's collection proxy aborts when
+    *writing* one, so there is no fixture to ground against locally yet.
+- **RNTuple**
+  - **An RNTuple inside a `TDirectory`, and several per file** — today the writer
+    emits one RNTuple in the root directory.
+  - **More field types** — `std::optional` / `std::unique_ptr` (the "late" /
+    nullable fields), `std::atomic<T>`, and a `std::map` *write* ROOT reads
+    (read already works; write is blocked by the same proxy as `TTree`).
+  - **Schema late extension** — append fields/columns to an existing RNTuple via
+    the footer's schema-extension record.
+- **More persistable objects** — the small classes constantly stored alongside
+  histograms: `TObjString`, `TParameter<T>` (named scalars), standalone `TF1` /
+  `TF2` / `TF3` (formula functions; `TF1` already round-trips *inside* a graph's
+  `fFunctions`), `TMultiGraph`, and a `TList` / `TObjArray` / `TMap` of objects
+  as a top-level key.
+- **`TFile` container**
+  - **Arbitrary-depth `TDirectory` write** — the builder nests one level today.
+  - **Delete / compact in update mode** — append mode ships; rewriting a key at
+    a new cycle and purging old cycles (`TFile::Purge`) does not.
+  - **Read an object at an explicit cycle** (`name;N`).
+- **Compression** — **LZMA (XZ) encode**, for full parity with the four codecs
+  already decoded (Zstd / zlib / LZ4 are also encoded today).
+- **Axes** — **time axes** (`TAxis` `fTimeDisplay` / `fTimeFormat`) on histograms
+  and graphs, for monitoring-style time series.
 
 Out of scope: ROOT 7 `RHist` (no persistable on-disk format — its `Streamer`
-throws) and reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) —
-the `plot` feature renders the data, it does not (de)serialize ROOT graphics.
+throws); reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) — the
+`plot` feature renders the data, it does not (de)serialize ROOT graphics; and the
+declarative analysis layer (`RDataFrame`, `RNTupleProcessor`) — oxiroot is an IO
+library, not a compute engine.
 
 ## License
 
