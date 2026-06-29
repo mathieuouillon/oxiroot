@@ -26,8 +26,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `TF1`).
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
-  structs, `std::vector<std::vector<T>>`, `TClonesArray`, and split single
-  objects; multi-basket via a bounded-memory streaming writer.
+  structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
+  `std::set`/`std::map` branches, and `TNtuple`/`TNtupleD`; multi-basket via a
+  bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**, fixed-size
   `std::array`/`std::bitset`, user classes, `std::set`/`std::map`), read
@@ -358,7 +359,10 @@ ax2.save("heatmap.svg")?;
 
 - **Read & write** scalar, fixed-size array (`x[N]`, incl. multidimensional
   `x[N][M]`), variable-length / jagged (`x[n]`), string, multi-leaf (leaflist
-  `a/F:b/I`), and `std::vector<T>` branches; **read** `std::vector<std::string>`.
+  `a/F:b/I`), and `std::vector<T>` branches; **read** `std::vector<std::string>`,
+  `std::set<T>` (an unsplit object-wise collection) and `std::map<K,V>` (split
+  into parallel `.first`/`.second` collections), and `TNtuple` / `TNtupleD` (the
+  all-`float`/`double` `TTree` subclasses) as ordinary trees.
 - **Split `std::vector<MyStruct>`** branches written as per-member sub-branches
   (`TBranchElement`), with a generated `TStreamerInfo` for the element class —
   ROOT-C++- and uproot-verified, both directions.
@@ -514,11 +518,6 @@ Grouped by the ROOT feature each fills.
   - **Friend trees** (`TTree::AddFriend`) — read a friend tree's branches
     aligned to the main tree by entry (the standard way HEP analyses join
     per-event datasets), and the index-based join (`BuildIndex`).
-  - **`TNtuple` / `TNtupleD`** — the all-`float`/`double` `TTree` subclasses;
-    read them as ordinary trees (currently a non-`TTree` class is rejected).
-  - **`std::map` / `std::set` branches** — they read through the existing
-    streamer-info member walker, but ROOT 6.40's collection proxy aborts when
-    *writing* one, so there is no fixture to ground against locally yet.
   - **Aliases & selections** — `TTree::SetAlias` (named branch expressions) and
     `TEntryList` (a saved set of selected entries), plus older non-split
     `TBranchObject` branches.

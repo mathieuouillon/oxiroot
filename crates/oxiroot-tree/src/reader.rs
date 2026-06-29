@@ -1053,10 +1053,30 @@ fn basic_leaf_type(name: &str) -> Option<LeafType> {
     })
 }
 
-/// Map a `std::vector<T>` class name to its element [`LeafType`], or `None` for
-/// an unsupported element type.
+/// Strip a single-element STL container wrapper — `vector` / `set` / `multiset`
+/// (bare or `std::`) — returning the trimmed element type. `std::set` and
+/// `std::vector` share an object-wise on-disk layout (a 10-byte streamer header
+/// then the contiguous elements), so the reader treats them the same.
+fn strip_collection(class_name: &str) -> Option<&str> {
+    for prefix in [
+        "vector<",
+        "std::vector<",
+        "set<",
+        "std::set<",
+        "multiset<",
+        "std::multiset<",
+    ] {
+        if let Some(inner) = class_name.strip_prefix(prefix) {
+            return inner.strip_suffix('>').map(str::trim);
+        }
+    }
+    None
+}
+
+/// Map an unsplit single-element STL container (`std::vector<T>`/`std::set<T>`/…)
+/// class name to its element [`LeafType`], or `None` for an unsupported element.
 fn parse_vector_elem(class_name: &str) -> Option<LeafType> {
-    basic_leaf_type(strip_vector(class_name)?)
+    basic_leaf_type(strip_collection(class_name)?)
 }
 
 /// Map a `std::vector<std::vector<T>>` class name to `T`'s element [`LeafType`],
