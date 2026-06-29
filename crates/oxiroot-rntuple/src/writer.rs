@@ -41,6 +41,14 @@ const ROLE_COLLECTION: u16 = 1;
 const ROLE_RECORD: u16 = 2;
 const ROLE_VARIANT: u16 = 3;
 
+/// Field flag: the field is a fixed-size array (`std::array`/`std::bitset`); an
+/// element count (`u64`) trails the field record.
+const FIELD_FLAG_ARRAY: u16 = 0x01;
+/// Field flag: a type checksum (`u32`) trails the field record (user classes).
+const FIELD_FLAG_CHECKSUM: u16 = 0x04;
+/// The on-disk type version a checksummed user-class field carries (`-1`).
+const CHECKSUM_TYPE_VERSION: u32 = 0xFFFF_FFFF;
+
 /// Column flag: the descriptor carries an `(f64, f64)` value range (e.g. for a
 /// quantized real column).
 const COLUMN_FLAG_RANGE: u16 = 0x02;
@@ -139,6 +147,34 @@ pub enum Column {
         /// Per entry, the 1-based active alternative (`0` = valueless).
         tags: Vec<u32>,
     },
+    /// A fixed-size array (`std::array<T, N>`): exactly `len` elements per entry.
+    /// `items` is the flattened element column (`len * entries` values); on disk
+    /// the array field carries no column of its own and holds a single element
+    /// child `_0`.
+    Array {
+        /// Elements per entry (`N`).
+        len: usize,
+        /// The flattened element column.
+        items: Box<Column>,
+    },
+    /// A `std::bitset<N>`: exactly `len` bits per entry, stored in the field's own
+    /// Bit column. `bits` is the flattened bit stream (`len * entries`).
+    Bitset {
+        /// Bits per entry (`N`).
+        len: usize,
+        /// The flattened bits.
+        bits: Vec<bool>,
+    },
+    /// A user-defined class split into a record of named `members`, tagged with
+    /// its C++ `type_name` and the ROOT class checksum (computed from the type
+    /// name and members). ROOT reads it back as the class when its dictionary is
+    /// loaded.
+    Object {
+        /// The C++ class name (e.g. `"Hit"`).
+        type_name: String,
+        /// The named members, in declaration order.
+        members: Vec<(String, Column)>,
+    },
 }
 
 impl Column {
@@ -173,6 +209,9 @@ impl Column {
             Column::Record(subs) => subs.first().map_or(0, |(_, c)| c.len()),
             Column::Nested { offsets, .. } => offsets.len(),
             Column::Variant { tags, .. } => tags.len(),
+            Column::Array { len, items } => items.len().checked_div(*len).unwrap_or(0),
+            Column::Bitset { len, bits } => bits.len().checked_div(*len).unwrap_or(0),
+            Column::Object { members, .. } => members.first().map_or(0, |(_, c)| c.len()),
         }
     }
 }
@@ -307,6 +346,80 @@ impl Field {
     pub fn variant(name: impl Into<String>, alternatives: Vec<Column>, tags: Vec<u32>) -> Field {
         Field::new(name, Column::Variant { alternatives, tags })
     }
+
+    /// A fixed-size array field (`std::array<T, N>`): `len` elements per entry,
+    /// `items` the flattened element column (`len * entries` values). The element
+    /// type spelling is taken from `items`. Use this for element types without a
+    /// dedicated `array_*` shortcut.
+    pub fn array(name: impl Into<String>, len: usize, items: Column) -> Field {
+        Field::new(
+            name,
+            Column::Array {
+                len,
+                items: Box::new(items),
+            },
+        )
+    }
+
+    /// A `std::bitset<N>` field: `data` is one fixed-length bit vector per entry
+    /// (all inner vectors must share the same length `N`).
+    pub fn bitset(name: impl Into<String>, data: Vec<Vec<bool>>) -> Field {
+        let len = data.first().map_or(0, Vec::len);
+        let bits: Vec<bool> = data.into_iter().flatten().collect();
+        Field::new(name, Column::Bitset { len, bits })
+    }
+
+    /// A user-class field (`type_name`) split into named `members`. The ROOT
+    /// class checksum is computed from the type name and members so ROOT reads it
+    /// back as the class (with its dictionary loaded).
+    pub fn object(
+        name: impl Into<String>,
+        type_name: impl Into<String>,
+        members: Vec<(String, Column)>,
+    ) -> Field {
+        Field::new(
+            name,
+            Column::Object {
+                type_name: type_name.into(),
+                members,
+            },
+        )
+    }
+}
+
+/// Build an [`Column::Array`] from per-entry chunks `data` (every chunk must have
+/// the same length `N`), with `make` turning the flattened values into the
+/// element column. Used by the typed `Field::array_*` shortcuts.
+fn array_column<T: Clone>(data: Vec<Vec<T>>, make: impl Fn(Vec<T>) -> Column) -> Column {
+    let len = data.first().map_or(0, Vec::len);
+    let items: Vec<T> = data.into_iter().flatten().collect();
+    Column::Array {
+        len,
+        items: Box::new(make(items)),
+    }
+}
+
+/// Generate typed `Field::array_*` shortcuts taking per-entry chunks.
+macro_rules! array_ctors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl Field {
+            $(
+                #[doc = concat!("A `std::array<", stringify!($elem), ", N>` field from per-entry chunks (all length `N`).")]
+                pub fn $method(name: impl Into<String>, data: Vec<Vec<$elem>>) -> Field {
+                    Field::new(name, array_column(data, Column::$variant))
+                }
+            )*
+        }
+    };
+}
+
+array_ctors! {
+    array_i32 => I32(i32),
+    array_i64 => I64(i64),
+    array_u32 => U32(u32),
+    array_u64 => U64(u64),
+    array_f32 => F32(f32),
+    array_f64 => F64(f64),
 }
 
 // --- internal lowered model ------------------------------------------------
@@ -316,6 +429,12 @@ struct FieldPlan {
     type_name: String,
     parent_id: u32,
     role: u16,
+    /// Field flag bits (`FIELD_FLAG_*`): array/checksum.
+    flags: u16,
+    /// `std::array`/`std::bitset` element count, when [`FIELD_FLAG_ARRAY`] is set.
+    array_size: Option<u64>,
+    /// ROOT class checksum, when [`FIELD_FLAG_CHECKSUM`] is set (user classes).
+    type_checksum: Option<u32>,
 }
 
 struct ColumnPlan {
@@ -430,6 +549,12 @@ struct Node {
     role: u16,
     cols: Vec<RawCol>,
     children: Vec<Node>,
+    /// Field flag bits (`FIELD_FLAG_*`).
+    flags: u16,
+    /// Fixed array element count (`std::array`/`std::bitset`).
+    array_size: Option<u64>,
+    /// ROOT class checksum (user-class records).
+    type_checksum: Option<u32>,
 }
 
 fn raw(column_type: ColumnType, bits: u16, page: Vec<u8>, n: usize) -> RawCol {
@@ -450,6 +575,9 @@ fn leaf_node(name: &str, type_name: &str, col: RawCol) -> Node {
         role: ROLE_LEAF,
         cols: vec![col],
         children: vec![],
+        flags: 0,
+        array_size: None,
+        type_checksum: None,
     }
 }
 
@@ -476,6 +604,9 @@ fn string_node(name: &str, v: &[String]) -> Node {
             raw(ColumnType::Char, 8, bytes, n_chars),
         ],
         children: vec![],
+        flags: 0,
+        array_size: None,
+        type_checksum: None,
     }
 }
 
@@ -493,6 +624,9 @@ fn collection_node(name: &str, offsets: &[u64], n_outer: usize, child: Node) -> 
             n_outer,
         )],
         children: vec![child],
+        flags: 0,
+        array_size: None,
+        type_checksum: None,
     }
 }
 
@@ -792,6 +926,9 @@ fn lower_column(name: &str, data: &Column) -> Node {
                 role: ROLE_RECORD,
                 cols: vec![],
                 children,
+                flags: 0,
+                array_size: None,
+                type_checksum: None,
             }
         }
         Column::Variant { alternatives, tags } => {
@@ -825,8 +962,89 @@ fn lower_column(name: &str, data: &Column) -> Node {
                 role: ROLE_VARIANT,
                 cols: vec![raw(ColumnType::Switch, 96, switch, tags.len())],
                 children,
+                flags: 0,
+                array_size: None,
+                type_checksum: None,
             }
         }
+        Column::Array { len, items } => {
+            // A fixed array: no own column, one element child `_0` carrying the
+            // flattened values; the field flags an `array_size` element count.
+            let child = lower_column("_0", items);
+            Node {
+                name: name.to_string(),
+                type_name: format!("std::array<{},{}>", child.type_name, len),
+                role: ROLE_LEAF,
+                cols: vec![],
+                children: vec![child],
+                flags: FIELD_FLAG_ARRAY,
+                array_size: Some(*len as u64),
+                type_checksum: None,
+            }
+        }
+        Column::Bitset { len, bits } => Node {
+            name: name.to_string(),
+            type_name: format!("std::bitset<{len}>"),
+            role: ROLE_LEAF,
+            cols: vec![raw(ColumnType::Bit, 1, pack_bits(bits), bits.len())],
+            children: vec![],
+            flags: FIELD_FLAG_ARRAY,
+            array_size: Some(*len as u64),
+            type_checksum: None,
+        },
+        Column::Object { type_name, members } => {
+            let children: Vec<Node> = members.iter().map(|(n, c)| lower_column(n, c)).collect();
+            let checksum = class_checksum(type_name, members);
+            Node {
+                name: name.to_string(),
+                type_name: type_name.clone(),
+                role: ROLE_RECORD,
+                cols: vec![],
+                children,
+                flags: FIELD_FLAG_CHECKSUM,
+                array_size: None,
+                type_checksum: Some(checksum),
+            }
+        }
+    }
+}
+
+/// ROOT's class checksum (`TClass::GetCheckSum`) for a flat record: fold each
+/// character of the class name, then of every member's name and C++ type, into
+/// `id = id * 3 + ch`. Matches `TClass::GetCheckSum()` for plain-member classes,
+/// which the RNTuple field record stores so ROOT can validate the on-disk schema.
+fn class_checksum(class_name: &str, members: &[(String, Column)]) -> u32 {
+    let fold = |id: u32, s: &str| {
+        s.bytes()
+            .fold(id, |acc, b| acc.wrapping_mul(3).wrapping_add(u32::from(b)))
+    };
+    let mut id = fold(0, class_name);
+    for (name, col) in members {
+        id = fold(id, name);
+        id = fold(id, checksum_type_name(col));
+    }
+    id
+}
+
+/// The C++ type spelling ROOT uses for a member when computing a class checksum
+/// (the fundamental-type keyword, e.g. `int`/`double`), for each writable
+/// scalar [`Column`]. Panics on a column kind not valid as a flat class member.
+fn checksum_type_name(col: &Column) -> &'static str {
+    match col {
+        Column::Bool(_) => "bool",
+        Column::I8(_) => "char",
+        Column::U8(_) => "unsigned char",
+        Column::I16(_) => "short",
+        Column::U16(_) => "unsigned short",
+        Column::I32(_) => "int",
+        Column::U32(_) => "unsigned int",
+        Column::I64(_) => "long long",
+        Column::U64(_) => "unsigned long long",
+        Column::F32(_) | Column::HalfF32(_) | Column::TruncF32 { .. } | Column::QuantF32 { .. } => {
+            "float"
+        }
+        Column::F64(_) => "double",
+        _ => "void", // non-scalar members are not part of the supported checksum
     }
 }
 
@@ -853,6 +1071,9 @@ fn push_node(
         type_name: node.type_name,
         parent_id: parent.unwrap_or(id), // a top-level field is its own parent
         role: node.role,
+        flags: node.flags,
+        array_size: node.array_size,
+        type_checksum: node.type_checksum,
     });
     for c in node.cols {
         cols.push(ColumnPlan {
@@ -939,14 +1160,28 @@ fn build_header(name: &str, fields: &[FieldPlan], cols: &[ColumnPlan]) -> Vec<u8
         .map(|f| {
             let mut r = Vec::new();
             r.extend_from_slice(&0u32.to_le_bytes()); // field version
-            r.extend_from_slice(&0u32.to_le_bytes()); // type version
+                                                      // A checksummed (user-class) field records type version -1.
+            let type_version = if f.type_checksum.is_some() {
+                CHECKSUM_TYPE_VERSION
+            } else {
+                0
+            };
+            r.extend_from_slice(&type_version.to_le_bytes());
             r.extend_from_slice(&f.parent_id.to_le_bytes());
             r.extend_from_slice(&f.role.to_le_bytes()); // struct role
-            r.extend_from_slice(&0u16.to_le_bytes()); // flags
+            r.extend_from_slice(&f.flags.to_le_bytes()); // flags
             r.extend_from_slice(&rstr(&f.name));
             r.extend_from_slice(&rstr(&f.type_name));
             r.extend_from_slice(&rstr("")); // type alias
             r.extend_from_slice(&rstr("")); // description
+                                            // Flag-gated trailers (must match the reader's order: array, then
+                                            // projection source, then checksum).
+            if let Some(size) = f.array_size {
+                r.extend_from_slice(&size.to_le_bytes());
+            }
+            if let Some(checksum) = f.type_checksum {
+                r.extend_from_slice(&checksum.to_le_bytes());
+            }
             record_frame(&r)
         })
         .collect();
