@@ -175,6 +175,19 @@ pub enum Column {
         /// The named members, in declaration order.
         members: Vec<(String, Column)>,
     },
+    /// An associative container stored as a collection (`std::set<T>`,
+    /// `std::map<K, V>`, …): an Index offset column over `offsets` plus a single
+    /// element child `_0` (`items` — a leaf for a set, a `Record` of key/value
+    /// for a map). `type_name` is the full C++ container type written to the
+    /// field record.
+    Assoc {
+        /// The C++ container type name (e.g. `"std::set<std::int32_t>"`).
+        type_name: String,
+        /// Cumulative element boundaries, one per entry.
+        offsets: Vec<u64>,
+        /// The flattened element child.
+        items: Box<Column>,
+    },
 }
 
 impl Column {
@@ -212,6 +225,7 @@ impl Column {
             Column::Array { len, items } => items.len().checked_div(*len).unwrap_or(0),
             Column::Bitset { len, bits } => bits.len().checked_div(*len).unwrap_or(0),
             Column::Object { members, .. } => members.first().map_or(0, |(_, c)| c.len()),
+            Column::Assoc { offsets, .. } => offsets.len(),
         }
     }
 }
@@ -420,6 +434,85 @@ array_ctors! {
     array_u64 => U64(u64),
     array_f32 => F32(f32),
     array_f64 => F64(f64),
+}
+
+impl Field {
+    /// A `std::map<K, V>` field from per-entry key/value pairs. `key_type` and
+    /// `val_type` are the C++ element type spellings ROOT uses (e.g.
+    /// `"std::int32_t"`, `"double"`); `keys` and `vals` are the flattened key and
+    /// value columns, partitioned per entry by `offsets`. On disk a map is a
+    /// collection of `std::pair<K, V>` records.
+    pub fn map(
+        name: impl Into<String>,
+        key_type: &str,
+        val_type: &str,
+        offsets: Vec<u64>,
+        keys: Column,
+        vals: Column,
+    ) -> Field {
+        let items = Column::Record(vec![("_0".into(), keys), ("_1".into(), vals)]);
+        Field::new(
+            name,
+            Column::Assoc {
+                type_name: format!("std::map<{key_type},{val_type}>"),
+                offsets,
+                items: Box::new(items),
+            },
+        )
+    }
+
+    /// A `std::map<std::int32_t, double>` field from one `(key, value)` list per
+    /// entry. The pairs are stored in the order given (ROOT re-sorts a real
+    /// `std::map` by key on read).
+    pub fn map_i32_f64(name: impl Into<String>, data: Vec<Vec<(i32, f64)>>) -> Field {
+        let mut offsets = Vec::with_capacity(data.len());
+        let mut keys = Vec::new();
+        let mut vals = Vec::new();
+        for entry in &data {
+            for &(k, v) in entry {
+                keys.push(k);
+                vals.push(v);
+            }
+            offsets.push(keys.len() as u64);
+        }
+        Field::map(
+            name,
+            "std::int32_t",
+            "double",
+            offsets,
+            Column::I32(keys),
+            Column::F64(vals),
+        )
+    }
+}
+
+/// Generate typed `Field::set_*` shortcuts: a `std::set<T>` from per-entry lists.
+macro_rules! set_ctors {
+    ($($method:ident => $variant:ident($elem:ty, $cxx:literal)),* $(,)?) => {
+        impl Field {
+            $(
+                #[doc = concat!("A `std::set<", $cxx, ">` field from one element list per entry.")]
+                pub fn $method(name: impl Into<String>, data: Vec<Vec<$elem>>) -> Field {
+                    let (offsets, flat) = flatten(&data);
+                    Field::new(name, Column::Assoc {
+                        type_name: concat!("std::set<", $cxx, ">").to_string(),
+                        offsets,
+                        items: Box::new(Column::$variant(flat)),
+                    })
+                }
+            )*
+        }
+    };
+}
+
+set_ctors! {
+    set_i32 => I32(i32, "std::int32_t"),
+    set_i64 => I64(i64, "std::int64_t"),
+    set_u32 => U32(u32, "std::uint32_t"),
+    set_u64 => U64(u64, "std::uint64_t"),
+    set_f32 => F32(f32, "float"),
+    set_f64 => F64(f64, "double"),
+    set_str => Str(String, "std::string"),
 }
 
 // --- internal lowered model ------------------------------------------------
@@ -1005,6 +1098,17 @@ fn lower_column(name: &str, data: &Column) -> Node {
                 array_size: None,
                 type_checksum: Some(checksum),
             }
+        }
+        Column::Assoc {
+            type_name,
+            offsets,
+            items,
+        } => {
+            // Like a collection, but the field carries the associative type name
+            // (std::set / std::map) instead of std::vector.
+            let mut node = collection_node(name, offsets, offsets.len(), lower_column("_0", items));
+            node.type_name = type_name.clone();
+            node
         }
     }
 }
