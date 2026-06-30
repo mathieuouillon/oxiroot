@@ -1,11 +1,12 @@
-//! A bare collection of objects stored under one key: [`ObjList`], which writes
-//! and reads as a ROOT `TList` or `TObjArray`. Build it from any writable objects
-//! and, on read, pull the members back out by type with
-//! [`items`](ObjList::items).
+//! Collections of objects stored under one key: [`ObjList`] (a ROOT `TList` or
+//! `TObjArray`) and [`TMap`] (a keyed object → object map). Build them from any
+//! writable objects and, on read, pull the members back out by type with
+//! [`items`](ObjList::items) / [`get`](TMap::get).
 //!
 //! Members are serialized through ROOT's object protocol (each with a fresh class
-//! tag), so ROOT and uproot read what oxiroot writes; reading uses [`TagReader`]
-//! so the class back-references ROOT emits for repeated member types resolve.
+//! tag), so ROOT reads what oxiroot writes; reading uses [`TagReader`] so the
+//! class back-references ROOT emits for repeated member types resolve. (uproot
+//! reads `TList`/`TObjArray` but has no `TMap` model — see [`TMap`].)
 
 use std::ops::Range;
 
@@ -295,4 +296,188 @@ impl FromMember for TMatrixDSym {
     fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
         (class == "TMatrixTSym<double>").then(|| decode_tmatrixdsym("", class, bytes))
     }
+}
+
+// --- TMap -------------------------------------------------------------------
+
+/// One side of a [`TMap`] pair: a member's `(class_name, streamed body)`.
+type MapEntry = (String, Vec<u8>);
+
+/// A `TMap` — ROOT's keyed map of object → object, stored under one key (the way
+/// ROOT keeps string-keyed metadata). Build it with [`TMap::insert`] (string
+/// keys) or [`TMap::add`] (any key object); read one back with
+/// [`TMap::read_root`] and look values up by string key with [`get`](TMap::get).
+///
+/// Note: uproot has no `TMap` model, so a `TMap` is unreadable there (ROOT's own
+/// `TMap`s share this). ROOT C++ reads what oxiroot writes, and oxiroot reads
+/// ROOT's `TMap`s.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TMap {
+    name: String,
+    pairs: Vec<(MapEntry, MapEntry)>,
+}
+
+impl TMap {
+    /// An empty map.
+    pub fn new() -> TMap {
+        TMap::default()
+    }
+
+    /// Set the key name this map is stored under.
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> TMap {
+        self.name = name.into();
+        self
+    }
+
+    /// Insert a `value` under a string `key` (stored as a `TObjString`, the usual
+    /// map-key type).
+    #[must_use]
+    pub fn insert(self, key: &str, value: &dyn WriteRoot) -> TMap {
+        let key_obj = TObjString::new(key);
+        self.add(&key_obj, value)
+    }
+
+    /// Insert a `value` under an arbitrary object `key`.
+    #[must_use]
+    pub fn add(mut self, key: &dyn WriteRoot, value: &dyn WriteRoot) -> TMap {
+        self.pairs.push((
+            (key.root_class(), key.to_root_bytes()),
+            (value.root_class(), value.to_root_bytes()),
+        ));
+        self
+    }
+
+    /// The key name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    /// The number of entries.
+    pub fn len(&self) -> usize {
+        self.pairs.len()
+    }
+    /// Whether the map is empty.
+    pub fn is_empty(&self) -> bool {
+        self.pairs.is_empty()
+    }
+
+    /// The string (`TObjString`) keys, in insertion order; keys of other types
+    /// are skipped.
+    pub fn string_keys(&self) -> Vec<String> {
+        self.pairs
+            .iter()
+            .filter_map(|((kc, kb), _)| {
+                (kc == "TObjString")
+                    .then(|| {
+                        decode_tobjstring("", kc, kb)
+                            .ok()
+                            .map(|s| s.value().to_string())
+                    })
+                    .flatten()
+            })
+            .collect()
+    }
+
+    /// The value stored under the string `key`, decoded as `T` — `None` if no
+    /// entry has that `TObjString` key or its value is not a `T`.
+    pub fn get<T: FromMember>(&self, key: &str) -> Option<Result<T>> {
+        self.pairs.iter().find_map(|((kc, kb), (vc, vb))| {
+            if kc != "TObjString" {
+                return None;
+            }
+            match decode_tobjstring("", kc, kb) {
+                Ok(k) if k.value() == key => T::from_member(vc, vb),
+                Ok(_) => None,
+                Err(e) => Some(Err(e)),
+            }
+        })
+    }
+
+    /// Every value that is a `T`, in insertion order.
+    pub fn values<T: FromMember>(&self) -> Result<Vec<T>> {
+        self.pairs
+            .iter()
+            .filter_map(|(_, (vc, vb))| T::from_member(vc, vb))
+            .collect()
+    }
+}
+
+impl WriteRoot for TMap {
+    fn root_class(&self) -> String {
+        "TMap".to_string()
+    }
+    fn root_name(&self) -> &str {
+        &self.name
+    }
+    fn root_title(&self) -> &str {
+        ""
+    }
+    fn contained_classes(&self) -> Vec<String> {
+        self.pairs
+            .iter()
+            .flat_map(|((kc, _), (vc, _))| [kc.clone(), vc.clone()])
+            .collect()
+    }
+    fn to_root_bytes(&self) -> Vec<u8> {
+        let mut w = WBuffer::new();
+        let obj = w.begin_object(3); // TMap version 3
+        write_tobject(&mut w, 0);
+        w.string(&self.name); // fName
+        w.be_i32(self.pairs.len() as i32); // number of pairs
+        for ((kc, kb), (vc, vb)) in &self.pairs {
+            write_object(&mut w, kc, kb); // key object
+            write_object(&mut w, vc, vb); // value object
+        }
+        w.end_object(obj);
+        w.into_vec()
+    }
+}
+
+/// Read one map entry (key or value): its class name and body byte range, or an
+/// empty entry for a null slot. Advances the cursor past the object.
+fn read_entry(r: &mut RBuffer, tags: &mut TagReader, object: &[u8]) -> Result<MapEntry> {
+    let header = tags.read_header(r)?;
+    let entry = match (header.class_name, header.end) {
+        (Some(class), Some(end)) => {
+            let body = object[r.pos()..end].to_vec();
+            r.seek(end)?;
+            (class, body)
+        }
+        (_, Some(end)) => {
+            r.seek(end)?;
+            (String::new(), Vec::new())
+        }
+        _ => (String::new(), Vec::new()),
+    };
+    Ok(entry)
+}
+
+fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
+    if class != "TMap" {
+        return Err(Error::Format(format!("key is a {class}, not a TMap")));
+    }
+    let mut r = RBuffer::new(object);
+    r.read_version()?; // TMap version
+    read_tobject(&mut r)?;
+    let name = r.string()?; // fName
+    let n = r.be_i32()?.max(0);
+
+    let mut tags = TagReader::new(keylen);
+    let mut pairs = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let key = read_entry(&mut r, &mut tags, object)?;
+        let value = read_entry(&mut r, &mut tags, object)?;
+        pairs.push((key, value));
+    }
+    Ok(TMap { name, pairs })
+}
+
+pub(crate) fn read_tmap(file: &RFile, name: &str) -> Result<TMap> {
+    let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
+    decode_tmap(&class, &object, keylen)
+}
+
+pub(crate) fn read_tmap_in(file: &RFile, subdir: &str, name: &str) -> Result<TMap> {
+    let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
+    decode_tmap(&class, &object, keylen)
 }

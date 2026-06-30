@@ -54,7 +54,7 @@ pub use graph2d::TGraph2D;
 pub use graphmultierrors::TGraphMultiErrors;
 pub use linalg::{TMatrixD, TMatrixDSym, TVectorD};
 pub use objects::{ParamValue, TObjString, TParameter};
-pub use objlist::{FromMember, ListKind, ObjList};
+pub use objlist::{FromMember, ListKind, ObjList, TMap};
 pub use ops::Histogram;
 pub use read::ReadRoot;
 pub use tefficiency::TEfficiency;

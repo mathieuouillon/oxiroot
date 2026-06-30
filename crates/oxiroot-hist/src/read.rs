@@ -9,7 +9,7 @@ use crate::graph2d::TGraph2D;
 use crate::graphmultierrors::TGraphMultiErrors;
 use crate::linalg::{TMatrixD, TMatrixDSym, TVectorD};
 use crate::objects::{TObjString, TParameter};
-use crate::objlist::ObjList;
+use crate::objlist::{ObjList, TMap};
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
 use crate::th2::TH2;
@@ -140,4 +140,9 @@ impl_read_root!(
     ObjList,
     crate::objlist::read_objlist,
     crate::objlist::read_objlist_in
+);
+impl_read_root!(
+    TMap,
+    crate::objlist::read_tmap,
+    crate::objlist::read_tmap_in
 );

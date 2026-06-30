@@ -46,6 +46,7 @@ c++ $(root-config --cflags) scripts/gen_root_fixtures.cpp $(root-config --libs) 
 | `collections.root` | a `THStack` `hs` (2×`TH1F`) + `TMultiGraph` `mg` (2×`TGraph`) (`scripts/gen_collections.cpp`) | C++ ROOT |
 | `linalg.root` | a `TVectorD` `v`, `TMatrixD` `m` (2×3), `TMatrixDSym` `s` (3×3) (`scripts/gen_linalg.cpp`) | C++ ROOT |
 | `objlist.root` | a `TList` `mylist` (TH1F + TObjString + TParameter) + `TObjArray` `myarr` (2×TH1F) (`scripts/gen_objlist.cpp`) | C++ ROOT |
+| `tmap.root` | a `TMap` `meta` (string keys → TObjString / TParameter / TH1F) (`scripts/gen_tmap.cpp`) | C++ ROOT (uproot has no TMap model) |
 
 ## Why uproot and not ROOT?
 

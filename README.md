@@ -388,6 +388,25 @@ assert_eq!(list.items::<TParameter>()?[0].value().as_f64(), 137.5);
 histogram family, `TGraph`, `TObjString`, `TParameter`, and the linear-algebra
 types; `class_names()` lists every member.
 
+`TMap` is the keyed variant — ROOT's object → object map, the way ROOT stores
+string-keyed metadata. `insert(key, value)` takes a string key; look values up by
+key with `get::<T>(key)`:
+
+```rust
+use oxiroot::prelude::*;
+let meta = TMap::new().named("meta")
+    .insert("version", &TObjString::new("2.1"))
+    .insert("lumi", &TParameter::f64("lumi", 137.5));
+RootFile::create("meta.root").add(&meta).write(Compression::None)?;
+
+let meta = TMap::read_root(&RFile::open("meta.root")?, "meta")?;
+assert_eq!(meta.get::<TParameter>("lumi").unwrap()?.value().as_f64(), 137.5);
+```
+
+> **uproot caveat:** uproot has no `TMap` model, so a `TMap` is not readable
+> there — a limitation that ROOT's own `TMap`s share. ROOT C++ reads what oxiroot
+> writes, and oxiroot reads ROOT's `TMap`s.
+
 ### Plotting (`oxiroot::plot`, `plot` feature)
 
 Render histograms and graphs to **SVG, PNG, and PDF** with a matplotlib-like API and an
@@ -659,14 +678,6 @@ Grouped by the ROOT feature each fills.
     blocked because ROOT 6.40's `std::map` collection proxy is non-functional in
     the test build — it can neither create nor read a `std::map` RNTuple field —
     so this needs a ROOT install with the `std::map` dictionary loaded to verify.
-- **More persistable objects** — done: `TObjString`, `TParameter<T>` (named
-  scalars), `THStack`, `TMultiGraph`, the linear-algebra classes (`TVectorD`,
-  `TMatrixD`, `TMatrixDSym`), and a bare `TList` / `TObjArray` of objects as a
-  key. See [persistable objects](#persistable-objects-oxiroothist),
-  [collections](#collections-oxiroothist),
-  [linear algebra](#linear-algebra-oxiroothist), and
-  [object collections](#object-collections-oxiroothist). (A keyed `TMap` —
-  ROOT's hash map of objects — is the one shape still open.)
 - **Functions** — standalone `TF1` / `TF2` / `TF3` keys and a real `TFormula`
   expression engine (arbitrary formulas like `[0]+[1]*sin(x)`, `gaus(0)`,
   `expo`), with `Eval` / `Integral` / `Derivative`. Today the `fit` crate's
