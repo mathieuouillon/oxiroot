@@ -53,6 +53,10 @@ const CHECKSUM_TYPE_VERSION: u32 = 0xFFFF_FFFF;
 /// quantized real column).
 const COLUMN_FLAG_RANGE: u16 = 0x02;
 
+/// Column flag: a deferred column (a schema-extension field added late) — the
+/// descriptor carries an `i64` first-element index trailer.
+const COLUMN_FLAG_DEFERRED: u16 = 0x01;
+
 /// A column of data for one RNTuple field.
 #[non_exhaustive]
 pub enum Column {
@@ -1377,6 +1381,63 @@ fn list_frame(items: &[Vec<u8>]) -> Vec<u8> {
 
 // --- envelope builders ------------------------------------------------------
 
+/// One field descriptor record (shared by the header and the footer's
+/// schema-extension record).
+fn field_record(f: &FieldPlan) -> Vec<u8> {
+    let mut r = Vec::new();
+    r.extend_from_slice(&0u32.to_le_bytes()); // field version
+                                              // A checksummed (user-class) field records type version -1.
+    let type_version = if f.type_checksum.is_some() {
+        CHECKSUM_TYPE_VERSION
+    } else {
+        0
+    };
+    r.extend_from_slice(&type_version.to_le_bytes());
+    r.extend_from_slice(&f.parent_id.to_le_bytes());
+    r.extend_from_slice(&f.role.to_le_bytes()); // struct role
+    r.extend_from_slice(&f.flags.to_le_bytes()); // flags
+    r.extend_from_slice(&rstr(&f.name));
+    r.extend_from_slice(&rstr(&f.type_name));
+    r.extend_from_slice(&rstr("")); // type alias
+    r.extend_from_slice(&rstr("")); // description
+                                    // Flag-gated trailers (reader order: array, projection source, checksum).
+    if let Some(size) = f.array_size {
+        r.extend_from_slice(&size.to_le_bytes());
+    }
+    if let Some(checksum) = f.type_checksum {
+        r.extend_from_slice(&checksum.to_le_bytes());
+    }
+    record_frame(&r)
+}
+
+/// One column descriptor record. `first_element_index` is `Some` for a deferred
+/// (schema-extension) column — its data starts at that global element index — and
+/// sets the [`COLUMN_FLAG_DEFERRED`] flag plus the index trailer (before the value
+/// range, matching the reader's order).
+fn column_record(c: &ColumnPlan, first_element_index: Option<i64>) -> Vec<u8> {
+    let mut r = Vec::new();
+    r.extend_from_slice(&(c.column_type as u16).to_le_bytes());
+    r.extend_from_slice(&c.bits.to_le_bytes());
+    r.extend_from_slice(&c.field_id.to_le_bytes());
+    let mut flags = 0u16;
+    if first_element_index.is_some() {
+        flags |= COLUMN_FLAG_DEFERRED;
+    }
+    if c.value_range.is_some() {
+        flags |= COLUMN_FLAG_RANGE;
+    }
+    r.extend_from_slice(&flags.to_le_bytes());
+    r.extend_from_slice(&0u16.to_le_bytes()); // representation index
+    if let Some(first) = first_element_index {
+        r.extend_from_slice(&first.to_le_bytes());
+    }
+    if let Some((min, max)) = c.value_range {
+        r.extend_from_slice(&min.to_le_bytes());
+        r.extend_from_slice(&max.to_le_bytes());
+    }
+    record_frame(&r)
+}
+
 fn build_header(name: &str, fields: &[FieldPlan], cols: &[ColumnPlan]) -> Vec<u8> {
     let mut p = Vec::new();
     p.extend_from_slice(&0i64.to_le_bytes()); // feature flags
@@ -1384,59 +1445,10 @@ fn build_header(name: &str, fields: &[FieldPlan], cols: &[ColumnPlan]) -> Vec<u8
     p.extend_from_slice(&rstr("")); // description
     p.extend_from_slice(&rstr("oxiroot")); // writer
 
-    let field_records: Vec<Vec<u8>> = fields
-        .iter()
-        .map(|f| {
-            let mut r = Vec::new();
-            r.extend_from_slice(&0u32.to_le_bytes()); // field version
-                                                      // A checksummed (user-class) field records type version -1.
-            let type_version = if f.type_checksum.is_some() {
-                CHECKSUM_TYPE_VERSION
-            } else {
-                0
-            };
-            r.extend_from_slice(&type_version.to_le_bytes());
-            r.extend_from_slice(&f.parent_id.to_le_bytes());
-            r.extend_from_slice(&f.role.to_le_bytes()); // struct role
-            r.extend_from_slice(&f.flags.to_le_bytes()); // flags
-            r.extend_from_slice(&rstr(&f.name));
-            r.extend_from_slice(&rstr(&f.type_name));
-            r.extend_from_slice(&rstr("")); // type alias
-            r.extend_from_slice(&rstr("")); // description
-                                            // Flag-gated trailers (must match the reader's order: array, then
-                                            // projection source, then checksum).
-            if let Some(size) = f.array_size {
-                r.extend_from_slice(&size.to_le_bytes());
-            }
-            if let Some(checksum) = f.type_checksum {
-                r.extend_from_slice(&checksum.to_le_bytes());
-            }
-            record_frame(&r)
-        })
-        .collect();
+    let field_records: Vec<Vec<u8>> = fields.iter().map(field_record).collect();
     p.extend_from_slice(&list_frame(&field_records));
 
-    let column_records: Vec<Vec<u8>> = cols
-        .iter()
-        .map(|c| {
-            let mut r = Vec::new();
-            r.extend_from_slice(&(c.column_type as u16).to_le_bytes());
-            r.extend_from_slice(&c.bits.to_le_bytes());
-            r.extend_from_slice(&c.field_id.to_le_bytes());
-            let flags = if c.value_range.is_some() {
-                COLUMN_FLAG_RANGE
-            } else {
-                0
-            };
-            r.extend_from_slice(&flags.to_le_bytes());
-            r.extend_from_slice(&0u16.to_le_bytes()); // representation index
-            if let Some((min, max)) = c.value_range {
-                r.extend_from_slice(&min.to_le_bytes());
-                r.extend_from_slice(&max.to_le_bytes());
-            }
-            record_frame(&r)
-        })
-        .collect();
+    let column_records: Vec<Vec<u8>> = cols.iter().map(|c| column_record(c, None)).collect();
     p.extend_from_slice(&list_frame(&column_records));
 
     p.extend_from_slice(&list_frame(&[])); // alias columns
@@ -1476,6 +1488,32 @@ fn build_page_list(
     compression: u32,
     header_checksum: u64,
 ) -> Result<Vec<u8>> {
+    // A normal single cluster: every column starts at element 0.
+    let element_offsets = vec![0i64; cols.len()];
+    build_page_list_offsets(
+        n_entries,
+        page_offsets,
+        disk_sizes,
+        cols,
+        &element_offsets,
+        compression,
+        header_checksum,
+    )
+}
+
+/// Like [`build_page_list`] but with each column's first-element offset given
+/// explicitly: a deferred (schema-extension) column's page starts at that global
+/// element index, so the reader knows the earlier entries are defaulted.
+#[allow(clippy::too_many_arguments)]
+fn build_page_list_offsets(
+    n_entries: u32,
+    page_offsets: &[usize],
+    disk_sizes: &[usize],
+    cols: &[ColumnPlan],
+    element_offsets: &[i64],
+    compression: u32,
+    header_checksum: u64,
+) -> Result<Vec<u8>> {
     let mut p = Vec::new();
     p.extend_from_slice(&header_checksum.to_le_bytes());
 
@@ -1494,7 +1532,7 @@ fn build_page_list(
         let mut body = Vec::new();
         body.extend_from_slice(&1u32.to_le_bytes()); // one page
         body.extend_from_slice(&page);
-        body.extend_from_slice(&0i64.to_le_bytes()); // element offset
+        body.extend_from_slice(&element_offsets[i].to_le_bytes()); // element offset
         body.extend_from_slice(&compression.to_le_bytes()); // compression settings
         let size = (8 + body.len()) as i64;
         let mut frame = (-size).to_le_bytes().to_vec();
@@ -1514,14 +1552,49 @@ fn build_footer(
     page_list_len: usize,
     header_checksum: u64,
 ) -> Vec<u8> {
+    build_footer_ext(
+        n_entries,
+        num_clusters,
+        page_list_offset,
+        page_list_len,
+        header_checksum,
+        &[],
+        &[],
+        &[],
+    )
+}
+
+/// Like [`build_footer`] but with a non-empty schema-extension record: the late
+/// `ext_fields` and their deferred `ext_cols` (each paired with its first-element
+/// index) go into the header-extension record so readers merge them and back-fill.
+#[allow(clippy::too_many_arguments)]
+fn build_footer_ext(
+    n_entries: u32,
+    num_clusters: u32,
+    page_list_offset: usize,
+    page_list_len: usize,
+    header_checksum: u64,
+    ext_fields: &[FieldPlan],
+    ext_cols: &[ColumnPlan],
+    first_entries: &[i64],
+) -> Vec<u8> {
     let mut p = Vec::new();
     p.extend_from_slice(&0i64.to_le_bytes()); // feature flags
     p.extend_from_slice(&header_checksum.to_le_bytes());
 
+    // Header-extension record: late field list, late column list, then the two
+    // empty trailers (alias columns, extra type info).
     let mut ext = Vec::new();
-    for _ in 0..4 {
-        ext.extend_from_slice(&list_frame(&[]));
-    }
+    let field_records: Vec<Vec<u8>> = ext_fields.iter().map(field_record).collect();
+    ext.extend_from_slice(&list_frame(&field_records));
+    let column_records: Vec<Vec<u8>> = ext_cols
+        .iter()
+        .zip(first_entries)
+        .map(|(c, &first)| column_record(c, Some(first)))
+        .collect();
+    ext.extend_from_slice(&list_frame(&column_records));
+    ext.extend_from_slice(&list_frame(&[])); // alias columns
+    ext.extend_from_slice(&list_frame(&[])); // extra type info
     p.extend_from_slice(&record_frame(&ext));
 
     // One cluster group spanning every cluster; it links to the single page-list
@@ -1635,6 +1708,20 @@ struct NtuplePrep {
     disk_sizes: Vec<usize>,
     cols: Vec<ColumnPlan>,
     n_entries: u32,
+    /// Set when this is a schema-extended RNTuple: the late field/column
+    /// descriptors (placed in the footer's extension record) and the per-column
+    /// element offsets. `cols`/`disk_pages` already include the late columns.
+    ext: Option<ExtPrep>,
+}
+
+/// The schema-extension half of a [`NtuplePrep`]: the late field descriptors, the
+/// boundary between header and late columns, and each column's first-element
+/// offset (`0` for header columns, the late field's first entry for late ones).
+struct ExtPrep {
+    ext_fields: Vec<FieldPlan>,
+    base_col_count: usize,
+    first_entries: Vec<i64>,
+    element_offsets: Vec<i64>,
 }
 
 /// Lower one RNTuple's fields and encode its pages (the placement-independent
@@ -1657,7 +1744,104 @@ fn prep_ntuple(name: &str, fields: &[Field], compression: u32) -> Result<NtupleP
         disk_sizes,
         cols,
         n_entries,
+        ext: None,
     })
+}
+
+/// Lower a schema-extended RNTuple: `base_fields` go in the header, and each
+/// `(first_entry, late_field)` becomes a deferred field in the footer's extension
+/// record whose data covers entries `first_entry..n_entries`. The late field's
+/// IDs continue the base's. Late fields must be scalar leaves (one column each)
+/// and supply exactly `n_entries - first_entry` values.
+fn prep_ntuple_extended(
+    name: &str,
+    base_fields: &[Field],
+    late: &[(u64, Field)],
+    compression: u32,
+) -> Result<NtuplePrep> {
+    let (base_fields_plan, base_cols, n_entries) = lower(base_fields)?;
+    let header_env = build_header(name, &base_fields_plan, &base_cols);
+    let header_checksum =
+        u64::from_le_bytes(header_env[header_env.len() - 8..].try_into().unwrap());
+
+    let base_col_count = base_cols.len();
+    let mut cols = base_cols;
+    let mut ext_fields = Vec::new();
+    let mut first_entries = Vec::new();
+    let mut element_offsets = vec![0i64; base_col_count];
+
+    for (first_entry, field) in late {
+        let (mut late_fp, mut late_cols, late_n) = lower(std::slice::from_ref(field))?;
+        if late_cols.len() != 1 || late_fp.len() != 1 {
+            return Err(Error::Format(format!(
+                "late RNTuple field {:?} must be a scalar leaf",
+                field.name
+            )));
+        }
+        if *first_entry + late_n as u64 != u64::from(n_entries) {
+            return Err(Error::Format(format!(
+                "late RNTuple field {:?} has {late_n} values starting at entry {first_entry}, \
+                 but the RNTuple has {n_entries} entries",
+                field.name
+            )));
+        }
+        // Continue the schema's field/column IDs past everything added so far.
+        let id_base = (base_fields_plan.len() + ext_fields.len()) as u32;
+        for f in &mut late_fp {
+            f.parent_id += id_base;
+        }
+        for c in &mut late_cols {
+            c.field_id += id_base;
+        }
+        ext_fields.append(&mut late_fp);
+        first_entries.push(*first_entry as i64);
+        element_offsets.push(*first_entry as i64);
+        cols.append(&mut late_cols);
+    }
+
+    let disk_pages: Vec<Vec<u8>> = cols
+        .iter()
+        .map(|c| on_disk_page(&c.page, compression))
+        .collect();
+    let disk_sizes: Vec<usize> = disk_pages.iter().map(|p| p.len()).collect();
+
+    Ok(NtuplePrep {
+        name: name.to_string(),
+        header_env,
+        header_checksum,
+        disk_pages,
+        disk_sizes,
+        cols,
+        n_entries,
+        ext: Some(ExtPrep {
+            ext_fields,
+            base_col_count,
+            first_entries,
+            element_offsets,
+        }),
+    })
+}
+
+/// Build a complete ROOT file with one schema-extended RNTuple: `base_fields` in
+/// the header plus late `(first_entry, field)` fields in the footer's extension
+/// record (see [`prep_ntuple_extended`]). Small container form only — schema
+/// extension is an append-time operation, not a >2 GiB one.
+fn extended_rntuple_file_bytes(
+    file_name: &str,
+    ntuple_name: &str,
+    base_fields: &[Field],
+    late: &[(u64, Field)],
+    compression: Compression,
+) -> Result<Vec<u8>> {
+    let compression = compression.setting();
+    let prep = prep_ntuple_extended(ntuple_name, base_fields, late, compression)?;
+    rntuples_one_shot_pass(
+        file_name,
+        std::slice::from_ref(&prep),
+        &[],
+        compression,
+        false,
+    )
 }
 
 /// Write one RNTuple's blobs (header, pages, page list, footer) into `w`, then
@@ -1678,23 +1862,52 @@ fn write_one_rntuple(
         w.bytes(dp);
     }
     let page_list_offset = w.len();
-    let page_list_env = build_page_list(
-        p.n_entries,
-        &page_offsets,
-        &p.disk_sizes,
-        &p.cols,
-        compression,
-        p.header_checksum,
-    )?;
-    w.bytes(&page_list_env);
+    let (page_list_env, footer_env);
+    if let Some(ext) = &p.ext {
+        // Schema-extended: the late columns' pages start at their first element
+        // index (the page list records the offset), and the late field/column
+        // descriptors go in the footer's schema-extension record.
+        page_list_env = build_page_list_offsets(
+            p.n_entries,
+            &page_offsets,
+            &p.disk_sizes,
+            &p.cols,
+            &ext.element_offsets,
+            compression,
+            p.header_checksum,
+        )?;
+        w.bytes(&page_list_env);
+        let seek = w.len();
+        footer_env = build_footer_ext(
+            p.n_entries,
+            1,
+            page_list_offset,
+            page_list_env.len(),
+            p.header_checksum,
+            &ext.ext_fields,
+            &p.cols[ext.base_col_count..],
+            &ext.first_entries,
+        );
+        debug_assert_eq!(seek, w.len());
+    } else {
+        page_list_env = build_page_list(
+            p.n_entries,
+            &page_offsets,
+            &p.disk_sizes,
+            &p.cols,
+            compression,
+            p.header_checksum,
+        )?;
+        w.bytes(&page_list_env);
+        footer_env = build_footer(
+            p.n_entries,
+            1,
+            page_list_offset,
+            page_list_env.len(),
+            p.header_checksum,
+        );
+    }
     let seek_footer = w.len();
-    let footer_env = build_footer(
-        p.n_entries,
-        1,
-        page_list_offset,
-        page_list_env.len(),
-        p.header_checksum,
-    );
     w.bytes(&footer_env);
 
     let anchor_obj = build_anchor(
@@ -2038,6 +2251,44 @@ impl Ntuple {
     /// file header.
     pub fn to_root_bytes(&self, file_name: &str, compression: Compression) -> Result<Vec<u8>> {
         rntuple_file_bytes(file_name, &self.name, &self.fields, compression)
+    }
+
+    /// Write this RNTuple **with a schema late extension**: this RNTuple's fields
+    /// go in the header, and each `(first_entry, field)` in `late` is added as a
+    /// deferred field via the footer's schema-extension record — its data covers
+    /// entries `first_entry..N`, and the earlier entries default. ROOT reads the
+    /// result as a schema-extended RNTuple (as if the field had been added
+    /// mid-writing with a model updater). Late fields must be scalar leaves and
+    /// supply exactly `N - first_entry` values.
+    ///
+    /// ```no_run
+    /// use oxiroot_rntuple::{Field, Ntuple};
+    /// use oxiroot_io_core::Compression;
+    /// // 4 entries of `x`; `y` added late, covering only entries 2 and 3.
+    /// Ntuple::new("events", vec![Field::i32("x", vec![1, 2, 3, 4])])
+    ///     .write_root_extended(
+    ///         "ext.root",
+    ///         &[(2, Field::f32("y", vec![3.5, 4.5]))],
+    ///         Compression::None,
+    ///     )?;
+    /// # Ok::<(), oxiroot_io_core::error::Error>(())
+    /// ```
+    pub fn write_root_extended(
+        &self,
+        path: impl AsRef<Path>,
+        late: &[(u64, Field)],
+        compression: Compression,
+    ) -> Result<()> {
+        let file_name = path
+            .as_ref()
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file.root")
+            .to_string();
+        let bytes =
+            extended_rntuple_file_bytes(&file_name, &self.name, &self.fields, late, compression)?;
+        std::fs::write(path, bytes)?;
+        Ok(())
     }
 }
 

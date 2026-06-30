@@ -35,8 +35,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   vectors, **nested vectors and vectors of records**, fixed-size
   `std::array`/`std::bitset`, user classes, `std::set`/`std::map`, the nullable
   `std::optional`/`std::unique_ptr` and `std::atomic`), read *unsplit* streamer
-  fields, compressed, multi-cluster via a streaming writer, and **several
-  RNTuples per file / inside a `TDirectory`**.
+  fields, compressed, multi-cluster via a streaming writer, **several RNTuples per
+  file / inside a `TDirectory`**, and **schema late extensions** (read and write
+  fields added via the footer's schema-extension record).
 - 🗜 **Compression** — decode Zstd / zlib / LZ4 / LZMA; encode Zstd / zlib /
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
@@ -432,6 +433,11 @@ ax2.save("heatmap.svg")?;
   `std::variant` (`Field::variant`), and the nullable / atomic fields
   (`Field::optional_*` / `unique_ptr_*` from a `Vec<Option<T>>`, `Field::atomic_*`)
   — optionally Zstd-compressed.
+- `Ntuple::write_root_extended` writes a **schema late extension**: this RNTuple's
+  fields go in the header, and each late `(first_entry, field)` is added through
+  the footer's schema-extension record as a deferred column (its data covers
+  entries `first_entry..N`; earlier ones default). ROOT reads the result as if the
+  field had been added mid-writing with a model updater.
 - `Ntuple::new(name, fields).write_root(path, compression)` is the method form
   (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
   free `write_rntuple_file` remains.
@@ -551,10 +557,6 @@ Grouped by the ROOT feature each fills.
 - **RNTuple**
   - **A `std::map` write ROOT reads** — read already works; the write is blocked
     by the same collection-proxy dictionary as `TTree`.
-  - **Writing a schema late extension** — *appending* fields/columns to an
-    existing RNTuple via the footer's schema-extension record. (Reading a
-    schema-extended RNTuple — merging the late fields and back-filling the
-    deferred columns — already works.)
 - **More persistable objects** — the small classes constantly stored alongside
   histograms: `TObjString`, `TParameter<T>` (named scalars), `TMultiGraph`,
   `THStack` (a stacked-histogram collection), a `TList` / `TObjArray` / `TMap` of
