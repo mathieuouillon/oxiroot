@@ -83,12 +83,14 @@ pub trait WriteRoot {
                 self.root_class()
             )));
         }
+        let class = self.root_class();
+        let streamers = streamer_info_for(std::iter::once(class.as_str()))?;
         write_named(path, |file_name| {
             write_root_file_with_streamers(
                 file_name,
                 &[record_of(self)],
                 compression.setting(),
-                Some(HIST_STREAMER_INFO),
+                Some(streamers.as_ref()),
             )
         })
     }
@@ -175,6 +177,32 @@ impl WriteRoot for TGraph {
 /// Embedded in every written file so it is self-describing. Sourced from a
 /// ROOT-written file with one of each type, kept uncompressed.
 const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
+
+/// The streamer info to embed for objects with class names `class_names`: the
+/// baked histogram blob, plus any persistable-object classes
+/// (`TObjString`/`TParameter<…>`) those objects use, so uproot can model them.
+/// Returns the baked blob borrowed when nothing extra is needed.
+fn streamer_info_for<'a>(
+    class_names: impl Iterator<Item = &'a str>,
+) -> Result<std::borrow::Cow<'static, [u8]>> {
+    use oxiroot_io_core::streamer_gen::{append_streamer_infos, Cls};
+    let mut extra: Vec<Cls> = Vec::new();
+    for class in class_names {
+        if let Some(cls) = crate::objects::streamer_class(class) {
+            if !extra.iter().any(|c| c.name == cls.name) {
+                extra.push(cls);
+            }
+        }
+    }
+    if extra.is_empty() {
+        Ok(std::borrow::Cow::Borrowed(HIST_STREAMER_INFO))
+    } else {
+        Ok(std::borrow::Cow::Owned(append_streamer_infos(
+            HIST_STREAMER_INFO,
+            &extra,
+        )?))
+    }
+}
 
 // `fBits` values ROOT writes for the embedded TObjects in a fresh histogram.
 const HIST_BITS: u32 = 0x0300_0008;
@@ -1215,6 +1243,13 @@ impl RootFile {
             .unwrap_or("file.root")
             .to_string();
         let setting = compression.setting();
+        let streamers = streamer_info_for(
+            self.root
+                .iter()
+                .chain(self.dirs.iter().flat_map(|d| d.objects.iter()))
+                .map(|r| r.class_name.as_str()),
+        )?;
+        let streamers = Some(streamers.as_ref());
         let bytes = match self.existing {
             Some(existing) => {
                 if !self.dirs.is_empty() {
@@ -1225,27 +1260,14 @@ impl RootFile {
                             .to_string(),
                     ));
                 }
-                update_root_file(
-                    &existing,
-                    &file_name,
-                    &self.root,
-                    setting,
-                    Some(HIST_STREAMER_INFO),
-                )?
+                update_root_file(&existing, &file_name, &self.root, setting, streamers)?
             }
-            None if self.dirs.is_empty() => write_root_file_with_streamers(
-                &file_name,
-                &self.root,
-                setting,
-                Some(HIST_STREAMER_INFO),
-            )?,
-            None => write_root_file_with_dirs(
-                &file_name,
-                &self.root,
-                &self.dirs,
-                setting,
-                Some(HIST_STREAMER_INFO),
-            )?,
+            None if self.dirs.is_empty() => {
+                write_root_file_with_streamers(&file_name, &self.root, setting, streamers)?
+            }
+            None => {
+                write_root_file_with_dirs(&file_name, &self.root, &self.dirs, setting, streamers)?
+            }
         };
         std::fs::write(&self.path, bytes)?;
         Ok(())

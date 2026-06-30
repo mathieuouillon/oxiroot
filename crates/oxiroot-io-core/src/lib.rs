@@ -19,6 +19,7 @@ pub mod error;
 pub mod file;
 pub mod object;
 pub mod streamer;
+pub mod streamer_gen;
 pub mod streamer_info;
 
 pub use compression::Compression;

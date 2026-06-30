@@ -7,6 +7,7 @@
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::read_tobject;
+use oxiroot_io_core::streamer_gen::{base, basic, strf, Cls};
 use oxiroot_io_core::RFile;
 
 use crate::base::object_bytes_any;
@@ -123,18 +124,20 @@ pub enum ParamValue {
     Float(f32),
     /// `TParameter<int>`.
     Int(i32),
-    /// `TParameter<Long64_t>` (a 64-bit integer).
+    /// `TParameter<long long>` (a 64-bit integer; ROOT's `Long64_t`).
     Long64(i64),
 }
 
 impl ParamValue {
-    /// The C++ type name ROOT uses in the `TParameter<…>` class name.
+    /// The C++ type name ROOT uses in the `TParameter<…>` class name. `Long64_t`
+    /// demangles to `long long` on disk (matching ROOT's own key class and
+    /// streamer-info names, so uproot resolves the class).
     fn type_name(&self) -> &'static str {
         match self {
             ParamValue::Double(_) => "double",
             ParamValue::Float(_) => "float",
             ParamValue::Int(_) => "int",
-            ParamValue::Long64(_) => "Long64_t",
+            ParamValue::Long64(_) => "long long",
         }
     }
     fn write(&self, w: &mut WBuffer) {
@@ -247,6 +250,46 @@ fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Result<TParamete
         name: name.to_string(),
         value,
     })
+}
+
+/// The `TStreamerInfo` ROOT writes for `class`, if it is one of the persistable
+/// object classes this module serializes. The written file embeds these (merged
+/// into the histogram streamer info) so uproot can model the class — ROOT C++
+/// has them compiled in and does not need them, but uproot reads a templated
+/// `TParameter<…>` only from its streamer. The base classes (`TObject`,
+/// `TString`) are already covered by the histogram streamer info. Returns `None`
+/// for anything else (e.g. a histogram, already described). Checksums/versions
+/// are ROOT's own values (see `scripts/gen_persist_objs.cpp`).
+pub(crate) fn streamer_class(class: &str) -> Option<Cls> {
+    let param = |name, checksum, ty, size, type_name| Cls {
+        name,
+        version: 2,
+        checksum,
+        elements: vec![
+            base("TObject", 1),
+            strf("fName"),
+            basic("fVal", ty, size, type_name),
+        ],
+    };
+    match class {
+        "TObjString" => Some(Cls {
+            name: "TObjString",
+            version: 1,
+            checksum: 2_626_570_240,
+            elements: vec![base("TObject", 1), strf("fString")],
+        }),
+        "TParameter<double>" => Some(param("TParameter<double>", 1_968_899_544, 8, 8, "double")),
+        "TParameter<float>" => Some(param("TParameter<float>", 1_396_280_242, 5, 4, "float")),
+        "TParameter<int>" => Some(param("TParameter<int>", 4_270_151_672, 3, 4, "int")),
+        "TParameter<long long>" => Some(param(
+            "TParameter<long long>",
+            3_647_805_264,
+            16,
+            8,
+            "long long",
+        )),
+        _ => None,
+    }
 }
 
 pub(crate) fn read_tparameter(file: &RFile, name: &str) -> Result<TParameter> {

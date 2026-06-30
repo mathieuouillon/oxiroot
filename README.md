@@ -311,10 +311,10 @@ assert_eq!(TParameter::read_root(&f, "lumi")?.value().as_f64(), 137.5);
 ```
 
 `TParameter` comes in `f64`/`f32`/`i32`/`i64` flavours (the `double`/`float`/
-`int`/`Long64_t` instantiations). ROOT C++ reads both classes from oxiroot's
-files, and uproot reads the `TObjString`; reading oxiroot's `TParameter` in
-uproot additionally needs its `TStreamerInfo` embedded (oxiroot currently embeds
-only the histogram streamers), so prefer ROOT C++ for that round-trip.
+`int`/`long long` instantiations). Both ROOT C++ and uproot read them from
+oxiroot's files: the writer embeds the `TStreamerInfo` for whichever
+`TParameter<…>`/`TObjString` classes a file contains (merged into the histogram
+streamers), so uproot can model the templated `TParameter` class.
 
 ### Plotting (`oxiroot::plot`, `plot` feature)
 
