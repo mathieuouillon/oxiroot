@@ -133,7 +133,7 @@ impl Header {
     }
 }
 
-fn read_field_list(r: &mut RBuffer) -> Result<Vec<FieldDescriptor>> {
+pub(crate) fn read_field_list(r: &mut RBuffer) -> Result<Vec<FieldDescriptor>> {
     let list = read_frame(r)?;
     let mut fields = Vec::with_capacity((list.n_items as usize).min(r.remaining()));
     for _ in 0..list.n_items {
@@ -179,7 +179,7 @@ fn read_field_list(r: &mut RBuffer) -> Result<Vec<FieldDescriptor>> {
     Ok(fields)
 }
 
-fn read_column_list(r: &mut RBuffer) -> Result<Vec<ColumnDescriptor>> {
+pub(crate) fn read_column_list(r: &mut RBuffer) -> Result<Vec<ColumnDescriptor>> {
     let list = read_frame(r)?;
     let mut columns = Vec::with_capacity((list.n_items as usize).min(r.remaining()));
     for _ in 0..list.n_items {

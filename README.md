@@ -421,7 +421,10 @@ ax2.save("heatmap.svg")?;
   the nullable / "late" fields `std::optional<T>` / `std::unique_ptr<T>` (read as
   a [`FieldValues::Opt`] you can zip with `opt_f32()` etc.), `std::atomic<T>`,
   fixed-size `std::array`/`std::bitset`, and user-defined classes (split into a
-  record of their members), across multiple clusters.
+  record of their members), across multiple clusters. **Schema-extended**
+  RNTuples (fields added late via the footer's schema-extension record) are read
+  too — the late fields merge into the schema and their deferred columns
+  back-fill the entries written before the field existed.
 - Write the same surface it reads: `bool`, every integer width (8/16/32/64-bit,
   signed & unsigned), `f32`/`f64`, reduced-precision reals (`Field::half` /
   `truncated` / `quantized`), `std::string`, `std::vector<T>`, the nested
@@ -548,8 +551,10 @@ Grouped by the ROOT feature each fills.
 - **RNTuple**
   - **A `std::map` write ROOT reads** — read already works; the write is blocked
     by the same collection-proxy dictionary as `TTree`.
-  - **Schema late extension** — append fields/columns to an existing RNTuple via
-    the footer's schema-extension record.
+  - **Writing a schema late extension** — *appending* fields/columns to an
+    existing RNTuple via the footer's schema-extension record. (Reading a
+    schema-extended RNTuple — merging the late fields and back-filling the
+    deferred columns — already works.)
 - **More persistable objects** — the small classes constantly stored alongside
   histograms: `TObjString`, `TParameter<T>` (named scalars), `TMultiGraph`,
   `THStack` (a stacked-histogram collection), a `TList` / `TObjArray` / `TMap` of

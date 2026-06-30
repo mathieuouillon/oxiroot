@@ -4,6 +4,7 @@ use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::Result;
 
 use crate::envelope::{read_feature_flags, read_frame, read_locator, Locator};
+use crate::header::{read_column_list, read_field_list, ColumnDescriptor, FieldDescriptor};
 
 /// A cluster group: a contiguous range of entries whose page locations live in
 /// one page-list envelope.
@@ -22,10 +23,18 @@ pub struct ClusterGroup {
 }
 
 /// The parsed footer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Not `Eq`: extension `ColumnDescriptor`s may carry an `f64` value range.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Footer {
     /// XXH3-64 of the header envelope (cross-check).
     pub header_checksum: u64,
+    /// Fields added after the header via the schema-extension record (the late
+    /// fields of a schema-extended RNTuple); empty for an unextended one. Their
+    /// field IDs continue the header's numbering.
+    pub ext_fields: Vec<FieldDescriptor>,
+    /// Columns added via the schema-extension record (deferred columns of the
+    /// late fields); their IDs continue the header's numbering.
+    pub ext_columns: Vec<ColumnDescriptor>,
     /// The cluster groups, in order.
     pub cluster_groups: Vec<ClusterGroup>,
 }
@@ -38,8 +47,17 @@ impl Footer {
         read_feature_flags(&mut r)?;
         let header_checksum = r.le_u64()?;
 
-        // Schema extension record frame (late-added fields/columns) — skipped.
+        // Schema extension record frame: late-added field/column descriptors (a
+        // record frame wrapping the same field + column lists as the header
+        // schema). Empty for an unextended RNTuple.
         let ext = read_frame(&mut r)?;
+        let (ext_fields, ext_columns) = if r.pos() < ext.end {
+            let fields = read_field_list(&mut r)?;
+            let columns = read_column_list(&mut r)?;
+            (fields, columns)
+        } else {
+            (Vec::new(), Vec::new())
+        };
         r.seek(ext.end)?;
 
         // Cluster group list frame. Cap the reservation at the remaining buffer
@@ -69,6 +87,8 @@ impl Footer {
 
         Ok(Footer {
             header_checksum,
+            ext_fields,
+            ext_columns,
             cluster_groups,
         })
     }

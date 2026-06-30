@@ -87,7 +87,7 @@ impl RNTuple {
                 h.type_id
             )));
         }
-        let header = Header::parse(h.payload)?;
+        let mut header = Header::parse(h.payload)?;
 
         let f = read_envelope(&footer_bytes)?;
         if f.type_id != ENVELOPE_FOOTER {
@@ -97,6 +97,11 @@ impl RNTuple {
             )));
         }
         let footer = Footer::parse(f.payload)?;
+
+        // Merge any schema-extension fields/columns (late-added fields of a
+        // schema-extended RNTuple) into the schema, continuing the header's IDs.
+        header.fields.extend(footer.ext_fields.iter().cloned());
+        header.columns.extend(footer.ext_columns.iter().cloned());
 
         // Read each cluster group's page-list envelope.
         let mut summaries = Vec::new();
@@ -172,20 +177,31 @@ impl RNTuple {
 
         let mut pages: Vec<PageInfo> = Vec::new();
         for cluster in &self.page_clusters {
-            let column = cluster
-                .columns
-                .get(column_index)
-                .ok_or_else(|| Error::Format(format!("cluster missing column {column_index}")))?;
-            pages.extend_from_slice(&column.pages);
+            // A deferred (schema-extension) column is absent from the clusters
+            // written before it existed; those contribute no pages and are
+            // back-filled with defaults below.
+            if let Some(column) = cluster.columns.get(column_index) {
+                pages.extend_from_slice(&column.pages);
+            }
         }
 
-        read_column(
+        let values = read_column(
             file.data(),
             descriptor.column_type,
             descriptor.bits_on_storage,
             &pages,
             descriptor.value_range,
-        )
+        )?;
+
+        // A deferred (schema-extension) column carries a non-zero
+        // `first_element_index`: its pages cover only the elements from that
+        // index on, and ROOT defaults the earlier ones. Prepend that many
+        // defaults so the column lines up. (A normal collection child column has
+        // no such index and is legitimately shorter than the entry count.)
+        match descriptor.first_element_index {
+            Some(first) if first > 0 => Ok(backfill_leading(values, first as usize)),
+            _ => Ok(values),
+        }
     }
 
     /// Names of the top-level fields, in schema order.
@@ -479,6 +495,36 @@ impl RNTuple {
 /// `std::unique_ptr<T>`) — read back as [`FieldValues::Opt`], not a collection.
 fn is_late_field(type_name: &str) -> bool {
     type_name.starts_with("std::optional<") || type_name.starts_with("std::unique_ptr<")
+}
+
+/// Prepend `k` default values to a decoded column — the leading entries a
+/// late-added (schema-extension) column does not cover. Numerics default to `0`
+/// and bools to `false` (an `Index*` offset of `0` is an empty collection),
+/// matching how ROOT defaults entries written before the field was added.
+fn backfill_leading(values: ColumnValues, k: usize) -> ColumnValues {
+    use ColumnValues::*;
+    macro_rules! pre {
+        ($variant:ident, $v:ident, $default:expr) => {{
+            let mut out = vec![$default; k];
+            out.extend($v);
+            $variant(out)
+        }};
+    }
+    match values {
+        Bits(v) => pre!(Bits, v, false),
+        Bytes(v) => pre!(Bytes, v, 0),
+        I8(v) => pre!(I8, v, 0),
+        U8(v) => pre!(U8, v, 0),
+        I16(v) => pre!(I16, v, 0),
+        U16(v) => pre!(U16, v, 0),
+        I32(v) => pre!(I32, v, 0),
+        I64(v) => pre!(I64, v, 0),
+        U32(v) => pre!(U32, v, 0),
+        U64(v) => pre!(U64, v, 0),
+        F32(v) => pre!(F32, v, 0.0),
+        F64(v) => pre!(F64, v, 0.0),
+        Switch(v) => pre!(Switch, v, (0u64, 0u32)),
+    }
 }
 
 fn read_blob(data: &[u8], seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
