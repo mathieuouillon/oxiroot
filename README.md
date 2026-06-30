@@ -27,9 +27,10 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
-  `std::set`/`std::map` branches, `TNtuple`/`TNtupleD`, **friend trees**
-  (`AddFriend`, read entry-aligned), tree aliases (`SetAlias`), and `TEntryList`
-  selections; multi-basket via a bounded-memory streaming writer.
+  old unsplit object branches (`TBranchObject`), `std::set`/`std::map` branches,
+  `TNtuple`/`TNtupleD`, **friend trees** (`AddFriend`, read entry-aligned), tree
+  aliases (`SetAlias`), and `TEntryList` selections; multi-basket via a
+  bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**, fixed-size
   `std::array`/`std::bitset`, user classes, `std::set`/`std::map`), read
@@ -393,6 +394,10 @@ ax2.save("heatmap.svg")?;
   strings but does not evaluate them. `TEntryList::open(file, name)` reads a
   saved entry selection (a standalone key) into the ascending list of selected
   entry numbers, with `entries()` / `contains(entry)`.
+- Old unsplit object branches (`TBranchObject`, the pre-`TBranchElement` way of
+  storing a whole object per entry) are read by synthesizing one `branch.member`
+  column per basic/string member of the object class — e.g. a branch of `TNamed`
+  reads as `branch.fName` / `branch.fTitle`.
 - The reader is **streamer-info-driven**: it parses `TTree`/`TBranch`/
   `TBranchElement` by walking the member list in the file's own `TStreamerInfo`
   (`TTree::streamer_classes` exposes it), so a schema change is absorbed instead
@@ -529,9 +534,6 @@ Grouped by the ROOT feature each fills.
     `fTreeIndex` (`TTreeIndex`) so friends can be joined on a `(major, minor)`
     key instead of by entry. (Positional friends — `AddFriend`, read
     entry-aligned — already work.)
-  - **Old non-split object branches** (`TBranchObject`) — the pre-`TBranchElement`
-    way of storing a whole object per entry behind a `TLeafObject`. (Aliases —
-    `SetAlias` — and `TEntryList` selections already read.)
 - **RNTuple**
   - **An RNTuple inside a `TDirectory`, and several per file** — today the writer
     emits one RNTuple in the root directory.

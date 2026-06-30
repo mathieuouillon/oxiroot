@@ -114,6 +114,23 @@ struct Branch {
     /// entry data is decoded as a doubly-nested collection ([`BranchValues::Nested`])
     /// rather than a flat jagged array.
     nested_elem: Option<LeafType>,
+    /// Set for a synthesized member column of an old unsplit `TBranchObject`: the
+    /// object class to decode out of each entry, and which member this column is.
+    /// The branch data is one whole object per entry (`[className][version][members]`),
+    /// from which this member is extracted at read time.
+    object_member: Option<ObjectMember>,
+}
+
+/// One member column synthesized from an old unsplit `TBranchObject` (a whole
+/// object stored per entry behind a `TLeafObject`). Carries the object class's
+/// streamer layout so the per-entry object can be decoded without the registry.
+#[derive(Debug, Clone)]
+struct ObjectMember {
+    /// The member this column extracts (e.g. `fName`).
+    member: String,
+    /// The object class's streamer elements, in order (so the per-entry object
+    /// can be walked up to `member`).
+    class_elements: Vec<StreamerElement>,
 }
 
 /// One `TLeaf` of a branch: its name/title, element type, fixed length, and byte
@@ -336,6 +353,11 @@ impl TTree {
                 "branch {name:?} is a string branch; use read_branch"
             )));
         }
+        if branch.object_member.is_some() {
+            return Err(Error::Format(format!(
+                "branch {name:?} is a TBranchObject member; use read_branch"
+            )));
+        }
         let baskets = read_baskets(file, branch, 0..branch.n_baskets)?;
         let regions = entry_regions(branch, &baskets);
         let size = branch.leaf_type.size().max(1);
@@ -426,6 +448,12 @@ fn read_baskets(
 /// [`BranchValues`] — the shared body of [`TTree::read_branch`] and
 /// [`TTree::read_branch_range`].
 fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<BranchValues> {
+    // A synthesized `TBranchObject` member column: each entry is a whole object,
+    // from which this member is extracted.
+    if let Some(om) = &branch.object_member {
+        return decode_object_members(branch.leaf_type, om, &entry_regions_variable(baskets)?);
+    }
+
     // A leaflist leaf: take this leaf's bytes out of each entry's fixed stride
     // at its offset, then decode like a scalar / fixed array.
     if let Some((offset, stride)) = branch.leaflist {
@@ -568,6 +596,96 @@ fn entry_regions_variable(baskets: &[Basket]) -> Result<Vec<&[u8]>> {
         }
     }
     Ok(regions)
+}
+
+/// Decode a synthesized `TBranchObject` member column: each `region` is one
+/// entry's whole object (`[className][version][members]`); walk the object class
+/// and collect `om.member`, typed by `leaf_type`. Decoding is registry-free —
+/// the object class's elements are carried on `om`, and base classes other than
+/// `TObject`/`TNamed` degrade to a byte-count skip.
+fn decode_object_members(
+    leaf_type: LeafType,
+    om: &ObjectMember,
+    regions: &[&[u8]],
+) -> Result<BranchValues> {
+    let reg = StreamerRegistry::default();
+    let mut values: Vec<MemberVal> = Vec::with_capacity(regions.len());
+    for region in regions {
+        let mut r = RBuffer::new(region);
+        locate_object(&mut r);
+        r.read_version()?; // the object's own version header
+        let mut members = Members::new();
+        let mut on_object = |_: &str, rb: &mut RBuffer| -> Result<()> { skip_object(rb) };
+        walk_members(
+            &mut r,
+            &reg,
+            &om.class_elements,
+            &mut members,
+            &mut on_object,
+            "",
+        )?;
+        values.push(members.remove(&om.member).unwrap_or(MemberVal::Int(0)));
+    }
+    Ok(build_member_column(leaf_type, &values))
+}
+
+/// Skip an entry's leading class-name string (when present, for a "virtual"
+/// `TLeafObject`) and any padding so the cursor sits at the object's version
+/// header — recognised by the byte count's mask bit in its leading word.
+fn locate_object(r: &mut RBuffer) {
+    if r.remaining() < 4 {
+        return;
+    }
+    let start = r.pos();
+    let first = r.be_u32().unwrap_or(0);
+    let _ = r.seek(start);
+    // A small leading byte (a class-name length) rather than a masked byte count
+    // means the class name is present; consume it.
+    if first & K_BYTE_COUNT_MASK == 0 {
+        let _ = r.string();
+    }
+    // Step over up to a few padding bytes to the object's byte-count word.
+    for _ in 0..4 {
+        if r.remaining() < 4 {
+            return;
+        }
+        let p = r.pos();
+        let word = r.be_u32().unwrap_or(0);
+        let _ = r.seek(p);
+        if word & K_BYTE_COUNT_MASK != 0 {
+            return;
+        }
+        let _ = r.seek(p + 1);
+    }
+}
+
+/// Build a `BranchValues` column of `leaf_type` from per-entry member values
+/// (integers, floats, or strings extracted from each entry's object).
+fn build_member_column(leaf_type: LeafType, vals: &[MemberVal]) -> BranchValues {
+    use BranchValues as BV;
+    let floats = |v: &[MemberVal]| -> Vec<f64> {
+        v.iter()
+            .map(|m| match m {
+                MemberVal::Float(f) => *f,
+                other => other.int() as f64,
+            })
+            .collect()
+    };
+    let ints: Vec<i64> = vals.iter().map(MemberVal::int).collect();
+    match leaf_type {
+        LeafType::Str => BV::Str(vals.iter().map(|m| m.str().to_string()).collect()),
+        LeafType::Bool => BV::Bool(ints.iter().map(|&i| i != 0).collect()),
+        LeafType::I8 => BV::I8(ints.iter().map(|&i| i as i8).collect()),
+        LeafType::U8 => BV::U8(ints.iter().map(|&i| i as u8).collect()),
+        LeafType::I16 => BV::I16(ints.iter().map(|&i| i as i16).collect()),
+        LeafType::U16 => BV::U16(ints.iter().map(|&i| i as u16).collect()),
+        LeafType::I32 => BV::I32(ints.iter().map(|&i| i as i32).collect()),
+        LeafType::U32 => BV::U32(ints.iter().map(|&i| i as u32).collect()),
+        LeafType::I64 => BV::I64(ints),
+        LeafType::U64 => BV::U64(ints.iter().map(|&i| i as u64).collect()),
+        LeafType::F32 => BV::F32(floats(vals).iter().map(|&f| f as f32).collect()),
+        LeafType::F64 => BV::F64(floats(vals)),
+    }
 }
 
 /// Per-entry byte regions of a fixed-size array branch: each basket's entry data
@@ -968,6 +1086,9 @@ fn read_branch_array(
             Some("TBranchElement") => {
                 branches.extend(read_branch_element(r, tags, diag, reg)?);
             }
+            Some("TBranchObject") => {
+                branches.extend(read_branch_object(r, tags, diag, reg)?);
+            }
             Some(other) => diag.push((other.to_string(), "unsupported branch class".to_string())),
             None => {}
         }
@@ -1081,6 +1202,7 @@ fn read_branch(
             leaflist: None,
             dims: parse_dims(&leaf.title),
             nested_elem: None,
+            object_member: None,
         }]);
     }
 
@@ -1105,6 +1227,7 @@ fn read_branch(
             leaflist: Some((leaf.offset, stride)),
             dims: parse_dims(&leaf.title),
             nested_elem: None,
+            object_member: None,
         })
         .collect();
     Ok(out)
@@ -1198,7 +1321,92 @@ fn read_branch_element(
         leaflist: None,
         dims: Vec::new(),
         nested_elem,
+        object_member: None,
     }])
+}
+
+/// Read one old-style unsplit `TBranchObject` (leaf `TLeafObject`): a whole
+/// object of class `fClassName` is stored per entry, with no sub-branches. We
+/// synthesize one column per (basic or string) member of the object class —
+/// named `branch.member`, mirroring the split-object path — each decoding that
+/// member out of every entry's object. Base classes and members of types we
+/// can't decode are skipped; if none remain, the branch is recorded in `diag`.
+fn read_branch_object(
+    r: &mut RBuffer,
+    tags: &mut TagReader,
+    diag: &mut Vec<(String, String)>,
+    reg: &StreamerRegistry,
+) -> Result<Vec<Branch>> {
+    let info = reg
+        .get("TBranchObject")
+        .ok_or_else(|| Error::Format("file has no TStreamerInfo for TBranchObject".to_string()))?;
+    let _vh = r.read_version()?; // TBranchObject
+    let (out, sub, _leaves) = read_tbranch_base(r, tags, diag, reg, &info.elements, "")?;
+
+    let name = member_str(&out, "fName");
+    let title = member_str(&out, "fTitle");
+    let class_name = member_str(&out, "fClassName");
+    let (write_basket, basket_entry, basket_seek) = basket_locators(&out);
+
+    if !sub.is_empty() {
+        diag.push((
+            name,
+            "TBranchObject with sub-branches is not supported".to_string(),
+        ));
+        return Ok(Vec::new());
+    }
+    let Some(class_info) = reg.get(&class_name) else {
+        diag.push((
+            name,
+            format!("TBranchObject class {class_name:?} has no streamer info"),
+        ));
+        return Ok(Vec::new());
+    };
+
+    // One synthesized column per decodable (basic / string) member of the object.
+    let mut branches = Vec::new();
+    for el in &class_info.elements {
+        if el.element_class == "TStreamerBase" {
+            continue; // base-class members (e.g. TObject's) are not surfaced
+        }
+        let Some(leaf_type) = member_leaf_type(el) else {
+            continue;
+        };
+        branches.push(Branch {
+            name: format!("{name}.{}", el.name),
+            title: title.clone(),
+            leaf_type,
+            leaf_len: 1,
+            n_baskets: write_basket,
+            basket_seek: basket_seek.clone(),
+            basket_entry: basket_entry.clone(),
+            elem_header: 0,
+            leaflist: None,
+            dims: Vec::new(),
+            nested_elem: None,
+            object_member: Some(ObjectMember {
+                member: el.name.clone(),
+                class_elements: class_info.elements.clone(),
+            }),
+        });
+    }
+    if branches.is_empty() {
+        diag.push((
+            name,
+            format!("TBranchObject class {class_name:?} has no readable members"),
+        ));
+    }
+    Ok(branches)
+}
+
+/// Map a class member's streamer element to its [`LeafType`] — basic scalars (via
+/// [`streamer_type_to_leaf`]) and `TString` (`fType` 65). `None` for member types
+/// we don't surface from a `TBranchObject` (objects, arrays, pointers).
+fn member_leaf_type(el: &StreamerElement) -> Option<LeafType> {
+    if el.el_type == 65 {
+        return Some(LeafType::Str);
+    }
+    streamer_type_to_leaf(el.el_type)
 }
 
 /// Map a `TStreamerInfo` basic-type code (`fStreamerType`, ROOT's `EDataType`)
