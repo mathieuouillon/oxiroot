@@ -33,9 +33,10 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**, fixed-size
-  `std::array`/`std::bitset`, user classes, `std::set`/`std::map`), read
-  *unsplit* streamer fields, compressed, multi-cluster via a streaming writer,
-  and **several RNTuples per file / inside a `TDirectory`**.
+  `std::array`/`std::bitset`, user classes, `std::set`/`std::map`, the nullable
+  `std::optional`/`std::unique_ptr` and `std::atomic`), read *unsplit* streamer
+  fields, compressed, multi-cluster via a streaming writer, and **several
+  RNTuples per file / inside a `TDirectory`**.
 - 🗜 **Compression** — decode Zstd / zlib / LZ4 / LZMA; encode Zstd / zlib /
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
@@ -417,13 +418,17 @@ ax2.save("heatmap.svg")?;
 - Typed field API (`read_field`) for scalars, `std::string`, `std::vector<T>`,
   nested collections — `std::vector<std::string>`, `std::vector<std::vector<T>>`,
   and vectors of records (`std::vector<MyStruct>`/`std::pair`) — `std::variant`,
+  the nullable / "late" fields `std::optional<T>` / `std::unique_ptr<T>` (read as
+  a [`FieldValues::Opt`] you can zip with `opt_f32()` etc.), `std::atomic<T>`,
   fixed-size `std::array`/`std::bitset`, and user-defined classes (split into a
   record of their members), across multiple clusters.
 - Write the same surface it reads: `bool`, every integer width (8/16/32/64-bit,
   signed & unsigned), `f32`/`f64`, reduced-precision reals (`Field::half` /
   `truncated` / `quantized`), `std::string`, `std::vector<T>`, the nested
-  collections (`Field::vec_str` / `vec_vec_*`, `Column::Record`/`Nested`), and
-  `std::variant` (`Field::variant`) — optionally Zstd-compressed.
+  collections (`Field::vec_str` / `vec_vec_*`, `Column::Record`/`Nested`),
+  `std::variant` (`Field::variant`), and the nullable / atomic fields
+  (`Field::optional_*` / `unique_ptr_*` from a `Vec<Option<T>>`, `Field::atomic_*`)
+  — optionally Zstd-compressed.
 - `Ntuple::new(name, fields).write_root(path, compression)` is the method form
   (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
   free `write_rntuple_file` remains.
@@ -541,9 +546,8 @@ Grouped by the ROOT feature each fills.
     key instead of by entry. (Positional friends — `AddFriend`, read
     entry-aligned — already work.)
 - **RNTuple**
-  - **More field types** — `std::optional` / `std::unique_ptr` (the "late" /
-    nullable fields), `std::atomic<T>`, and a `std::map` *write* ROOT reads
-    (read already works; write is blocked by the same proxy as `TTree`).
+  - **A `std::map` write ROOT reads** — read already works; the write is blocked
+    by the same collection-proxy dictionary as `TTree`.
   - **Schema late extension** — append fields/columns to an existing RNTuple via
     the footer's schema-extension record.
 - **More persistable objects** — the small classes constantly stored alongside

@@ -89,6 +89,17 @@ pub enum FieldValues {
         /// Per element: the position within the active alternative's column.
         indices: Vec<u64>,
     },
+    /// A nullable / "late" field (`std::optional<T>` or `std::unique_ptr<T>`):
+    /// `present[i]` flags whether entry `i` holds a value, and `values` holds the
+    /// present values densely (so `values.len()` equals the count of `true`s in
+    /// `present`). Use the `opt_*` helpers to zip them into `Vec<Option<T>>`, or
+    /// read `present` / `values` directly.
+    Opt {
+        /// Per-entry presence (length = entry count).
+        present: Vec<bool>,
+        /// The present values, densely packed; a scalar variant (e.g. `F32`).
+        values: Box<FieldValues>,
+    },
 }
 
 impl FieldValues {
@@ -124,6 +135,7 @@ impl FieldValues {
             Record(fields) => fields.first().map_or(0, |(_, f)| f.len()),
             Nested { offsets, .. } => offsets.len(),
             Variant { tags, .. } => tags.len(),
+            Opt { present, .. } => present.len(),
         }
     }
 
@@ -132,6 +144,48 @@ impl FieldValues {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
+
+/// Generate `opt_<ty>(&self) -> Option<Vec<Option<T>>>` accessors that zip an
+/// [`Opt`](FieldValues::Opt) field's presence mask with its dense values.
+macro_rules! opt_accessors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl FieldValues {
+            $(
+                #[doc = concat!("If this is an `Opt` over `", stringify!($variant),
+                    "`, zip it into a per-entry `Vec<Option<", stringify!($elem),
+                    ">>`; `None` if the value type does not match.")]
+                #[must_use]
+                pub fn $method(&self) -> Option<Vec<Option<$elem>>> {
+                    match self {
+                        FieldValues::Opt { present, values } => match values.as_ref() {
+                            FieldValues::$variant(v) => {
+                                let mut it = v.iter().cloned();
+                                Some(
+                                    present
+                                        .iter()
+                                        .map(|&p| if p { it.next() } else { None })
+                                        .collect(),
+                                )
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    }
+                }
+            )*
+        }
+    };
+}
+
+opt_accessors! {
+    opt_bool => Bool(bool),
+    opt_i32 => I32(i32),
+    opt_i64 => I64(i64),
+    opt_u32 => U32(u32),
+    opt_u64 => U64(u64),
+    opt_f32 => F32(f32),
+    opt_f64 => F64(f64),
 }
 
 /// Map a scalar leaf column to per-entry field values.
@@ -199,6 +253,23 @@ pub(crate) fn collect(offsets: Vec<u64>, items: FieldValues) -> Result<FieldValu
             offsets,
             items: Box::new(other),
         },
+    })
+}
+
+/// Present an optional / unique_ptr collection (each entry 0 or 1 elements) as a
+/// nullable [`FieldValues::Opt`]: derive per-entry presence from the cumulative
+/// `offsets` (entry `i` is present iff its count increased), keeping the
+/// densely-packed present `values`.
+pub(crate) fn optional(offsets: &[u64], values: FieldValues) -> Result<FieldValues> {
+    let mut present = Vec::with_capacity(offsets.len());
+    let mut prev = 0u64;
+    for &o in offsets {
+        present.push(o > prev);
+        prev = o;
+    }
+    Ok(FieldValues::Opt {
+        present,
+        values: Box::new(values),
     })
 }
 

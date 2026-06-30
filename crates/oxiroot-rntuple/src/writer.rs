@@ -188,6 +188,20 @@ pub enum Column {
         /// The flattened element child.
         items: Box<Column>,
     },
+    /// A nullable / "late" field — `std::optional<T>` or `std::unique_ptr<T>`.
+    /// `present[i]` flags whether entry `i` holds a value; `values` holds the
+    /// present values densely, in order. Built by the `optional_*` /
+    /// `unique_ptr_*` constructors (which split a `Vec<Option<T>>`).
+    Optional {
+        /// `true` for `std::unique_ptr<T>`, `false` for `std::optional<T>`.
+        unique: bool,
+        /// Per-entry presence (length = entry count).
+        present: Vec<bool>,
+        /// The present values, densely packed in entry order.
+        values: Box<Column>,
+    },
+    /// A `std::atomic<T>` field — stored as the bare `T`. Built by `atomic_*`.
+    Atomic(Box<Column>),
 }
 
 impl Column {
@@ -226,6 +240,8 @@ impl Column {
             Column::Bitset { len, bits } => bits.len().checked_div(*len).unwrap_or(0),
             Column::Object { members, .. } => members.first().map_or(0, |(_, c)| c.len()),
             Column::Assoc { offsets, .. } => offsets.len(),
+            Column::Optional { present, .. } => present.len(),
+            Column::Atomic(inner) => inner.len(),
         }
     }
 }
@@ -319,6 +335,55 @@ vec_vec_ctors! {
     vec_vec_f32 => VecF32(f32),
     vec_vec_f64 => VecF64(f64),
     vec_vec_str => VecStr(String),
+}
+
+/// Split a `Vec<Option<T>>` into a presence mask and the densely-packed present
+/// values wrapped as a `Column`, for the `optional_*` / `unique_ptr_*` builders.
+fn optional_column<T>(
+    data: Vec<Option<T>>,
+    wrap: impl Fn(Vec<T>) -> Column,
+    unique: bool,
+) -> Column {
+    let present: Vec<bool> = data.iter().map(Option::is_some).collect();
+    let values: Vec<T> = data.into_iter().flatten().collect();
+    Column::Optional {
+        unique,
+        present,
+        values: Box::new(wrap(values)),
+    }
+}
+
+/// Generate the `optional_<ty>` / `unique_ptr_<ty>` (`Vec<Option<T>>`) and
+/// `atomic_<ty>` (`Vec<T>`) field shortcuts for each primitive.
+macro_rules! late_ctors {
+    ($($opt:ident, $uniq:ident, $atom:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl Field {
+            $(
+                #[doc = concat!("A `std::optional<", stringify!($elem), ">` field.")]
+                pub fn $opt(name: impl Into<String>, data: Vec<Option<$elem>>) -> Field {
+                    Field::new(name, optional_column(data, Column::$variant, false))
+                }
+                #[doc = concat!("A `std::unique_ptr<", stringify!($elem), ">` field.")]
+                pub fn $uniq(name: impl Into<String>, data: Vec<Option<$elem>>) -> Field {
+                    Field::new(name, optional_column(data, Column::$variant, true))
+                }
+                #[doc = concat!("A `std::atomic<", stringify!($elem), ">` field (stored as the bare value).")]
+                pub fn $atom(name: impl Into<String>, data: Vec<$elem>) -> Field {
+                    Field::new(name, Column::Atomic(Box::new(Column::$variant(data))))
+                }
+            )*
+        }
+    };
+}
+
+late_ctors! {
+    optional_bool, unique_ptr_bool, atomic_bool => Bool(bool),
+    optional_i32, unique_ptr_i32, atomic_i32 => I32(i32),
+    optional_i64, unique_ptr_i64, atomic_i64 => I64(i64),
+    optional_u32, unique_ptr_u32, atomic_u32 => U32(u32),
+    optional_u64, unique_ptr_u64, atomic_u64 => U64(u64),
+    optional_f32, unique_ptr_f32, atomic_f32 => F32(f32),
+    optional_f64, unique_ptr_f64, atomic_f64 => F64(f64),
 }
 
 impl Field {
@@ -706,9 +771,23 @@ fn string_node(name: &str, v: &[String]) -> Node {
 /// A collection field: an Index64 offset column over `offsets` plus the single
 /// element `child`. Its type name is `std::vector<child>`.
 fn collection_node(name: &str, offsets: &[u64], n_outer: usize, child: Node) -> Node {
+    collection_node_wrapped(name, "std::vector", offsets, n_outer, child)
+}
+
+/// Like [`collection_node`] but with a caller-chosen container `wrapper`
+/// (`"std::vector"`, `"std::optional"`, `"std::unique_ptr"`, …). All share the
+/// same on-disk shape — an `Index64` offset column over a single child — so they
+/// differ only in the field's `type_name`.
+fn collection_node_wrapped(
+    name: &str,
+    wrapper: &str,
+    offsets: &[u64],
+    n_outer: usize,
+    child: Node,
+) -> Node {
     Node {
         name: name.to_string(),
-        type_name: format!("std::vector<{}>", child.type_name),
+        type_name: format!("{wrapper}<{}>", child.type_name),
         role: ROLE_COLLECTION,
         cols: vec![raw(
             ColumnType::Index64,
@@ -721,6 +800,21 @@ fn collection_node(name: &str, offsets: &[u64], n_outer: usize, child: Node) -> 
         array_size: None,
         type_checksum: None,
     }
+}
+
+/// Cumulative present-count offsets for an optional/unique_ptr presence mask:
+/// `offsets[i]` is the number of present entries in `0..=i` (the Index64 column).
+fn present_offsets(present: &[bool]) -> Vec<u64> {
+    let mut acc = 0u64;
+    present
+        .iter()
+        .map(|&p| {
+            if p {
+                acc += 1;
+            }
+            acc
+        })
+        .collect()
 }
 
 /// ROOT's anonymous-record type names: a 2-field record serializes as a
@@ -1009,6 +1103,37 @@ fn lower_column(name: &str, data: &Column) -> Node {
         Column::Nested { offsets, items } => {
             let child = lower_column("_0", items);
             collection_node(name, offsets, offsets.len(), child)
+        }
+        Column::Optional {
+            unique,
+            present,
+            values,
+        } => {
+            // optional/unique_ptr share the collection shape; only the wrapper
+            // type name differs. The index column counts present entries.
+            let child = lower_column("_0", values);
+            let offsets = present_offsets(present);
+            let wrapper = if *unique {
+                "std::unique_ptr"
+            } else {
+                "std::optional"
+            };
+            collection_node_wrapped(name, wrapper, &offsets, present.len(), child)
+        }
+        Column::Atomic(inner) => {
+            // std::atomic<T> is a Leaf field that delegates to a single child
+            // leaf `_0` carrying the bare value (no column of its own).
+            let child = lower_column("_0", inner);
+            Node {
+                name: name.to_string(),
+                type_name: format!("std::atomic<{}>", child.type_name),
+                role: ROLE_LEAF,
+                cols: vec![],
+                children: vec![child],
+                flags: 0,
+                array_size: None,
+                type_checksum: None,
+            }
         }
         Column::Record(subs) => {
             let children: Vec<Node> = subs.iter().map(|(n, c)| lower_column(n, c)).collect();

@@ -276,6 +276,13 @@ impl RNTuple {
                 field::strings(&offsets, &bytes)
             }
             StructRole::Leaf => {
+                // A `std::atomic<T>` (and similar transparent wrappers) is a Leaf
+                // with no column of its own that delegates to a single child leaf.
+                if columns.is_empty() {
+                    if let Some(&child) = self.child_fields(field_idx).first() {
+                        return self.read_field_tree(file, child);
+                    }
+                }
                 let ci = *columns
                     .first()
                     .ok_or_else(|| Error::Format(format!("field {:?} has no column", fld.name)))?;
@@ -296,6 +303,11 @@ impl RNTuple {
                     ))
                 })?;
                 let items = self.read_field_tree(file, child)?;
+                // `std::optional<T>` / `std::unique_ptr<T>` use the collection
+                // shape (0 or 1 element per entry) but read back as a nullable.
+                if is_late_field(&fld.type_name) {
+                    return field::optional(&offsets, items);
+                }
                 field::collect(offsets, items)
             }
             StructRole::Record => {
@@ -463,6 +475,12 @@ impl RNTuple {
 }
 
 /// Read and decompress an RBlob (header/footer/page list) at `seek`.
+/// Whether `type_name` is a nullable / "late" field (`std::optional<T>` or
+/// `std::unique_ptr<T>`) — read back as [`FieldValues::Opt`], not a collection.
+fn is_late_field(type_name: &str) -> bool {
+    type_name.starts_with("std::optional<") || type_name.starts_with("std::unique_ptr<")
+}
+
 fn read_blob(data: &[u8], seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
     let start = seek as usize;
     let end = start
