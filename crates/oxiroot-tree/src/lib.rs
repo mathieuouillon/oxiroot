@@ -11,12 +11,14 @@
 
 mod basket;
 mod chain;
+mod entrylist;
 mod reader;
 mod streamer_gen;
 mod value;
 mod writer;
 
 pub use chain::TChain;
+pub use entrylist::TEntryList;
 pub use reader::{Friend, TTree};
 pub use value::{BranchValues, Jagged, LeafType};
 pub use writer::{

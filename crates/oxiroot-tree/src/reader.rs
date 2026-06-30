@@ -12,7 +12,7 @@
 //! *split* (`fSplitLevel > 0`) `std::vector<MyStruct>` branches, which are
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
-use oxiroot_io_core::buffer::RBuffer;
+use oxiroot_io_core::buffer::{RBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
@@ -38,6 +38,9 @@ pub struct TTree {
     /// Friend trees recorded by `TTree::AddFriend` (read from `fFriends`);
     /// surfaced via [`TTree::friends`].
     friends: Vec<Friend>,
+    /// `(alias, expression)` pairs set with `TTree::SetAlias` (read from
+    /// `fAliases`); surfaced via [`TTree::aliases`] / [`TTree::alias`].
+    aliases: Vec<(String, String)>,
 }
 
 /// A friend tree attached to a `TTree` via `TTree::AddFriend`, persisted in the
@@ -177,6 +180,23 @@ impl TTree {
     /// up by entry.
     pub fn friends(&self) -> &[Friend] {
         &self.friends
+    }
+
+    /// The `(alias, expression)` pairs defined with `TTree::SetAlias` (read from
+    /// `fAliases`). An alias is a shorthand name standing for a branch
+    /// expression (e.g. `"pt"` → `"sqrt(px*px+py*py)"`); oxiroot reads the pairs
+    /// but does not evaluate the expressions.
+    pub fn aliases(&self) -> &[(String, String)] {
+        &self.aliases
+    }
+
+    /// The expression that alias `name` stands for, or `None` if there is no
+    /// such alias.
+    pub fn alias(&self, name: &str) -> Option<&str> {
+        self.aliases
+            .iter()
+            .find(|(a, _)| a == name)
+            .map(|(_, expr)| expr.as_str())
     }
 
     /// The element type of branch `name` (without reading its data), or `None`
@@ -764,15 +784,17 @@ fn read_tree(
     let mut branches = Vec::new();
     let mut unsupported = Vec::new();
     let mut friends = Vec::new();
+    let mut aliases = Vec::new();
     {
         let mut on_object = |name: &str, rb: &mut RBuffer| -> Result<()> {
             // The TTree streamer order (after the scalar members) is fBranches,
             // fLeaves, fAliases, fIndexValues, fIndex, fTreeIndex, fFriends, ….
-            // We read the two we consume (fBranches, fFriends) and step over the
-            // rest — each with its correct on-disk framing so the cursor stays
-            // aligned all the way to fFriends.
+            // We read the three we consume (fBranches, fAliases, fFriends) and
+            // step over the rest — each with its correct on-disk framing so the
+            // cursor stays aligned all the way to fFriends.
             match name {
                 "fBranches" => branches = read_branch_array(rb, &mut tags, &mut unsupported, reg)?,
+                "fAliases" => aliases = read_aliases(rb, &mut tags)?,
                 "fFriends" => friends = read_friends(rb, &mut tags)?,
                 // `TArrayD`/`TArrayI` (the legacy inline index): `[Int_t n][n
                 // elements]`, with no version header.
@@ -784,10 +806,9 @@ fn read_tree(
                     let n = rb.be_i32()?.max(0) as usize;
                     rb.skip(n * 4)?;
                 }
-                // `TList*` / `TVirtualIndex*` are object pointers (ROOT's object
-                // protocol); a null pointer is a bare 4-byte 0, which the tag
-                // header consumes.
-                "fAliases" | "fTreeIndex" => {
+                // `TVirtualIndex*` is an object pointer (ROOT's object protocol);
+                // a null pointer is a bare 4-byte 0, which the tag header consumes.
+                "fTreeIndex" => {
                     let h = tags.read_header(rb)?;
                     if let Some(end) = h.end {
                         rb.seek(end)?;
@@ -823,23 +844,58 @@ fn read_tree(
         unsupported,
         streamer_classes: Vec::new(),
         friends,
+        aliases,
     })
 }
 
-/// Read a `TTree`'s `fFriends` (`TList<TFriendElement>` — the friends added with
-/// `TTree::AddFriend`). The cursor is positioned at the `fFriends` object pointer;
-/// a null pointer (no friends) reads as an empty list. Each `TFriendElement`
-/// carries the friend's tree name (`fTreeName`), the alias (`TNamed::fName`), and
-/// the file it lives in (`TNamed::fTitle`, empty for a same-file friend).
-fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
-    let header = tags.read_header(r)?;
-    if header.class_name.is_none() {
-        return Ok(Vec::new()); // null pointer: the tree has no friends
+/// Position the cursor at a `TList`-valued member's body and return its object
+/// end offset (when known) and element count. ROOT frames a `TList*` member two
+/// ways: *inline* — a bare version header (`fAliases`) — or via the *object
+/// protocol* — a byte count then a class tag, then the list's own version header
+/// (`fFriends`). A null pointer (`0`) reads as an empty list. After this returns,
+/// the next read is the first element's object header.
+fn open_tlist(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Option<usize>, i32)> {
+    const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
+    const K_CLASS_MASK: u32 = 0x8000_0000;
+
+    let start = r.pos();
+    let word = r.be_u32()?;
+    if word == 0 {
+        return Ok((None, 0)); // null pointer: no list
     }
-    // TList body: version header, TObject, list name, then the element count.
-    read_version_tobject_header(r)?;
+    r.seek(start)?;
+    let end = if word & K_BYTE_COUNT_MASK != 0 {
+        // Distinguish the two framings by the word after the byte count: a class
+        // tag (new-class marker or a high-bit class reference) means the object
+        // protocol; anything else is a `{version, …}` header read inline.
+        let after = r.pos() + 4;
+        r.seek(after)?;
+        let tag = r.be_u32()?;
+        r.seek(start)?;
+        if tag == K_NEW_CLASS_TAG || tag & K_CLASS_MASK != 0 {
+            let header = tags.read_header(r)?;
+            r.read_version()?; // the list's own (inner) version header
+            header.end
+        } else {
+            r.read_version()?.end
+        }
+    } else {
+        r.read_version()?.end
+    };
+    read_tobject(r)?;
+    r.string()?; // the list's fName
     let n = r.be_i32()?.max(0);
-    let mut friends = Vec::with_capacity(n as usize);
+    Ok((end, n))
+}
+
+/// Read a `TTree`'s `fFriends` (`TList<TFriendElement>` — the friends added with
+/// `TTree::AddFriend`). The cursor is positioned at the `fFriends` member; a null
+/// pointer (no friends) reads as an empty list. Each `TFriendElement` carries the
+/// friend's tree name (`fTreeName`), the alias (`TNamed::fName`), and the file it
+/// lives in (`TNamed::fTitle`, empty for a same-file friend).
+fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
+    let (end, n) = open_tlist(r, tags)?;
+    let mut friends = Vec::with_capacity(n.max(0) as usize);
     for _ in 0..n {
         let elem = tags.read_header(r)?;
         if elem.class_name.as_deref() == Some("TFriendElement") {
@@ -860,10 +916,34 @@ fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
         }
         r.string()?; // the per-object option string TList writes after each entry
     }
-    if let Some(end) = header.end {
+    if let Some(end) = end {
         r.seek(end)?;
     }
     Ok(friends)
+}
+
+/// Read a `TTree`'s `fAliases` (`TList<TNamed>` — the `(name, expression)` pairs
+/// set with `TTree::SetAlias`). The cursor is positioned at the `fAliases` member;
+/// a null pointer (no aliases) reads as an empty list. Each entry's `fName` is the
+/// alias and `fTitle` is the expression it stands for.
+fn read_aliases(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<(String, String)>> {
+    let (end, n) = open_tlist(r, tags)?;
+    let mut aliases = Vec::with_capacity(n.max(0) as usize);
+    for _ in 0..n {
+        let elem = tags.read_header(r)?;
+        if elem.class_name.as_deref() == Some("TNamed") {
+            let named = read_tnamed(r)?;
+            aliases.push((named.name, named.title));
+        }
+        if let Some(end) = elem.end {
+            r.seek(end)?;
+        }
+        r.string()?; // the per-object option string
+    }
+    if let Some(end) = end {
+        r.seek(end)?;
+    }
+    Ok(aliases)
 }
 
 /// Read a `TObjArray` of `TBranch`es. Branch classes we don't yet handle are

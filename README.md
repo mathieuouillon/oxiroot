@@ -27,9 +27,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
-  `std::set`/`std::map` branches, `TNtuple`/`TNtupleD`, and **friend trees**
-  (`AddFriend`, read entry-aligned); multi-basket via a bounded-memory streaming
-  writer.
+  `std::set`/`std::map` branches, `TNtuple`/`TNtupleD`, **friend trees**
+  (`AddFriend`, read entry-aligned), tree aliases (`SetAlias`), and `TEntryList`
+  selections; multi-basket via a bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**, fixed-size
   `std::array`/`std::bitset`, user classes, `std::set`/`std::map`), read
@@ -388,6 +388,11 @@ ax2.save("heatmap.svg")?;
   from the persisted `fFriends` list). A friend is read **positionally** — entry
   *i* of the main tree pairs with entry *i* of the friend — so opening the friend
   tree and reading its branches yields columns that line up by entry.
+- `aliases()` / `alias(name)` return the `(name, expression)` shorthands defined
+  with `TTree::SetAlias` (read from `fAliases`); oxiroot reads the expression
+  strings but does not evaluate them. `TEntryList::open(file, name)` reads a
+  saved entry selection (a standalone key) into the ascending list of selected
+  entry numbers, with `entries()` / `contains(entry)`.
 - The reader is **streamer-info-driven**: it parses `TTree`/`TBranch`/
   `TBranchElement` by walking the member list in the file's own `TStreamerInfo`
   (`TTree::streamer_classes` exposes it), so a schema change is absorbed instead
@@ -524,9 +529,9 @@ Grouped by the ROOT feature each fills.
     `fTreeIndex` (`TTreeIndex`) so friends can be joined on a `(major, minor)`
     key instead of by entry. (Positional friends — `AddFriend`, read
     entry-aligned — already work.)
-  - **Aliases & selections** — `TTree::SetAlias` (named branch expressions) and
-    `TEntryList` (a saved set of selected entries), plus older non-split
-    `TBranchObject` branches.
+  - **Old non-split object branches** (`TBranchObject`) — the pre-`TBranchElement`
+    way of storing a whole object per entry behind a `TLeafObject`. (Aliases —
+    `SetAlias` — and `TEntryList` selections already read.)
 - **RNTuple**
   - **An RNTuple inside a `TDirectory`, and several per file** — today the writer
     emits one RNTuple in the root directory.
