@@ -44,6 +44,7 @@ c++ $(root-config --cflags) scripts/gen_root_fixtures.cpp $(root-config --libs) 
 | `tprofile_uncompressed.root` | a `TProfile` `p`, 4 bins | C++ ROOT |
 | `persist_objs.root` | a `TObjString` `label` + `TParameter<double/int/Long64_t>` `lumi`/`nevents`/`bignum` (`scripts/gen_persist_objs.cpp`) | C++ ROOT |
 | `collections.root` | a `THStack` `hs` (2×`TH1F`) + `TMultiGraph` `mg` (2×`TGraph`) (`scripts/gen_collections.cpp`) | C++ ROOT |
+| `linalg.root` | a `TVectorD` `v`, `TMatrixD` `m` (2×3), `TMatrixDSym` `s` (3×3) (`scripts/gen_linalg.cpp`) | C++ ROOT |
 
 ## Why uproot and not ROOT?
 

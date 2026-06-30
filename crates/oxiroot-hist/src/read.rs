@@ -7,6 +7,7 @@ use crate::collections::{THStack, TMultiGraph};
 use crate::graph::TGraph;
 use crate::graph2d::TGraph2D;
 use crate::graphmultierrors::TGraphMultiErrors;
+use crate::linalg::{TMatrixD, TMatrixDSym, TVectorD};
 use crate::objects::{TObjString, TParameter};
 use crate::tefficiency::TEfficiency;
 use crate::th1::TH1;
@@ -118,4 +119,19 @@ impl_read_root!(
     TMultiGraph,
     crate::collections::read_tmultigraph,
     crate::collections::read_tmultigraph_in
+);
+impl_read_root!(
+    TVectorD,
+    crate::linalg::read_tvectord,
+    crate::linalg::read_tvectord_in
+);
+impl_read_root!(
+    TMatrixD,
+    crate::linalg::read_tmatrixd,
+    crate::linalg::read_tmatrixd_in
+);
+impl_read_root!(
+    TMatrixDSym,
+    crate::linalg::read_tmatrixdsym,
+    crate::linalg::read_tmatrixdsym_in
 );

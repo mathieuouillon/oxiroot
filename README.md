@@ -340,6 +340,27 @@ assert_eq!(THStack::read_root(&f, "hs")?.hists().len(), 2);
 assert_eq!(TMultiGraph::read_root(&f, "mg")?.graphs()[0].name, "obs");
 ```
 
+### Linear algebra (`oxiroot::hist`)
+
+`TVectorD` (a vector), `TMatrixD` (a dense matrix), and `TMatrixDSym` (a symmetric
+matrix — the shape a fit's covariance takes) read and write byte-for-byte as
+ROOT's `TVectorT<double>` / `TMatrixT<double>` / `TMatrixTSym<double>`. The
+symmetric matrix is stored as the full matrix in memory but, like ROOT, written
+as just its upper triangle.
+
+```rust
+use oxiroot::prelude::*;
+RootFile::create("fit.root")
+    .add(&TVectorD::new(vec![91.2, 2.1]).named("pars"))
+    .add(&TMatrixDSym::new(2, vec![0.04, 0.01, 0.01, 0.09]).named("cov")) // covariance
+    .write(Compression::None)?;
+
+let f = RFile::open("fit.root")?;
+assert_eq!(TVectorD::read_root(&f, "pars")?.elements(), &[91.2, 2.1]);
+let cov = TMatrixDSym::read_root(&f, "cov")?;
+assert_eq!(cov.get(0, 1), cov.get(1, 0)); // symmetric
+```
+
 ### Plotting (`oxiroot::plot`, `plot` feature)
 
 Render histograms and graphs to **SVG, PNG, and PDF** with a matplotlib-like API and an
@@ -612,12 +633,12 @@ Grouped by the ROOT feature each fills.
     the test build — it can neither create nor read a `std::map` RNTuple field —
     so this needs a ROOT install with the `std::map` dictionary loaded to verify.
 - **More persistable objects** — `TObjString`, `TParameter<T>` (named scalars),
-  `THStack`, and `TMultiGraph` are done (see
-  [persistable objects](#persistable-objects-oxiroothist) and
-  [collections](#collections-oxiroothist)); still wanted are a bare
-  `TList` / `TObjArray` / `TMap` of objects as a top-level key, and the
-  linear-algebra objects fit results carry — `TVectorD`, `TMatrixD`,
-  `TMatrixDSym` (covariance matrices).
+  `THStack`, `TMultiGraph`, and the linear-algebra classes (`TVectorD`,
+  `TMatrixD`, `TMatrixDSym`) are done (see
+  [persistable objects](#persistable-objects-oxiroothist),
+  [collections](#collections-oxiroothist), and
+  [linear algebra](#linear-algebra-oxiroothist)); the remaining wish is a bare
+  `TList` / `TObjArray` / `TMap` of objects as a top-level key.
 - **Functions** — standalone `TF1` / `TF2` / `TF3` keys and a real `TFormula`
   expression engine (arbitrary formulas like `[0]+[1]*sin(x)`, `gaus(0)`,
   `expo`), with `Eval` / `Integral` / `Derivative`. Today the `fit` crate's

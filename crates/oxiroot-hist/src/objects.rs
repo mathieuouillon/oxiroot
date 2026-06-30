@@ -7,7 +7,7 @@
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::read_tobject;
-use oxiroot_io_core::streamer_gen::{base, basic, objptr, strf, Cls};
+use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, objptr, strf, Cls};
 use oxiroot_io_core::RFile;
 
 use crate::base::object_bytes_any;
@@ -252,17 +252,18 @@ fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Result<TParamete
     })
 }
 
-/// The `TStreamerInfo` ROOT writes for `class`, if it is one of the persistable
-/// object or collection classes oxiroot serializes outside the histogram family.
-/// The written file embeds these (merged into the histogram streamer info) so
-/// uproot can model the class — ROOT C++ has them compiled in and does not need
-/// them, but uproot reads a templated `TParameter<…>` (or a `THStack`/
-/// `TMultiGraph`) only from its streamer. The base classes (`TObject`, `TString`,
-/// `TNamed`, `TList`) and the histogram/graph members are already covered by the
-/// histogram streamer info. Returns `None` for anything else (e.g. a histogram,
-/// already described). Checksums/versions are ROOT's own values (see
-/// `scripts/gen_persist_objs.cpp` / `scripts/gen_collections.cpp`).
-pub(crate) fn streamer_class(class: &str) -> Option<Cls> {
+/// The `TStreamerInfo`s ROOT writes for `class` (the class plus any of its base
+/// classes not already in the histogram streamer info), if it is one of the
+/// persistable-object, collection, or linear-algebra classes oxiroot serializes
+/// outside the histogram family. The written file embeds these (merged into the
+/// histogram streamer info) so uproot can model the class — ROOT C++ has them
+/// compiled in and does not need them, but uproot reads a templated
+/// `TParameter<…>`/`TVectorT<…>`/`TMatrixT<…>` (or a `THStack`/`TMultiGraph`)
+/// only from its streamer. The common bases (`TObject`, `TString`, `TNamed`,
+/// `TList`) and the histogram/graph members are already covered. Returns an empty
+/// vector for anything else (e.g. a histogram, already described).
+/// Checksums/versions are ROOT's own values (see the `scripts/gen_*.cpp`).
+pub(crate) fn streamer_classes(class: &str) -> Vec<Cls> {
     let param = |name, checksum, ty, size, type_name| Cls {
         name,
         version: 2,
@@ -273,24 +274,40 @@ pub(crate) fn streamer_class(class: &str) -> Option<Cls> {
             basic("fVal", ty, size, type_name),
         ],
     };
+    // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
+    let matrix_base = || Cls {
+        name: "TMatrixTBase<double>",
+        version: 5,
+        checksum: 2_333_786_657,
+        elements: vec![
+            base("TObject", 1),
+            basic("fNrows", 3, 4, "int"),
+            basic("fNcols", 3, 4, "int"),
+            basic("fRowLwb", 3, 4, "int"),
+            basic("fColLwb", 3, 4, "int"),
+            basic("fNelems", 6, 4, "int"),
+            basic("fNrowIndex", 3, 4, "int"),
+            basic("fTol", 8, 8, "double"),
+        ],
+    };
     match class {
-        "TObjString" => Some(Cls {
+        "TObjString" => vec![Cls {
             name: "TObjString",
             version: 1,
             checksum: 2_626_570_240,
             elements: vec![base("TObject", 1), strf("fString")],
-        }),
-        "TParameter<double>" => Some(param("TParameter<double>", 1_968_899_544, 8, 8, "double")),
-        "TParameter<float>" => Some(param("TParameter<float>", 1_396_280_242, 5, 4, "float")),
-        "TParameter<int>" => Some(param("TParameter<int>", 4_270_151_672, 3, 4, "int")),
-        "TParameter<long long>" => Some(param(
+        }],
+        "TParameter<double>" => vec![param("TParameter<double>", 1_968_899_544, 8, 8, "double")],
+        "TParameter<float>" => vec![param("TParameter<float>", 1_396_280_242, 5, 4, "float")],
+        "TParameter<int>" => vec![param("TParameter<int>", 4_270_151_672, 3, 4, "int")],
+        "TParameter<long long>" => vec![param(
             "TParameter<long long>",
             3_647_805_264,
             16,
             8,
             "long long",
-        )),
-        "THStack" => Some(Cls {
+        )],
+        "THStack" => vec![Cls {
             name: "THStack",
             version: 2,
             checksum: 1_918_797_077,
@@ -301,8 +318,8 @@ pub(crate) fn streamer_class(class: &str) -> Option<Cls> {
                 basic("fMaximum", 8, 8, "double"),
                 basic("fMinimum", 8, 8, "double"),
             ],
-        }),
-        "TMultiGraph" => Some(Cls {
+        }],
+        "TMultiGraph" => vec![Cls {
             name: "TMultiGraph",
             version: 2,
             checksum: 3_767_090_389,
@@ -314,8 +331,44 @@ pub(crate) fn streamer_class(class: &str) -> Option<Cls> {
                 basic("fMaximum", 8, 8, "double"),
                 basic("fMinimum", 8, 8, "double"),
             ],
-        }),
-        _ => None,
+        }],
+        "TVectorT<double>" => vec![Cls {
+            name: "TVectorT<double>",
+            version: 4,
+            checksum: 1_779_256_495,
+            elements: vec![
+                base("TObject", 1),
+                basic("fNrows", 6, 4, "int"),
+                basic("fRowLwb", 3, 4, "int"),
+                basicptr("fElements", 48, 8, "double*", "fNrows"),
+            ],
+        }],
+        "TMatrixT<double>" => vec![
+            matrix_base(),
+            Cls {
+                name: "TMatrixT<double>",
+                version: 4,
+                checksum: 135_074_716,
+                elements: vec![
+                    base("TMatrixTBase<double>", 5),
+                    // fNelems lives in the TMatrixTBase<double> base, not here.
+                    basicptr_in(
+                        "fElements",
+                        48,
+                        8,
+                        "double*",
+                        "fNelems",
+                        "TMatrixTBase<double>",
+                        5,
+                    ),
+                ],
+            },
+        ],
+        // ROOT emits no `TMatrixTSym<double>` streamer — its custom Streamer
+        // writes the base then the triangle, and uproot models it natively — so
+        // only the shared base is needed.
+        "TMatrixTSym<double>" => vec![matrix_base()],
+        _ => Vec::new(),
     }
 }
 

@@ -185,10 +185,13 @@ const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
 fn streamer_info_for<'a>(
     class_names: impl Iterator<Item = &'a str>,
 ) -> Result<std::borrow::Cow<'static, [u8]>> {
-    use oxiroot_io_core::streamer_gen::{append_streamer_infos, Cls};
+    use oxiroot_io_core::streamer_gen::append_streamer_infos;
+    use oxiroot_io_core::streamer_gen::Cls;
     let mut extra: Vec<Cls> = Vec::new();
     for class in class_names {
-        if let Some(cls) = crate::objects::streamer_class(class) {
+        // A class may need several infos (e.g. a matrix plus its base); dedup by
+        // name so a shared base is embedded once.
+        for cls in crate::objects::streamer_classes(class) {
             if !extra.iter().any(|c| c.name == cls.name) {
                 extra.push(cls);
             }

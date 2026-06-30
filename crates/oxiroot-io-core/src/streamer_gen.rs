@@ -53,7 +53,11 @@ enum Ek {
     Object,
     Any,
     ObjectPtr,
-    BasicPtr(&'static str),
+    /// A `//[count]` pointer: the counter's name, and an optional
+    /// `(count_class, count_version)` when the counter lives in a different class
+    /// than the one declaring this element (e.g. a base class) — `None` uses the
+    /// declaring class.
+    BasicPtr(&'static str, Option<(&'static str, i32)>),
 }
 
 /// One class's `TStreamerInfo`: name, on-disk version, ROOT checksum, members
@@ -134,7 +138,8 @@ pub fn objptr(name: &'static str, type_name: &'static str) -> El {
         kind: Ek::ObjectPtr,
     }
 }
-/// A `//[fCount]`-counted basic-type pointer member; `count` names the counter.
+/// A `//[fCount]`-counted basic-type pointer member; `count` names the counter,
+/// which is assumed to live in the same class that declares this element.
 pub fn basicptr(
     name: &'static str,
     ty: i32,
@@ -147,7 +152,28 @@ pub fn basicptr(
         ty,
         size,
         type_name,
-        kind: Ek::BasicPtr(count),
+        kind: Ek::BasicPtr(count, None),
+    }
+}
+
+/// Like [`basicptr`], but the counter lives in `count_class` (version
+/// `count_version`) rather than the declaring class — as for a matrix's
+/// `fElements`, counted by `fNelems` in its `TMatrixTBase` base.
+pub fn basicptr_in(
+    name: &'static str,
+    ty: i32,
+    size: i32,
+    type_name: &'static str,
+    count: &'static str,
+    count_class: &'static str,
+    count_version: i32,
+) -> El {
+    El {
+        name,
+        ty,
+        size,
+        type_name,
+        kind: Ek::BasicPtr(count, Some((count_class, count_version))),
     }
 }
 
@@ -195,17 +221,18 @@ fn write_element(w: &mut WBuffer, el: &El, owner: &str, owner_version: i32) {
         Ek::Object => ("TStreamerObject", 2),
         Ek::Any => ("TStreamerObjectAny", 2),
         Ek::ObjectPtr => ("TStreamerObjectPointer", 2),
-        Ek::BasicPtr(_) => ("TStreamerBasicPointer", 2),
+        Ek::BasicPtr(..) => ("TStreamerBasicPointer", 2),
     };
     let bc = begin_object_any(w, class);
     let sub = w.begin_object(version);
     write_element_base(w, el);
     match el.kind {
         Ek::Base(base_version) => w.be_i32(base_version), // fBaseVersion
-        Ek::BasicPtr(count_name) => {
-            w.be_i32(owner_version); // fCountVersion
+        Ek::BasicPtr(count_name, count_owner) => {
+            let (count_class, count_version) = count_owner.unwrap_or((owner, owner_version));
+            w.be_i32(count_version); // fCountVersion
             w.string(count_name); // fCountName
-            w.string(owner); // fCountClass
+            w.string(count_class); // fCountClass
         }
         _ => {}
     }

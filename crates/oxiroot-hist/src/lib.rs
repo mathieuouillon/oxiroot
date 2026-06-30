@@ -12,6 +12,7 @@
 mod base;
 mod collections;
 mod compare;
+mod linalg;
 mod naming;
 mod objects;
 mod ops;
@@ -50,6 +51,7 @@ pub use fit::{
 pub use graph::{GraphErrors, GraphFunction, TGraph};
 pub use graph2d::TGraph2D;
 pub use graphmultierrors::TGraphMultiErrors;
+pub use linalg::{TMatrixD, TMatrixDSym, TVectorD};
 pub use objects::{ParamValue, TObjString, TParameter};
 pub use ops::Histogram;
 pub use read::ReadRoot;
