@@ -484,7 +484,7 @@ pub(crate) fn read_tgraph_in(file: &RFile, subdir: &str, name: &str) -> Result<T
     decode_tgraph(name, &class, &object)
 }
 
-fn decode_tgraph(name: &str, class: &str, object: &[u8]) -> Result<TGraph> {
+pub(crate) fn decode_tgraph(name: &str, class: &str, object: &[u8]) -> Result<TGraph> {
     let mut r = RBuffer::new(object);
     match class {
         "TGraph" => read_tgraph_base(&mut r),

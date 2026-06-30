@@ -7,7 +7,7 @@
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::read_tobject;
-use oxiroot_io_core::streamer_gen::{base, basic, strf, Cls};
+use oxiroot_io_core::streamer_gen::{base, basic, objptr, strf, Cls};
 use oxiroot_io_core::RFile;
 
 use crate::base::object_bytes_any;
@@ -253,13 +253,15 @@ fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Result<TParamete
 }
 
 /// The `TStreamerInfo` ROOT writes for `class`, if it is one of the persistable
-/// object classes this module serializes. The written file embeds these (merged
-/// into the histogram streamer info) so uproot can model the class — ROOT C++
-/// has them compiled in and does not need them, but uproot reads a templated
-/// `TParameter<…>` only from its streamer. The base classes (`TObject`,
-/// `TString`) are already covered by the histogram streamer info. Returns `None`
-/// for anything else (e.g. a histogram, already described). Checksums/versions
-/// are ROOT's own values (see `scripts/gen_persist_objs.cpp`).
+/// object or collection classes oxiroot serializes outside the histogram family.
+/// The written file embeds these (merged into the histogram streamer info) so
+/// uproot can model the class — ROOT C++ has them compiled in and does not need
+/// them, but uproot reads a templated `TParameter<…>` (or a `THStack`/
+/// `TMultiGraph`) only from its streamer. The base classes (`TObject`, `TString`,
+/// `TNamed`, `TList`) and the histogram/graph members are already covered by the
+/// histogram streamer info. Returns `None` for anything else (e.g. a histogram,
+/// already described). Checksums/versions are ROOT's own values (see
+/// `scripts/gen_persist_objs.cpp` / `scripts/gen_collections.cpp`).
 pub(crate) fn streamer_class(class: &str) -> Option<Cls> {
     let param = |name, checksum, ty, size, type_name| Cls {
         name,
@@ -288,6 +290,31 @@ pub(crate) fn streamer_class(class: &str) -> Option<Cls> {
             8,
             "long long",
         )),
+        "THStack" => Some(Cls {
+            name: "THStack",
+            version: 2,
+            checksum: 1_918_797_077,
+            elements: vec![
+                base("TNamed", 1),
+                objptr("fHists", "TList*"),
+                objptr("fHistogram", "TH1*"),
+                basic("fMaximum", 8, 8, "double"),
+                basic("fMinimum", 8, 8, "double"),
+            ],
+        }),
+        "TMultiGraph" => Some(Cls {
+            name: "TMultiGraph",
+            version: 2,
+            checksum: 3_767_090_389,
+            elements: vec![
+                base("TNamed", 1),
+                objptr("fGraphs", "TList*"),
+                objptr("fFunctions", "TList*"),
+                objptr("fHistogram", "TH1F*"),
+                basic("fMaximum", 8, 8, "double"),
+                basic("fMinimum", 8, 8, "double"),
+            ],
+        }),
         _ => None,
     }
 }

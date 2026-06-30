@@ -272,6 +272,20 @@ pub(crate) fn object_bytes_any(file: &RFile, name: &str) -> Result<(String, Vec<
     Ok((key.class_name.clone(), object))
 }
 
+/// Like [`object_bytes_any`], but also return the key's header length, needed by
+/// the object-reference map ([`oxiroot_io_core::object::TagReader`]) to resolve
+/// the class back-references inside a collection (a `THStack`'s `TList` of
+/// histograms, a `TMultiGraph`'s `TList` of graphs).
+pub(crate) fn object_bytes_any_keyed(file: &RFile, name: &str) -> Result<(String, Vec<u8>, usize)> {
+    let key = file
+        .key(name)
+        .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+    let payload = key.payload(file.data())?;
+    let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
+        .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
+    Ok((key.class_name.clone(), object, key.key_len as usize))
+}
+
 /// Fetch a histogram object, requiring a 4-character class with the given
 /// dimension prefix (e.g. `"TH1"`), so a `read_th1` cannot accept a `TH2`.
 pub(crate) fn histogram_object(

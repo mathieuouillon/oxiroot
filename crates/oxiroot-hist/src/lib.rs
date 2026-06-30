@@ -10,6 +10,7 @@
 //! precision; the exact class is preserved in `class_name`.
 
 mod base;
+mod collections;
 mod compare;
 mod naming;
 mod objects;
@@ -40,6 +41,7 @@ pub use oxiroot_io_core::Compression;
 
 pub use axis::TAxis;
 pub use base::Precision;
+pub use collections::{THStack, TMultiGraph};
 pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 #[cfg(feature = "fit")]
 pub use fit::{

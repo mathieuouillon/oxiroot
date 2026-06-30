@@ -3,6 +3,7 @@
 use oxiroot_io_core::error::Result;
 use oxiroot_io_core::RFile;
 
+use crate::collections::{THStack, TMultiGraph};
 use crate::graph::TGraph;
 use crate::graph2d::TGraph2D;
 use crate::graphmultierrors::TGraphMultiErrors;
@@ -107,4 +108,14 @@ impl_read_root!(
     TParameter,
     crate::objects::read_tparameter,
     crate::objects::read_tparameter_in
+);
+impl_read_root!(
+    THStack,
+    crate::collections::read_thstack,
+    crate::collections::read_thstack_in
+);
+impl_read_root!(
+    TMultiGraph,
+    crate::collections::read_tmultigraph,
+    crate::collections::read_tmultigraph_in
 );

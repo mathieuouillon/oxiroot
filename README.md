@@ -316,6 +316,30 @@ oxiroot's files: the writer embeds the `TStreamerInfo` for whichever
 `TParameter<…>`/`TObjString` classes a file contains (merged into the histogram
 streamers), so uproot can model the templated `TParameter` class.
 
+### Collections (`oxiroot::hist`)
+
+`THStack` (a stack of histograms) and `TMultiGraph` (several graphs in one frame)
+hold their members in a `TList`. Build them from existing `TH1`/`TGraph`s; on
+read they hand the members back. The members are serialized through ROOT's
+object protocol, so ROOT C++ and uproot read what oxiroot writes, and oxiroot
+reads ROOT's files (including the class back-references ROOT emits for repeated
+member types).
+
+```rust
+use oxiroot::prelude::*;
+let stack = THStack::new().named("hs").titled("backgrounds")
+    .add(TH1::new(50, 0.0, 100.0).named("zjets"))
+    .add(TH1::new(50, 0.0, 100.0).named("ttbar"));
+let graphs = TMultiGraph::new().named("mg")
+    .add(TGraph::new(vec![0.0, 1.0], vec![1.0, 2.0]).named("obs"))
+    .add(TGraph::new(vec![0.0, 1.0], vec![2.0, 1.0]).named("exp"));
+RootFile::create("plots.root").add(&stack).add(&graphs).write(Compression::None)?;
+
+let f = RFile::open("plots.root")?;
+assert_eq!(THStack::read_root(&f, "hs")?.hists().len(), 2);
+assert_eq!(TMultiGraph::read_root(&f, "mg")?.graphs()[0].name, "obs");
+```
+
 ### Plotting (`oxiroot::plot`, `plot` feature)
 
 Render histograms and graphs to **SVG, PNG, and PDF** with a matplotlib-like API and an
@@ -587,11 +611,12 @@ Grouped by the ROOT feature each fills.
     blocked because ROOT 6.40's `std::map` collection proxy is non-functional in
     the test build — it can neither create nor read a `std::map` RNTuple field —
     so this needs a ROOT install with the `std::map` dictionary loaded to verify.
-- **More persistable objects** — `TObjString` and `TParameter<T>` (named scalars)
-  are [done](#persistable-objects-oxiroothist); still wanted are the collection
-  and linear-algebra classes: `TMultiGraph`, `THStack` (a stacked-histogram
-  collection), a `TList` / `TObjArray` / `TMap` of objects as a top-level key, and
-  the linear-algebra objects fit results carry — `TVectorD`, `TMatrixD`,
+- **More persistable objects** — `TObjString`, `TParameter<T>` (named scalars),
+  `THStack`, and `TMultiGraph` are done (see
+  [persistable objects](#persistable-objects-oxiroothist) and
+  [collections](#collections-oxiroothist)); still wanted are a bare
+  `TList` / `TObjArray` / `TMap` of objects as a top-level key, and the
+  linear-algebra objects fit results carry — `TVectorD`, `TMatrixD`,
   `TMatrixDSym` (covariance matrices).
 - **Functions** — standalone `TF1` / `TF2` / `TF3` keys and a real `TFormula`
   expression engine (arbitrary formulas like `[0]+[1]*sin(x)`, `gaus(0)`,

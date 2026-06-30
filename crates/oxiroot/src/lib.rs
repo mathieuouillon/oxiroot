@@ -90,9 +90,9 @@ pub mod prelude {
     pub use oxiroot_hist::{
         merge_all, Chi2TestKind, Chi2TestResult, Dir, ErrorMode, GraphErrors, GraphFunction,
         Histogram, KsTestResult, Merge, ParamValue, PolyBin, Precision, ReadRoot, RootFile,
-        SparseBin, TAxis, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THnSparse,
-        TObjString, TParameter, TProfile, TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TH1,
-        TH2, TH3,
+        SparseBin, TAxis, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
+        THnSparse, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D,
+        ThreadedHist, WriteRoot, TH1, TH2, TH3,
     };
 
     pub use oxiroot_rntuple::{

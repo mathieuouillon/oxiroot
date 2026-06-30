@@ -115,6 +115,16 @@ impl TH1 {
         self.contents.len() as i32
     }
 
+    /// The histogram's name (`fName`, its key when written).
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The histogram's title (`fTitle`).
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
     /// The exact ROOT class name (`"TH1D"`/`"TH1F"`/…), derived from the stored
     /// [`precision`](TH1::precision).
     #[must_use]
@@ -239,6 +249,6 @@ pub(crate) fn read_th1_in(file: &RFile, subdir: &str, name: &str) -> Result<TH1>
     decode_th1(histogram_object_in(file, subdir, name, "TH1")?)
 }
 
-fn decode_th1((class, object): (String, Vec<u8>)) -> Result<TH1> {
+pub(crate) fn decode_th1((class, object): (String, Vec<u8>)) -> Result<TH1> {
     TH1::read(&mut RBuffer::new(&object), precision_of(&class)?)
 }
