@@ -4,8 +4,29 @@
 use crate::artists::{draw_marker, LegendHandle, Marker};
 use crate::axes::Axes;
 use crate::color::Color;
-use crate::draw::{DrawCommand, DrawGroup, Rect, Stroke};
+use crate::draw::{DrawCommand, DrawGroup, Path, Rect, Seg, Stroke};
 use crate::text::{self, FontStyle, HAlign, VAlign};
+
+/// A rounded rectangle as a path (matplotlib `fancybox` legend frame). `r` is the
+/// corner radius in pixels, clamped so it never exceeds half the shorter side.
+fn rounded_rect(rect: Rect, r: f32) -> Path {
+    let (x, y, w, h) = (rect.x, rect.y, rect.w, rect.h);
+    let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
+    Path {
+        segs: vec![
+            Seg::Move(x + r, y),
+            Seg::Line(x + w - r, y),
+            Seg::Quad(x + w, y, x + w, y + r),
+            Seg::Line(x + w, y + h - r),
+            Seg::Quad(x + w, y + h, x + w - r, y + h),
+            Seg::Line(x + r, y + h),
+            Seg::Quad(x, y + h, x, y + h - r),
+            Seg::Line(x, y + r),
+            Seg::Quad(x, y, x + r, y),
+            Seg::Close,
+        ],
+    }
+}
 
 /// Draw the legend into `g` (the unclipped axis group).
 pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
@@ -15,10 +36,12 @@ pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
     }
     let s = &ax.style;
     let fs = s.px(s.legend_size_pt);
-    let pad = s.px(5.0);
-    let gap = s.px(5.0);
-    let handle_w = s.px(20.0);
-    let row_h = fs * 1.4;
+    // Spacing in font-size units, matching matplotlib's legend rcParams:
+    // borderpad 0.4, handlelength 2.0, handletextpad 0.8, labelspacing 0.5.
+    let pad = 0.4 * fs;
+    let gap = 0.8 * fs;
+    let handle_w = 2.0 * fs;
+    let row_h = fs * 1.5;
 
     let max_w = items
         .iter()
@@ -27,15 +50,20 @@ pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
 
     let box_w = pad + handle_w + gap + max_w + pad;
     let box_h = pad * 2.0 + row_h * items.len() as f32;
-    let margin = s.px(6.0);
+    let margin = s.px(s.axes_linewidth_pt) + 0.5 * fs; // borderaxespad ~0.5
     let x0 = box_.right() - margin - box_w;
     let y0 = box_.y + margin;
 
     if s.legend_frame {
-        g.push(DrawCommand::Rect {
-            rect: Rect::new(x0, y0, box_w, box_h),
+        // matplotlib `fancybox`: a rounded white box (framealpha 0.8) with a light
+        // grey edge (legend.edgecolor "0.8") at the axes line width.
+        g.push(DrawCommand::Path {
+            path: rounded_rect(Rect::new(x0, y0, box_w, box_h), 0.2 * fs),
             fill: Some(Color::WHITE.with_alpha(0.8)),
-            stroke: Some(Stroke::line(Color::hex("#cccccc"), s.px(0.8))),
+            stroke: Some(Stroke::line(
+                Color::hex("#cccccc"),
+                s.px(s.axes_linewidth_pt),
+            )),
         });
     }
 

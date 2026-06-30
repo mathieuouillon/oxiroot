@@ -171,8 +171,9 @@ impl Style {
     }
 
     /// An mplhep-flavored variant: in-pointing ticks on all four sides, minor
-    /// ticks on, a slightly heavier frame, and no data margin on x. The plot
-    /// look stays matplotlib; histograms are always drawn as mplhep staircases.
+    /// ticks on, a heavier frame, and longer ticks (the HEP `ROOT`/`CMS` look).
+    /// The plot look stays matplotlib; histograms are always drawn as mplhep
+    /// staircases, and the legend is frameless.
     #[must_use]
     pub fn mplhep() -> Self {
         Style {
@@ -184,7 +185,13 @@ impl Style {
                 top: true,
             },
             minor_ticks: true,
-            axes_linewidth_pt: 1.0,
+            // A heavier frame and longer, thicker ticks than matplotlib's
+            // defaults, matching the proportions of mplhep's ROOT/CMS styles.
+            axes_linewidth_pt: 1.1,
+            tick_major_len_pt: 6.0,
+            tick_minor_len_pt: 3.0,
+            tick_major_width_pt: 1.1,
+            tick_pad_pt: 5.0,
             legend_frame: false,
             ..Style::default()
         }

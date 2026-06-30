@@ -27,6 +27,10 @@ pub struct Axes {
     xlabel: Option<String>,
     ylabel: Option<String>,
     title: Option<String>,
+    /// mplhep experiment label `(experiment, status)`, drawn above the axes.
+    hep_label: Option<(String, String)>,
+    /// Right-hand label above the axes (luminosity / energy).
+    hep_rhs: Option<String>,
     pub(crate) artists: Vec<Artist>,
     color_idx: usize,
     show_legend: bool,
@@ -55,6 +59,8 @@ impl Axes {
             xlabel: None,
             ylabel: None,
             title: None,
+            hep_label: None,
+            hep_rhs: None,
             artists: Vec::new(),
             color_idx: 0,
             show_legend: false,
@@ -104,6 +110,33 @@ impl Axes {
         self.ylabel = Some(s.into());
         self
     }
+    /// Add an mplhep-style experiment label above the axes: a bold `experiment`
+    /// name (e.g. `"CMS"`, `"ATLAS"`) followed by an italic `status`
+    /// (e.g. `"Preliminary"`, `"Simulation"`; pass `""` for none). Pair it with
+    /// [`hep_rhs`](Axes::hep_rhs) for the luminosity / energy on the right.
+    ///
+    /// # Examples
+    /// ```
+    /// # use oxiroot_plot::{Axes, Style};
+    /// let mut ax = Axes::with_style(Style::mplhep());
+    /// ax.hep_label("CMS", "Preliminary").hep_rhs("138 fb$^{-1}$ (13 TeV)");
+    /// ```
+    pub fn hep_label(
+        &mut self,
+        experiment: impl Into<String>,
+        status: impl Into<String>,
+    ) -> &mut Self {
+        self.hep_label = Some((experiment.into(), status.into()));
+        self
+    }
+
+    /// Set the right-hand text above the axes (luminosity / energy, e.g.
+    /// `"138 fb$^{-1}$ (13 TeV)"`), right-aligned to the frame. Supports `$…$`.
+    pub fn hep_rhs(&mut self, text: impl Into<String>) -> &mut Self {
+        self.hep_rhs = Some(text.into());
+        self
+    }
+
     /// Set the title.
     pub fn title(&mut self, s: impl Into<String>) -> &mut Self {
         self.title = Some(s.into());
@@ -746,8 +779,10 @@ impl Axes {
                 });
             }
         }
-        // Minor ticks.
+        // Minor ticks, drawn a touch thinner than major (matplotlib uses a 0.6 pt
+        // minor width against a 0.8 pt major).
         if s.minor_ticks {
+            let minorstroke = Stroke::line(fg, s.px(s.tick_major_width_pt * 0.75));
             let xmin_t = ticker::minor_ticks(xmin, xmax, &xticks, 5);
             let ymin_t = ticker::minor_ticks(ymin, ymax, &yticks, 5);
             for &xv in &xmin_t {
@@ -756,14 +791,14 @@ impl Axes {
                     axis.push(DrawCommand::Line {
                         p0: (px, box_.bottom() - in_minor),
                         p1: (px, box_.bottom() + out_minor),
-                        stroke: tickstroke.clone(),
+                        stroke: minorstroke.clone(),
                     });
                 }
                 if s.tick_sides.top {
                     axis.push(DrawCommand::Line {
                         p0: (px, box_.y + in_minor),
                         p1: (px, box_.y - out_minor),
-                        stroke: tickstroke.clone(),
+                        stroke: minorstroke.clone(),
                     });
                 }
             }
@@ -773,14 +808,14 @@ impl Axes {
                     axis.push(DrawCommand::Line {
                         p0: (box_.x + in_minor, py),
                         p1: (box_.x - out_minor, py),
-                        stroke: tickstroke.clone(),
+                        stroke: minorstroke.clone(),
                     });
                 }
                 if s.tick_sides.right {
                     axis.push(DrawCommand::Line {
                         p0: (box_.right() - in_minor, py),
                         p1: (box_.right() + out_minor, py),
-                        stroke: tickstroke.clone(),
+                        stroke: minorstroke.clone(),
                     });
                 }
             }
@@ -878,6 +913,55 @@ impl Axes {
                 fg,
                 HAlign::Center,
                 VAlign::Bottom,
+                0.0,
+            );
+        }
+
+        // mplhep experiment label: a bold experiment name + italic status above
+        // the top-left of the frame, the luminosity / energy above the top-right.
+        if let Some((exp, status)) = &self.hep_label {
+            let base = s.px(s.font_size_pt);
+            let baseline = box_.y - s.px(5.0);
+            let exp_size = base * 1.3;
+            let exp_w = text::measure(&s.fonts, exp, exp_size, FontStyle::Bold).width;
+            axis.cmds.extend(text::layout(
+                &s.fonts,
+                exp,
+                box_.x,
+                baseline,
+                exp_size,
+                FontStyle::Bold,
+                fg,
+                HAlign::Left,
+                VAlign::Baseline,
+                0.0,
+            ));
+            if !status.is_empty() {
+                axis.cmds.extend(text::layout(
+                    &s.fonts,
+                    status,
+                    box_.x + exp_w + base * 0.4,
+                    baseline,
+                    base * 1.05,
+                    FontStyle::Italic,
+                    fg,
+                    HAlign::Left,
+                    VAlign::Baseline,
+                    0.0,
+                ));
+            }
+        }
+        if let Some(rhs) = &self.hep_rhs {
+            crate::mathtext::layout_label(
+                &mut axis,
+                &s.fonts,
+                rhs,
+                box_.right(),
+                box_.y - s.px(5.0),
+                s.px(s.font_size_pt),
+                fg,
+                HAlign::Right,
+                VAlign::Baseline,
                 0.0,
             );
         }

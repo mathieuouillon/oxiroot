@@ -418,11 +418,15 @@ labels are typeset as real LaTeX math by the pure-Rust
 [ReX](https://github.com/KenyC/ReX) TeX engine into the same IR.
 
 <p align="center">
-  <img src="docs/images/plot-mass.png" alt="Z to mu mu candidates: filled MC template with data points overlaid" width="46%">
+  <img src="docs/images/plot-mass.png" alt="Z to mu mu candidates: filled MC template with data points overlaid, matplotlib look" width="46%">
+  <img src="docs/images/plot-mplhep.png" alt="The same histogram in the mplhep style with a bold CMS Preliminary label and luminosity/energy" width="46%">
+</p>
+<p align="center">
   <img src="docs/images/plot-heatmap.png" alt="2-D TH2 rendered as a viridis heatmap with a colorbar" width="46%">
+  <img src="docs/images/plot-ratio.png" alt="A main panel over a data/MC ratio panel sharing the x-axis" width="46%">
 </p>
 
-<sub>Both figures are produced by `cargo run -p oxiroot --example plot --features plot` (PNG **and** SVG).</sub>
+<sub>All figures are produced by `cargo run -p oxiroot --example plot --features plot` (PNG, SVG **and** PDF). Left: the plain matplotlib look (fancybox legend, STIX serif, LaTeX labels). Right: the HEP-publication look (`Style::mplhep()` + `ax.hep_label("CMS", "Preliminary")`).</sub>
 
 ```rust
 use oxiroot::plot::{Axes, HistType, HistOpts, ErrorbarOpts, Hist2dOpts, Color};
@@ -453,6 +457,11 @@ ax2.save("heatmap.svg")?;
   analytic or fitted curve), `grid`, `xlabel`/`ylabel`/`title`, `xlim`/`ylim`
   (taking a `Range`, e.g. `ax.xlim(0.0..100.0)`), and `legend`. The `*_with`
   methods take an options builder; the bare ones use defaults.
+- **Publication-ready out of the box** — a matplotlib `fancybox` (rounded) legend,
+  the STIX serif used by LaTeX, and [`Style::mplhep()`](https://scikit-hep.org/mplhep/)
+  for the HEP look (in-pointing minor ticks on all four sides, a heavier frame).
+  `ax.hep_label("CMS", "Preliminary")` adds the bold experiment label, and
+  `ax.hep_rhs("138 fb$^{-1}$ (13 TeV)")` the luminosity/energy above the frame.
 - **Overlay a fit** — `ax.function(|x| …, x0..x1)` draws any closure as a smooth
   curve; with the `fit` feature, `ax.model(&model, x0..x1)` overlays a fitted
   [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) `Model` directly on a histogram.

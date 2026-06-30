@@ -629,9 +629,10 @@ impl MeshArtist {
                 let y0 = t.y(self.yedges[iy]);
                 let y1 = t.y(self.yedges[iy + 1]);
                 let (ry, rh) = (y0.min(y1), (y1 - y0).abs());
-                // Slight overlap avoids anti-aliasing seams between cells.
+                // Overlap each cell ~0.5 px into its neighbours so no sliver of the
+                // page background shows through sub-pixel seams between cells.
                 g.push(DrawCommand::Rect {
-                    rect: Rect::new(rx - 0.25, ry - 0.25, rw + 0.5, rh + 0.5),
+                    rect: Rect::new(rx - 0.5, ry - 0.5, rw + 1.0, rh + 1.0),
                     fill: Some(color),
                     stroke: None,
                 });

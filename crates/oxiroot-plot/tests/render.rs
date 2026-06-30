@@ -156,6 +156,29 @@ fn file_and_in_memory_bytes_agree() {
 }
 
 #[test]
+fn hep_label_adds_glyphs_above_the_frame() {
+    use oxiroot_plot::Style;
+    // The bold experiment label + italic status + right-hand lumi/energy each add
+    // glyph paths to the SVG, so a labelled axes renders more `<path` than a bare
+    // one with the same data.
+    let mut bare = Axes::with_style(Style::mplhep());
+    bare.hist(&gauss_hist());
+    let n_bare = occurrences(&bare.to_svg_string(), "<path");
+
+    let mut labelled = Axes::with_style(Style::mplhep());
+    labelled.hist(&gauss_hist());
+    labelled
+        .hep_label("CMS", "Preliminary")
+        .hep_rhs("138 fb$^{-1}$ (13 TeV)");
+    let n_labelled = occurrences(&labelled.to_svg_string(), "<path");
+
+    assert!(
+        n_labelled > n_bare + 15,
+        "expected the experiment label to add many glyph paths: {n_bare} -> {n_labelled}"
+    );
+}
+
+#[test]
 fn rendering_is_deterministic() {
     // Two independently built identical plots must produce identical bytes.
     let render = || {

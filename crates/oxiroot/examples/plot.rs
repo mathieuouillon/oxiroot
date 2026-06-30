@@ -11,7 +11,8 @@
 //! 1. `mass` — a filled MC template with "data" points overlaid, a legend, and a
 //!    LaTeX axis label (the default matplotlib look). Also saved at 220 DPI.
 //! 2. `mplhep` — the same histogram as a step staircase with error bars in the
-//!    mplhep style (in-pointing ticks, minors, all four sides) and a grid.
+//!    mplhep style (in-pointing ticks, minors, all four sides), with a bold
+//!    `CMS Preliminary` experiment label and luminosity/energy above the frame.
 //! 3. `heatmap` — a 2-D TH2 as a viridis color mesh with a colorbar.
 //! 4. `ratio` — a main panel over a data/MC ratio panel sharing the x-axis.
 
@@ -69,10 +70,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ax.save_with(out.join("mass_hi.png"), SaveOpts::new().dpi(220.0))?;
     println!("wrote {} (220 dpi)", out.join("mass_hi.png").display());
 
-    // --- 2. The same histogram as a step + error bars + grid, mplhep style. ---
+    // --- 2. The same histogram as a step + error bars, mplhep style, with a
+    //        CMS experiment label and luminosity/energy above the frame. ---
     let mut hep = Axes::with_style(Style::mplhep());
     hep.hist_with(&mc, HistOpts::new().yerr().label("MC"));
-    hep.grid();
+    hep.hep_label("CMS", "Preliminary")
+        .hep_rhs("138 fb$^{-1}$ (13 TeV)");
     hep.xlabel("$m_{\\mu\\mu}$ [GeV]");
     hep.ylabel("Events / 2 GeV");
     hep.legend();
