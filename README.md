@@ -667,12 +667,17 @@ Grouped by the ROOT feature each fills.
   already decoded (Zstd / zlib / LZ4 are also encoded today).
 - **Axes** — **time axes** (`TAxis` `fTimeDisplay` / `fTimeFormat`) on histograms
   and graphs, for monitoring-style time series.
+- **`RDataFrame`-style analysis** *(far future)* — a lazy, columnar analysis
+  front-end (`Define` / `Filter` / `Histo1D` / `Sum`, executed in one pass over a
+  `TTree` or RNTuple, parallelised across clusters) built on the existing readers.
+  This is a compute engine, not IO — a large, separate undertaking — so it sits
+  well beyond the current milestones, but it is the natural cap on the stack once
+  the IO layer is complete. (`RNTupleProcessor`, ROOT's RNTuple-native iteration,
+  is the same shape and would share the machinery.)
 
 Out of scope: ROOT 7 `RHist` (no persistable on-disk format — its `Streamer`
-throws); reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) — the
-`plot` feature renders the data, it does not (de)serialize ROOT graphics; and the
-declarative analysis layer (`RDataFrame`, `RNTupleProcessor`) — oxiroot is an IO
-library, not a compute engine.
+throws); and reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) —
+the `plot` feature renders the data, it does not (de)serialize ROOT graphics.
 
 ## License
 
