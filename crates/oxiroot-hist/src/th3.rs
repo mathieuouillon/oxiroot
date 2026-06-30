@@ -319,6 +319,6 @@ pub(crate) fn read_th3_in(file: &RFile, subdir: &str, name: &str) -> Result<TH3>
     decode_th3(histogram_object_in(file, subdir, name, "TH3")?)
 }
 
-fn decode_th3((class, object): (String, Vec<u8>)) -> Result<TH3> {
+pub(crate) fn decode_th3((class, object): (String, Vec<u8>)) -> Result<TH3> {
     TH3::read(&mut RBuffer::new(&object), precision_of(&class)?)
 }

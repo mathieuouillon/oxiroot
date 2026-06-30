@@ -86,7 +86,7 @@ impl WriteRoot for TObjString {
     }
 }
 
-fn decode_tobjstring(name: &str, class: &str, object: &[u8]) -> Result<TObjString> {
+pub(crate) fn decode_tobjstring(name: &str, class: &str, object: &[u8]) -> Result<TObjString> {
     if class != "TObjString" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TObjString"
@@ -226,7 +226,7 @@ impl WriteRoot for TParameter {
     }
 }
 
-fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Result<TParameter> {
+pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Result<TParameter> {
     let type_name = class
         .strip_prefix("TParameter<")
         .and_then(|s| s.strip_suffix('>'))

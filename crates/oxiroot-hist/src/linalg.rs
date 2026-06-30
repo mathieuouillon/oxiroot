@@ -115,7 +115,7 @@ impl WriteRoot for TVectorD {
     }
 }
 
-fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<TVectorD> {
+pub(crate) fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<TVectorD> {
     if class != "TVectorT<double>" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TVectorD"
@@ -230,7 +230,7 @@ impl WriteRoot for TMatrixD {
     }
 }
 
-fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<TMatrixD> {
+pub(crate) fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<TMatrixD> {
     if class != "TMatrixT<double>" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TMatrixD"
@@ -347,7 +347,7 @@ impl WriteRoot for TMatrixDSym {
     }
 }
 
-fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMatrixDSym> {
+pub(crate) fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMatrixDSym> {
     if class != "TMatrixTSym<double>" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TMatrixDSym"

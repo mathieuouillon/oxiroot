@@ -284,6 +284,6 @@ pub(crate) fn read_th2_in(file: &RFile, subdir: &str, name: &str) -> Result<TH2>
     decode_th2(histogram_object_in(file, subdir, name, "TH2")?)
 }
 
-fn decode_th2((class, object): (String, Vec<u8>)) -> Result<TH2> {
+pub(crate) fn decode_th2((class, object): (String, Vec<u8>)) -> Result<TH2> {
     TH2::read(&mut RBuffer::new(&object), precision_of(&class)?)
 }

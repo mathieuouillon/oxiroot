@@ -30,7 +30,7 @@ const UNSET_LIMIT: f64 = -1111.0;
 
 /// Write one embedded object: `[byte count][kNewClassTag][class\0][body]`, where
 /// `body` is the object's own streamed bytes (as produced by [`WriteRoot`]).
-fn write_object(w: &mut WBuffer, class: &str, body: &[u8]) {
+pub(crate) fn write_object(w: &mut WBuffer, class: &str, body: &[u8]) {
     let bc = w.reserve(4);
     w.be_u32(K_NEW_CLASS_TAG);
     w.bytes(class.as_bytes());

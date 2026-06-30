@@ -88,11 +88,12 @@ pub mod prelude {
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     pub use oxiroot_hist::{
-        merge_all, Chi2TestKind, Chi2TestResult, Dir, ErrorMode, GraphErrors, GraphFunction,
-        Histogram, KsTestResult, Merge, ParamValue, PolyBin, Precision, ReadRoot, RootFile,
-        SparseBin, TAxis, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
-        THnSparse, TMatrixD, TMatrixDSym, TMultiGraph, TObjString, TParameter, TProfile,
-        TProfile2D, TProfile3D, TVectorD, ThreadedHist, WriteRoot, TH1, TH2, TH3,
+        merge_all, Chi2TestKind, Chi2TestResult, Dir, ErrorMode, FromMember, GraphErrors,
+        GraphFunction, Histogram, KsTestResult, ListKind, Merge, ObjList, ParamValue, PolyBin,
+        Precision, ReadRoot, RootFile, SparseBin, TAxis, TEfficiency, TGraph, TGraph2D,
+        TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMatrixD, TMatrixDSym, TMultiGraph,
+        TObjString, TParameter, TProfile, TProfile2D, TProfile3D, TVectorD, ThreadedHist,
+        WriteRoot, TH1, TH2, TH3,
     };
 
     pub use oxiroot_rntuple::{

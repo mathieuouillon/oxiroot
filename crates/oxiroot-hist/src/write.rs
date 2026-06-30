@@ -72,6 +72,13 @@ pub trait WriteRoot {
     #[must_use]
     fn to_root_bytes(&self) -> Vec<u8>;
 
+    /// The class names of any objects this one *contains* (a collection's
+    /// members), so their `TStreamerInfo` is embedded too. Empty for the leaf
+    /// types; overridden by `ObjList`.
+    fn contained_classes(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Write this object as the sole content of a new ROOT file at `path`.
     fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()>
     where
@@ -84,7 +91,10 @@ pub trait WriteRoot {
             )));
         }
         let class = self.root_class();
-        let streamers = streamer_info_for(std::iter::once(class.as_str()))?;
+        let contained = self.contained_classes();
+        let streamers = streamer_info_for(
+            std::iter::once(class.as_str()).chain(contained.iter().map(String::as_str)),
+        )?;
         write_named(path, |file_name| {
             write_root_file_with_streamers(
                 file_name,
@@ -1175,6 +1185,9 @@ pub struct RootFile {
     existing: Option<Vec<u8>>,
     root: Vec<ObjectRecord>,
     dirs: Vec<Subdir>,
+    /// Classes contained inside added objects (collection members) whose streamer
+    /// info must also be embedded.
+    contained: Vec<String>,
 }
 
 impl RootFile {
@@ -1186,6 +1199,7 @@ impl RootFile {
             existing: None,
             root: Vec::new(),
             dirs: Vec::new(),
+            contained: Vec::new(),
         }
     }
 
@@ -1204,6 +1218,7 @@ impl RootFile {
             existing: Some(existing),
             root: Vec::new(),
             dirs: Vec::new(),
+            contained: Vec::new(),
         })
     }
 
@@ -1211,6 +1226,7 @@ impl RootFile {
     // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
     #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, object: &dyn WriteRoot) -> RootFile {
+        self.contained.extend(object.contained_classes());
         self.root.push(record_of(object));
         self
     }
@@ -1221,7 +1237,9 @@ impl RootFile {
     pub fn dir(mut self, name: impl Into<String>, build: impl FnOnce(Dir) -> Dir) -> RootFile {
         let dir = build(Dir {
             objects: Vec::new(),
+            contained: Vec::new(),
         });
+        self.contained.extend(dir.contained);
         self.dirs.push(Subdir {
             name: name.into(),
             objects: dir.objects,
@@ -1250,7 +1268,8 @@ impl RootFile {
             self.root
                 .iter()
                 .chain(self.dirs.iter().flat_map(|d| d.objects.iter()))
-                .map(|r| r.class_name.as_str()),
+                .map(|r| r.class_name.as_str())
+                .chain(self.contained.iter().map(String::as_str)),
         )?;
         let streamers = Some(streamers.as_ref());
         let bytes = match self.existing {
@@ -1281,12 +1300,14 @@ impl RootFile {
 #[must_use]
 pub struct Dir {
     objects: Vec<ObjectRecord>,
+    contained: Vec<String>,
 }
 
 impl Dir {
     /// Add an object to this subdirectory.
     #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, object: &dyn WriteRoot) -> Dir {
+        self.contained.extend(object.contained_classes());
         self.objects.push(record_of(object));
         self
     }
