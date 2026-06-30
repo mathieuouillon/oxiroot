@@ -34,7 +34,8 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**, fixed-size
   `std::array`/`std::bitset`, user classes, `std::set`/`std::map`), read
-  *unsplit* streamer fields, compressed, multi-cluster via a streaming writer.
+  *unsplit* streamer fields, compressed, multi-cluster via a streaming writer,
+  and **several RNTuples per file / inside a `TDirectory`**.
 - 🗜 **Compression** — decode Zstd / zlib / LZ4 / LZMA; encode Zstd / zlib /
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
@@ -426,6 +427,11 @@ ax2.save("heatmap.svg")?;
 - `Ntuple::new(name, fields).write_root(path, compression)` is the method form
   (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
   free `write_rntuple_file` remains.
+- `NtupleFile` writes **several RNTuples per file** and RNTuples **inside a
+  `TDirectory`** — `NtupleFile::new().add(events).add(runs).dir("cal", |d|
+  d.add(pedestals)).write_root(…)`. Read a nested one with
+  `RNTuple::open_in(file, "cal", "pedestals")`. ROOT and uproot navigate the
+  result natively.
 - `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is
   never fully held in memory.
 
@@ -535,8 +541,6 @@ Grouped by the ROOT feature each fills.
     key instead of by entry. (Positional friends — `AddFriend`, read
     entry-aligned — already work.)
 - **RNTuple**
-  - **An RNTuple inside a `TDirectory`, and several per file** — today the writer
-    emits one RNTuple in the root directory.
   - **More field types** — `std::optional` / `std::unique_ptr` (the "late" /
     nullable fields), `std::atomic<T>`, and a `std::map` *write* ROOT reads
     (read already works; write is blocked by the same proxy as `TTree`).

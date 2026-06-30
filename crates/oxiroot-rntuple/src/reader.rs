@@ -25,15 +25,38 @@ pub struct RNTuple {
 }
 
 impl RNTuple {
-    /// Open the RNTuple named `name` from an open ROOT file.
+    /// Open the RNTuple named `name` from the file's top directory.
     pub fn open(file: &RFile, name: &str) -> Result<RNTuple> {
         let key = file
             .key(name)
             .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+        Self::open_from_key(file, key)
+    }
+
+    /// Open the RNTuple named `name` from the subdirectory `subdir`. The anchor's
+    /// blob offsets are absolute file positions, so reading is identical to a
+    /// top-directory RNTuple once the anchor key is located.
+    pub fn open_in(file: &RFile, subdir: &str, name: &str) -> Result<RNTuple> {
+        let dir = file.subdir(subdir)?;
+        let key = dir
+            .keys
+            .iter()
+            .find(|k| k.name == name && !k.is_deleted())
+            .ok_or_else(|| {
+                Error::Format(format!("no key named {name:?} in subdirectory {subdir:?}"))
+            })?;
+        // Clone out of the borrowed `dir` so the returned RNTuple owns nothing
+        // tied to it.
+        let key = key.clone();
+        Self::open_from_key(file, &key)
+    }
+
+    /// Read an RNTuple given its already-located anchor `key`.
+    fn open_from_key(file: &RFile, key: &oxiroot_io_core::TKey) -> Result<RNTuple> {
         if key.class_name != ANCHOR_CLASS {
             return Err(Error::Format(format!(
-                "key {name:?} is a {}, not {ANCHOR_CLASS}",
-                key.class_name
+                "key {:?} is a {}, not {ANCHOR_CLASS}",
+                key.name, key.class_name
             )));
         }
 

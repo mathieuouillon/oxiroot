@@ -95,7 +95,8 @@ pub mod prelude {
     };
 
     pub use oxiroot_rntuple::{
-        write_rntuple_file, Column, Field, FieldValues, Ntuple, RNTuple, RNTupleWriter,
+        write_rntuple_file, Column, Field, FieldValues, Ntuple, NtupleDir, NtupleFile, RNTuple,
+        RNTupleWriter,
     };
 
     pub use oxiroot_tree::{
