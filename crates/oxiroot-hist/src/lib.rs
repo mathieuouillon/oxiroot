@@ -12,6 +12,7 @@
 mod base;
 mod compare;
 mod naming;
+mod objects;
 mod ops;
 mod read;
 
@@ -47,6 +48,7 @@ pub use fit::{
 pub use graph::{GraphErrors, GraphFunction, TGraph};
 pub use graph2d::TGraph2D;
 pub use graphmultierrors::TGraphMultiErrors;
+pub use objects::{ParamValue, TObjString, TParameter};
 pub use ops::Histogram;
 pub use read::ReadRoot;
 pub use tefficiency::TEfficiency;
