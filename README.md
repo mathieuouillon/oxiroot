@@ -555,8 +555,12 @@ Grouped by the ROOT feature each fills.
     key instead of by entry. (Positional friends — `AddFriend`, read
     entry-aligned — already work.)
 - **RNTuple**
-  - **A `std::map` write ROOT reads** — read already works; the write is blocked
-    by the same collection-proxy dictionary as `TTree`.
+  - **A ROOT-C++-confirmed `std::map` write** — oxiroot already writes a
+    spec-compliant `std::map` RNTuple that uproot reads and oxiroot round-trips
+    (`Field::map`; see the `assoc` tests). Confirming a *ROOT-C++* round-trip is
+    blocked because ROOT 6.40's `std::map` collection proxy is non-functional in
+    the test build — it can neither create nor read a `std::map` RNTuple field —
+    so this needs a ROOT install with the `std::map` dictionary loaded to verify.
 - **More persistable objects** — the small classes constantly stored alongside
   histograms: `TObjString`, `TParameter<T>` (named scalars), `TMultiGraph`,
   `THStack` (a stacked-histogram collection), a `TList` / `TObjArray` / `TMap` of
