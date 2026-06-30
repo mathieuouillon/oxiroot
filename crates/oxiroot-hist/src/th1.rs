@@ -232,6 +232,106 @@ impl TH1 {
         }
     }
 
+    /// Per-in-range-bin variances (scikit-hep `hist`'s `.variances`). With
+    /// [`sumw2`](TH1::sumw2) on these are the stored sums of squared weights;
+    /// otherwise the bin content (the Poisson variance ROOT assumes for an
+    /// unweighted histogram), i.e. `bin_error(i+1)²`.
+    #[must_use]
+    pub fn variances(&self) -> Vec<f64> {
+        let n = self.contents.len();
+        let lo = if n >= 2 { 1 } else { 0 };
+        let hi = if n >= 2 { n - 1 } else { n };
+        (lo..hi)
+            .map(|i| {
+                self.sumw2
+                    .get(i)
+                    .copied()
+                    .unwrap_or_else(|| self.contents[i].max(0.0))
+            })
+            .collect()
+    }
+
+    /// Per-in-range-bin uncertainties — `√variance`, the error bars. The
+    /// companion to [`values`](TH1::values) (`hist` exposes this as
+    /// `np.sqrt(h.variances())`).
+    #[must_use]
+    pub fn errors(&self) -> Vec<f64> {
+        self.variances().iter().map(|v| v.max(0.0).sqrt()).collect()
+    }
+
+    /// Per-bin effective entry counts (`hist`'s `.counts`): `value² / variance`
+    /// for weighted bins (the effective number of entries behind the sum of
+    /// weights), or the bin content when the histogram carries no weights.
+    #[must_use]
+    pub fn counts(&self) -> Vec<f64> {
+        let vals = self.values();
+        let vars = self.variances();
+        let weighted = !self.sumw2.is_empty();
+        vals.iter()
+            .zip(&vars)
+            .map(|(&v, &var)| {
+                if weighted && var > 0.0 {
+                    v * v / var
+                } else {
+                    v
+                }
+            })
+            .collect()
+    }
+
+    /// Probability density per bin (`hist`'s `.density`): the bin contents scaled
+    /// so the histogram integrates to one — `Σ density(i) · binwidth(i) = 1`.
+    #[must_use]
+    pub fn density(&self) -> Vec<f64> {
+        let vals = self.values();
+        let total: f64 = vals.iter().sum();
+        if total == 0.0 {
+            return vec![0.0; vals.len()];
+        }
+        let edges = self.edges();
+        (0..vals.len())
+            .map(|i| {
+                let w = edges[i + 1] - edges[i];
+                if w == 0.0 {
+                    0.0
+                } else {
+                    vals[i] / (w * total)
+                }
+            })
+            .collect()
+    }
+
+    /// The bin content at coordinate `x` (`hist`'s `h[hist.loc(x)]`):
+    /// under/overflow content is returned for `x` outside the axis range.
+    #[must_use]
+    pub fn at(&self, x: f64) -> f64 {
+        self.contents.get(self.find_bin(x)).copied().unwrap_or(0.0)
+    }
+
+    /// The x-axis label (ROOT `fXaxis.fTitle`; scikit-hep `hist`'s axis `label`).
+    pub fn x_label(&self) -> &str {
+        &self.xaxis.title
+    }
+
+    /// Set the x-axis label. Round-trips through ROOT (`fXaxis.fTitle`).
+    #[must_use]
+    pub fn with_x_label(mut self, label: impl Into<String>) -> Self {
+        self.xaxis.title = label.into();
+        self
+    }
+
+    /// The y-axis label (ROOT `fYaxis.fTitle`; e.g. `"Events / 2 GeV"`).
+    pub fn y_label(&self) -> &str {
+        &self.yaxis.title
+    }
+
+    /// Set the y-axis label. Round-trips through ROOT (`fYaxis.fTitle`).
+    #[must_use]
+    pub fn with_y_label(mut self, label: impl Into<String>) -> Self {
+        self.yaxis.title = label.into();
+        self
+    }
+
     /// The X-axis bin edges (`nbins + 1` values).
     pub fn edges(&self) -> Vec<f64> {
         self.xaxis.edges()

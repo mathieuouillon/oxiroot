@@ -17,6 +17,7 @@ mod naming;
 mod objects;
 mod objlist;
 mod ops;
+pub mod quick;
 mod read;
 
 pub mod axis;
@@ -56,6 +57,7 @@ pub use linalg::{TMatrixD, TMatrixDSym, TVectorD};
 pub use objects::{ParamValue, TObjString, TParameter};
 pub use objlist::{FromMember, ListKind, ObjList, TMap};
 pub use ops::Histogram;
+pub use quick::Hist;
 pub use read::ReadRoot;
 pub use tefficiency::TEfficiency;
 pub use th1::TH1;

@@ -134,6 +134,16 @@ cargo run -p oxiroot --example analysis
 - Create and `fill`/`fill_weight` with ROOT's exact `Fill` semantics; uniform or
   variable (`new_variable`) bins; `sumw2()` (chains: `h.sumw2().fill(x)`) for
   weighted per-bin errors (`bin_error`).
+- **A scikit-hep [`hist`](https://github.com/scikit-hep/hist)-style quick-construct
+  builder and accessors**, mapped onto ROOT so the result is an ordinary
+  `TH1`/`TH2`/`TH3` (see [the report](docs/hist-api-report.md)).
+  `Hist::reg(50, 0.0, 100.0).name("pt").label("$p_T$ [GeV]").weight()` chains the
+  axes then a storage finalizer — `double()`→`TH1D`, `float()`→`TH1F`,
+  `int64()`→`TH1L`, `weight()`→`TH1D`+`Sumw2`; chain `.reg`/`.var` for `TH2`/`TH3`.
+  Axis labels (`label()` / `with_x_label()` / `x_label()`) live in ROOT's
+  `fXaxis.fTitle` and round-trip. The `hist` accessor family is there too:
+  `values()`, `variances()` (`Sumw2`), `errors()` (`√variance`), `counts()`
+  (effective entries), `density()`, and `at(x)` (content at a coordinate).
 - Arithmetic with `Sumw2` error propagation: `scale` (also `h *= c` / `h * c`),
   `add` (the bin-by-bin merge used to combine job outputs), `multiply`, `divide`,
   `integral`. Bins read by cell index (`h[bin]`) or iterator (`for &c in &h`);
