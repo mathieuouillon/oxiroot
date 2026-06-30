@@ -92,6 +92,60 @@ impl TH1 {
         out
     }
 
+    /// A sub-range copy over the coordinate range `[lo, hi]` (scikit-hep `hist`'s
+    /// `h[hist.loc(lo):hist.loc(hi)]`): keep the in-range bins from `find_bin(lo)`
+    /// through `find_bin(hi)`. Content outside the kept range is summed into the
+    /// new under/overflow, so the total content (with flow) is preserved; `Sumw2`
+    /// carries over per bin, and the moment sums are recomputed from the kept
+    /// bins (their centres), so `mean`/`std_dev` describe the slice.
+    #[must_use]
+    pub fn slice(&self, lo: f64, hi: f64) -> TH1 {
+        let n = self.xaxis.nbins.max(0) as usize;
+        if n == 0 {
+            return self.clone();
+        }
+        let ilo = self.find_bin(lo).clamp(1, n);
+        let ihi = self.find_bin(hi).clamp(1, n);
+        let (ilo, ihi) = (ilo.min(ihi), ilo.max(ihi));
+        let edges = self.xaxis.edges();
+        let sub_edges: Vec<f64> = edges[ilo - 1..=ihi].to_vec();
+        let mut out = TH1::new_variable(&sub_edges)
+            .named(self.name.clone())
+            .titled(self.title.clone());
+        out.precision = self.precision;
+        out.xaxis.title = self.xaxis.title.clone();
+        let track = !self.sumw2.is_empty();
+        if track {
+            out.sumw2 = vec![0.0; out.contents.len()];
+        }
+        let oc = out.contents.len();
+
+        for (k, i) in (ilo..=ihi).enumerate() {
+            out.contents[k + 1] = self.contents[i];
+            if track {
+                out.sumw2[k + 1] = self.sumw2[i];
+            }
+        }
+        out.contents[0] = self.contents[0] + (1..ilo).map(|i| self.contents[i]).sum::<f64>();
+        out.contents[oc - 1] =
+            self.contents[n + 1] + (ihi + 1..=n).map(|i| self.contents[i]).sum::<f64>();
+
+        out.entries = self.entries;
+        out.tsumw = 0.0;
+        out.tsumw2 = 0.0;
+        out.tsumwx = 0.0;
+        out.tsumwx2 = 0.0;
+        for i in ilo..=ihi {
+            let c = self.contents[i];
+            let center = 0.5 * (edges[i - 1] + edges[i]);
+            out.tsumw += c;
+            out.tsumw2 += if track { self.sumw2[i] } else { c };
+            out.tsumwx += c * center;
+            out.tsumwx2 += c * center * center;
+        }
+        out
+    }
+
     /// The cumulative histogram (ROOT's `GetCumulative`): bin `i` becomes the
     /// running sum of the in-range bins up to `i` (`forward`) or from `i` to the
     /// top (`!forward`). Binning and moment sums are preserved.

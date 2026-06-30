@@ -35,11 +35,15 @@ new API had to map onto ROOT concepts and **survive a ROOT write/read**. It does
 | `h.counts` | effective entries | — | **`counts()`** |
 | `h.density()` | normalized density | — | **`density()`** |
 | `h[hist.loc(x)]` | `GetBinContent(FindBin(x))` | `find_bin` + `values` | **`at(x)`** |
-| `h.project`/`profile`/`sum` | projections / integral | `projection_x`, `profile_x`, `integral` | (unchanged) |
+| `h.fill(array)` | `Fill` loop | `fill` in a loop | **`fill_many()`** / **`fill_many_weighted()`** |
+| `h[a:b:sum]` | range integral | — | **`integral_range(a, b)`** |
+| `h[a:b]` | sub-range histogram | — | **`slice(a, b)`** (flow-preserving) |
+| `Hist.new.Reg(...).Mean()` | `TProfile` | `TProfile::new` | **`Hist::reg(...).profile()`** |
+| `h.project`/`sum` | projections / integral | `projection_x`, `integral` | (unchanged) |
 
-The two `hist` storages with no `TH1` equivalent are intentionally **not**
-mapped: a `Mean`/`WeightedMean` storage is ROOT's `TProfile` (a different class,
-already supported separately), and categorical (`IntCategory`/`StrCategory`) axes
+`hist`'s `Mean` storage is ROOT's `TProfile`, reached by the `.profile()`
+finalizer (`Hist::reg(...).profile()`). The one family with no `TH1` equivalent
+is intentionally **not** mapped: categorical (`IntCategory`/`StrCategory`) axes
 have no `TH1` representation — they are a `boost-histogram` concept, out of scope
 for a ROOT-compatible type. ROOT's alphanumeric **bin labels** (`fLabels`) are a
 narrower thing oxiroot already reads and writes.
@@ -100,6 +104,25 @@ let h = TH1::read_root(&f, "pt")?
     .with_y_label("Events / 2 GeV");
 assert_eq!(h.x_label(), "$p_T$ [GeV]");
 ```
+
+### Batch fill, range integral, slicing, and profiles
+
+```rust
+let mut h = TH1::new(100, 0.0, 100.0);
+h.fill_many(&data);                         // hist's h.fill(array)
+h.fill_many_weighted(&data, &weights);      // h.fill(array, weight=…)
+
+h.integral_range(80.0, 100.0);              // hist's h[80j:100j:sum]
+let tail = h.slice(80.0, 100.0);            // hist's h[80j:100j] — a sub-range TH1
+
+// hist's Mean storage → TProfile:
+let mut p = Hist::reg(50, 0.0, 100.0).name("resp").label("x").profile();
+p.fill(x, y);                               // each bin holds the mean y
+```
+
+`slice` folds the cropped content into the new under/overflow, so the total
+(with flow) is preserved, and it recomputes the moment sums from the kept bins so
+`mean()`/`std_dev()` describe the slice.
 
 ## Verification
 

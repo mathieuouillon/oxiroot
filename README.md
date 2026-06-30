@@ -143,7 +143,9 @@ cargo run -p oxiroot --example analysis
   Axis labels (`label()` / `with_x_label()` / `x_label()`) live in ROOT's
   `fXaxis.fTitle` and round-trip. The `hist` accessor family is there too:
   `values()`, `variances()` (`Sumw2`), `errors()` (`√variance`), `counts()`
-  (effective entries), `density()`, and `at(x)` (content at a coordinate).
+  (effective entries), `density()`, and `at(x)` (content at a coordinate); plus
+  batch `fill_many()`, UHI-style `integral_range(a, b)` / `slice(a, b)`, and a
+  `Hist::reg(...).profile()` finalizer for a `TProfile` (`hist`'s `Mean` storage).
 - Arithmetic with `Sumw2` error propagation: `scale` (also `h *= c` / `h * c`),
   `add` (the bin-by-bin merge used to combine job outputs), `multiply`, `divide`,
   `integral`. Bins read by cell index (`h[bin]`) or iterator (`for &c in &h`);

@@ -72,6 +72,52 @@ fn hist_style_accessors() {
 }
 
 #[test]
+fn batch_fill_and_uhi_slicing() {
+    // hist's array fill.
+    let mut h = TH1::new(10, 0.0, 10.0);
+    h.fill_many(&[0.5, 0.5, 1.5, 9.5]);
+    assert_eq!(h.values()[0], 2.0);
+    let mut hw = TH1::new(4, 0.0, 4.0);
+    hw.sumw2();
+    hw.fill_many_weighted(&[0.5, 1.5], &[2.0, 3.0]);
+    assert_eq!(hw.variances(), vec![4.0, 9.0, 0.0, 0.0]);
+
+    // UHI: the integral over a coordinate range (h[a:b:sum]) and a sub-range copy
+    // (h[a:b]) where the cropped content folds into the flow.
+    let mut g = TH1::new(10, 0.0, 10.0);
+    for i in 0..10 {
+        g.fill(i as f64 + 0.5); // one entry per bin
+    }
+    assert_eq!(g.integral_range(2.5, 4.5), 3.0); // bins 3, 4, 5
+    let s = g.slice(2.5, 4.5);
+    assert_eq!(s.values(), &[1.0, 1.0, 1.0]);
+    assert!((s.mean() - 3.5).abs() < 1e-9); // centre of the kept range
+    let total = s.contents[0] + s.integral() + s.contents[s.contents.len() - 1];
+    assert_eq!(total, g.integral()); // flow preserves the total
+}
+
+#[test]
+fn profile_finalizer_builds_a_tprofile() {
+    use oxiroot_hist::TProfile;
+    // hist's Mean storage on a 1-D axis -> TProfile.
+    let mut p = Hist::reg(4, 0.0, 4.0)
+        .name("prof")
+        .label("x [cm]")
+        .profile();
+    p.fill(0.5, 10.0);
+    p.fill(0.5, 20.0);
+    assert_eq!(p.values()[0], 15.0); // the mean of (10, 20)
+    assert_eq!(p.xaxis.title, "x [cm]");
+
+    // It is an ordinary TProfile and writes to ROOT.
+    let out = std::env::temp_dir().join("oxiroot_quick_profile.root");
+    p.write_root(&out, Compression::None).unwrap();
+    let back = TProfile::read_root(&RFile::open(&out).unwrap(), "prof").unwrap();
+    assert_eq!(back.values()[0], 15.0);
+    let _ = std::fs::remove_file(&out);
+}
+
+#[test]
 fn builder_output_round_trips_through_root() {
     let mut h = Hist::reg(4, 0.0, 4.0)
         .name("pt")

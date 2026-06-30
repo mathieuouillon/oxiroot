@@ -24,6 +24,7 @@ use crate::base::Precision;
 use crate::th1::TH1;
 use crate::th2::TH2;
 use crate::th3::TH3;
+use crate::tprofile::TProfile;
 
 /// One axis of the builder: a regular range or explicit edges, plus a label.
 #[derive(Debug, Clone)]
@@ -229,6 +230,21 @@ impl H1 {
         };
         h.xaxis.title = self.ax.label;
         h.finish(self.name, self.title, prec, weight)
+    }
+
+    /// Build a [`TProfile`] — `hist`'s `Mean` storage on a 1-D axis. Fill it with
+    /// `(x, y)` pairs (`profile.fill(x, y)`); each bin then holds the mean `y`
+    /// and its error, instead of a count.
+    #[must_use]
+    pub fn profile(self) -> TProfile {
+        // TProfile has only a regular-axis constructor; overlay explicit edges
+        // for a variable axis (the bin count already matches).
+        let mut p = TProfile::new(self.ax.nbins, self.ax.lo, self.ax.hi);
+        if let Some(e) = &self.ax.edges {
+            p.xaxis.xbins = e.clone();
+        }
+        p.xaxis.title = self.ax.label;
+        p.named(self.name).titled(self.title)
     }
 }
 builder!(H1, TH1, build1);

@@ -175,6 +175,23 @@ impl TH1 {
         }
     }
 
+    /// Fill many values at once (scikit-hep `hist`'s `h.fill(array)`):
+    /// equivalent to [`fill`](TH1::fill) on each.
+    pub fn fill_many(&mut self, xs: &[f64]) {
+        for &x in xs {
+            self.fill_weight(x, 1.0);
+        }
+    }
+
+    /// Fill many `(x, weight)` pairs at once (`hist`'s `h.fill(array, weight=…)`);
+    /// `xs` and `weights` are zipped, so extra entries in the longer slice are
+    /// ignored.
+    pub fn fill_many_weighted(&mut self, xs: &[f64], weights: &[f64]) {
+        for (&x, &w) in xs.iter().zip(weights) {
+            self.fill_weight(x, w);
+        }
+    }
+
     /// Mean of the in-range fills (`fTsumwx / fTsumw`), or 0 if empty.
     pub fn mean(&self) -> f64 {
         if self.tsumw != 0.0 {
@@ -306,6 +323,20 @@ impl TH1 {
     #[must_use]
     pub fn at(&self, x: f64) -> f64 {
         self.contents.get(self.find_bin(x)).copied().unwrap_or(0.0)
+    }
+
+    /// The summed bin content over the coordinate range `[lo, hi]` (`hist`'s
+    /// `h[hist.loc(lo):hist.loc(hi):sum]`): the in-range bins from `find_bin(lo)`
+    /// through `find_bin(hi)`, inclusive.
+    #[must_use]
+    pub fn integral_range(&self, lo: f64, hi: f64) -> f64 {
+        let nbins = self.xaxis.nbins.max(0) as usize;
+        if nbins == 0 {
+            return 0.0;
+        }
+        let a = self.find_bin(lo).clamp(1, nbins);
+        let b = self.find_bin(hi).clamp(1, nbins);
+        self.contents[a.min(b)..=a.max(b)].iter().sum()
     }
 
     /// The x-axis label (ROOT `fXaxis.fTitle`; scikit-hep `hist`'s axis `label`).
