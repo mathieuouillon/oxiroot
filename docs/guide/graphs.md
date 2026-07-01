@@ -115,7 +115,7 @@ to use subdirectories, use the [`RootFile`](../api/oxiroot/index.html) builder.
 use oxiroot::prelude::*;
 
 let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0]).named("g");
-let h = TH1::new(10, 0.0, 1.0).named("h");
+let h = Hist::reg(10, 0.0, 1.0).double().named("h");
 
 RootFile::create("out.root")
     .add(&g)

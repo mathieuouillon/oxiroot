@@ -2,11 +2,13 @@
 //! correct ROOT class for each precision (so ROOT compatibility is preserved)
 //! and round-trip through a real file.
 
-use oxiroot_hist::{Compression, Precision, ReadRoot, RootFile, TProfile, WriteRoot, TH1, TH2};
+use oxiroot_hist::{
+    Compression, Hist, Precision, ReadRoot, RootFile, TProfile, WriteRoot, TH1, TH2,
+};
 use oxiroot_io_core::RFile;
 
 fn sample() -> TH1 {
-    let mut h = TH1::new(10, 0.0, 10.0).named("h").titled("title");
+    let mut h = Hist::reg(10, 0.0, 10.0).double().named("h").titled("title");
     h.sumw2();
     for i in 0..10 {
         h.fill_weight(i as f64 + 0.5, (i + 1) as f64);
@@ -56,9 +58,9 @@ fn float_precision_round_trips_as_th1f() {
 fn write_root_file_handles_heterogeneous_objects() {
     // The new multi-object writer takes any mix of writable types via &dyn —
     // not just TH1/TH2/TH3 as the old Hist enum did.
-    let h1 = TH1::new(5, 0.0, 5.0).named("h1");
-    let h2 = TH2::new(4, 0.0, 4.0, 4, 0.0, 4.0).named("h2");
-    let p = TProfile::new(5, 0.0, 5.0).named("p");
+    let h1 = Hist::reg(5, 0.0, 5.0).double().named("h1");
+    let h2 = Hist::reg(4, 0.0, 4.0).reg(4, 0.0, 4.0).double().named("h2");
+    let p = Hist::reg(5, 0.0, 5.0).profile().named("p");
     let path = std::env::temp_dir().join("oxiroot_traitapi_multi.root");
     RootFile::create(&path)
         .add(&h1)

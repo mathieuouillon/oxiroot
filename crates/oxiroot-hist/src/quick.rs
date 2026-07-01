@@ -19,12 +19,18 @@
 //! | `Weight()`     | [`weight`](H1::weight) | `TH1D` + `Sumw2` | value **and** variance |
 //! | `Int64()`      | [`int64`](H1::int64)   | `TH1L` | 64-bit integer bins |
 //! | (ROOT)         | [`float`](H1::float)   | `TH1F` | 32-bit float bins |
+//! | (ROOT)         | [`int32`](H1::int32)   | `TH1I` | 32-bit integer bins |
+//! | (ROOT)         | [`int16`](H1::int16)   | `TH1S` | 16-bit integer bins |
+//! | (ROOT)         | [`int8`](H1::int8)     | `TH1C` | 8-bit integer bins |
+//! | `Mean()`       | [`profile`](H1::profile) | `TProfile` | per-bin mean (1-, 2-, 3-D) |
 
 use crate::base::Precision;
 use crate::th1::TH1;
 use crate::th2::TH2;
 use crate::th3::TH3;
 use crate::tprofile::TProfile;
+use crate::tprofile2d::TProfile2D;
+use crate::tprofile3d::TProfile3D;
 
 /// One axis of the builder: a regular range or explicit edges, plus a label.
 #[derive(Debug, Clone)]
@@ -181,6 +187,21 @@ macro_rules! builder {
             pub fn int64(self) -> $hist {
                 self.$build(Precision::Long, false)
             }
+            /// Build with 32-bit integer storage (`TH1I`/`TH2I`/`TH3I`).
+            #[must_use]
+            pub fn int32(self) -> $hist {
+                self.$build(Precision::Int, false)
+            }
+            /// Build with 16-bit integer storage (`TH1S`/`TH2S`/`TH3S`).
+            #[must_use]
+            pub fn int16(self) -> $hist {
+                self.$build(Precision::Short, false)
+            }
+            /// Build with 8-bit integer storage (`TH1C`/`TH2C`/`TH3C`).
+            #[must_use]
+            pub fn int8(self) -> $hist {
+                self.$build(Precision::Char, false)
+            }
             /// Build with `Weight` storage — `Double` plus per-bin variances
             /// (ROOT `Sumw2`), for weighted fills.
             #[must_use]
@@ -293,6 +314,26 @@ impl H2 {
         h.yaxis.title = y.label.clone();
         h.finish(self.name, self.title, prec, weight)
     }
+
+    /// Build a [`TProfile2D`] — `hist`'s `Mean` storage over two axes. Fill it
+    /// with `(x, y, z)` triples (`profile.fill(x, y, z)`); each bin holds the
+    /// mean `z` and its error, instead of a count.
+    #[must_use]
+    pub fn profile(self) -> TProfile2D {
+        let [x, y] = &self.axes;
+        // TProfile2D has only a regular-axis constructor; overlay explicit edges
+        // for any variable axis (the bin counts already match).
+        let mut p = TProfile2D::new(x.nbins, x.lo, x.hi, y.nbins, y.lo, y.hi);
+        if let Some(e) = &x.edges {
+            p.xaxis.xbins = e.clone();
+        }
+        if let Some(e) = &y.edges {
+            p.yaxis.xbins = e.clone();
+        }
+        p.xaxis.title = x.label.clone();
+        p.yaxis.title = y.label.clone();
+        p.named(self.name).titled(self.title)
+    }
 }
 builder!(H2, TH2, build2);
 
@@ -330,6 +371,30 @@ impl H3 {
         h.yaxis.title = y.label.clone();
         h.zaxis.title = z.label.clone();
         h.finish(self.name, self.title, prec, weight)
+    }
+
+    /// Build a [`TProfile3D`] — `hist`'s `Mean` storage over three axes. Fill it
+    /// with `(x, y, z, t)` (`profile.fill(x, y, z, t)`); each bin holds the mean
+    /// `t` and its error, instead of a count.
+    #[must_use]
+    pub fn profile(self) -> TProfile3D {
+        let [x, y, z] = &self.axes;
+        let mut p = TProfile3D::new(
+            x.nbins, x.lo, x.hi, y.nbins, y.lo, y.hi, z.nbins, z.lo, z.hi,
+        );
+        if let Some(e) = &x.edges {
+            p.xaxis.xbins = e.clone();
+        }
+        if let Some(e) = &y.edges {
+            p.yaxis.xbins = e.clone();
+        }
+        if let Some(e) = &z.edges {
+            p.zaxis.xbins = e.clone();
+        }
+        p.xaxis.title = x.label.clone();
+        p.yaxis.title = y.label.clone();
+        p.zaxis.title = z.label.clone();
+        p.named(self.name).titled(self.title)
     }
 }
 builder!(H3, TH3, build3);

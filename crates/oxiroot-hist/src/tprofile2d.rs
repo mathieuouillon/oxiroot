@@ -64,9 +64,11 @@ pub struct TProfile2D {
 }
 
 impl TProfile2D {
-    /// Create an empty `TProfile2D` with uniform x and y bins and no z restriction.
+    /// Create an empty `TProfile2D` with uniform x and y bins and no z
+    /// restriction. Internal primitive behind the public builder:
+    /// [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).profile()`.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> TProfile2D {
+    pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> TProfile2D {
         let ncells = ((nx.max(0) + 2) * (ny.max(0) + 2)) as usize;
         TProfile2D {
             name: String::new(),

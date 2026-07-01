@@ -12,12 +12,12 @@ use oxiroot::prelude::*;
 
 ## One histogram
 
-A histogram is just data. Construct it with `TH1::new(nbins, lo, hi)`, fill it,
+A histogram is just data. Construct it with `Hist::reg(nbins, lo, hi).double()`, fill it,
 and name it only when you persist it. The `WriteRoot` / `ReadRoot` traits give
 every writable object a `write_root` and every readable object a `read_root`.
 
 ```rust
-let mut h = TH1::new(50, 0.0, 100.0).named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt").titled("p_{T}");
 h.sumw2();                                  // per-bin (weighted) errors
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;        // any single writable object
@@ -31,7 +31,7 @@ For more than one object, a `TDirectory`, or appending to an existing file, use
 the `RootFile` builder — the single entry point for file composition.
 
 ```rust
-let prof = TProfile::new(5, 0.0, 5.0).named("prof").titled("<pt> per region");
+let prof = Hist::reg(5, 0.0, 5.0).profile().named("prof").titled("<pt> per region");
 RootFile::create("out.root")
     .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory

@@ -120,9 +120,10 @@ impl TH2 {
     }
 
     /// Create an empty `TH2D` with uniform axes: `nx` bins over `[xlo, xhi)`
-    /// and `ny` bins over `[ylo, yhi)`. Mirrors ROOT's `TH2D` constructor.
+    /// and `ny` bins over `[ylo, yhi)`. Internal primitive behind the public
+    /// builder: [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).double()`.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> TH2 {
+    pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> TH2 {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2);
         TH2 {
             precision: Precision::Double,
@@ -145,8 +146,9 @@ impl TH2 {
         }
     }
 
-    /// Create an empty `TH2D` with variable bin edges on each axis.
-    pub fn new_variable(xedges: &[f64], yedges: &[f64]) -> TH2 {
+    /// Create an empty `TH2D` with variable bin edges on each axis. Internal
+    /// primitive behind [`Hist::var`](crate::Hist::var)`(xedges).var(yedges).double()`.
+    pub(crate) fn new_variable(xedges: &[f64], yedges: &[f64]) -> TH2 {
         let ncells = (xedges.len() as i32 + 1) * (yedges.len() as i32 + 1);
         TH2 {
             precision: Precision::Double,
@@ -198,7 +200,9 @@ impl TH2 {
         self.precision
     }
 
-    /// Set the on-disk precision (e.g. `Precision::Float` writes a `TH2F`).
+    /// Change the on-disk precision of an existing histogram — the
+    /// post-construction counterpart of the builder's storage finalizers (build
+    /// at a precision with [`Hist::reg(...).reg(...).float()`](crate::Hist) → `TH2F`, …).
     #[must_use]
     pub fn with_precision(mut self, precision: Precision) -> Self {
         self.precision = precision;

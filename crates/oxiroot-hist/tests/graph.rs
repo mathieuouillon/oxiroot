@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{GraphErrors, ReadRoot, TGraph, WriteRoot, TH1};
+use oxiroot_hist::{GraphErrors, Hist, ReadRoot, TGraph, WriteRoot};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> PathBuf {
@@ -133,7 +133,10 @@ fn reads_root_graph_histogram() {
 /// A user-attached display frame round-trips (and is persisted as a `TH1F`).
 #[test]
 fn graph_histogram_round_trips() {
-    let frame = TH1::new(20, -5.0, 5.0).named("Graph").titled("frame;x;y");
+    let frame = Hist::reg(20, -5.0, 5.0)
+        .double()
+        .named("Graph")
+        .titled("frame;x;y");
     let g = TGraph::with_errors(
         vec![1.0, 2.0],
         vec![3.0, 4.0],

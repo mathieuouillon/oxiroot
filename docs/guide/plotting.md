@@ -46,7 +46,7 @@ The API mirrors matplotlib but reads as idiomatic Rust:
 use oxiroot::plot::Axes;
 use oxiroot::prelude::*;
 
-let mut h = TH1::new(50, 0.0, 100.0).named("pt");
+let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt");
 h.fill(42.0);
 
 let mut ax = Axes::new();

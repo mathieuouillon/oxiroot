@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, TProfile2D, WriteRoot};
+use oxiroot_hist::{Hist, ReadRoot, TProfile2D, WriteRoot};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> PathBuf {
@@ -23,7 +23,9 @@ fn reads_root_written_tprofile2d() {
 
 #[test]
 fn tprofile2d_round_trips() {
-    let mut p = TProfile2D::new(2, 0.0, 2.0, 2, 0.0, 2.0)
+    let mut p = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .profile()
         .named("p2")
         .titled("prof");
     p.fill(0.5, 0.5, 10.0);

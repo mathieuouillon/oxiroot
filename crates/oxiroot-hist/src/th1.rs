@@ -52,10 +52,10 @@ pub struct TH1 {
 }
 
 impl TH1 {
-    /// Create an empty `TH1D` with `nbins` uniform bins over `[xmin, xmax)`,
-    /// ready to be filled. The histogram is anonymous; name it with
-    /// [`named`](TH1::named) when you write it to a file.
-    pub fn new(nbins: i32, xmin: f64, xmax: f64) -> TH1 {
+    /// Create an empty `TH1D` with `nbins` uniform bins over `[xmin, xmax)`.
+    /// Internal primitive behind the public builder: construct histograms with
+    /// [`Hist::reg`](crate::Hist::reg)`(nbins, xmin, xmax).double()`.
+    pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> TH1 {
         let cells = (nbins.max(0) as usize) + 2;
         TH1 {
             precision: Precision::Double,
@@ -76,8 +76,9 @@ impl TH1 {
     }
 
     /// Create an empty `TH1D` with variable bin edges (`edges` = the `nbins + 1`
-    /// boundaries, ascending). Anonymous; name it with [`named`](TH1::named).
-    pub fn new_variable(edges: &[f64]) -> TH1 {
+    /// boundaries, ascending). Internal primitive behind the public builder:
+    /// construct variable-axis histograms with [`Hist::var`](crate::Hist::var)`(edges).double()`.
+    pub(crate) fn new_variable(edges: &[f64]) -> TH1 {
         let cells = edges.len() + 1; // (edges.len() - 1) bins + 2 flow
         TH1 {
             precision: Precision::Double,
@@ -139,9 +140,12 @@ impl TH1 {
         self.precision
     }
 
-    /// Set the on-disk precision (the `TArray*` element type the writer emits):
-    /// `TH1::new(...).with_precision(Precision::Float)` writes a `TH1F`. Bin
-    /// contents stay `f64` in memory and are narrowed only at write time.
+    /// Change the on-disk precision of an existing histogram — the
+    /// post-construction counterpart of the builder's storage finalizers. Build
+    /// at a precision with [`Hist::reg(...).float()`](crate::Hist) (→ `TH1F`),
+    /// `.int32()` (→ `TH1I`), …; use this to re-precision a histogram you already
+    /// filled or read back. Bin contents stay `f64` in memory and are narrowed
+    /// only at write time.
     #[must_use]
     pub fn with_precision(mut self, precision: Precision) -> Self {
         self.precision = precision;

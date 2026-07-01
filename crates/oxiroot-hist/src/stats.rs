@@ -43,13 +43,10 @@ fn extremum(contents: &[f64], cells: impl Iterator<Item = usize>, want_max: bool
 }
 
 impl TH1 {
-    /// Standard deviation of the filled x distribution (ROOT `GetStdDev`).
+    /// Standard deviation of the filled x distribution (ROOT `GetStdDev`, also
+    /// exposed as `GetRMS`).
     pub fn std_dev(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwx, self.tsumwx2)
-    }
-    /// Alias for [`std_dev`](Self::std_dev) (ROOT `GetRMS`).
-    pub fn rms(&self) -> f64 {
-        self.std_dev()
     }
     /// Largest in-range bin content (ROOT `GetMaximum`).
     pub fn maximum(&self) -> f64 {

@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, TH1};
+use oxiroot_hist::{Hist, ReadRoot, TH1};
 use oxiroot_io_core::RFile;
 
 fn h(name: &str) -> TH1 {
@@ -68,7 +68,7 @@ fn kolmogorov_test_matches_root() {
 #[test]
 fn comparison_tests_reject_mismatched_binning() {
     let a = h("h");
-    let other = TH1::new(10, 0.0, 10.0).named("x"); // different binning
+    let other = Hist::reg(10, 0.0, 10.0).double().named("x"); // different binning
     assert!(a.chi2_test(&other).is_err());
     assert!(a.kolmogorov_test(&other).is_err());
 }

@@ -32,7 +32,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&out)?;
 
     // A deterministic Gaussian-filled di-muon mass histogram (Sumw2 on).
-    let mut mc = TH1::new(40, 50.0, 130.0)
+    let mut mc = Hist::reg(40, 50.0, 130.0)
+        .double()
         .named("mass")
         .titled("di-muon mass");
     mc.sumw2();
@@ -82,7 +83,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     save_both(&hep, &out, "mplhep")?;
 
     // --- 3. A 2-D TH2 as a viridis heatmap with a colorbar. ---
-    let mut h2 = TH2::new(40, -4.0, 4.0, 40, -4.0, 4.0).named("h2");
+    let mut h2 = Hist::reg(40, -4.0, 4.0)
+        .reg(40, -4.0, 4.0)
+        .double()
+        .named("h2");
     for ix in 0..40 {
         for iy in 0..40 {
             let x = -4.0 + (ix as f64 + 0.5) * 0.2;

@@ -231,8 +231,9 @@ impl TProfile {
     }
 
     /// Create an empty `TProfile` with `nbins` uniform x bins over `[xlo, xhi)`
-    /// and no y restriction. Mirrors ROOT's `TProfile` constructor.
-    pub fn new(nbins: i32, xlo: f64, xhi: f64) -> TProfile {
+    /// and no y restriction. Internal primitive behind the public builder:
+    /// [`Hist::reg`](crate::Hist::reg)`(nbins, xlo, xhi).profile()`.
+    pub(crate) fn new(nbins: i32, xlo: f64, xhi: f64) -> TProfile {
         let ncells = (nbins.max(0) + 2) as usize;
         TProfile {
             name: String::new(),

@@ -150,10 +150,11 @@ impl TH3 {
             .collect()
     }
 
-    /// Create an empty `TH3D` with uniform axes. Mirrors ROOT's `TH3D`
-    /// constructor: `nx` bins over `[xlo, xhi)`, etc.
+    /// Create an empty `TH3D` with uniform axes (`nx` bins over `[xlo, xhi)`,
+    /// etc.). Internal primitive behind the public builder:
+    /// [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).double()`.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         nx: i32,
         xlo: f64,
         xhi: f64,
@@ -219,7 +220,9 @@ impl TH3 {
         self.precision
     }
 
-    /// Set the on-disk precision (e.g. `Precision::Float` writes a `TH3F`).
+    /// Change the on-disk precision of an existing histogram — the
+    /// post-construction counterpart of the builder's storage finalizers (build
+    /// at a precision with [`Hist::reg(...).reg(...).reg(...).float()`](crate::Hist) → `TH3F`, …).
     #[must_use]
     pub fn with_precision(mut self, precision: Precision) -> Self {
         self.precision = precision;

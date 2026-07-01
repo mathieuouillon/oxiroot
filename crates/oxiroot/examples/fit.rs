@@ -45,7 +45,8 @@ fn main() {
     let (true_mean, true_sigma) = (91.2, 2.5);
 
     // --- 1. A clean Gaussian peak: chi-square vs binned likelihood. ---
-    let mut peak = TH1::new(60, 80.0, 100.0)
+    let mut peak = Hist::reg(60, 80.0, 100.0)
+        .double()
         .named("mass")
         .titled("di-muon mass [GeV]");
     peak.sumw2(); // track per-bin errors for the chi-square
@@ -75,7 +76,8 @@ fn main() {
     );
 
     // --- 2. The same peak on a flat background, fitted with a custom model. ---
-    let mut withbkg = TH1::new(60, 80.0, 100.0)
+    let mut withbkg = Hist::reg(60, 80.0, 100.0)
+        .double()
         .named("mass_bkg")
         .titled("peak + background");
     withbkg.sumw2();

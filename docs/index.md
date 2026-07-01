@@ -12,7 +12,7 @@ write.
 use oxiroot::prelude::*;
 
 // Fill a histogram and save it — readable by ROOT and uproot.
-let mut h = TH1::new(50, 0.0, 100.0).named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt").titled("p_{T}");
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;
 

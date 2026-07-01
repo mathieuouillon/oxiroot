@@ -49,8 +49,8 @@ use crate::tprofile3d::TProfile3D;
 /// This one trait is the way to write any single object:
 ///
 /// ```no_run
-/// use oxiroot_hist::{Compression, TH1, WriteRoot};
-/// let h = TH1::new(100, 0.0, 1.0).named("h");
+/// use oxiroot_hist::{Compression, Hist, WriteRoot};
+/// let h = Hist::reg(100, 0.0, 1.0).double().named("h");
 /// h.write_root("out.root", Compression::None)?; // works for any writable type
 /// let bytes = h.to_root_bytes();                // just the streamed object payload
 /// # Ok::<(), oxiroot_io_core::Error>(())
@@ -1158,10 +1158,10 @@ fn check_names(records: &[ObjectRecord], location: &str) -> Result<()> {
 /// writable types (histograms, profiles, graphs, …) can go in one file:
 ///
 /// ```no_run
-/// use oxiroot_hist::{Compression, RootFile, TH1, TProfile};
-/// let pt = TH1::new(10, 0.0, 1.0).named("pt");
-/// let prof = TProfile::new(10, 0.0, 1.0).named("prof");
-/// let signal = TH1::new(10, 0.0, 1.0).named("sig");
+/// use oxiroot_hist::{Compression, Hist, RootFile};
+/// let pt = Hist::reg(10, 0.0, 1.0).double().named("pt");
+/// let prof = Hist::reg(10, 0.0, 1.0).profile().named("prof");
+/// let signal = Hist::reg(10, 0.0, 1.0).double().named("sig");
 /// RootFile::create("out.root")
 ///     .add(&pt)
 ///     .add(&prof)
@@ -1173,8 +1173,8 @@ fn check_names(records: &[ObjectRecord], location: &str) -> Result<()> {
 /// Append to an existing file with [`open`](RootFile::open):
 ///
 /// ```no_run
-/// # use oxiroot_hist::{Compression, RootFile, TH1};
-/// # let extra = TH1::new(10, 0.0, 1.0).named("extra");
+/// # use oxiroot_hist::{Compression, Hist, RootFile};
+/// # let extra = Hist::reg(10, 0.0, 1.0).double().named("extra");
 /// RootFile::open("out.root")?.add(&extra).write(Compression::None)?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```

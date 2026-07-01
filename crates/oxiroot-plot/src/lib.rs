@@ -37,9 +37,9 @@
 //!
 //! ```no_run
 //! use oxiroot_plot::{Axes, Color, ErrorbarOpts, HistOpts, HistType};
-//! use oxiroot_hist::{TGraph, TH1};
+//! use oxiroot_hist::{Hist, TGraph};
 //!
-//! let mut mc = TH1::new(50, 0.0, 100.0).named("mc");
+//! let mut mc = Hist::reg(50, 0.0, 100.0).double().named("mc");
 //! mc.sumw2();
 //! for x in [40.0, 48.0, 50.0, 52.0, 60.0] {
 //!     mc.fill(x);
@@ -60,9 +60,9 @@
 //!
 //! ```no_run
 //! use oxiroot_plot::{ratio_subplots, Color, ErrorbarOpts, HistOpts, HistType};
-//! use oxiroot_hist::{TGraph, TH1};
+//! use oxiroot_hist::{Hist, TGraph};
 //!
-//! let mc = TH1::new(50, 0.0, 100.0).named("mc");
+//! let mc = Hist::reg(50, 0.0, 100.0).double().named("mc");
 //! let ratio_points = TGraph::with_errors(vec![50.0], vec![1.0], vec![0.0], vec![0.1]).named("r");
 //!
 //! let (fig, mut main, mut ratio) = ratio_subplots();
@@ -121,7 +121,7 @@ mod tests {
     // The render IR, text/math layout, and backends are private to the crate;
     // the tests reach them through `crate::` (still accessible in-crate).
     use crate::{draw, mathtext, render, text};
-    use oxiroot_hist::{TGraph, TH1, TH2};
+    use oxiroot_hist::{Hist, TGraph, TH1};
 
     fn is_png(bytes: &[u8]) -> bool {
         bytes.starts_with(b"\x89PNG\r\n\x1a\n")
@@ -136,7 +136,7 @@ mod tests {
             (seed >> 33) as f64 / (1u64 << 31) as f64
         };
         let mut gauss = move || (0..12).map(|_| next()).sum::<f64>() - 6.0;
-        let mut h = TH1::new(40, 50.0, 130.0).named("mass");
+        let mut h = Hist::reg(40, 50.0, 130.0).double().named("mass");
         h.sumw2();
         for _ in 0..20000 {
             h.fill(90.0 + 8.0 * gauss());
@@ -223,7 +223,10 @@ mod tests {
 
     #[test]
     fn hist2d_heatmap_with_colorbar() {
-        let mut h2 = TH2::new(20, -3.0, 3.0, 20, -3.0, 3.0).named("h2");
+        let mut h2 = Hist::reg(20, -3.0, 3.0)
+            .reg(20, -3.0, 3.0)
+            .double()
+            .named("h2");
         for ix in 0..20 {
             for iy in 0..20 {
                 let x = -3.0 + (ix as f64 + 0.5) * 0.3;

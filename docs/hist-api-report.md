@@ -27,6 +27,9 @@ new API had to map onto ROOT concepts and **survive a ROOT write/read**. It does
 | `.Int64()` | `TH1L` (64-bit) | `.with_precision(Long)` | `.int64()` |
 | `.Weight()` | `TH1D` + `Sumw2` | `.sumw2()` | `.weight()` |
 | (ROOT-only) | `TH1F` (32-bit) | `.with_precision(Float)` | `.float()` |
+| (ROOT-only) | `TH1I` (32-bit int) | `.with_precision(Int)` | `.int32()` |
+| (ROOT-only) | `TH1S` (16-bit int) | `.with_precision(Short)` | `.int16()` |
+| (ROOT-only) | `TH1C` (8-bit int) | `.with_precision(Char)` | `.int8()` |
 | axis `name=` | `fXaxis.fName` (`"xaxis"`) | fixed | fixed (as ROOT) |
 | axis `label=` | **`fXaxis.fTitle`** | only via `h.xaxis.title` | `.label()` / `with_x_label()` |
 | `h.values` | bin contents | `values()` | `values()` |
@@ -108,7 +111,7 @@ assert_eq!(h.x_label(), "$p_T$ [GeV]");
 ### Batch fill, range integral, slicing, and profiles
 
 ```rust
-let mut h = TH1::new(100, 0.0, 100.0);
+let mut h = Hist::reg(100, 0.0, 100.0).double();
 h.fill_many(&data);                         // hist's h.fill(array)
 h.fill_many_weighted(&data, &weights);      // h.fill(array, weight=…)
 
@@ -145,12 +148,22 @@ Every part of the new API was checked against all three oracles:
 
 ## Design notes
 
-- **Additive, not a rewrite.** `TH1::new(...)` and the rest are untouched; `Hist`
-  is a thin builder and the accessors are new methods. Nothing about the ROOT
-  data model or serialization changed.
+- **One way to construct.** `Hist::reg`/`Hist::var` is the *sole* public
+  constructor. The raw class constructors (`TH1::new`/`new_variable`, the `TH2`/
+  `TH3`/`TProfile*` equivalents) became `pub(crate)` primitives the builder calls
+  internally — there is exactly one blessed path, so nothing about the ROOT data
+  model or serialization changed, only the public surface. A finalizer exists for
+  every ROOT storage class (`double`/`float`/`int32`/`int16`/`int8`/`int64`/
+  `weight`, plus `profile` for `TProfile`/`TProfile2D`/`TProfile3D`), so the
+  builder can express anything the primitives could.
+- **`with_precision` stays public** as the post-construction counterpart of the
+  finalizers: it re-precisions a histogram you already built or read back (e.g.
+  writing a filled `TH1D` out compactly as a `TH1C`), which a construction-time
+  finalizer cannot do without rebuilding.
 - **Type-state builder** keeps the finalizer return type correct (`H2.double()`
   is a `TH2`, not a `TH1`) without runtime checks.
 - **`int64()` → `TH1L`**, the closest ROOT class to `boost-histogram`'s 64-bit
-  integer storage, so integer-count histograms are stored exactly.
+  integer storage, so integer-count histograms are stored exactly; `int32`/`int16`/
+  `int8` reach ROOT's narrower `TH1I`/`TH1S`/`TH1C` compact-count classes.
 - The single thing `hist` does that a `TH1` fundamentally cannot is **categorical
   axes**; those stay out of scope because they have no ROOT representation.

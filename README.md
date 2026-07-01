@@ -70,15 +70,14 @@ oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTup
 ```rust
 use oxiroot::prelude::*;
 
-// Fill and save one histogram — the WriteRoot / ReadRoot traits.
-let mut h = TH1::new(50, 0.0, 100.0).named("pt").titled("p_{T}");
-h.sumw2();
+// Fill and save one histogram — the Hist builder + WriteRoot / ReadRoot traits.
+let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("p_{T}").weight();
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;            // any single writable object
 let same = TH1::read_root(&RFile::open("hist.root")?, "pt")?; // any readable object
 
 // Several objects, subdirectories, or appending — the RootFile builder.
-let prof = TProfile::new(5, 0.0, 5.0).named("prof").titled("<pt> per region");
+let prof = Hist::reg(5, 0.0, 5.0).name("prof").title("<pt> per region").profile();
 RootFile::create("out.root")
     .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
@@ -122,24 +121,30 @@ cargo run -p oxiroot --example analysis
   `TH1::read_root(&file, name)?` (the `WriteRoot`/`ReadRoot` traits; also
   `h.to_root_bytes()` and `TH1::read_root_in(&file, dir, name)?` for a
   subdirectory). A `TH1`/`TH2`/`TH3`'s on-disk precision is a typed `Precision`
-  set with `.with_precision(Precision::Float)` (writes a `TH1F`), and
-  `h.class_name()` reconstructs the ROOT class. Profiles carry a typed
-  `ErrorMode`.
+  chosen by the builder's storage finalizer (`.float()` writes a `TH1F`; see
+  below), or changed on a histogram you already built or read with
+  `.with_precision(Precision::Float)`; `h.class_name()` reconstructs the ROOT
+  class. Profiles carry a typed `ErrorMode`.
 - **No forced names, no global registry.** A histogram is just data: construct
-  it with `TH1::new(nbins, lo, hi)` and name it only when you persist it —
-  `.named("pt")` sets the file key (`.titled(...)` the title). Unlike ROOT there
+  it with the `Hist` builder (`Hist::reg(nbins, lo, hi).double()`) and name it
+  only when you persist it — `.name("pt")` sets the file key (`.title(...)` the
+  title). Unlike ROOT there
   is no `gROOT`/`gDirectory`, so any number of same-named histograms coexist in
   memory; and writing two objects under the same key name in one directory is a
   loud `DuplicateName` error, never ROOT's silent shadow-on-read.
-- Create and `fill`/`fill_weight` with ROOT's exact `Fill` semantics; uniform or
-  variable (`new_variable`) bins; `sumw2()` (chains: `h.sumw2().fill(x)`) for
-  weighted per-bin errors (`bin_error`).
-- **A scikit-hep [`hist`](https://github.com/scikit-hep/hist)-style quick-construct
-  builder and accessors**, mapped onto ROOT so the result is an ordinary
-  `TH1`/`TH2`/`TH3` (see [the report](docs/hist-api-report.md)).
-  `Hist::reg(50, 0.0, 100.0).name("pt").label("$p_T$ [GeV]").weight()` chains the
-  axes then a storage finalizer — `double()`→`TH1D`, `float()`→`TH1F`,
-  `int64()`→`TH1L`, `weight()`→`TH1D`+`Sumw2`; chain `.reg`/`.var` for `TH2`/`TH3`.
+- Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics; `sumw2()`
+  (chains: `h.sumw2().fill(x)`) enables weighted per-bin errors (`bin_error`) on
+  a histogram not already built with `.weight()`.
+- **The one way to build a histogram is the scikit-hep
+  [`hist`](https://github.com/scikit-hep/hist)-style `Hist` builder**, mapped
+  onto ROOT so the result is an ordinary `TH1`/`TH2`/`TH3` (see
+  [the report](docs/hist-api-report.md)).
+  `Hist::reg(50, 0.0, 100.0).name("pt").label("$p_T$ [GeV]").weight()` chains a
+  regular (`reg`) or variable (`var`, from explicit edges) axis, then a storage
+  finalizer picks the ROOT class — `double()`→`TH1D`, `float()`→`TH1F`,
+  `int64()`→`TH1L`, `int32()`→`TH1I`, `int16()`→`TH1S`, `int8()`→`TH1C`,
+  `weight()`→`TH1D`+`Sumw2`, `profile()`→`TProfile`. Chain `.reg`/`.var` again
+  for `TH2`/`TH3` (and `.profile()` on those for `TProfile2D`/`TProfile3D`).
   Axis labels (`label()` / `with_x_label()` / `x_label()`) live in ROOT's
   `fXaxis.fTitle` and round-trip. The `hist` accessor family is there too:
   `values()`, `variances()` (`Sumw2`), `errors()` (`√variance`), `counts()`
@@ -151,7 +156,7 @@ cargo run -p oxiroot --example analysis
   `integral`. Bins read by cell index (`h[bin]`) or iterator (`for &c in &h`);
   a shared `Histogram` trait (`contents`/`entries`/`sum`) abstracts over `TH1/2/3`,
   and every type implements `Display` for a one-line summary.
-- Statistics & shape accessors: `mean`/`std_dev`/`rms`, `maximum`/`minimum`/
+- Statistics & shape accessors: `mean`/`std_dev`, `maximum`/`minimum`/
   `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,
   `effective_entries`, `reset`, `interpolate`, `quantiles`; derived histograms
   `rebin`/`rebin2d`/`rebin3d`, `cumulative`, projections (`TH2`→`TH1`;
@@ -173,7 +178,7 @@ cargo run -p oxiroot --example analysis
   each thread transparently gets its own copy — then `hist.merge()` combines them
   exactly (contents + `Sumw2` + every moment sum), identical to a serial fill:
   ```rust
-  let hist = ThreadedHist::new(TH1::new(100, 0.0, 100.0).named("h"));
+  let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().named("h"));
   std::thread::scope(|s| for chunk in data.chunks(n) {
       let hist = &hist;
       s.spawn(move || for &x in chunk { hist.fill(x); });
@@ -228,7 +233,7 @@ let fit = data.fit_opts(&model, &FitOptions::new().minimizer(Minimizer::NelderMe
 ```rust
 use oxiroot::prelude::*; // needs `--features fit`
 
-let mut h = TH1::new(60, 80.0, 100.0).named("mass").titled("di-muon mass");
+let mut h = Hist::reg(60, 80.0, 100.0).double().named("mass").titled("di-muon mass");
 h.sumw2();
 // … fill h with events …
 
@@ -340,8 +345,8 @@ member types).
 ```rust
 use oxiroot::prelude::*;
 let stack = THStack::new().named("hs").titled("backgrounds")
-    .add(TH1::new(50, 0.0, 100.0).named("zjets"))
-    .add(TH1::new(50, 0.0, 100.0).named("ttbar"));
+    .add(Hist::reg(50, 0.0, 100.0).double().named("zjets"))
+    .add(Hist::reg(50, 0.0, 100.0).double().named("ttbar"));
 let graphs = TMultiGraph::new().named("mg")
     .add(TGraph::new(vec![0.0, 1.0], vec![1.0, 2.0]).named("obs"))
     .add(TGraph::new(vec![0.0, 1.0], vec![2.0, 1.0]).named("exp"));
@@ -384,7 +389,7 @@ writable objects; on read, pull the members back out by type with
 ```rust
 use oxiroot::prelude::*;
 let list = ObjList::list().named("systematics")
-    .add(&TH1::new(50, 0.0, 100.0).named("nominal"))
+    .add(&Hist::reg(50, 0.0, 100.0).double().named("nominal"))
     .add(&TObjString::new("2024-data").named("tag"))
     .add(&TParameter::f64("lumi", 137.5));
 RootFile::create("syst.root").add(&list).write(Compression::None)?;

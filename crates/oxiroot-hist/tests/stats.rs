@@ -1,11 +1,11 @@
 //! Tier-1 statistics accessors (std_dev/maximum/find_bin/effective_entries/reset)
 //! against hand-computed values.
 
-use oxiroot_hist::{TProfile, TH1, TH2};
+use oxiroot_hist::{Hist, TH1};
 
 fn filled_th1() -> TH1 {
     // 4 bins over [0,4); fills at 0.5,0.5,1.5,2.5,2.5,2.5 → contents [2,1,3,0].
-    let mut h = TH1::new(4, 0.0, 4.0).named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
     for x in [0.5, 0.5, 1.5, 2.5, 2.5, 2.5] {
         h.fill(x);
     }
@@ -20,7 +20,6 @@ fn th1_stats() {
     assert!((h.mean() - 10.0 / 6.0).abs() < 1e-12);
     let var = 21.5 / 6.0 - (10.0 / 6.0_f64).powi(2);
     assert!((h.std_dev() - var.sqrt()).abs() < 1e-12);
-    assert!((h.rms() - h.std_dev()).abs() < 1e-15);
 
     assert_eq!(h.maximum(), 3.0);
     assert_eq!(h.maximum_bin(), 3);
@@ -56,7 +55,7 @@ fn th1_reset_clears_everything() {
 
 #[test]
 fn th2_extrema_and_find_bin() {
-    let mut h = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0).named("h");
+    let mut h = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().named("h");
     h.fill(0.5, 0.5); // cell (1,1)
     h.fill(1.5, 1.5);
     h.fill(1.5, 1.5); // cell (2,2) = 2
@@ -69,7 +68,7 @@ fn th2_extrema_and_find_bin() {
 
 #[test]
 fn tprofile_mean_std_dev() {
-    let mut p = TProfile::new(4, 0.0, 4.0).named("p");
+    let mut p = Hist::reg(4, 0.0, 4.0).profile().named("p");
     for (x, y) in [(0.5, 10.0), (0.5, 20.0), (1.5, 5.0), (2.5, 30.0)] {
         p.fill(x, y);
     }

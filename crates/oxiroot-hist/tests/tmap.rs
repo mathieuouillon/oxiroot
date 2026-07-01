@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, RootFile, TMap, TObjString, TParameter, TH1};
+use oxiroot_hist::{Hist, ReadRoot, RootFile, TMap, TObjString, TParameter, TH1};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture() -> RFile {
@@ -41,7 +41,7 @@ fn reads_root_written_map() {
 
 #[test]
 fn round_trips_map_through_oxiroot() {
-    let mut h = TH1::new(4, 0.0, 4.0).named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
     h.fill(0.5);
     let map = TMap::new()
         .named("meta")

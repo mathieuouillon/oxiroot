@@ -10,6 +10,9 @@ fn builder_maps_storage_to_root_classes() {
     assert_eq!(Hist::reg(4, 0.0, 4.0).double().class_name(), "TH1D");
     assert_eq!(Hist::reg(4, 0.0, 4.0).float().class_name(), "TH1F");
     assert_eq!(Hist::reg(4, 0.0, 4.0).int64().class_name(), "TH1L");
+    assert_eq!(Hist::reg(4, 0.0, 4.0).int32().class_name(), "TH1I");
+    assert_eq!(Hist::reg(4, 0.0, 4.0).int16().class_name(), "TH1S");
+    assert_eq!(Hist::reg(4, 0.0, 4.0).int8().class_name(), "TH1C");
     assert_eq!(Hist::reg(4, 0.0, 4.0).weight().class_name(), "TH1D"); // + Sumw2
 
     // 2-D and 3-D, and a variable axis.
@@ -64,7 +67,7 @@ fn hist_style_accessors() {
     assert_eq!(h.at(1.5), 3.0);
 
     // An unweighted histogram: variances default to the bin content (Poisson).
-    let mut p = TH1::new(3, 0.0, 3.0);
+    let mut p = Hist::reg(3, 0.0, 3.0).double();
     p.fill(0.5);
     p.fill(0.5);
     assert_eq!(p.variances(), vec![2.0, 0.0, 0.0]);
@@ -74,17 +77,17 @@ fn hist_style_accessors() {
 #[test]
 fn batch_fill_and_uhi_slicing() {
     // hist's array fill.
-    let mut h = TH1::new(10, 0.0, 10.0);
+    let mut h = Hist::reg(10, 0.0, 10.0).double();
     h.fill_many(&[0.5, 0.5, 1.5, 9.5]);
     assert_eq!(h.values()[0], 2.0);
-    let mut hw = TH1::new(4, 0.0, 4.0);
+    let mut hw = Hist::reg(4, 0.0, 4.0).double();
     hw.sumw2();
     hw.fill_many_weighted(&[0.5, 1.5], &[2.0, 3.0]);
     assert_eq!(hw.variances(), vec![4.0, 9.0, 0.0, 0.0]);
 
     // UHI: the integral over a coordinate range (h[a:b:sum]) and a sub-range copy
     // (h[a:b]) where the cropped content folds into the flow.
-    let mut g = TH1::new(10, 0.0, 10.0);
+    let mut g = Hist::reg(10, 0.0, 10.0).double();
     for i in 0..10 {
         g.fill(i as f64 + 0.5); // one entry per bin
     }

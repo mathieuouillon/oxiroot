@@ -1,11 +1,11 @@
 //! Naming is optional at construction and a write-time/file-key concern — and
 //! same-name collisions are a loud error, not ROOT's silent shadow-on-read.
 
-use oxiroot_hist::{Compression, ReadRoot, RootFile, WriteRoot, TH1};
+use oxiroot_hist::{Compression, Hist, ReadRoot, RootFile, WriteRoot, TH1};
 use oxiroot_io_core::{Error, RFile};
 
 fn filled(name: &str) -> TH1 {
-    let mut h = TH1::new(4, 0.0, 4.0).named(name);
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named(name);
     for b in 0..4 {
         h.fill(b as f64 + 0.5);
     }
@@ -15,7 +15,7 @@ fn filled(name: &str) -> TH1 {
 #[test]
 fn histograms_are_anonymous_until_named() {
     // No name forced at construction.
-    let h = TH1::new(10, 0.0, 1.0);
+    let h = Hist::reg(10, 0.0, 1.0).double();
     assert_eq!(h.name, "");
     assert_eq!(h.title, "");
     // `named`/`titled` are chainable and set the fields.
@@ -27,7 +27,9 @@ fn histograms_are_anonymous_until_named() {
 #[test]
 fn writing_an_unnamed_object_is_a_clear_error() {
     let path = std::env::temp_dir().join("oxiroot_naming_anon.root");
-    let err = TH1::new(4, 0.0, 4.0).write_root(&path, Compression::None);
+    let err = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .write_root(&path, Compression::None);
     match err {
         Err(Error::Format(msg)) => assert!(msg.contains("unnamed"), "got: {msg}"),
         other => panic!("expected an unnamed-object error, got {other:?}"),

@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, RootFile, TGraph, THStack, TMultiGraph, TH1};
+use oxiroot_hist::{Hist, ReadRoot, RootFile, TGraph, THStack, TMultiGraph};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture() -> RFile {
@@ -40,9 +40,9 @@ fn reads_root_written_collections() {
 
 #[test]
 fn round_trips_collections_through_oxiroot() {
-    let mut ha = TH1::new(4, 0.0, 4.0).named("ha").titled("a");
+    let mut ha = Hist::reg(4, 0.0, 4.0).double().named("ha").titled("a");
     ha.fill(0.5);
-    let hb = TH1::new(4, 0.0, 4.0).named("hb").titled("b");
+    let hb = Hist::reg(4, 0.0, 4.0).double().named("hb").titled("b");
     let stack = THStack::new()
         .named("hs")
         .titled("my stack")

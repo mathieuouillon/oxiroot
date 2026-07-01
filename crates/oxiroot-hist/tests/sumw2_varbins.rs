@@ -3,12 +3,15 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, WriteRoot, TH1};
+use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH1};
 use oxiroot_io_core::RFile;
 
 #[test]
 fn weighted_sumw2_round_trips() {
-    let mut h = TH1::new(3, 0.0, 3.0).named("hw").titled("weighted");
+    let mut h = Hist::reg(3, 0.0, 3.0)
+        .double()
+        .named("hw")
+        .titled("weighted");
     h.sumw2(); // enable per-bin error tracking before filling
     h.fill_weight(0.5, 2.0); // bin 1
     h.fill_weight(0.5, 3.0); // bin 1
@@ -32,7 +35,7 @@ fn weighted_sumw2_round_trips() {
 #[test]
 fn variable_bins_round_trip() {
     let edges = [0.0, 1.0, 4.0, 10.0]; // 3 bins: [0,1) [1,4) [4,10)
-    let mut h = TH1::new_variable(&edges).named("hv").titled("var");
+    let mut h = Hist::var(&edges).double().named("hv").titled("var");
     h.fill(0.5); // bin 1
     h.fill(2.0); // bin 2
     h.fill(3.9); // bin 2

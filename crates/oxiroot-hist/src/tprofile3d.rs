@@ -84,9 +84,11 @@ impl TProfile3D {
         self.bin_entries.len() as i32
     }
 
-    /// Create an empty `TProfile3D` with uniform x/y/z bins and no t restriction.
+    /// Create an empty `TProfile3D` with uniform x/y/z bins and no t
+    /// restriction. Internal primitive behind the public builder:
+    /// [`Hist::reg`](crate::Hist::reg)`(nx, ..).reg(ny, ..).reg(nz, ..).profile()`.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         nx: i32,
         xlo: f64,
         xhi: f64,

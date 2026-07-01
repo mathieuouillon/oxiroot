@@ -118,7 +118,7 @@ The write side composes a histogram, an RNTuple, and a `TTree`:
 use oxiroot::prelude::*;
 
 // A histogram.
-let mut h = TH1::new(4, 0.0, 4.0).named("h").titled("interop");
+let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("interop");
 h.fill(0.5);
 h.write_root("rust_hist.root", Compression::None)?;
 

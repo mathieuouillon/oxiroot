@@ -16,7 +16,7 @@ prelude, so `use oxiroot::prelude::*;` is all you need.
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = TH1::new(50, 0.0, 100.0).named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt").titled("p_{T}");
 h.fill(42.0);
 
 // Zstandard at level 5 — ROOT's modern default.
@@ -31,8 +31,8 @@ The same value drives multi-object files and RNTuple/TTree writers:
 ```rust
 use oxiroot::prelude::*;
 
-let h = TH1::new(50, 0.0, 100.0).named("pt");
-let prof = TProfile::new(5, 0.0, 5.0).named("prof");
+let h = Hist::reg(50, 0.0, 100.0).double().named("pt");
+let prof = Hist::reg(5, 0.0, 5.0).profile().named("prof");
 
 RootFile::create("out.root")
     .add(&h)

@@ -3,18 +3,27 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, RootFile, TH1};
+use oxiroot_hist::{Hist, ReadRoot, RootFile, TH1};
 use oxiroot_io_core::RFile;
 
 #[test]
 fn writes_histograms_into_subdirectories() {
-    let mut top = TH1::new(3, 0.0, 3.0).named("top").titled("top-level");
+    let mut top = Hist::reg(3, 0.0, 3.0)
+        .double()
+        .named("top")
+        .titled("top-level");
     top.fill(0.5);
 
-    let mut sr = TH1::new(4, 0.0, 4.0).named("mll").titled("signal region");
+    let mut sr = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .named("mll")
+        .titled("signal region");
     sr.fill(1.5);
     sr.fill(2.5);
-    let mut cr = TH1::new(4, 0.0, 4.0).named("mll").titled("control region");
+    let mut cr = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .named("mll")
+        .titled("control region");
     cr.fill(0.5);
 
     let out = PathBuf::from("/tmp/rootrs_dirs.root");

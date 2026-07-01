@@ -18,10 +18,10 @@ when you *persist* the object — it becomes the file key.
 use oxiroot::prelude::*;
 
 // Anonymous histograms — no gROOT, no gDirectory.
-let mut h = TH1::new(100, 0.0, 100.0);
+let mut h = Hist::reg(100, 0.0, 100.0).double();
 
 // Name and title are fluent, chainable, and set whenever you like.
-let mut pt = TH1::new(100, 0.0, 100.0)
+let mut pt = Hist::reg(100, 0.0, 100.0).double()
     .named("pt")
     .titled("p_{T} spectrum");
 ```
@@ -31,23 +31,24 @@ return `Self`, so they chain off the constructor.
 
 ### Uniform vs variable bins
 
-`TH1::new(nbins, xmin, xmax)` builds uniform bins over `[xmin, xmax)`.
-`TH1::new_variable(edges)` takes the `nbins + 1` bin boundaries directly (they
+`Hist::reg(nbins, xmin, xmax).double()` builds uniform bins over `[xmin, xmax)`.
+`Hist::var(edges).double()` takes the `nbins + 1` bin boundaries directly (they
 must be strictly ascending):
 
 ```rust
 use oxiroot::prelude::*;
 
-let uniform = TH1::new(100, 0.0, 100.0);
+let uniform = Hist::reg(100, 0.0, 100.0).double();
 
 let edges = [0.0, 10.0, 20.0, 40.0, 80.0, 160.0];
-let variable = TH1::new_variable(&edges); // 5 bins of growing width
+let variable = Hist::var(&edges).double(); // 5 bins of growing width
 ```
 
-`TH2::new(nx, xlo, xhi, ny, ylo, yhi)` and `TH3::new(nx, xlo, xhi, ny, ylo, yhi,
-nz, zlo, zhi)` mirror the ROOT constructors; `TH2::new_variable(xedges, yedges)`
-gives variable bins on both axes. (`TH3` has no variable-bin constructor; set
-`xaxis`/`yaxis`/`zaxis` directly if you need one.)
+Chain another `reg`/`var` per axis for higher dimensions:
+`Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double()` is a `TH2`, and a third
+`.reg(nz, zlo, zhi)` makes it a `TH3`. `reg` and `var` mix freely on any axis, so
+`Hist::var(xedges).var(yedges).double()` gives variable bins on both axes of a
+`TH2`, and a variable axis works on `TH3` too.
 
 ## Filling
 
@@ -58,7 +59,7 @@ the statistical moment sums accumulate only for in-range fills.
 ```rust
 use oxiroot::prelude::*;
 
-let mut pt = TH1::new_variable(&[0.0, 10.0, 20.0, 40.0, 80.0, 160.0]).named("pt");
+let mut pt = Hist::var(&[0.0, 10.0, 20.0, 40.0, 80.0, 160.0]).double().named("pt");
 pt.sumw2(); // track per-bin errors before filling (see below)
 
 for &(x, w) in &[(5.0, 1.2), (15.0, 0.8), (35.0, 1.5)] {
@@ -77,7 +78,7 @@ seeds it from the current contents, and from then on every fill also accumulates
 `&mut Self`, so it chains:
 
 ```rust
-let mut h = TH1::new(100, 0.0, 1.0);
+let mut h = Hist::reg(100, 0.0, 1.0).double();
 h.sumw2().fill(0.5); // chain enable + fill
 ```
 
@@ -94,17 +95,21 @@ underflow, `1..=nbins` are in range.
 
 A `TH1`/`TH2`/`TH3` keeps its bin contents as `f64` in memory regardless of
 on-disk precision. The class suffix (`D`/`F`/`I`/`S`/`C`/`L`) is a typed
-[`Precision`](../api/oxiroot/index.html) value, defaulting to `Precision::Double`.
-Set it with `with_precision`; the contents are narrowed only at write time.
+[`Precision`](../api/oxiroot/index.html) value chosen by the builder's storage
+finalizer: `double()` → `TH1D`, `float()` → `TH1F`, `int32()` → `TH1I`,
+`int16()` → `TH1S`, `int8()` → `TH1C`, `int64()` → `TH1L`. To change the
+precision of a histogram you already built or read back, use `with_precision`;
+either way the contents are narrowed only at write time.
 
 ```rust
 use oxiroot::prelude::*;
 
-let h = TH1::new(100, 0.0, 1.0).named("h");
-assert_eq!(h.class_name(), "TH1D");
+let h = Hist::reg(100, 0.0, 1.0).float().named("h");
+assert_eq!(h.class_name(), "TH1F"); // the finalizer picked the class
 
-let hf = h.clone().with_precision(Precision::Float);
-assert_eq!(hf.class_name(), "TH1F"); // writes a TH1F
+// Re-precision an existing histogram (e.g. store a filled TH1D compactly):
+let hc = h.clone().with_precision(Precision::Char);
+assert_eq!(hc.class_name(), "TH1C");
 ```
 
 | Method | Returns |
@@ -121,12 +126,12 @@ Every type below reads and writes through the same `WriteRoot`/`ReadRoot` traits
 
 | Type | Class(es) | Construct with |
 | --- | --- | --- |
-| `TH1` | `TH1D/F/I/S/C/L` | `TH1::new(nbins, xmin, xmax)`, `TH1::new_variable(edges)` |
-| `TH2` | `TH2D/F/I/S/C/L` | `TH2::new(nx, xlo, xhi, ny, ylo, yhi)`, `TH2::new_variable(xe, ye)` |
-| `TH3` | `TH3D/F/I/S/C/L` | `TH3::new(nx, xlo, xhi, ny, ylo, yhi, nz, zlo, zhi)` |
-| `TProfile` | `TProfile` | `TProfile::new(nbins, xlo, xhi)` |
-| `TProfile2D` | `TProfile2D` | `TProfile2D::new(nx, xlo, xhi, ny, ylo, yhi)` |
-| `TProfile3D` | `TProfile3D` | `TProfile3D::new(...)` |
+| `TH1` | `TH1D/F/I/S/C/L` | `Hist::reg(nbins, xmin, xmax).double()`, `Hist::var(edges).double()` |
+| `TH2` | `TH2D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double()`, `Hist::var(xe).var(ye).double()` |
+| `TH3` | `TH3D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).double()` |
+| `TProfile` | `TProfile` | `Hist::reg(nbins, xlo, xhi).profile()` |
+| `TProfile2D` | `TProfile2D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).profile()` |
+| `TProfile3D` | `TProfile3D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).profile()` |
 | `TEfficiency` | `TEfficiency` | `TEfficiency::new(nbins, xlo, xhi)`, then `fill(passed, x)` |
 | `THnSparse` | `THnSparseT<TArrayD>` | `THnSparse::new(&[(nbins, lo, hi), …])`, then `fill(&coords)` |
 | `TH2Poly` | `TH2Poly` | `TH2Poly::new(xlow, xup, ylow, yup)`, then `add_bin`/`add_bin_rect` |
@@ -140,7 +145,7 @@ mapping ROOT's `fErrorMode`). `TProfile2D::fill(x, y, z)` profiles `z` against
 ```rust
 use oxiroot::prelude::*;
 
-let mut prof = TProfile::new(5, 0.0, 5.0).named("pt_prof").titled("<pt> per region");
+let mut prof = Hist::reg(5, 0.0, 5.0).profile().named("pt_prof").titled("<pt> per region");
 prof.fill(0.5, 91.2);
 prof.fill(1.5, 125.1);
 let profiled = prof.values(); // sum / entries per in-range bin
@@ -203,7 +208,7 @@ new on-disk state.
 | Accessor | Meaning |
 | --- | --- |
 | `mean()` | mean of the in-range fills (`TH2`/`TH3` use `mean_x`/`mean_y`/`mean_z`) |
-| `std_dev()` / `rms()` | standard deviation (`TH2`/`TH3`: `std_dev_x`/`_y`/`_z`) |
+| `std_dev()` | standard deviation, ROOT `GetStdDev`/`GetRMS` (`TH2`/`TH3`: `std_dev_x`/`_y`/`_z`) |
 | `maximum()` / `minimum()` | largest / smallest in-range bin content |
 | `maximum_bin()` / `minimum_bin()` | bin index of the extremum |
 | `find_bin(x)` | bin holding `x` (0 = underflow, `nbins+1` = overflow) |
@@ -291,7 +296,7 @@ ROOT files in both directions.
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = TH1::new(3, 0.0, 3.0).named("by_region");
+let mut h = Hist::reg(3, 0.0, 3.0).double().named("by_region");
 h.xaxis.set_label(1, "barrel");
 h.xaxis.set_label(2, "endcap");
 h.xaxis.set_label(3, "forward");
@@ -316,7 +321,7 @@ self-describing for ROOT and uproot.
 ```rust
 use oxiroot::prelude::*;
 
-let h = TH1::new(100, 0.0, 1.0).named("h");
+let h = Hist::reg(100, 0.0, 1.0).double().named("h");
 h.write_root("out.root", Compression::Zstd(5))?; // works for any writable type
 
 let bytes = h.to_root_bytes(); // just the streamed object payload
@@ -330,9 +335,9 @@ let bytes = h.to_root_bytes(); // just the streamed object payload
 ```rust
 use oxiroot::prelude::*;
 
-let pt = TH1::new(10, 0.0, 1.0).named("pt");
-let prof = TProfile::new(10, 0.0, 1.0).named("prof");
-let signal = TH1::new(10, 0.0, 1.0).named("sig");
+let pt = Hist::reg(10, 0.0, 1.0).double().named("pt");
+let prof = Hist::reg(10, 0.0, 1.0).profile().named("prof");
+let signal = Hist::reg(10, 0.0, 1.0).double().named("sig");
 
 RootFile::create("out.root")
     .add(&pt)                            // any &dyn WriteRoot: hist, profile, graph…

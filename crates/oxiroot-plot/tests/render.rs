@@ -4,7 +4,7 @@
 //! artist / layout actually renders. No pixel comparison — only structural and
 //! invariant checks that won't flake.
 
-use oxiroot_hist::{TGraph, TProfile, TH1, TH2};
+use oxiroot_hist::{Hist, TGraph, TProfile, TH1, TH2};
 use oxiroot_plot::{
     ratio_subplots, subplots, subplots_grid, Axes, Color, CurveOpts, Error, ErrorbarOpts, FontSet,
     Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
@@ -13,7 +13,8 @@ use oxiroot_plot::{
 // --- deterministic fixtures (a tiny LCG → reproducible bytes, no rng dep) ---
 
 fn gauss_hist() -> TH1 {
-    let mut h = TH1::new(40, 50.0, 130.0)
+    let mut h = Hist::reg(40, 50.0, 130.0)
+        .double()
         .named("mass")
         .titled("di-muon mass");
     h.sumw2();
@@ -42,7 +43,10 @@ fn graph() -> TGraph {
 }
 
 fn th2() -> TH2 {
-    let mut h = TH2::new(20, -3.0, 3.0, 20, -3.0, 3.0).named("h2");
+    let mut h = Hist::reg(20, -3.0, 3.0)
+        .reg(20, -3.0, 3.0)
+        .double()
+        .named("h2");
     for ix in 0..20 {
         for iy in 0..20 {
             let x = -3.0 + (ix as f64 + 0.5) * 0.3;
@@ -54,7 +58,7 @@ fn th2() -> TH2 {
 }
 
 fn profile() -> TProfile {
-    let mut p = TProfile::new(10, 0.0, 10.0).named("p");
+    let mut p = Hist::reg(10, 0.0, 10.0).profile().named("p");
     for i in 0..400 {
         let x = (i % 10) as f64 + 0.5;
         p.fill(x, 1.5 * x + (i % 3) as f64);
@@ -399,13 +403,19 @@ fn hist2d_leaves_empty_bins_as_background() {
         occurrences(&ax.to_svg_string(), "<rect")
     };
 
-    let mut full = TH2::new(10, 0.0, 1.0, 10, 0.0, 1.0).named("full");
+    let mut full = Hist::reg(10, 0.0, 1.0)
+        .reg(10, 0.0, 1.0)
+        .double()
+        .named("full");
     for ix in 0..10 {
         for iy in 0..10 {
             full.fill_weight(0.05 + ix as f64 * 0.1, 0.05 + iy as f64 * 0.1, 1.0);
         }
     }
-    let mut sparse = TH2::new(10, 0.0, 1.0, 10, 0.0, 1.0).named("sparse");
+    let mut sparse = Hist::reg(10, 0.0, 1.0)
+        .reg(10, 0.0, 1.0)
+        .double()
+        .named("sparse");
     sparse.fill_weight(0.05, 0.05, 5.0);
     sparse.fill_weight(0.55, 0.55, 3.0); // only two filled cells
 

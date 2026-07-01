@@ -19,7 +19,7 @@ without file/key framing). Anything readable implements `ReadRoot`, giving it
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = TH1::new(50, 0.0, 100.0).named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt").titled("p_{T}");
 h.fill(42.0);
 
 // Write a single object as a complete ROOT file …
@@ -34,7 +34,7 @@ let same = TH1::read_root(&RFile::open("hist.root")?, "pt")?;
 !!! note "Names belong to the file, not the object"
     A histogram is just data. It carries a name only when you persist it —
     `.named("pt")` sets the file key, `.titled(...)` the ROOT title. Construct
-    with `TH1::new(nbins, lo, hi)` and any number of unnamed or same-named
+    with `Hist::reg(nbins, lo, hi).double()` and any number of unnamed or same-named
     objects can coexist in memory; the name matters only at write time. See
     [Histograms](histograms.md) for the construction model.
 
@@ -46,7 +46,7 @@ takes any `&dyn WriteRoot`, `dir` opens a subdirectory, and `write` commits with
 a chosen compression.
 
 ```rust
-let prof = TProfile::new(5, 0.0, 5.0).named("prof").titled("<pt> per region");
+let prof = Hist::reg(5, 0.0, 5.0).profile().named("prof").titled("<pt> per region");
 let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0]).named("res");
 
 RootFile::create("out.root")
@@ -106,8 +106,8 @@ name is also an error. Different subdirectories are independent namespaces, so
 the same name in two directories is fine.
 
 ```rust
-let a = TH1::new(10, 0.0, 1.0).named("h");
-let b = TH1::new(10, 0.0, 1.0).named("h");
+let a = Hist::reg(10, 0.0, 1.0).double().named("h");
+let b = Hist::reg(10, 0.0, 1.0).double().named("h");
 let err = RootFile::create("dup.root").add(&a).add(&b).write(Compression::None);
 assert!(err.is_err()); // Error::DuplicateName { name: "h", .. }
 ```

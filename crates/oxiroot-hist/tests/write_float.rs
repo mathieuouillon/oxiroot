@@ -2,12 +2,12 @@
 //! through our own reader. The files in /tmp are also checked by uproot/ROOT C++
 //! in the interop job.
 
-use oxiroot_hist::{Precision, ReadRoot, WriteRoot, TH1, TH2, TH3};
+use oxiroot_hist::{Hist, Precision, ReadRoot, WriteRoot, TH1, TH2, TH3};
 use oxiroot_io_core::{Compression, RFile};
 
 #[test]
 fn th1f_write_read_round_trips() {
-    let mut h = TH1::new(4, 0.0, 4.0).named("h1").titled("float");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h1").titled("float");
     for (i, &n) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
         for _ in 0..(n as usize) {
             h.fill(i as f64 + 0.5);
@@ -27,7 +27,9 @@ fn th1f_write_read_round_trips() {
 
 #[test]
 fn th2f_write_read_round_trips() {
-    let mut h = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0)
+    let mut h = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
         .named("h2")
         .titled("float2");
     h.fill(0.5, 0.5);
@@ -47,7 +49,10 @@ fn th2f_write_read_round_trips() {
 
 #[test]
 fn th3f_write_read_round_trips() {
-    let mut h = TH3::new(2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0)
+    let mut h = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
         .named("h3")
         .titled("float3");
     h.fill(0.5, 0.5, 0.5);

@@ -3,16 +3,18 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, RootFile, TH1, TH2};
+use oxiroot_hist::{Hist, ReadRoot, RootFile, TH1, TH2};
 use oxiroot_io_core::RFile;
 
 #[test]
 fn writes_multiple_histograms_into_one_file() {
-    let mut h1 = TH1::new(4, 0.0, 4.0).named("hx").titled("1-D");
+    let mut h1 = Hist::reg(4, 0.0, 4.0).double().named("hx").titled("1-D");
     for x in [0.5, 1.5, 1.5, 3.5] {
         h1.fill(x);
     }
-    let mut h2 = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0)
+    let mut h2 = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
         .named("hxy")
         .titled("2-D");
     h2.fill(0.5, 0.5);

@@ -305,8 +305,8 @@ impl Axes {
     /// # Examples
     /// ```no_run
     /// use oxiroot_plot::{Axes, HistOpts, HistType};
-    /// use oxiroot_hist::TH1;
-    /// let h = TH1::new(20, 0.0, 10.0).named("h");
+    /// use oxiroot_hist::Hist;
+    /// let h = Hist::reg(20, 0.0, 10.0).double().named("h");
     /// let mut ax = Axes::new();
     /// ax.hist_with(&h, HistOpts::new().histtype(HistType::Step).yerr().label("MC"));
     /// ax.save("h.svg").unwrap();
@@ -410,8 +410,8 @@ impl Axes {
     /// # Examples
     /// ```no_run
     /// use oxiroot_plot::Axes;
-    /// use oxiroot_hist::TProfile;
-    /// let tp = TProfile::new(10, 0.0, 10.0).named("p");
+    /// use oxiroot_hist::Hist;
+    /// let tp = Hist::reg(10, 0.0, 10.0).profile().named("p");
     /// let mut ax = Axes::new();
     /// ax.profile(&tp);
     /// ax.save("profile.png").unwrap();
@@ -452,8 +452,8 @@ impl Axes {
     /// # Examples
     /// ```no_run
     /// use oxiroot_plot::{Axes, Colormap, Hist2dOpts};
-    /// use oxiroot_hist::TH2;
-    /// let h = TH2::new(10, 0.0, 1.0, 10, 0.0, 1.0).named("h2");
+    /// use oxiroot_hist::Hist;
+    /// let h = Hist::reg(10, 0.0, 1.0).reg(10, 0.0, 1.0).double().named("h2");
     /// let mut ax = Axes::new();
     /// ax.hist2d_with(&h, Hist2dOpts::new().cmap(Colormap::Viridis).label("entries"));
     /// ax.save("h2.png").unwrap();

@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ListKind, ObjList, ReadRoot, RootFile, TObjString, TParameter, TH1};
+use oxiroot_hist::{Hist, ListKind, ObjList, ReadRoot, RootFile, TObjString, TParameter, TH1};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture() -> RFile {
@@ -39,7 +39,7 @@ fn reads_root_written_list_and_array() {
 
 #[test]
 fn round_trips_list_and_array_through_oxiroot() {
-    let mut h = TH1::new(4, 0.0, 4.0).named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
     h.fill(0.5);
     let list = ObjList::list()
         .named("mylist")
@@ -48,8 +48,8 @@ fn round_trips_list_and_array_through_oxiroot() {
         .add(&TParameter::f64("lumi", 12.5));
     let arr = ObjList::array()
         .named("myarr")
-        .add(&TH1::new(3, 0.0, 3.0).named("a0"))
-        .add(&TH1::new(3, 0.0, 3.0).named("a1"));
+        .add(&Hist::reg(3, 0.0, 3.0).double().named("a0"))
+        .add(&Hist::reg(3, 0.0, 3.0).double().named("a1"));
 
     let out = std::env::temp_dir().join("oxiroot_objlist_rt.root");
     RootFile::create(&out)

@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, WriteRoot, TH3};
+use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH3};
 use oxiroot_io_core::RFile;
 
 fn fixture(name: &str) -> PathBuf {
@@ -37,7 +37,10 @@ fn round_trips_real_root_th3d() {
 
 #[test]
 fn create_fill_save_round_trips() {
-    let mut h = TH3::new(2, 0.0, 2.0, 2, 0.0, 2.0, 2, 0.0, 2.0)
+    let mut h = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
         .named("h3")
         .titled("filled");
     h.fill(0.5, 0.5, 0.5); // (1,1,1)

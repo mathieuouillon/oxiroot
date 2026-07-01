@@ -19,7 +19,10 @@ fn appends_a_histogram_to_an_rntuple_file() {
         .write_root(&out, Compression::None)
         .expect("write rntuple");
 
-    let mut h = TH1::new(4, 0.0, 4.0).named("h").titled("appended");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .named("h")
+        .titled("appended");
     h.fill(0.5);
     h.fill(2.5);
     RootFile::open(&out)

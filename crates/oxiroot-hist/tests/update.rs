@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, RootFile, WriteRoot, TH1, TH2};
+use oxiroot_hist::{Hist, ReadRoot, RootFile, WriteRoot, TH1, TH2};
 use oxiroot_io_core::{Compression, RFile};
 
 #[test]
@@ -13,16 +13,18 @@ fn appends_objects_to_an_existing_file() {
     let out = PathBuf::from("/tmp/rootrs_update.root");
 
     // Start with a one-histogram file.
-    let mut a = TH1::new(4, 0.0, 4.0).named("a").titled("first");
+    let mut a = Hist::reg(4, 0.0, 4.0).double().named("a").titled("first");
     a.fill(0.5);
     a.fill(2.5);
     a.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("initial write");
 
     // Append two more histograms (a TH1D and a TH2D).
-    let mut b = TH1::new(3, 0.0, 3.0).named("b").titled("second");
+    let mut b = Hist::reg(3, 0.0, 3.0).double().named("b").titled("second");
     b.fill(1.5);
-    let mut c = TH2::new(2, 0.0, 2.0, 2, 0.0, 2.0)
+    let mut c = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
         .named("c")
         .titled("third");
     c.fill(0.5, 1.5);
@@ -52,14 +54,14 @@ fn appends_objects_to_an_existing_file() {
 #[test]
 fn re_adding_a_name_bumps_the_cycle() {
     let out = PathBuf::from("/tmp/rootrs_update_cycle.root");
-    let mut v1 = TH1::new(4, 0.0, 4.0).named("h").titled("v1");
+    let mut v1 = Hist::reg(4, 0.0, 4.0).double().named("h").titled("v1");
     v1.fill(0.5);
     v1.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write v1");
 
     // Re-add "h" with different contents; ROOT keeps both at different cycles,
     // newest (highest cycle) wins for a plain lookup.
-    let mut v2 = TH1::new(4, 0.0, 4.0).named("h").titled("v2");
+    let mut v2 = Hist::reg(4, 0.0, 4.0).double().named("h").titled("v2");
     v2.fill(1.5);
     v2.fill(1.5);
     RootFile::open(&out)
@@ -88,9 +90,12 @@ fn re_adding_a_name_bumps_the_cycle() {
 fn appends_to_a_file_with_a_subdirectory() {
     let out = PathBuf::from("/tmp/rootrs_update_subdir.root");
 
-    let mut a = TH1::new(4, 0.0, 4.0).named("a").titled("root");
+    let mut a = Hist::reg(4, 0.0, 4.0).double().named("a").titled("root");
     a.fill(0.5);
-    let mut s = TH1::new(3, 0.0, 3.0).named("s").titled("in subdir");
+    let mut s = Hist::reg(3, 0.0, 3.0)
+        .double()
+        .named("s")
+        .titled("in subdir");
     s.fill(1.5);
     RootFile::create(&out)
         .add(&a)
@@ -98,7 +103,10 @@ fn appends_to_a_file_with_a_subdirectory() {
         .write(Compression::None)
         .expect("create with subdir");
 
-    let mut b = TH1::new(2, 0.0, 2.0).named("b").titled("appended");
+    let mut b = Hist::reg(2, 0.0, 2.0)
+        .double()
+        .named("b")
+        .titled("appended");
     b.fill(0.5);
     RootFile::open(&out)
         .expect("open for append")
@@ -130,11 +138,11 @@ fn appends_to_a_file_with_a_subdirectory() {
 #[test]
 fn adding_a_new_subdir_during_append_is_rejected() {
     let out = PathBuf::from("/tmp/rootrs_update_newdir.root");
-    let mut a = TH1::new(4, 0.0, 4.0).named("a");
+    let mut a = Hist::reg(4, 0.0, 4.0).double().named("a");
     a.fill(0.5);
     a.write_root(&out, Compression::None).expect("write");
 
-    let s = TH1::new(2, 0.0, 2.0).named("s");
+    let s = Hist::reg(2, 0.0, 2.0).double().named("s");
     let err = RootFile::open(&out)
         .expect("open")
         .dir("new", |d| d.add(&s))

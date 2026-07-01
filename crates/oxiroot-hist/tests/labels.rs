@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, TH1};
+use oxiroot_hist::{Hist, ReadRoot, TH1};
 use oxiroot_io_core::RFile;
 
 fn fixture(name: &str) -> PathBuf {
@@ -52,7 +52,10 @@ fn writes_and_round_trips_labels() {
     assert_eq!(back.xaxis.labels, src.xaxis.labels);
 
     // Build a labelled histogram from scratch.
-    let mut h = TH1::new(3, 0.0, 3.0).named("cuts").titled("selection");
+    let mut h = Hist::reg(3, 0.0, 3.0)
+        .double()
+        .named("cuts")
+        .titled("selection");
     h.xaxis.set_label(1, "trigger");
     h.xaxis.set_label(2, "vertex");
     h.xaxis.set_label(3, "isolation");

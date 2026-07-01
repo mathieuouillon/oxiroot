@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, WriteRoot, TH2};
+use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH2};
 use oxiroot_io_core::RFile;
 
 fn fixture(name: &str) -> PathBuf {
@@ -32,7 +32,9 @@ fn serializes_th2d_byte_identical_to_root() {
 #[test]
 fn create_fill_save_round_trips() {
     // Build a 3x2 histogram and fill it, as in a 2-D analysis loop.
-    let mut h = TH2::new(3, 0.0, 3.0, 2, 0.0, 2.0)
+    let mut h = Hist::reg(3, 0.0, 3.0)
+        .reg(2, 0.0, 2.0)
+        .double()
         .named("h2")
         .titled("filled");
     h.fill(0.5, 0.5); // (binx=1, biny=1)

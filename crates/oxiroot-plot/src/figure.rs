@@ -311,8 +311,8 @@ pub fn subplots_grid_with(style: Style, grid: GridSpec) -> (Figure, Vec<Axes>) {
 /// # Examples
 /// ```no_run
 /// use oxiroot_plot::ratio_subplots;
-/// use oxiroot_hist::TH1;
-/// let h = TH1::new(20, 0.0, 10.0).named("h");
+/// use oxiroot_hist::Hist;
+/// let h = Hist::reg(20, 0.0, 10.0).double().named("h");
 /// let (fig, mut main, mut ratio) = ratio_subplots();
 /// main.hist(&h);
 /// main.ylabel("Events");
