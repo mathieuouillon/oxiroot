@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{read_column, ColumnType, Locator, PageInfo, RNTuple};
+use oxiroot_rntuple::{concat_ntuples, read_column, ColumnType, Locator, PageInfo, RNTuple};
 
 fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(
@@ -21,6 +21,9 @@ fn poke_rntuple(f: &RFile) {
         for name in names {
             let _ = ntpl.read_field(f, &name);
         }
+        // Run the (possibly corrupt) ntuple through the `hadd`-style merge —
+        // exercises field concatenation + rebuild on malformed input.
+        let _ = concat_ntuples("ntpl", &[(f, &ntpl)]);
     }
 }
 

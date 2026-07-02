@@ -8,12 +8,13 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{
-    ReadRoot, TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TH1, TH2,
-    TH3,
+    ReadRoot, TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TF1, TF2,
+    TF3, TH1, TH2, TH3,
 };
 use oxiroot_io_core::RFile;
 
-/// Fixtures spanning every histogram/graph layout, with one key name each.
+/// Fixtures spanning every histogram/graph/function layout, with one key name
+/// each.
 const FIXTURES: &[(&str, &str)] = &[
     ("th1d_uncompressed.root", "h1"),
     ("th2d_uncompressed.root", "h2"),
@@ -23,6 +24,9 @@ const FIXTURES: &[(&str, &str)] = &[
     ("tprofile2d.root", "p2"),
     ("th2poly.root", "hp"),
     ("thnsparse.root", "hs"),
+    ("tf1.root", "myfunc"),
+    ("tf23.root", "f2"),
+    ("tf23.root", "f3"),
 ];
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -46,6 +50,9 @@ fn poke_hist(f: &RFile, name: &str) {
     let _ = THnSparse::read_root(f, name);
     let _ = TH2Poly::read_root(f, name);
     let _ = TGraph::read_root(f, name);
+    let _ = TF1::read_root(f, name);
+    let _ = TF2::read_root(f, name);
+    let _ = TF3::read_root(f, name);
 }
 
 /// Stride that keeps each fixture to roughly `samples` probes regardless of size.

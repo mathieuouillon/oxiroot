@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::RFile;
-use oxiroot_tree::TTree;
+use oxiroot_tree::{concat_trees, TTree};
 
 /// Fixtures spanning the supported branch layouts, with their tree name.
 const FIXTURES: &[(&str, &str)] = &[
@@ -26,14 +26,18 @@ fn fixture(name: &str) -> Vec<u8> {
     .expect("read fixture")
 }
 
-/// Open the tree (if it parses) and read every branch. The point is that none
-/// of this panics regardless of the bytes.
+/// Open the tree (if it parses), read every branch, and run it through the
+/// `hadd`-style [`concat_trees`] merge. The point is that none of this panics
+/// regardless of the bytes.
 fn poke_tree(f: &RFile, tree: &str) {
     if let Ok(t) = TTree::open(f, tree) {
         let names: Vec<String> = t.branch_names().iter().map(|s| s.to_string()).collect();
         for b in &names {
             let _ = t.read_branch(f, b);
         }
+        // Merge the (possibly corrupt) tree with itself — exercises the branch
+        // kind reconstruction and value concatenation on malformed input.
+        let _ = concat_trees(&[(f, &t)]);
     }
 }
 
