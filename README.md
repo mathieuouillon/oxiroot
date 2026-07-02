@@ -166,6 +166,11 @@ cargo run -p oxiroot --example analysis
   `rebin`/`rebin2d`/`rebin3d`, `cumulative`, projections (`TH2`→`TH1`;
   `TH3`→`TH1`/`TH2`), and `profile_x`/`profile_y` — all carrying the statistical
   moment sums so the results' `mean`/`std_dev` stay correct.
+- Sampling & smoothing: `get_random` / `fill_random` draw from a histogram's (or,
+  via `fill_random_fn` / `TF1::get_random`, a function's) distribution
+  (inverse-CDF, ROOT's `GetRandom`/`FillRandom`); `smooth` is ROOT's `353QH`
+  smoother. A small seedable `Rng` means no `rand` dependency and reproducible
+  draws.
 - Compatibility tests: `chi2_test`/`chi2_test_with` (Pearson χ², all three
   `UU`/`UW`/`WW` weighting schemes) and `kolmogorov_test`, returning ROOT-matched
   p-values. Alphanumeric (labelled) axes round-trip through `TAxis::labels`
@@ -730,8 +735,6 @@ Grouped by the ROOT feature each fills.
     blocked because ROOT 6.40's `std::map` collection proxy is non-functional in
     the test build — it can neither create nor read a `std::map` RNTuple field —
     so this needs a ROOT install with the `std::map` dictionary loaded to verify.
-- **Histogram sampling** — `TH1::GetRandom` / `FillRandom` (draw from a histogram
-  or function) and `TH1::Smooth`.
 - **Merging (`hadd`)** — combine several ROOT files the way the `hadd` CLI does:
   histograms summed (the bin-wise `add`/`merge_all` already exists), `TTree`s and
   RNTuples concatenated (`TFileMerger` / `RNTupleMerger`). The single most-used

@@ -264,6 +264,45 @@ let px = corr.projection_x("px");           // TH2 → TH1
 let prof = corr.profile_x("pfx");           // TH2 → TProfile
 ```
 
+## Sampling and smoothing
+
+Draw random values from a histogram's distribution (ROOT's `GetRandom` /
+`FillRandom`) — the bin contents are the density, a bin is picked in proportion
+to its content, and the value is interpolated within it. Sampling needs a uniform
+source; oxiroot has no `gRandom`, so a small seedable [`Rng`](../api/oxiroot/index.html)
+is provided (no `rand` dependency, reproducible draws).
+
+```rust
+use oxiroot::prelude::*;
+
+let mut source = Hist::reg(100, -5.0, 5.0).double();
+for x in &data { source.fill(*x); }
+
+let mut rng = Rng::seed(12345);
+let x = source.get_random(&mut rng);        // one draw
+
+// Fill a new histogram with 100k draws from `source`'s shape (efficient — the
+// cumulative is built once):
+let mut resampled = Hist::reg(100, -5.0, 5.0).double();
+resampled.fill_random(&source, 100_000, &mut rng);
+
+// …or draw from a function over the histogram's range:
+resampled.fill_random_fn(|x| (-0.5 * x * x).exp(), 100_000, &mut rng);
+let g = TF1::new("g", "gaus", -5.0, 5.0)?.with_params(vec![1.0, 0.0, 1.0]);
+let y = g.get_random(&mut rng);             // TF1::GetRandom
+# Ok::<(), oxiroot::Error>(())
+```
+
+`smooth(ntimes)` applies ROOT's `353QH, twice` smoother to the in-range bins
+(bit-for-bit matching `TH1::Smooth`):
+
+```rust
+use oxiroot::prelude::*;
+let mut h = Hist::reg(100, 0.0, 100.0).double();
+# for x in [1.0, 2.0, 3.0] { h.fill(x); }
+h.smooth(2);
+```
+
 ## Compatibility tests
 
 `TH1` supports ROOT's `Chi2Test` and `KolmogorovTest`, returning ROOT-matched
