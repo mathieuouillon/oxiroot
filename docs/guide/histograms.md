@@ -29,19 +29,20 @@ let mut pt = Hist::reg(100, 0.0, 100.0).double()
 `named` sets the on-disk key (`fName`); `titled` sets the title (`fTitle`). Both
 return `Self`, so they chain off the constructor.
 
-### Uniform vs variable bins
+### Uniform vs variable (irregular) bins
 
 `Hist::reg(nbins, xmin, xmax).double()` builds uniform bins over `[xmin, xmax)`.
-`Hist::var(edges).double()` takes the `nbins + 1` bin boundaries directly (they
-must be strictly ascending):
+For **irregular** bins of arbitrary width, `Hist::var(edges).double()` takes the
+`nbins + 1` bin boundaries directly (they must be strictly ascending) — this is a
+real ROOT variable-binned histogram:
 
 ```rust
 use oxiroot::prelude::*;
 
 let uniform = Hist::reg(100, 0.0, 100.0).double();
 
-let edges = [0.0, 10.0, 20.0, 40.0, 80.0, 160.0];
-let variable = Hist::var(&edges).double(); // 5 bins of growing width
+// Arbitrary edges → 5 bins of widths 1, 1, 3, 5, 90.
+let variable = Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0]).double();
 ```
 
 Chain another `reg`/`var` per axis for higher dimensions:

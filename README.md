@@ -144,10 +144,11 @@ cargo run -p oxiroot --example analysis
   a histogram not already built with `.weight()`.
 - **The one way to build a histogram is the scikit-hep
   [`hist`](https://github.com/scikit-hep/hist)-style `Hist` builder**, mapped
-  onto ROOT so the result is an ordinary `TH1`/`TH2`/`TH3` (see
-  [the report](docs/hist-api-report.md)).
+  onto ROOT so the result is an ordinary `TH1`/`TH2`/`TH3`.
   `Hist::reg(50, 0.0, 100.0).name("pt").label("$p_T$ [GeV]").weight()` chains a
-  regular (`reg`) or variable (`var`, from explicit edges) axis, then a storage
+  regular (`reg`) axis; for **irregular bin edges** give them explicitly with
+  `var` — `Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0]).double()` (a real ROOT
+  variable-binned `TH1D`). Either kind chains a storage
   finalizer picks the ROOT class — `double()`→`TH1D`, `float()`→`TH1F`,
   `int64()`→`TH1L`, `int32()`→`TH1I`, `int16()`→`TH1S`, `int8()`→`TH1C`,
   `weight()`→`TH1D`+`Sumw2`, `profile()`→`TProfile`. Chain `.reg`/`.var` again

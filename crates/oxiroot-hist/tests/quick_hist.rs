@@ -139,3 +139,27 @@ fn builder_output_round_trips_through_root() {
     assert_eq!(back.variances(), vec![4.0, 9.0, 0.0, 0.0]); // Sumw2 survives
     let _ = std::fs::remove_file(&out);
 }
+
+#[test]
+fn variable_axis_takes_arbitrary_irregular_edges() {
+    // Irregular bin edges of arbitrary width (widths 1, 1, 3, 5, 90) — a real
+    // ROOT variable-binned TH1D, built with `var` instead of `reg`.
+    let edges = vec![0.0, 1.0, 2.0, 5.0, 10.0, 100.0];
+    let mut h = Hist::var(&edges).double().named("hv").titled("irregular");
+    for x in [0.5, 1.5, 3.0, 3.0, 7.0, 50.0, 50.0, 50.0] {
+        h.fill(x);
+    }
+    // Fills land by edge, not by uniform width:
+    // [0,1)->1, [1,2)->1, [2,5)->2, [5,10)->1, [10,100)->3.
+    assert_eq!(h.values(), &[1.0, 1.0, 2.0, 1.0, 3.0]);
+    assert_eq!(h.edges(), edges);
+
+    // The exact edges and contents round-trip through the writer.
+    let out = std::env::temp_dir().join("oxiroot_quick_varbins.root");
+    h.write_root(&out, Compression::None).unwrap();
+    let f = RFile::open(&out).unwrap();
+    let back = TH1::read_root(&f, "hv").unwrap();
+    assert_eq!(back.edges(), edges);
+    assert_eq!(back.values(), &[1.0, 1.0, 2.0, 1.0, 3.0]);
+    let _ = std::fs::remove_file(&out);
+}
