@@ -421,9 +421,9 @@ mod tests {
     #[cfg(feature = "fit")]
     #[test]
     fn model_overlay_adds_a_curve() {
-        use oxiroot_fit::TF1;
+        use oxiroot_fit::Model;
         let h = gauss_hist();
-        let model = TF1::gaussian("g").with_params(vec![4000.0, 90.0, 8.0]);
+        let model = Model::gaussian("g").with_params(vec![4000.0, 90.0, 8.0]);
 
         let mut base = Axes::new();
         base.hist(&h);

@@ -18,9 +18,10 @@ pub(crate) struct Constraint {
     pub(crate) step: Option<f64>,
 }
 
-/// A parametric fit function (ROOT's `TF1`): a closure `f(x, params)` plus named
-/// parameters with their current/initial values and optional per-parameter
-/// limits, fixing, and step hints.
+/// A parametric fit function: a closure `f(x, params)` plus named parameters
+/// with their current/initial values and optional per-parameter limits, fixing,
+/// and step hints. Build one from a closure ([`new`](Model::new)), a built-in
+/// shape, or a formula string ([`from_formula`](Model::from_formula)).
 #[derive(Clone)]
 pub struct Model {
     /// Function name.
@@ -145,6 +146,29 @@ impl Model {
         Model::new(name, &name_refs, vec![0.0; degree + 1], |x, p| {
             p.iter().rev().fold(0.0, |acc, &c| acc * x + c)
         })
+    }
+
+    /// Build a model from an arbitrary ROOT [`TFormula`](oxiroot_formula) string
+    /// (`"[0]+[1]*x"`, `"gaus"`, `"[0]*exp(-[1]*x)+[2]"`, …). Parameters are
+    /// `[0], [1], …` and the variable is `x`; the parameter count is inferred
+    /// from the formula. All parameters start at zero — seed them with
+    /// [`with_params`](Self::with_params).
+    ///
+    /// # Errors
+    /// Returns a [`ParseError`](oxiroot_formula::ParseError) if the formula does
+    /// not parse.
+    pub fn from_formula(name: &str, formula: &str) -> Result<Model, oxiroot_formula::ParseError> {
+        let f = oxiroot_formula::Formula::parse(formula)?;
+        let npar = f.npar();
+        // Own the parameter names so the closure can move `f`.
+        let names = f.param_names().to_vec();
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        Ok(Model::new(
+            name,
+            &name_refs,
+            vec![0.0; npar],
+            move |x, p| f.eval1(x, p),
+        ))
     }
 
     /// Replace the (initial) parameter values.

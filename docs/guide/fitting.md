@@ -26,7 +26,7 @@ dataset the `.fit(...)` methods for free.
 | `FitExt` | Blanket trait adding `fit` / `fit_with` / `fit_opts` / `fit_into` to any `FitData` |
 | `Point` | One `(x, y, sigma)` triple |
 | `Points` | A standalone collection of `Point`s |
-| `Model` (alias `TF1`) | A named parametric function `f(x, params)` |
+| `Model` | A named parametric fit function `f(x, params)` |
 | `FitResult` | Best-fit parameters, errors, covariance, chi-square |
 
 `TH1` and `TGraph` implement `FitData` (in `oxiroot-hist`, under the `fit`
@@ -55,7 +55,7 @@ for _ in 0..10_000 {
     peak.fill(/* sample */ 91.2);
 }
 
-let model = TF1::gaussian("z").estimate_from(&peak);
+let model = Model::gaussian("z").estimate_from(&peak);
 let fit = peak.fit(&model); // chi-square (ROOT's default)
 
 println!(
@@ -83,8 +83,10 @@ assert!((fit.params[1] - 2.0).abs() < 1e-6); // slope ≈ 2
 
 ## Building a model
 
-`Model` (aliased `TF1` for ROOT-compatible code) is a named parametric function
-`f(x, params)` with named parameters and optional per-parameter constraints.
+`Model` is a named parametric fit function `f(x, params)` with named parameters
+and optional per-parameter constraints. (The evaluable, persistable ROOT
+function object is [`TF1`](functions.md); `TF1::to_model()` converts one to a
+`Model` for fitting.)
 
 ### Built-in shapes
 
@@ -93,6 +95,21 @@ assert!((fit.params[1] - 2.0).abs() < 1e-6); // slope ≈ 2
 | `Model::gaussian(name)` | `[0]·exp(-½·((x-[1])/[2])²)` (ROOT `"gaus"`) | `constant`, `mean`, `sigma` |
 | `Model::exponential(name)` | `exp([0] + [1]·x)` (ROOT `"expo"`) | `constant`, `slope` |
 | `Model::polynomial(name, degree)` | `Σ p[k]·x^k` (ROOT `"polN"`) | `p0` … `p<degree>` |
+
+### Arbitrary formulas
+
+`Model::from_formula(name, formula)` builds a model from any ROOT
+[`TFormula`](functions.md) string — `"[0]*exp(-[1]*x)+[2]"`, `"gaus(0)+pol1(3)"`,
+… — so you are not limited to the three built-in shapes. The parameter count is
+inferred from the formula; seed the values with `with_params`.
+
+```rust
+use oxiroot::prelude::*;
+let model = Model::from_formula("decay", "[0]*exp(-[1]*x)")?
+    .with_params(vec![100.0, 0.5])
+    .lower_limit("p1", 0.0);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
 
 ### Custom closures
 
@@ -104,7 +121,7 @@ use oxiroot::prelude::*;
 
 // needs --features fit
 // params: [norm, mean, sigma, background-per-bin].
-let sig_bkg = TF1::new(
+let sig_bkg = Model::new(
     "sig+bkg",
     &["norm", "mean", "sigma", "bkg"],
     vec![100.0, 91.0, 2.0, 10.0], // initial values
@@ -276,7 +293,7 @@ use oxiroot::prelude::*;
 
 // needs --features fit,argmin
 let fit = peak.fit_opts(
-    &TF1::gaussian("z").estimate_from(&peak),
+    &Model::gaussian("z").estimate_from(&peak),
     &FitOptions::new().minimizer(Minimizer::NelderMead),
 );
 ```

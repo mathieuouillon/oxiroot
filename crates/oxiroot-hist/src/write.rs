@@ -790,25 +790,65 @@ fn write_functions(w: &mut WBuffer, functions: &[GraphFunction]) {
         w.string(""); // fName
         w.be_i32(functions.len() as i32); // fSize
         for f in functions {
-            write_object_ptr(w, "TF1", |w| write_tf1(w, f));
+            write_object_ptr(w, "TF1", |w| write_tf1_body(w, &Tf1Fields::from_graph(f)));
             w.string(""); // per-element option string
         }
         w.end_object(tl);
     });
 }
 
+/// The `TF1` member data shared by a graph's `fFunctions` entry and a standalone
+/// [`TF1`](crate::TF1)/[`TF2`](crate::TF2)/[`TF3`](crate::TF3) key. `ndim`/`npx`
+/// differ between a 1-D standalone `TF1` (100 px) and a `TF2`/`TF3` base (30 px).
+pub(crate) struct Tf1Fields<'a> {
+    pub name: &'a str,
+    pub title: &'a str,
+    /// The `[pN]`-form formula string ROOT stores as `TFormula::fFormula`.
+    pub formula: &'a str,
+    pub params: &'a [f64],
+    pub par_errors: &'a [f64],
+    pub par_min: &'a [f64],
+    pub par_max: &'a [f64],
+    pub xmin: f64,
+    pub xmax: f64,
+    pub chi2: f64,
+    pub ndf: i32,
+    pub ndim: i32,
+    pub npx: i32,
+}
+
+impl<'a> Tf1Fields<'a> {
+    fn from_graph(f: &'a GraphFunction) -> Tf1Fields<'a> {
+        Tf1Fields {
+            name: &f.name,
+            title: &f.title,
+            formula: &f.formula,
+            params: &f.params,
+            par_errors: &f.par_errors,
+            par_min: &f.par_min,
+            par_max: &f.par_max,
+            xmin: f.xmin,
+            xmax: f.xmax,
+            chi2: f.chi2,
+            ndf: f.ndf,
+            ndim: 1,
+            npx: 100,
+        }
+    }
+}
+
 /// Write a `TF1` object body (version 12): the `TNamed`/`TAtt*` bases, the
 /// scalar members, the parameter `vector<double>`s, then the `fFormula`
 /// `TFormula*` and null `fParams`/`fComposition` pointers.
-fn write_tf1(w: &mut WBuffer, f: &GraphFunction) {
-    let npar = f.npar();
+pub(crate) fn write_tf1_body(w: &mut WBuffer, f: &Tf1Fields) {
+    let npar = f.params.len();
     let obj = w.begin_object(12); // TF1 version 12
-    write_tnamed(w, 0, &f.name, &f.title);
+    write_tnamed(w, 0, f.name, f.title);
 
     let line = w.begin_object(2); // TAttLine
-    w.be_i16(1); // fLineColor
+    w.be_i16(2); // fLineColor (ROOT's TF1 default)
     w.be_i16(1); // fLineStyle
-    w.be_i16(1); // fLineWidth
+    w.be_i16(2); // fLineWidth (ROOT's TF1 default)
     w.end_object(line);
     let fill = w.begin_object(2); // TAttFill
     w.be_i16(19); // fFillColor (ROOT's TF1 default)
@@ -823,23 +863,54 @@ fn write_tf1(w: &mut WBuffer, f: &GraphFunction) {
     w.be_f64(f.xmin); // fXmin
     w.be_f64(f.xmax); // fXmax
     w.be_i32(npar as i32); // fNpar
-    w.be_i32(1); // fNdim
-    w.be_i32(100); // fNpx (ROOT default)
+    w.be_i32(f.ndim); // fNdim
+    w.be_i32(f.npx); // fNpx
     w.be_i32(0); // fType (kFormula)
     w.be_i32(0); // fNpfits
     w.be_i32(f.ndf); // fNDF
     w.be_f64(f.chi2); // fChisquare
     w.be_f64(-1111.0); // fMinimum
     w.be_f64(-1111.0); // fMaximum
-    write_vector_f64(w, &f.par_errors); // fParErrors
-    write_vector_f64(w, &f.par_min); // fParMin
-    write_vector_f64(w, &f.par_max); // fParMax
+    write_vector_f64(w, f.par_errors); // fParErrors
+    write_vector_f64(w, f.par_min); // fParMin
+    write_vector_f64(w, f.par_max); // fParMax
     write_vector_f64(w, &[]); // fSave (empty)
     w.u8(0); // fNormalized
     w.be_f64(0.0); // fNormIntegral
-    write_object_ptr(w, "TFormula", |w| write_tformula(w, f)); // fFormula
+    write_object_ptr(w, "TFormula", |w| write_tformula_body(w, f)); // fFormula
     w.be_u32(0); // fParams (TF1Parameters*) = null
     w.be_u32(0); // fComposition (TF1AbsComposition*) = null
+    w.end_object(obj);
+}
+
+/// Write a `TF2` object body (version 4): the `TF1` base, then `fYmin`/`fYmax`,
+/// `fNpy`, and an empty `fContour` (`TArrayD`).
+pub(crate) fn write_tf2_body(w: &mut WBuffer, f: &Tf1Fields, ymin: f64, ymax: f64) {
+    let obj = w.begin_object(4); // TF2 version 4
+    write_tf1_body(w, f); // TF1 base (ndim = 2, npx = 30)
+    w.be_f64(ymin); // fYmin
+    w.be_f64(ymax); // fYmax
+    w.be_i32(f.npx); // fNpy (ROOT keeps npx == npy by default)
+    w.be_i32(0); // fContour: empty TArrayD (fN = 0)
+    w.end_object(obj);
+}
+
+/// Write a `TF3` object body (version 3): the `TF2` base, then `fZmin`/`fZmax`
+/// and `fNpz`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn write_tf3_body(
+    w: &mut WBuffer,
+    f: &Tf1Fields,
+    ymin: f64,
+    ymax: f64,
+    zmin: f64,
+    zmax: f64,
+) {
+    let obj = w.begin_object(3); // TF3 version 3
+    write_tf2_body(w, f, ymin, ymax); // TF2 base (ndim = 3, npx = 30)
+    w.be_f64(zmin); // fZmin
+    w.be_f64(zmax); // fZmax
+    w.be_i32(f.npx); // fNpz
     w.end_object(obj);
 }
 
@@ -852,15 +923,15 @@ const FORMULA_NOT_GLOBAL: u32 = 0x0000_0400;
 /// Write a `TFormula` object body (version 14): `TNamed`, `fClingParameters`,
 /// `fAllParametersSetted`, the `fParams` name→index map, the `[pN]`-form formula
 /// string, and the trailing scalars/empty `fLinearParts`.
-fn write_tformula(w: &mut WBuffer, f: &GraphFunction) {
-    let npar = f.npar();
+fn write_tformula_body(w: &mut WBuffer, f: &Tf1Fields) {
+    let npar = f.params.len();
     let obj = w.begin_object(14); // TFormula version 14
-    write_tnamed(w, FORMULA_NOT_GLOBAL, &f.name, &f.title);
-    write_vector_f64(w, &f.params); // fClingParameters
+    write_tnamed(w, FORMULA_NOT_GLOBAL, f.name, f.title);
+    write_vector_f64(w, f.params); // fClingParameters
     w.u8(1); // fAllParametersSetted
     write_param_map(w, npar); // fParams (map<TString,int>)
-    w.string(&f.formula); // fFormula (in [pN] form)
-    w.be_i32(1); // fNdim
+    w.string(f.formula); // fFormula (in [pN] form)
+    w.be_i32(f.ndim); // fNdim
     w.be_i32(0); // fNumber
                  // fLinearParts: an empty objectwise vector<TObject*>.
     let lp = w.reserve(4);

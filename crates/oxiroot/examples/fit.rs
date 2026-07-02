@@ -56,7 +56,7 @@ fn main() {
 
     // `estimate_from` seeds (constant, mean, sigma) straight from the bins — no
     // manual moment loop, and it works even for set_bin_content histograms.
-    let model = TF1::gaussian("z").estimate_from(&peak);
+    let model = Model::gaussian("z").estimate_from(&peak);
     let chi2 = peak.fit(&model); // chi-square (the default)
     let like = peak.fit_with(&model, FitMethod::Likelihood); // Poisson likelihood
 
@@ -90,7 +90,7 @@ fn main() {
 
     // A closure model: Gaussian signal + constant background.
     // params: [norm, mean, sigma, background-per-bin].
-    let mut sig_bkg = TF1::new(
+    let mut sig_bkg = Model::new(
         "sig+bkg",
         &["norm", "mean", "sigma", "bkg"],
         vec![withbkg.maximum(), 91.0, 2.0, withbkg.minimum()],
@@ -130,7 +130,7 @@ fn main() {
     )
     .named("resp")
     .titled("response vs threshold");
-    let line = graph.fit(&TF1::polynomial("line", 1).with_params(vec![0.0, 0.0]));
+    let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     println!(
         "TGraph line fit (truth: slope 0.5, intercept 1.0):  slope = {:.3} ± {:.3}, intercept = {:.3}",
         line.params[1], line.errors[1], line.params[0]
@@ -160,7 +160,7 @@ fn main() {
     #[cfg(feature = "argmin")]
     {
         let chi2_nm = peak.fit_opts(
-            &TF1::gaussian("z").estimate_from(&peak),
+            &Model::gaussian("z").estimate_from(&peak),
             &FitOptions::new().minimizer(Minimizer::NelderMead),
         );
         println!(

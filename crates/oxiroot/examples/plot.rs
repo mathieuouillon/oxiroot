@@ -185,8 +185,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (Needs `--features plot,fit`; skipped otherwise.)
     #[cfg(feature = "fit")]
     {
-        use oxiroot::fit::TF1;
-        let model = TF1::gaussian("gaus").estimate_from(&mc);
+        use oxiroot::fit::Model;
+        let model = Model::gaussian("gaus").estimate_from(&mc);
         let r = mc.fit(&model);
         let fitted = model.with_params(r.params.clone());
         let mut ax = Axes::new();

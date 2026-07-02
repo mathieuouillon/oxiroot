@@ -82,7 +82,7 @@ pub mod prelude {
 
     #[cfg(feature = "fit")]
     pub use oxiroot_fit::{
-        FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points, TF1,
+        FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points,
     };
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
@@ -92,7 +92,7 @@ pub mod prelude {
         PolyBin, Precision, ReadRoot, RootFile, SparseBin, TAxis, TEfficiency, TGraph, TGraph2D,
         TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMap, TMatrixD, TMatrixDSym, TMultiGraph,
         TObjString, TParameter, TProfile, TProfile2D, TProfile3D, TVectorD, ThreadedHist,
-        WriteRoot, TH1, TH2, TH3,
+        WriteRoot, TF1, TF2, TF3, TH1, TH2, TH3,
     };
 
     pub use oxiroot_rntuple::{

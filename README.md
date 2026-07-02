@@ -24,6 +24,10 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, plus `TGraph2D`
   and `TGraphMultiErrors` — read and write, including a graph's display frame
   (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `TF1`).
+- 🧮 **Functions** — standalone `TF1`/`TF2`/`TF3` keys backed by a real
+  `TFormula` expression engine (arbitrary formulas, ROOT `gaus`/`expo`/`pol`
+  shortcuts), with pure-Rust `eval`/`integral`/`derivative`; any formula is also
+  fittable via `Model::from_formula`.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
@@ -211,9 +215,10 @@ data**, not just histograms. A dataset implements the `FitData` trait (yielding
 `TGraph` implement `FitData` out of the box, and `Points` (or your own `FitData`
 impl) covers everything else. `fit` is χ² by default; `fit_with` picks the cost
 (Neyman or Pearson chi-square, or a binned Poisson likelihood) and `fit_opts`
-adds a fit range and opt-in MINOS errors. `Model` (alias `TF1`) is built-in
-(`gaussian`, `exponential`, `polynomial`) or a closure `f(x, params)`, with
-per-parameter limits, fixing, and a data-driven seed. The fit returns the
+adds a fit range and opt-in MINOS errors. A `Model` is a built-in shape
+(`gaussian`, `exponential`, `polynomial`), any formula string
+(`Model::from_formula`), or a closure `f(x, params)`, with per-parameter limits,
+fixing, and a data-driven seed. The fit returns the
 parameters, parabolic errors, optional asymmetric MINOS errors and covariance
 matrix, and `chi2`/`ndf` (with `chi2_per_ndf()` and a goodness-of-fit
 `p_value()`). The χ² survival function it shares with the comparison tests lives
@@ -239,7 +244,7 @@ h.sumw2();
 
 // Gaussian peak fit (chi-square). `estimate_from` seeds (constant, mean, sigma)
 // from the bins — no manual moment loop, and it works for set_bin_content too.
-let model = TF1::gaussian("z").estimate_from(&h);
+let model = Model::gaussian("z").estimate_from(&h);
 let fit = h.fit(&model);
 println!("mean = {:.3} ± {:.3}", fit.params[1], fit.errors[1]);
 println!("chi2/ndf = {:.2}, p = {:.3}", fit.chi2_per_ndf(), fit.p_value());
@@ -248,14 +253,14 @@ let ml = h.fit_with(&model, FitMethod::Likelihood); // binned Poisson likelihood
 
 // Full control: fit the core ±window, keep sigma positive, and ask for MINOS.
 let opts = FitOptions::new().range(85.0, 97.0).with_minos(true);
-let mut peak = TF1::gaussian("z").estimate_from(&h).lower_limit("sigma", 0.0);
+let mut peak = Model::gaussian("z").estimate_from(&h).lower_limit("sigma", 0.0);
 let r = h.fit_into(&mut peak, &opts); // writes the fit back into `peak`
 if let Some(minos) = &r.minos {
     println!("mean +{:.3} {:.3}", minos[1].1, minos[1].0); // asymmetric errors
 }
 
 // A custom model — Gaussian signal on a flat background — as a closure.
-let sig_bkg = TF1::new(
+let sig_bkg = Model::new(
     "s+b", &["norm", "mean", "sigma", "bkg"], vec![h.maximum(), 91.0, 2.0, 0.0],
     |x, q| q[0] * (-0.5 * ((x - q[1]) / q[2]).powi(2)).exp() + q[3],
 );
@@ -306,6 +311,26 @@ let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])
     .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
 g.write_root("gfit.root", Compression::None)?;
 ```
+
+### Functions (`oxiroot::hist`)
+
+- **Standalone `TF1`/`TF2`/`TF3` keys** — real ROOT function objects (each
+  embedding a `TFormula`), built from a formula and a range and read/written like
+  any other object. `TF1::new("f", "[0]*sin([1]*x)", 0.0, 6.3)?.with_params(...)`.
+- **A real `TFormula` expression engine** ([`oxiroot-formula`], a dependency-free
+  crate): a tokenizer + Pratt parser + AST evaluator for arbitrary formulas —
+  operators `+ - * / ^`, the usual functions (`sin`/`exp`/`log`/`sqrt`/`pow`/…,
+  with or without a `TMath::` prefix), comparisons/`?:`, and ROOT's `gaus`/`expo`/
+  `pol0..N` shortcuts.
+- **`eval` / `integral` / `derivative`** in pure Rust — adaptive Gauss–Kronrod
+  quadrature and a Richardson central derivative, matching `TF1::Integral` /
+  `TF1::Derivative`.
+- The same engine powers `Model::from_formula`, so any formula is fittable, and
+  `TF1::to_model()` bridges a function to a fit. ROOT C++ reads oxiroot's
+  `TF1`/`TF2`/`TF3`; uproot reads `TF1` (it has no built-in `TF2`/`TF3` model).
+- See the [`functions` example](crates/oxiroot/examples/functions.rs).
+
+[`oxiroot-formula`]: crates/oxiroot-formula
 
 ### Persistable objects (`oxiroot::hist`)
 
@@ -704,11 +729,6 @@ Grouped by the ROOT feature each fills.
     blocked because ROOT 6.40's `std::map` collection proxy is non-functional in
     the test build — it can neither create nor read a `std::map` RNTuple field —
     so this needs a ROOT install with the `std::map` dictionary loaded to verify.
-- **Functions** — standalone `TF1` / `TF2` / `TF3` keys and a real `TFormula`
-  expression engine (arbitrary formulas like `[0]+[1]*sin(x)`, `gaus(0)`,
-  `expo`), with `Eval` / `Integral` / `Derivative`. Today the `fit` crate's
-  `Model` has fixed gaussian/exponential/polynomial built-ins, and a `TF1` only
-  round-trips *inside* a graph's `fFunctions`.
 - **Histogram sampling** — `TH1::GetRandom` / `FillRandom` (draw from a histogram
   or function) and `TH1::Smooth`.
 - **Merging (`hadd`)** — combine several ROOT files the way the `hadd` CLI does:

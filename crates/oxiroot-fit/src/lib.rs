@@ -18,9 +18,16 @@
 //! ```
 //!
 //! The minimizer is the pure-Rust [Minuit2](https://crates.io/crates/minuit2)
-//! port (the algorithm ROOT uses). [`Model`] is a named parametric function with
-//! optional per-parameter limits/fixing/steps; `TF1` is a ROOT-compatible alias.
-//! Costs: Neyman χ², Pearson χ², or binned Poisson likelihood ([`FitMethod`]).
+//! port (the algorithm ROOT uses). [`Model`] is a named parametric fit function
+//! with optional per-parameter limits/fixing/steps — built from a closure, a
+//! built-in shape ([`Model::gaussian`]/[`exponential`](Model::exponential)/
+//! [`polynomial`](Model::polynomial)), or an arbitrary formula string
+//! ([`Model::from_formula`]). Costs: Neyman χ², Pearson χ², or binned Poisson
+//! likelihood ([`FitMethod`]).
+//!
+//! The evaluable, persistable ROOT function objects `TF1`/`TF2`/`TF3` live in
+//! [`oxiroot_hist`](https://crates.io/crates/oxiroot-hist); a `TF1` converts to a
+//! `Model` for fitting.
 
 mod data;
 mod engine;
@@ -30,7 +37,3 @@ mod result;
 pub use data::{FitData, FitExt, Point, Points};
 pub use model::Model;
 pub use result::{FitMethod, FitOptions, FitResult, Minimizer};
-
-/// ROOT-compatible alias for [`Model`] — a 1-D parametric fit function (ROOT's
-/// `TF1`). Provided so existing `TF1::gaussian(...)` code keeps working.
-pub type TF1 = Model;

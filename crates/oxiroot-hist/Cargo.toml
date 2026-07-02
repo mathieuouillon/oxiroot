@@ -11,6 +11,7 @@ description = "Classic ROOT histograms (TH1/TH2/TH3/TProfile) read/write"
 oxiroot-io-core = { workspace = true }
 oxiroot-compress = { workspace = true }
 oxiroot-stat = { workspace = true }
+oxiroot-formula = { workspace = true }
 rayon = { version = "1", optional = true }
 oxiroot-fit = { workspace = true, optional = true }
 

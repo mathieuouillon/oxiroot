@@ -56,10 +56,10 @@ fn facade_plots_a_histogram_to_every_format() {
 #[cfg(feature = "fit")]
 #[test]
 fn facade_fits_and_overlays_a_model() {
-    use oxiroot::fit::TF1;
+    use oxiroot::fit::Model;
 
     let h = gauss_hist();
-    let model = TF1::gaussian("g").estimate_from(&h);
+    let model = Model::gaussian("g").estimate_from(&h);
     let result = h.fit(&model);
     assert!(result.ndf > 0, "a 50-bin Gaussian fit has positive ndf");
     let fitted = model.with_params(result.params.clone());

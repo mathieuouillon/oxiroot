@@ -11,6 +11,7 @@ use crate::linalg::{TMatrixD, TMatrixDSym, TVectorD};
 use crate::objects::{TObjString, TParameter};
 use crate::objlist::{ObjList, TMap};
 use crate::tefficiency::TEfficiency;
+use crate::tf::{TF1, TF2, TF3};
 use crate::th1::TH1;
 use crate::th2::TH2;
 use crate::th2poly::TH2Poly;
@@ -76,6 +77,9 @@ impl_read_root!(
     crate::tefficiency::read_tefficiency,
     crate::tefficiency::read_tefficiency_in
 );
+impl_read_root!(TF1, crate::tf::read_tf1, crate::tf::read_tf1_in);
+impl_read_root!(TF2, crate::tf::read_tf2, crate::tf::read_tf2_in);
+impl_read_root!(TF3, crate::tf::read_tf3, crate::tf::read_tf3_in);
 impl_read_root!(
     THnSparse,
     crate::thnsparse::read_thnsparse,

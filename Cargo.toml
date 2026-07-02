@@ -25,6 +25,7 @@ oxiroot-rntuple = { path = "crates/oxiroot-rntuple" }
 oxiroot-hist = { path = "crates/oxiroot-hist" }
 oxiroot-tree = { path = "crates/oxiroot-tree" }
 oxiroot-stat = { path = "crates/oxiroot-stat" }
+oxiroot-formula = { path = "crates/oxiroot-formula" }
 oxiroot-fit = { path = "crates/oxiroot-fit" }
 oxiroot-plot = { path = "crates/oxiroot-plot" }
 minuit2 = "0.5"

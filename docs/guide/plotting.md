@@ -140,7 +140,7 @@ use oxiroot::prelude::*;   // needs `--features plot,fit`
 use oxiroot::fit::TF1;
 
 // Fit a Gaussian to the histogram, then overlay the fitted curve.
-let model = TF1::gaussian("gaus").estimate_from(&h);
+let model = Model::gaussian("gaus").estimate_from(&h);
 let r = h.fit(&model);
 let fitted = model.with_params(r.params.clone());
 

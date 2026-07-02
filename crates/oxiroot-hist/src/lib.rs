@@ -29,6 +29,7 @@ pub mod graph2d;
 pub mod graphmultierrors;
 mod stats;
 pub mod tefficiency;
+pub mod tf;
 pub mod th1;
 pub mod th2;
 pub mod th2poly;
@@ -47,9 +48,7 @@ pub use base::Precision;
 pub use collections::{THStack, TMultiGraph};
 pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 #[cfg(feature = "fit")]
-pub use fit::{
-    FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points, TF1,
-};
+pub use fit::{FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points};
 pub use graph::{GraphErrors, GraphFunction, TGraph};
 pub use graph2d::TGraph2D;
 pub use graphmultierrors::TGraphMultiErrors;
@@ -60,6 +59,7 @@ pub use ops::Histogram;
 pub use quick::Hist;
 pub use read::ReadRoot;
 pub use tefficiency::TEfficiency;
+pub use tf::{TF1, TF2, TF3};
 pub use th1::TH1;
 pub use th2::TH2;
 pub use th2poly::{PolyBin, TH2Poly};

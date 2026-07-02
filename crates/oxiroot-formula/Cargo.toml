@@ -1,0 +1,13 @@
+[package]
+name = "oxiroot-formula"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A ROOT TFormula expression engine (parse + evaluate arbitrary formulas, numerical integral/derivative) for oxiroot's TF1/TF2/TF3 and fitting"
+
+[dependencies]
+
+[lints]
+workspace = true

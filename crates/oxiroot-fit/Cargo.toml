@@ -10,6 +10,7 @@ description = "Parametric curve fitting (Minuit2) for any 1-D data — histogram
 [dependencies]
 minuit2 = { workspace = true }
 oxiroot-stat = { workspace = true }
+oxiroot-formula = { workspace = true }
 argmin = { workspace = true, optional = true }
 argmin-math = { workspace = true, optional = true }
 

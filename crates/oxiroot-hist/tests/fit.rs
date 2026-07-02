@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{FitExt, Hist, ReadRoot, TF1, TH1};
+use oxiroot_hist::{FitExt, Hist, Model, ReadRoot, TH1};
 use oxiroot_io_core::RFile;
 
 fn read(name: &str) -> TH1 {
@@ -32,7 +32,7 @@ fn gaussian_fit_matches_root() {
         .map(|i| hg.contents[i] * (hg.bin_center(i) - mean).powi(2))
         .sum::<f64>()
         / total;
-    let model = TF1::gaussian("g").with_params(vec![hg.maximum(), mean, var.sqrt()]);
+    let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, var.sqrt()]);
     let r = hg.fit(&model);
 
     assert!(r.valid, "fit did not converge");
@@ -70,7 +70,7 @@ fn polynomial_fit_recovers_a_line() {
     for s in h.sumw2.iter_mut() {
         *s = 1.0;
     }
-    let r = h.fit(&TF1::polynomial("pol1", 1).with_params(vec![0.0, 0.0]));
+    let r = h.fit(&Model::polynomial("pol1", 1).with_params(vec![0.0, 0.0]));
     assert!(r.valid);
     assert!(rel_close(r.params[0], 3.0, 1e-6), "p0 = {}", r.params[0]);
     assert!(rel_close(r.params[1], 2.0, 1e-6), "p1 = {}", r.params[1]);
@@ -79,7 +79,7 @@ fn polynomial_fit_recovers_a_line() {
 
 #[test]
 fn tf1_eval_uses_current_params() {
-    let g = TF1::gaussian("g").with_params(vec![10.0, 0.0, 1.0]);
+    let g = Model::gaussian("g").with_params(vec![10.0, 0.0, 1.0]);
     assert!((g.eval(0.0) - 10.0).abs() < 1e-12); // peak
     assert!((g.eval(1.0) - 10.0 * (-0.5_f64).exp()).abs() < 1e-12);
 }
@@ -101,11 +101,11 @@ fn likelihood_fit_of_a_constant_equals_the_mean() {
     let mean = counts.iter().sum::<f64>() / counts.len() as f64; // 25.0
 
     let like = h.fit_with(
-        &TF1::polynomial("pol0", 0).with_params(vec![mean]),
+        &Model::polynomial("pol0", 0).with_params(vec![mean]),
         FitMethod::Likelihood,
     );
     let chi2 = h.fit_with(
-        &TF1::polynomial("pol0", 0).with_params(vec![mean]),
+        &Model::polynomial("pol0", 0).with_params(vec![mean]),
         FitMethod::Chi2,
     );
     assert!(like.valid && chi2.valid);
@@ -133,7 +133,7 @@ fn likelihood_gaussian_recovers_shape() {
         .map(|i| hg.bin_center(i) * hg.contents[i])
         .sum::<f64>()
         / total;
-    let model = TF1::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
+    let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
     let r = hg.fit_with(&model, FitMethod::Likelihood);
     assert!(r.valid);
     assert!(
@@ -157,7 +157,7 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
         .map(|i| hgl.bin_center(i) * hgl.contents[i])
         .sum::<f64>()
         / total;
-    let model = || TF1::gaussian("g").with_params(vec![hgl.maximum(), mean, 1.3]);
+    let model = || Model::gaussian("g").with_params(vec![hgl.maximum(), mean, 1.3]);
     let chi2 = hgl.fit_with(&model(), FitMethod::Chi2);
     let like = hgl.fit_with(&model(), FitMethod::Likelihood);
     assert!(chi2.valid && like.valid);
@@ -175,7 +175,7 @@ fn under_determined_fit_is_flagged_invalid() {
     let mut h = Hist::reg(2, 0.0, 2.0).double().named("tiny");
     h.contents[1] = 5.0;
     h.contents[2] = 7.0;
-    let r = h.fit(&TF1::gaussian("g").with_params(vec![7.0, 1.0, 1.0]));
+    let r = h.fit(&Model::gaussian("g").with_params(vec![7.0, 1.0, 1.0]));
     assert!(!r.valid);
     assert_eq!(r.ndf, 0);
     assert!(r.chi2_per_ndf().is_nan());
@@ -192,7 +192,7 @@ fn bounded_and_fixed_parameters() {
         / total;
 
     // (a) sigma constrained positive still recovers the width.
-    let bounded = TF1::gaussian("g")
+    let bounded = Model::gaussian("g")
         .with_params(vec![hg.maximum(), mean, 1.0])
         .lower_limit("sigma", 0.0);
     let rb = hg.fit(&bounded);
@@ -200,9 +200,9 @@ fn bounded_and_fixed_parameters() {
     assert!(rb.params[2] > 0.0 && rel_close(rb.params[2], 1.297287, 1e-2));
 
     // (b) fixing the mean removes one degree of freedom and pins the parameter.
-    let free = hg.fit(&TF1::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]));
+    let free = hg.fit(&Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]));
     let fixed = hg.fit(
-        &TF1::gaussian("g")
+        &Model::gaussian("g")
             .with_params(vec![hg.maximum(), 0.5, 1.3])
             .fix("mean"),
     );
@@ -225,7 +225,7 @@ fn fit_range_pearson_and_p_value() {
         .map(|i| hg.bin_center(i) * hg.contents[i])
         .sum::<f64>()
         / total;
-    let model = || TF1::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
+    let model = || Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
 
     // (a) Restricting the fit to the core ±2σ still recovers the peak, and uses
     //     fewer bins (smaller ndf) than the full-range fit.
@@ -259,7 +259,7 @@ fn minos_errors_and_covariance() {
         .map(|i| hg.bin_center(i) * hg.contents[i])
         .sum::<f64>()
         / total;
-    let model = TF1::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
+    let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
     let r = hg.fit_opts(&model, &FitOptions::new().with_minos(true));
     assert!(r.valid);
 
@@ -302,16 +302,16 @@ fn minos_errors_and_covariance() {
 fn ergonomics_estimate_seed_and_fit_into() {
     use oxiroot_hist::FitOptions;
 
-    // TF1 is Send + Sync + Clone (cross threads, share the model, rebuild seeds).
+    // Model is Send + Sync + Clone (cross threads, share the model, rebuild seeds).
     fn assert_traits<T: Send + Sync + Clone>() {}
-    assert_traits::<TF1>();
+    assert_traits::<Model>();
 
     let hg = read("hg"); // SetBinContent gaussian: mean()/std_dev() read back as 0
     assert_eq!(hg.mean(), 0.0, "fixture stores no moment sums");
 
     // estimate_from seeds (constant, mean, sigma) straight from the bins, so the
     // call site needs no manual content-weighted moment loop.
-    let mut model = TF1::gaussian("g").estimate_from(&hg);
+    let mut model = Model::gaussian("g").estimate_from(&hg);
     // A clone shares the closure and fits identically.
     assert_eq!(model.clone().eval(0.5), model.eval(0.5));
     assert!(model.params[2] > 0.0, "sigma seed must be positive");
@@ -342,7 +342,7 @@ fn fit_a_tgraph_with_errors() {
     let ey = vec![0.1; x.len()];
     let g = TGraph::with_errors(x, y, ex, ey).named("g").titled("line");
 
-    let fit = g.fit(&TF1::polynomial("line", 1).with_params(vec![0.0, 0.0]));
+    let fit = g.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     assert!(fit.valid);
     assert!(
         rel_close(fit.params[0], 3.0, 1e-6),

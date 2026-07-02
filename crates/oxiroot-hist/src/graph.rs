@@ -325,97 +325,25 @@ fn read_function_element(r: &mut RBuffer) -> Result<Option<GraphFunction>> {
         String::new() // back-reference; we cannot resolve it, so skip
     };
     let function = if class == "TF1" {
-        Some(read_tf1(r)?)
+        let d = crate::tf::read_tf1_body(r)?;
+        Some(GraphFunction {
+            name: d.name,
+            title: d.title,
+            formula: d.formula,
+            params: d.params,
+            par_errors: d.par_errors,
+            par_min: d.par_min,
+            par_max: d.par_max,
+            xmin: d.xmin,
+            xmax: d.xmax,
+            chi2: d.chi2,
+            ndf: d.ndf,
+        })
     } else {
         None
     };
     r.seek(end)?;
     Ok(function)
-}
-
-/// Read a `TF1` object (the body after its class tag), at version 12.
-fn read_tf1(r: &mut RBuffer) -> Result<GraphFunction> {
-    let tf1 = r.read_version()?; // TF1 v12
-    let named = read_tnamed(r)?;
-    skip_versioned(r)?; // TAttLine
-    skip_versioned(r)?; // TAttFill
-    skip_versioned(r)?; // TAttMarker
-    let xmin = r.be_f64()?;
-    let xmax = r.be_f64()?;
-    let _npar = r.be_i32()?;
-    let _ndim = r.be_i32()?;
-    let _npx = r.be_i32()?;
-    let _ftype = r.be_i32()?;
-    let _npfits = r.be_i32()?;
-    let ndf = r.be_i32()?;
-    let chi2 = r.be_f64()?;
-    let _minimum = r.be_f64()?;
-    let _maximum = r.be_f64()?;
-    let par_errors = read_vector_f64(r)?; // fParErrors
-    let par_min = read_vector_f64(r)?; // fParMin
-    let par_max = read_vector_f64(r)?; // fParMax
-    let _save = read_vector_f64(r)?; // fSave
-    let _normalized = r.u8()?;
-    let _norm_integral = r.be_f64()?;
-    let (formula, params) = read_tformula_ptr(r)?; // fFormula (TFormula*)
-    if let Some(end) = tf1.end {
-        r.seek(end)?; // skip fParams (TF1Parameters*) + fComposition
-    }
-    Ok(GraphFunction {
-        name: named.name,
-        title: named.title,
-        formula,
-        params,
-        par_errors,
-        par_min,
-        par_max,
-        xmin,
-        xmax,
-        chi2,
-        ndf,
-    })
-}
-
-/// Read the `fFormula` (`TFormula*`) object pointer, returning `(fFormula string,
-/// fClingParameters)`.
-fn read_tformula_ptr(r: &mut RBuffer) -> Result<(String, Vec<f64>)> {
-    let bc = r.be_i32()? as u32;
-    if bc == 0 {
-        return Ok((String::new(), Vec::new())); // null
-    }
-    let end = r.pos() + (bc & 0x3fff_ffff) as usize;
-    let tag = r.be_i32()? as u32;
-    if tag == 0xFFFF_FFFF {
-        skip_cstring(r)?; // "TFormula\0"
-    }
-    let _ver = r.read_version()?; // TFormula v14
-    let _named = read_tnamed(r)?;
-    let params = read_vector_f64(r)?; // fClingParameters
-    let _all_set = r.u8()?;
-    skip_param_map(r)?; // fParams (map<TString,int>)
-    let formula = r.string()?; // fFormula (in [pN] form)
-    r.seek(end)?;
-    Ok((formula, params))
-}
-
-/// Read an objectwise `vector<double>` (`[bc][ver][count][count×f64]`).
-fn read_vector_f64(r: &mut RBuffer) -> Result<Vec<f64>> {
-    let _bc = r.be_i32()?;
-    let _ver = r.be_i16()?;
-    let count = r.be_i32()?.max(0) as usize;
-    (0..count).map(|_| r.be_f64()).collect()
-}
-
-/// Skip a `map<TString,int>` (`[bc][ver][count]` then `count` `{TString}{i32}`).
-fn skip_param_map(r: &mut RBuffer) -> Result<()> {
-    let _bc = r.be_i32()?;
-    let _ver = r.be_i16()?;
-    let count = r.be_i32()?.max(0) as usize;
-    for _ in 0..count {
-        let _key = r.string()?;
-        let _val = r.be_i32()?;
-    }
-    Ok(())
 }
 
 /// Read a NUL-terminated class name (after a `kNewClassTag`).
