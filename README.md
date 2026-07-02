@@ -18,9 +18,13 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   handful of small pure-Rust crates (compression codecs and a hasher).
 - 🔄 **Two-way interop** — every reader and writer is validated against both
   official ROOT (C++) and uproot, in both directions.
-- 📊 **Histograms & profiles** — `TH1`/`TH2`/`TH3` (every precision),
-  `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`, N-dimensional `THnSparse`,
-  and polygon-binned `TH2Poly` — all read **and** write.
+- 📊 **Histograms & profiles** — `TH1`/`TH2`/`TH3` (every precision, uniform or
+  irregular bins), `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`,
+  N-dimensional `THnSparse`, and polygon-binned `TH2Poly` — all read **and** write.
+- 🎲 **Sampling & smoothing** — draw from a histogram's or function's
+  distribution (`get_random`/`fill_random`, ROOT's `GetRandom`/`FillRandom`) and
+  smooth with ROOT's `353QH` (`smooth`), via a small seedable built-in `Rng` (no
+  `rand` dependency).
 - 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, plus `TGraph2D`
   and `TGraphMultiErrors` — read and write, including a graph's display frame
   (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `TF1`).
