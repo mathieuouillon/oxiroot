@@ -34,6 +34,8 @@
 #[doc(inline)]
 pub use oxiroot_io_core::{buffer, error, file, Compression, Error, RFile, Result};
 
+pub mod hadd;
+
 /// ROOT compression framing and codecs (re-exported from `oxiroot-compress`).
 pub mod compress {
     pub use oxiroot_compress::*;
@@ -79,6 +81,8 @@ pub mod plot {
 /// and the RNTuple reader/writer.
 pub mod prelude {
     pub use oxiroot_io_core::{Compression, Error, RFile, Result};
+
+    pub use crate::hadd::{merge_files, MergeKind, MergeReport, Merger};
 
     #[cfg(feature = "fit")]
     pub use oxiroot_fit::{

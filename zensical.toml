@@ -36,6 +36,7 @@ nav = [
     { "RNTuple" = "guide/rntuple.md" },
     { "Fitting" = "guide/fitting.md" },
     { "Plotting" = "guide/plotting.md" },
+    { "Merging files (hadd)" = "guide/hadd.md" },
     { "Multithreaded fill" = "guide/multithreading.md" },
     { "Compression" = "guide/compression.md" },
     { "ROOT / uproot interop" = "guide/interop.md" },

@@ -1,5 +1,7 @@
 //! Branch value types.
 
+use oxiroot_io_core::error::{Error, Result};
+
 /// The element type of a branch's leaf, derived from the leaf class and its
 /// `fIsUnsigned` flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,6 +222,75 @@ impl BranchValues {
             Nested { items, .. } => items.leaf_type(),
         }
     }
+
+    /// Append `other`'s entries onto this column in place, concatenating them.
+    ///
+    /// Both columns must be the same variant (same element type and nesting);
+    /// otherwise an error is returned. This is the per-branch building block for
+    /// concatenating trees (see [`concat_trees`](crate::concat_trees)). For a
+    /// [`Nested`](BranchValues::Nested) column the inner `items` are appended and
+    /// the `offsets` rebased so the two entry ranges join seamlessly.
+    pub fn append(&mut self, other: BranchValues) -> Result<()> {
+        use BranchValues::*;
+        macro_rules! join {
+            ($a:expr, $variant:ident) => {
+                match other {
+                    $variant(b) => {
+                        $a.extend(b);
+                        Ok(())
+                    }
+                    _ => Err(type_mismatch(stringify!($variant))),
+                }
+            };
+        }
+        match self {
+            Bool(a) => join!(a, Bool),
+            I8(a) => join!(a, I8),
+            U8(a) => join!(a, U8),
+            I16(a) => join!(a, I16),
+            U16(a) => join!(a, U16),
+            I32(a) => join!(a, I32),
+            U32(a) => join!(a, U32),
+            I64(a) => join!(a, I64),
+            U64(a) => join!(a, U64),
+            F32(a) => join!(a, F32),
+            F64(a) => join!(a, F64),
+            VecBool(a) => join!(a, VecBool),
+            VecI8(a) => join!(a, VecI8),
+            VecU8(a) => join!(a, VecU8),
+            VecI16(a) => join!(a, VecI16),
+            VecU16(a) => join!(a, VecU16),
+            VecI32(a) => join!(a, VecI32),
+            VecU32(a) => join!(a, VecU32),
+            VecI64(a) => join!(a, VecI64),
+            VecU64(a) => join!(a, VecU64),
+            VecF32(a) => join!(a, VecF32),
+            VecF64(a) => join!(a, VecF64),
+            Str(a) => join!(a, Str),
+            VecStr(a) => join!(a, VecStr),
+            Nested { offsets, items } => match other {
+                Nested {
+                    offsets: other_offsets,
+                    items: other_items,
+                } => {
+                    // `other_offsets` starts with a leading `0`; drop it and
+                    // rebase the rest onto this column's last boundary.
+                    let base = offsets.last().copied().unwrap_or(0);
+                    offsets.extend(other_offsets.into_iter().skip(1).map(|o| o + base));
+                    items.append(*other_items)
+                }
+                _ => Err(type_mismatch("Nested")),
+            },
+        }
+    }
+}
+
+/// The error returned by [`BranchValues::append`] when the two columns are not
+/// the same variant.
+fn type_mismatch(expected: &str) -> Error {
+    Error::Format(format!(
+        "cannot concatenate branches of different types (expected another {expected} column)"
+    ))
 }
 
 /// Generate `as_<ty>() -> Option<&[..]>` accessors for the common scalar types.

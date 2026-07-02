@@ -46,6 +46,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
   `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
+- ➕ **`hadd`** — a pure-Rust file merger: histograms summed, `TTree` / RNTuple
+  entries concatenated, other objects copied — verified against ROOT's own
+  `hadd` (`oxiroot::hadd::merge_files`).
 - 🎨 **Plotting** (optional) — render `TH1`/`TH2`/`TGraph`/`TProfile` to **SVG,
   PNG, and PDF** with a matplotlib-like API and an mplhep histogram style —
   grids, ratio plots, LaTeX (`$…$`) math labels — all pure Rust, no matplotlib,
@@ -623,6 +626,30 @@ ax2.save("heatmap.svg")?;
 - `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is
   never fully held in memory.
 
+### Merging files — `hadd` (`oxiroot::hadd`)
+
+- **A pure-Rust [`hadd`](https://root.cern/doc/master/classTFileMerger.html)** —
+  `merge_files("all.root", &["run1.root", "run2.root"], Compression::Zstd(5))?`
+  combines several ROOT files the way ROOT's most-used command-line tool does:
+  **`TH1`/`TH2`/`TH3`/`TProfile` summed** bin-by-bin (the exact `add` reduction —
+  contents, `Sumw2`, entries, moments), and **`TTree` / RNTuple entries
+  concatenated**. Other supported objects (graphs, 2D/3D profiles, efficiencies,
+  functions, strings, matrices, …) are copied from the first file; unknown
+  classes are **skipped and listed in the report**, never silently dropped.
+- Each concatenated branch keeps its original kind (scalar, `x[N]`, jagged `x[n]`,
+  `std::vector<T>`, string). The standalone `oxiroot_tree::concat_trees`,
+  `oxiroot_rntuple::concat_ntuples`, and `oxiroot_hist::merge_histogram_files`
+  do the per-format work and can be called directly.
+- `Merger::new().inputs(paths).compression(c).merge("all.root")?` is the
+  composable builder; `merge_files` returns a `MergeReport` (what was summed /
+  copied / skipped, and the total entries) with a one-line `Display`.
+- One call writes one file and does not yet mix histograms with a `TTree`/RNTuple
+  in a single output (each owns auxiliary basket/page keys): a fileset is an
+  all-histogram set, a single `TTree`, or a single RNTuple — anything else is
+  refused with a message naming the keys. Verified against ROOT 6.40's `hadd`
+  (identical histogram sums, entry-for-entry tree concat) and read back by uproot
+  and ROOT C++. See the [`merge` example](crates/oxiroot/examples/merge.rs).
+
 ### Compression
 
 - **Read:** Zstd, zlib, LZ4, and LZMA (XZ) decode — every codec ROOT writes
@@ -735,10 +762,6 @@ Grouped by the ROOT feature each fills.
     blocked because ROOT 6.40's `std::map` collection proxy is non-functional in
     the test build — it can neither create nor read a `std::map` RNTuple field —
     so this needs a ROOT install with the `std::map` dictionary loaded to verify.
-- **Merging (`hadd`)** — combine several ROOT files the way the `hadd` CLI does:
-  histograms summed (the bin-wise `add`/`merge_all` already exists), `TTree`s and
-  RNTuples concatenated (`TFileMerger` / `RNTupleMerger`). The single most-used
-  ROOT command-line tool.
 - **Generic object reader** — read *any* class in a file driven by its
   `TStreamerInfo` into a dynamic value tree (the streamer-info member walker
   already powers the `TTree` reader), so oxiroot can inspect arbitrary ROOT files

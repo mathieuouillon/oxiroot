@@ -144,6 +144,68 @@ impl FieldValues {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Append `other`'s entries onto this field in place, concatenating them.
+    ///
+    /// Both fields must be the same scalar or vector variant; otherwise an error
+    /// is returned. Structural fields ([`Record`](FieldValues::Record),
+    /// [`Nested`](FieldValues::Nested), [`Variant`](FieldValues::Variant), and
+    /// [`Opt`](FieldValues::Opt)) are not concatenable here — the RNTuple half
+    /// of a file merge ([`concat_ntuples`](crate::concat_ntuples)) rejects them
+    /// before reaching this point.
+    pub fn append(&mut self, other: FieldValues) -> Result<()> {
+        use FieldValues::*;
+        macro_rules! join {
+            ($a:expr, $variant:ident) => {
+                match other {
+                    $variant(b) => {
+                        $a.extend(b);
+                        Ok(())
+                    }
+                    _ => Err(fv_mismatch(stringify!($variant))),
+                }
+            };
+        }
+        match self {
+            Bool(a) => join!(a, Bool),
+            I8(a) => join!(a, I8),
+            U8(a) => join!(a, U8),
+            I16(a) => join!(a, I16),
+            U16(a) => join!(a, U16),
+            I32(a) => join!(a, I32),
+            I64(a) => join!(a, I64),
+            U32(a) => join!(a, U32),
+            U64(a) => join!(a, U64),
+            F32(a) => join!(a, F32),
+            F64(a) => join!(a, F64),
+            Str(a) => join!(a, Str),
+            VecBool(a) => join!(a, VecBool),
+            VecI8(a) => join!(a, VecI8),
+            VecU8(a) => join!(a, VecU8),
+            VecI16(a) => join!(a, VecI16),
+            VecU16(a) => join!(a, VecU16),
+            VecI32(a) => join!(a, VecI32),
+            VecI64(a) => join!(a, VecI64),
+            VecU32(a) => join!(a, VecU32),
+            VecU64(a) => join!(a, VecU64),
+            VecF32(a) => join!(a, VecF32),
+            VecF64(a) => join!(a, VecF64),
+            VecStr(a) => join!(a, VecStr),
+            Record(_) | Nested { .. } | Variant { .. } | Opt { .. } => Err(Error::Format(
+                "cannot concatenate a structural RNTuple field (record, nested \
+                 collection, variant, or optional)"
+                    .into(),
+            )),
+        }
+    }
+}
+
+/// The error returned by [`FieldValues::append`] when the two fields are not the
+/// same variant.
+fn fv_mismatch(expected: &str) -> Error {
+    Error::Format(format!(
+        "cannot concatenate RNTuple fields of different types (expected another {expected} field)"
+    ))
 }
 
 /// Generate `opt_<ty>(&self) -> Option<Vec<Option<T>>>` accessors that zip an

@@ -133,6 +133,26 @@ struct ObjectMember {
     class_elements: Vec<StreamerElement>,
 }
 
+/// The write-reconstruction metadata of a read branch — the private-field
+/// summary [`concat_trees`](crate::concat_trees) needs to rebuild a branch as a
+/// writable [`Branch`](crate::Branch) with the correct kind (scalar / fixed
+/// array / jagged / `std::vector` / string), or to reject the kinds this crate
+/// cannot write back.
+pub(crate) struct BranchMetaLite {
+    /// Number of fixed-array dimensions parsed from the title (`x[N]` → 1,
+    /// `x[N][M]` → 2, scalar / jagged / `std::vector` → 0).
+    pub dims_len: usize,
+    /// Per-entry streamer-header size: `>0` marks a `std::vector<T>`
+    /// `TBranchElement` (distinguishing it from a jagged `x[n]` leaf).
+    pub elem_header: usize,
+    /// Whether this is one leaf of a multi-leaf (leaflist) branch.
+    pub has_leaflist: bool,
+    /// Whether this is a synthesized member column of an unsplit object branch.
+    pub has_object_member: bool,
+    /// Whether this is a `std::vector<std::vector<T>>` branch.
+    pub has_nested: bool,
+}
+
 /// One `TLeaf` of a branch: its name/title, element type, fixed length, and byte
 /// offset within an entry (`fOffset`, non-zero only inside a leaflist).
 struct Leaf {
@@ -268,6 +288,21 @@ impl TTree {
 
     fn branch(&self, name: &str) -> Option<&Branch> {
         self.branches.iter().find(|b| b.name == name)
+    }
+
+    /// The write-reconstruction metadata of branch `name` (for [`concat_trees`]),
+    /// or `None` if there is no such branch.
+    ///
+    /// [`concat_trees`]: crate::concat_trees
+    pub(crate) fn branch_meta(&self, name: &str) -> Option<BranchMetaLite> {
+        let b = self.branch(name)?;
+        Some(BranchMetaLite {
+            dims_len: b.dims.len(),
+            elem_header: b.elem_header,
+            has_leaflist: b.leaflist.is_some(),
+            has_object_member: b.object_member.is_some(),
+            has_nested: b.nested_elem.is_some(),
+        })
     }
 
     /// Read all values of branch `name` across every basket.

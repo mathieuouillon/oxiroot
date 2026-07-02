@@ -13,6 +13,7 @@ pub mod envelope;
 pub mod field;
 pub mod footer;
 pub mod header;
+pub mod merge;
 pub mod page;
 pub mod pagelist;
 pub mod reader;
@@ -27,6 +28,7 @@ pub use envelope::{read_envelope, read_frame, read_locator, Envelope, Frame, Loc
 pub use field::FieldValues;
 pub use footer::{ClusterGroup, Footer};
 pub use header::{ColumnDescriptor, FieldDescriptor, Header, StructRole};
+pub use merge::concat_ntuples;
 pub use page::{read_column, ColumnValues};
 pub use pagelist::{ClusterPages, ClusterSummary, ColumnPages, PageInfo, PageList};
 pub use reader::RNTuple;
