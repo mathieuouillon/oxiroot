@@ -14,6 +14,7 @@
 
 use oxiroot_io_core::buffer::{RBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::file::TKey;
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
 use oxiroot_io_core::streamer_info::{StreamerElement, StreamerRegistry};
@@ -169,12 +170,34 @@ impl TTree {
         let key = file
             .key(name)
             .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+        Self::open_from_key(file, key)
+    }
+
+    /// Open the `TTree` named `name` from the subdirectory `subdir` (a
+    /// `/`-separated path descends through nested `TDirectory`s).
+    pub fn open_in(file: &RFile, subdir: &str, name: &str) -> Result<TTree> {
+        let dir = file.subdir(subdir)?;
+        let key = dir
+            .keys
+            .iter()
+            .find(|k| k.name == name && !k.is_deleted())
+            .ok_or_else(|| {
+                Error::Format(format!("no key named {name:?} in subdirectory {subdir:?}"))
+            })?;
+        // Detach from the borrowed `dir` so the returned tree owns nothing tied to
+        // it; the key's seek offsets are absolute, so decoding is identical.
+        let key = key.clone();
+        Self::open_from_key(file, &key)
+    }
+
+    /// Decode a `TTree` (or `TNtuple`/`TNtupleD`) from an already-located key.
+    fn open_from_key(file: &RFile, key: &TKey) -> Result<TTree> {
         // `TNtuple` / `TNtupleD` are `TTree` subclasses (a `TTree` base wrapped in
         // one extra header plus a trailing `Int_t fNvar`); read them as trees too.
         if !matches!(key.class_name.as_str(), "TTree" | "TNtuple" | "TNtupleD") {
             return Err(Error::Format(format!(
-                "key {name:?} is a {}, not a TTree",
-                key.class_name
+                "key {:?} is a {}, not a TTree",
+                key.name, key.class_name
             )));
         }
         // The file's TStreamerInfo is the authoritative schema: the reader walks

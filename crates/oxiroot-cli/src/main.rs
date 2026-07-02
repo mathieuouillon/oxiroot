@@ -10,6 +10,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 mod dump;
+mod json;
 mod ls;
 mod show;
 mod stat;
@@ -22,6 +23,9 @@ mod util;
     version
 )]
 struct Cli {
+    /// Emit JSON instead of a human-readable table.
+    #[arg(long, global = true)]
+    json: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -41,11 +45,12 @@ enum Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let json = cli.json;
     let result = match cli.command {
-        Command::Ls(args) => ls::run(args),
-        Command::Show(args) => show::run(args),
-        Command::Dump(args) => dump::run(args),
-        Command::Stat(args) => stat::run(args),
+        Command::Ls(args) => ls::run(args, json),
+        Command::Show(args) => show::run(args, json),
+        Command::Dump(args) => dump::run(args, json),
+        Command::Stat(args) => stat::run(args, json),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

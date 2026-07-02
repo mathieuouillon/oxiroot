@@ -117,17 +117,27 @@ impl RFile {
             .max_by_key(|k| k.cycle)
     }
 
-    /// Navigate into a subdirectory by name, returning its parsed [`Directory`]
-    /// (with the keys it directly contains). Errors if the root directory has no
-    /// such subdirectory key.
+    /// Navigate into a subdirectory, returning its parsed [`Directory`] (with the
+    /// keys it directly contains). A `/`-separated `path` descends through nested
+    /// subdirectories (`"cal/pedestals"`); a plain name selects a single level.
+    /// Errors if any path component has no such subdirectory key.
     ///
     /// Accepts both `TDirectory` (the in-memory class oxiroot writes) and
     /// `TDirectoryFile` (the class official ROOT C++ records on disk), so
     /// subdirectories of ROOT-written files are navigable.
-    pub fn subdir(&self, name: &str) -> Result<Directory> {
-        let key = self
-            .root_dir
-            .keys
+    pub fn subdir(&self, path: &str) -> Result<Directory> {
+        let mut current: Option<Directory> = None;
+        for part in path.split('/').filter(|p| !p.is_empty()) {
+            current = Some(self.read_subdir(current.as_ref(), part)?);
+        }
+        current.ok_or_else(|| Error::Format(format!("empty subdirectory path {path:?}")))
+    }
+
+    /// Read the subdirectory `name` directly inside `parent` (or the root
+    /// directory when `parent` is `None`).
+    fn read_subdir(&self, parent: Option<&Directory>, name: &str) -> Result<Directory> {
+        let keys = parent.map_or(self.root_dir.keys.as_slice(), |d| d.keys.as_slice());
+        let key = keys
             .iter()
             .find(|k| {
                 k.name == name && (k.class_name == "TDirectory" || k.class_name == "TDirectoryFile")

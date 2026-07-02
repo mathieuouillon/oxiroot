@@ -3,6 +3,7 @@
 use clap::Args as ClapArgs;
 use oxiroot::RFile;
 
+use crate::json::Json;
 use crate::util::{compression_label, parse_spec, root_version, CmdResult};
 
 /// Arguments for `oxroot stat`.
@@ -13,31 +14,56 @@ pub struct Args {
 }
 
 /// Run `oxroot stat`.
-pub fn run(args: Args) -> CmdResult {
+pub fn run(args: Args, json: bool) -> CmdResult {
     let (path, _) = parse_spec(&args.file);
     let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let file = RFile::open(&path)?;
     let header = file.header();
     let keys = file.keys().iter().filter(|k| !k.is_deleted()).count();
+    let mut streamers: Vec<(String, i32)> = file
+        .streamer_registry()
+        .map(|r| {
+            r.infos()
+                .iter()
+                .map(|i| (i.class_name.clone(), i.class_version))
+                .collect()
+        })
+        .unwrap_or_default();
+    streamers.sort();
+
+    if json {
+        let streamers = Json::Array(
+            streamers
+                .iter()
+                .map(|(class, version)| {
+                    Json::Object(vec![
+                        ("class", Json::s(class.clone())),
+                        ("version", Json::Int(i64::from(*version))),
+                    ])
+                })
+                .collect(),
+        );
+        let out = Json::Object(vec![
+            ("file", Json::s(path)),
+            ("size_bytes", Json::Int(size as i64)),
+            ("root_version", Json::s(root_version(header.version))),
+            ("compression", Json::s(compression_label(header.compress))),
+            ("objects", Json::Int(keys as i64)),
+            ("streamers", streamers),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
 
     println!("file         {path}");
     println!("size         {}", human_size(size));
     println!("ROOT version {}", root_version(header.version));
     println!("compression  {}", compression_label(header.compress));
     println!("objects      {keys}");
-
-    if let Ok(registry) = file.streamer_registry() {
-        let infos = registry.infos();
-        if !infos.is_empty() {
-            println!("streamers    {} classes", infos.len());
-            let mut classes: Vec<String> = infos
-                .iter()
-                .map(|i| format!("{} (v{})", i.class_name, i.class_version))
-                .collect();
-            classes.sort();
-            for c in classes {
-                println!("    {c}");
-            }
+    if !streamers.is_empty() {
+        println!("streamers    {} classes", streamers.len());
+        for (class, version) in &streamers {
+            println!("    {class} (v{version})");
         }
     }
     Ok(())

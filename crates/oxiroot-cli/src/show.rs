@@ -5,6 +5,7 @@ use oxiroot::ntuple::RNTuple;
 use oxiroot::tree::{BranchValues, LeafType, TTree};
 use oxiroot::RFile;
 
+use crate::json::Json;
 use crate::util::{
     classify, leaf_type_name, locate_class, parse_spec, split_obj, CmdResult, Kind, Table,
 };
@@ -17,7 +18,7 @@ pub struct Args {
 }
 
 /// Run `oxroot show`.
-pub fn run(args: Args) -> CmdResult {
+pub fn run(args: Args, json: bool) -> CmdResult {
     let (path, obj) = parse_spec(&args.spec);
     let obj = obj.ok_or("show needs an object: `file.root:name`")?;
     let file = RFile::open(&path)?;
@@ -25,69 +26,132 @@ pub fn run(args: Args) -> CmdResult {
     let class = locate_class(&file, subdir, name)?;
 
     match classify(&class) {
-        Kind::Tree if subdir.is_some() => {
-            Err("showing a TTree inside a subdirectory is not supported yet".into())
-        }
-        Kind::Tree => show_tree(&file, name),
-        Kind::RNtuple => show_rntuple(&file, subdir, name),
+        Kind::Tree => show_tree(&file, subdir, name, json),
+        Kind::RNtuple => show_rntuple(&file, subdir, name, json),
         _ => {
-            println!("{name}  {class}");
-            println!("(not a TTree or RNTuple — use `oxroot dump` to see its contents)");
+            if json {
+                let out = Json::Object(vec![("name", Json::s(name)), ("class", Json::s(class))]);
+                println!("{}", out.render());
+            } else {
+                println!("{name}  {class}");
+                println!("(not a TTree or RNTuple — use `oxroot dump` to see its contents)");
+            }
             Ok(())
         }
     }
 }
 
-/// Print a `TTree`'s branches, their types, and any unreadable branches.
-fn show_tree(file: &RFile, name: &str) -> CmdResult {
-    let tree = TTree::open(file, name)?;
+/// Show a `TTree`'s branches, their types, and any unreadable branches.
+fn show_tree(file: &RFile, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
+    let tree = match subdir {
+        None => TTree::open(file, name)?,
+        Some(dir) => TTree::open_in(file, dir, name)?,
+    };
+    let mut branches = Vec::new();
+    for b in tree.branch_names() {
+        branches.push((b.to_string(), branch_type_label(&tree, file, b)));
+    }
+    let unreadable: Vec<(String, String)> = tree
+        .unsupported_branches()
+        .iter()
+        .map(|(n, r)| ((*n).to_string(), (*r).to_string()))
+        .collect();
+
+    if json {
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("TTree")),
+            ("entries", Json::Int(tree.num_entries() as i64)),
+            ("branches", named_type_array(&branches)),
+            (
+                "unreadable",
+                Json::Array(
+                    unreadable
+                        .iter()
+                        .map(|(n, r)| {
+                            Json::Object(vec![
+                                ("name", Json::s(n.clone())),
+                                ("reason", Json::s(r.clone())),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
+
     println!(
         "TTree {name:?}  ({} entries, {} branches)",
         tree.num_entries(),
-        tree.branch_names().len()
+        branches.len()
     );
-
     let mut table = Table::new(&["branch", "type"]);
-    for branch in tree.branch_names() {
-        table.row(vec![
-            branch.to_string(),
-            branch_type_label(&tree, file, branch),
-        ]);
+    for (n, t) in &branches {
+        table.row(vec![n.clone(), t.clone()]);
     }
-    for (branch, reason) in tree.unsupported_branches() {
-        table.row(vec![
-            format!("! {branch}"),
-            format!("unreadable ({reason})"),
-        ]);
+    for (n, r) in &unreadable {
+        table.row(vec![format!("! {n}"), format!("unreadable ({r})")]);
     }
     table.print();
     Ok(())
 }
 
-/// Print an RNTuple's top-level fields and their C++ types.
-fn show_rntuple(file: &RFile, subdir: Option<&str>, name: &str) -> CmdResult {
+/// Show an RNTuple's top-level fields and their C++ types.
+fn show_rntuple(file: &RFile, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
     let ntuple = match subdir {
         None => RNTuple::open(file, name)?,
         Some(dir) => RNTuple::open_in(file, dir, name)?,
     };
+    let descriptors = &ntuple.header().fields;
+    let mut fields = Vec::new();
+    for f in ntuple.field_names() {
+        let ty = descriptors
+            .iter()
+            .find(|fd| fd.name == f)
+            .map(|fd| fd.type_name.clone())
+            .unwrap_or_default();
+        fields.push((f.to_string(), ty));
+    }
+
+    if json {
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("RNTuple")),
+            ("entries", Json::Int(ntuple.num_entries() as i64)),
+            ("fields", named_type_array(&fields)),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
+
     println!(
         "RNTuple {name:?}  ({} entries, {} fields)",
         ntuple.num_entries(),
-        ntuple.field_names().len()
+        fields.len()
     );
-
-    let fields = &ntuple.header().fields;
     let mut table = Table::new(&["field", "type"]);
-    for field in ntuple.field_names() {
-        let ty = fields
-            .iter()
-            .find(|fd| fd.name == field)
-            .map(|fd| fd.type_name.clone())
-            .unwrap_or_default();
-        table.row(vec![field.to_string(), ty]);
+    for (n, t) in &fields {
+        table.row(vec![n.clone(), t.clone()]);
     }
     table.print();
     Ok(())
+}
+
+/// A JSON array of `{name, type}` objects.
+fn named_type_array(items: &[(String, String)]) -> Json {
+    Json::Array(
+        items
+            .iter()
+            .map(|(n, t)| {
+                Json::Object(vec![
+                    ("name", Json::s(n.clone())),
+                    ("type", Json::s(t.clone())),
+                ])
+            })
+            .collect(),
+    )
 }
 
 /// The C++-ish type label of a branch: `double`, `double[3]` (fixed array),

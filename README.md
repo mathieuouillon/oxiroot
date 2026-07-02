@@ -662,7 +662,8 @@ ax2.save("heatmap.svg")?;
 
 - **Look into a ROOT file from the shell**, no ROOT or Python:
   `cargo install --path crates/oxiroot-cli` builds the `oxroot` binary. Objects
-  are addressed `file.root:name` (uproot-style).
+  are addressed `file.root:name` (uproot-style), with a `/`-path for nested
+  `TDirectory`s (`file.root:cal/run2/Events`).
 - `oxroot ls [-l] [-r]` — list objects (name, class, title; `-l` adds cycle and
   `TTree`/RNTuple entry count; `-r` recurses one `TDirectory` level).
 - `oxroot show file.root:Events` — a `TTree`'s branches with their types
@@ -673,6 +674,8 @@ ax2.save("heatmap.svg")?;
   scalar value.
 - `oxroot stat file.root` — size, ROOT version, compression, key count, and the
   embedded streamer classes.
+- **`--json`** (global) emits machine-readable JSON for any command — dump rows
+  are typed (numbers, booleans, arrays) — via a dependency-free writer.
 - See the [command-line inspector guide](docs/guide/cli.md).
 
 ### Compression

@@ -1,11 +1,14 @@
 //! `oxroot dump` — print an object's data.
 
 use clap::Args as ClapArgs;
-use oxiroot::hist::{Histogram, ReadRoot, TGraph, TObjString, TParameter, TProfile, TH1, TH2, TH3};
+use oxiroot::hist::{
+    Histogram, ParamValue, ReadRoot, TGraph, TObjString, TParameter, TProfile, TH1, TH2, TH3,
+};
 use oxiroot::ntuple::{FieldValues, RNTuple};
 use oxiroot::tree::{BranchValues, TTree};
 use oxiroot::RFile;
 
+use crate::json::Json;
 use crate::util::{classify, locate_class, parse_spec, split_obj, CmdResult, Kind, Table};
 
 /// Arguments for `oxroot dump`.
@@ -22,7 +25,7 @@ pub struct Args {
 }
 
 /// Run `oxroot dump`.
-pub fn run(args: Args) -> CmdResult {
+pub fn run(args: Args, json: bool) -> CmdResult {
     let (path, obj) = parse_spec(&args.spec);
     let obj = obj.ok_or("dump needs an object: `file.root:name`")?;
     let file = RFile::open(&path)?;
@@ -30,27 +33,29 @@ pub fn run(args: Args) -> CmdResult {
     let class = locate_class(&file, subdir, name)?;
 
     match classify(&class) {
-        Kind::Tree if subdir.is_some() => {
-            Err("dumping a TTree inside a subdirectory is not supported yet".into())
-        }
-        Kind::Tree => dump_tree(&file, name, &args),
-        Kind::RNtuple => dump_rntuple(&file, subdir, name, &args),
-        Kind::Hist1 => dump_th1(&read_obj::<TH1>(&file, subdir, name)?, name),
-        Kind::Hist2 => dump_th2(&read_obj::<TH2>(&file, subdir, name)?, name),
-        Kind::Hist3 => dump_th3(&read_obj::<TH3>(&file, subdir, name)?, name),
-        Kind::Profile => dump_profile(&read_obj::<TProfile>(&file, subdir, name)?, name),
+        Kind::Tree => dump_tree(&file, subdir, name, &args, json),
+        Kind::RNtuple => dump_rntuple(&file, subdir, name, &args, json),
+        Kind::Hist1 => dump_th1(&read_obj::<TH1>(&file, subdir, name)?, name, json),
+        Kind::Hist2 => dump_th2(&read_obj::<TH2>(&file, subdir, name)?, name, json),
+        Kind::Hist3 => dump_th3(&read_obj::<TH3>(&file, subdir, name)?, name, json),
+        Kind::Profile => dump_profile(&read_obj::<TProfile>(&file, subdir, name)?, name, json),
         Kind::Graph => dump_graph(
             &read_obj::<TGraph>(&file, subdir, name)?,
             name,
             args.entries,
+            json,
         ),
         Kind::ObjString => {
-            println!("{}", read_obj::<TObjString>(&file, subdir, name)?.value());
+            let value = read_obj::<TObjString>(&file, subdir, name)?
+                .value()
+                .to_string();
+            emit_value(name, Json::s(value.clone()), &value, json);
             Ok(())
         }
         Kind::Parameter => {
-            let p = read_obj::<TParameter>(&file, subdir, name)?;
-            println!("{name} = {:?}", p.value());
+            let param = read_obj::<TParameter>(&file, subdir, name)?;
+            let (value, text) = param_value(param.value());
+            emit_value(name, value, &text, json);
             Ok(())
         }
         Kind::Other => Err(format!("dump: reading class {class:?} is not supported").into()),
@@ -65,87 +70,188 @@ fn read_obj<T: ReadRoot>(file: &RFile, subdir: Option<&str>, name: &str) -> oxir
     }
 }
 
-/// Print the first `n` entries of a `TTree` as a column table.
-fn dump_tree(file: &RFile, name: &str, args: &Args) -> CmdResult {
-    let tree = TTree::open(file, name)?;
-    let n = args.entries.min(tree.num_entries() as usize);
-    let selected: Vec<String> = if args.branches.is_empty() {
-        tree.branch_names().iter().map(|s| s.to_string()).collect()
+/// Print a single scalar value, as JSON `{name, value}` or `name = value`.
+fn emit_value(name: &str, value: Json, text: &str, json: bool) {
+    if json {
+        let out = Json::Object(vec![("name", Json::s(name)), ("value", value)]);
+        println!("{}", out.render());
     } else {
-        args.branches.clone()
+        println!("{name} = {text}");
+    }
+}
+
+/// A `TParameter`'s value as `(json, text)`.
+fn param_value(value: ParamValue) -> (Json, String) {
+    match value {
+        ParamValue::Double(x) => (Json::F64(x), num(x)),
+        ParamValue::Float(x) => (Json::F64(f64::from(x)), num(f64::from(x))),
+        ParamValue::Int(x) => (Json::Int(i64::from(x)), x.to_string()),
+        ParamValue::Long64(x) => (Json::Int(x), x.to_string()),
+    }
+}
+
+/// The first `n` entries of a `TTree`.
+fn dump_tree(file: &RFile, subdir: Option<&str>, name: &str, args: &Args, json: bool) -> CmdResult {
+    let tree = match subdir {
+        None => TTree::open(file, name)?,
+        Some(dir) => TTree::open_in(file, dir, name)?,
     };
+    let n = args.entries.min(tree.num_entries() as usize);
+    let selected = select(&args.branches, tree.branch_names());
     let cols: Vec<(String, Option<BranchValues>)> = selected
         .iter()
         .map(|b| (b.clone(), tree.read_branch_range(file, b, 0, n as u64).ok()))
         .collect();
 
-    let mut headers = vec!["#".to_string()];
-    headers.extend(cols.iter().map(|(b, _)| b.clone()));
-    let head_refs: Vec<&str> = headers.iter().map(String::as_str).collect();
-    let mut table = Table::new(&head_refs).right_align(&[0]);
-    for i in 0..n {
-        let mut row = vec![i.to_string()];
-        for (_, values) in &cols {
-            row.push(
-                values
-                    .as_ref()
-                    .map_or_else(String::new, |v| branch_cell(v, i)),
-            );
-        }
-        table.row(row);
+    if json {
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("TTree")),
+            ("entries", Json::Int(tree.num_entries() as i64)),
+            ("showing", Json::Int(n as i64)),
+            (
+                "columns",
+                Json::Array(cols.iter().map(|(c, _)| Json::s(c.clone())).collect()),
+            ),
+            ("rows", rows_json(&cols, n, branch_json)),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
     }
 
     println!(
         "TTree {name:?}  ({} entries; showing {n})",
         tree.num_entries()
     );
-    table.print();
+    print_table(&cols, n, branch_cell);
     Ok(())
 }
 
-/// Print the first `n` entries of an RNTuple as a column table.
-fn dump_rntuple(file: &RFile, subdir: Option<&str>, name: &str, args: &Args) -> CmdResult {
+/// The first `n` entries of an RNTuple.
+fn dump_rntuple(
+    file: &RFile,
+    subdir: Option<&str>,
+    name: &str,
+    args: &Args,
+    json: bool,
+) -> CmdResult {
     let ntuple = match subdir {
         None => RNTuple::open(file, name)?,
         Some(dir) => RNTuple::open_in(file, dir, name)?,
     };
     let n = args.entries.min(ntuple.num_entries() as usize);
-    let selected: Vec<String> = if args.branches.is_empty() {
-        ntuple.field_names().iter().map(|s| s.to_string()).collect()
-    } else {
-        args.branches.clone()
-    };
+    let selected = select(&args.branches, ntuple.field_names());
     let cols: Vec<(String, Option<FieldValues>)> = selected
         .iter()
         .map(|f| (f.clone(), ntuple.read_field(file, f).ok()))
         .collect();
 
-    let mut headers = vec!["#".to_string()];
-    headers.extend(cols.iter().map(|(f, _)| f.clone()));
-    let head_refs: Vec<&str> = headers.iter().map(String::as_str).collect();
-    let mut table = Table::new(&head_refs).right_align(&[0]);
-    for i in 0..n {
-        let mut row = vec![i.to_string()];
-        for (_, values) in &cols {
-            row.push(
-                values
-                    .as_ref()
-                    .map_or_else(String::new, |v| field_cell(v, i)),
-            );
-        }
-        table.row(row);
+    if json {
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("RNTuple")),
+            ("entries", Json::Int(ntuple.num_entries() as i64)),
+            ("showing", Json::Int(n as i64)),
+            (
+                "columns",
+                Json::Array(cols.iter().map(|(c, _)| Json::s(c.clone())).collect()),
+            ),
+            ("rows", rows_json(&cols, n, field_json)),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
     }
 
     println!(
         "RNTuple {name:?}  ({} entries; showing {n})",
         ntuple.num_entries()
     );
-    table.print();
+    print_table(&cols, n, field_cell);
     Ok(())
 }
 
+/// The selected column names (the `-b` subset, or all).
+fn select(requested: &[String], all: Vec<&str>) -> Vec<String> {
+    if requested.is_empty() {
+        all.iter().map(|s| (*s).to_string()).collect()
+    } else {
+        requested.to_vec()
+    }
+}
+
+/// Print a `#`-indexed table of `n` rows over `cols`, one cell per column.
+fn print_table<T>(cols: &[(String, Option<T>)], n: usize, cell: fn(&T, usize) -> String) {
+    let mut headers = vec!["#".to_string()];
+    headers.extend(cols.iter().map(|(c, _)| c.clone()));
+    let head_refs: Vec<&str> = headers.iter().map(String::as_str).collect();
+    let mut table = Table::new(&head_refs).right_align(&[0]);
+    for i in 0..n {
+        let mut row = vec![i.to_string()];
+        for (_, values) in cols {
+            row.push(values.as_ref().map_or_else(String::new, |v| cell(v, i)));
+        }
+        table.row(row);
+    }
+    table.print();
+}
+
+/// The JSON `rows` array: `n` arrays of typed cells over `cols`.
+fn rows_json<T>(cols: &[(String, Option<T>)], n: usize, cell: fn(&T, usize) -> Json) -> Json {
+    Json::Array(
+        (0..n)
+            .map(|i| {
+                Json::Array(
+                    cols.iter()
+                        .map(|(_, v)| v.as_ref().map_or(Json::Null, |vv| cell(vv, i)))
+                        .collect(),
+                )
+            })
+            .collect(),
+    )
+}
+
 /// Bins, contents, errors, and summary stats of a `TH1`.
-fn dump_th1(hist: &TH1, name: &str) -> CmdResult {
+fn dump_th1(hist: &TH1, name: &str, json: bool) -> CmdResult {
+    let edges = hist.edges();
+    let errors = hist.errors();
+    let bin = |i: usize, content: f64| {
+        (
+            edges.get(i).copied().unwrap_or(f64::NAN),
+            edges.get(i + 1).copied().unwrap_or(f64::NAN),
+            content,
+            errors.get(i).copied().unwrap_or(0.0),
+        )
+    };
+
+    if json {
+        let bins = Json::Array(
+            hist.values()
+                .iter()
+                .enumerate()
+                .map(|(i, &c)| {
+                    let (low, high, content, error) = bin(i, c);
+                    Json::Object(vec![
+                        ("low", Json::F64(low)),
+                        ("high", Json::F64(high)),
+                        ("content", Json::F64(content)),
+                        ("error", Json::F64(error)),
+                    ])
+                })
+                .collect(),
+        );
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("TH1")),
+            ("entries", Json::F64(hist.entries())),
+            ("mean", Json::F64(hist.mean())),
+            ("std", Json::F64(hist.std_dev())),
+            ("integral", Json::F64(hist.integral())),
+            ("bins", bins),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
+
     println!(
         "TH1 {name:?}  entries {}  mean {}  std {}  integral {}",
         num(hist.entries()),
@@ -153,17 +259,16 @@ fn dump_th1(hist: &TH1, name: &str) -> CmdResult {
         num(hist.std_dev()),
         num(hist.integral()),
     );
-    let edges = hist.edges();
-    let errors = hist.errors();
     let mut table =
         Table::new(&["bin", "low", "high", "content", "error"]).right_align(&[0, 1, 2, 3, 4]);
     for (i, &content) in hist.values().iter().enumerate() {
+        let (low, high, content, error) = bin(i, content);
         table.row(vec![
             (i + 1).to_string(),
-            num(edges.get(i).copied().unwrap_or(f64::NAN)),
-            num(edges.get(i + 1).copied().unwrap_or(f64::NAN)),
+            num(low),
+            num(high),
             num(content),
-            num(errors.get(i).copied().unwrap_or(0.0)),
+            num(error),
         ]);
     }
     table.print();
@@ -171,10 +276,24 @@ fn dump_th1(hist: &TH1, name: &str) -> CmdResult {
 }
 
 /// A summary of a `TH2` (its full grid is not printed).
-fn dump_th2(hist: &TH2, name: &str) -> CmdResult {
+fn dump_th2(hist: &TH2, name: &str, json: bool) -> CmdResult {
     let values = hist.values();
     let ny = values.len();
     let nx = values.first().map_or(0, Vec::len);
+    if json {
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("TH2")),
+            ("bins_x", Json::Int(nx as i64)),
+            ("bins_y", Json::Int(ny as i64)),
+            ("entries", Json::F64(hist.entries())),
+            ("integral", Json::F64(hist.integral())),
+            ("mean_x", Json::F64(hist.mean_x())),
+            ("mean_y", Json::F64(hist.mean_y())),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
     println!("TH2 {name:?}  {nx} x {ny} bins");
     println!(
         "entries {}  integral {}  mean_x {}  mean_y {}",
@@ -187,11 +306,26 @@ fn dump_th2(hist: &TH2, name: &str) -> CmdResult {
 }
 
 /// A summary of a `TH3` (its full grid is not printed).
-fn dump_th3(hist: &TH3, name: &str) -> CmdResult {
+fn dump_th3(hist: &TH3, name: &str, json: bool) -> CmdResult {
     let values = hist.values();
     let nz = values.len();
     let ny = values.first().map_or(0, Vec::len);
     let nx = values.first().and_then(|p| p.first()).map_or(0, Vec::len);
+    if json {
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("TH3")),
+            ("bins_x", Json::Int(nx as i64)),
+            ("bins_y", Json::Int(ny as i64)),
+            ("bins_z", Json::Int(nz as i64)),
+            ("entries", Json::F64(hist.entries())),
+            ("integral", Json::F64(hist.integral())),
+            ("mean_x", Json::F64(hist.mean_x())),
+            ("mean_y", Json::F64(hist.mean_y())),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
     println!("TH3 {name:?}  {nx} x {ny} x {nz} bins");
     println!(
         "entries {}  integral {}  mean_x {}  mean_y {}",
@@ -204,15 +338,42 @@ fn dump_th3(hist: &TH3, name: &str) -> CmdResult {
 }
 
 /// Per-bin mean-y of a `TProfile`.
-fn dump_profile(profile: &TProfile, name: &str) -> CmdResult {
-    println!("TProfile {name:?}");
+fn dump_profile(profile: &TProfile, name: &str, json: bool) -> CmdResult {
     let edges = profile.edges();
+    let low = |i: usize| edges.get(i).copied().unwrap_or(f64::NAN);
+    let high = |i: usize| edges.get(i + 1).copied().unwrap_or(f64::NAN);
+
+    if json {
+        let bins = Json::Array(
+            profile
+                .values()
+                .iter()
+                .enumerate()
+                .map(|(i, &v)| {
+                    Json::Object(vec![
+                        ("low", Json::F64(low(i))),
+                        ("high", Json::F64(high(i))),
+                        ("mean_y", Json::F64(v)),
+                    ])
+                })
+                .collect(),
+        );
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("TProfile")),
+            ("bins", bins),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
+
+    println!("TProfile {name:?}");
     let mut table = Table::new(&["bin", "low", "high", "mean-y"]).right_align(&[0, 1, 2, 3]);
     for (i, &value) in profile.values().iter().enumerate() {
         table.row(vec![
             (i + 1).to_string(),
-            num(edges.get(i).copied().unwrap_or(f64::NAN)),
-            num(edges.get(i + 1).copied().unwrap_or(f64::NAN)),
+            num(low(i)),
+            num(high(i)),
             num(value),
         ]);
     }
@@ -221,10 +382,31 @@ fn dump_profile(profile: &TProfile, name: &str) -> CmdResult {
 }
 
 /// The first `n` points of a `TGraph`.
-fn dump_graph(graph: &TGraph, name: &str, n: usize) -> CmdResult {
+fn dump_graph(graph: &TGraph, name: &str, n: usize, json: bool) -> CmdResult {
+    let count = graph.x.len().min(n);
+    if json {
+        let points = Json::Array(
+            (0..count)
+                .map(|i| {
+                    Json::Object(vec![
+                        ("x", Json::F64(graph.x[i])),
+                        ("y", Json::F64(graph.y[i])),
+                    ])
+                })
+                .collect(),
+        );
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s("TGraph")),
+            ("points", points),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
+
     println!("TGraph {name:?}  ({} points)", graph.x.len());
     let mut table = Table::new(&["#", "x", "y"]).right_align(&[0, 1, 2]);
-    for i in 0..graph.x.len().min(n) {
+    for i in 0..count {
         table.row(vec![i.to_string(), num(graph.x[i]), num(graph.y[i])]);
     }
     table.print();
@@ -304,6 +486,91 @@ fn field_cell(values: &FieldValues, i: usize) -> String {
         VecStr(v) => v.get(i).map_or_else(String::new, |row| format!("{row:?}")),
         _ => "...".to_string(),
     }
+}
+
+/// One `BranchValues` entry as a typed JSON value.
+fn branch_json(values: &BranchValues, i: usize) -> Json {
+    use BranchValues::*;
+    match values {
+        Bool(v) => opt(v.get(i), |x| Json::Bool(*x)),
+        I8(v) => opt(v.get(i), int),
+        U8(v) => opt(v.get(i), int),
+        I16(v) => opt(v.get(i), int),
+        U16(v) => opt(v.get(i), int),
+        I32(v) => opt(v.get(i), int),
+        U32(v) => opt(v.get(i), int),
+        I64(v) => opt(v.get(i), int),
+        U64(v) => opt(v.get(i), |x| Json::Int(*x as i64)),
+        F32(v) => opt(v.get(i), float),
+        F64(v) => opt(v.get(i), float),
+        Str(v) => opt(v.get(i), |s| Json::s(s.clone())),
+        VecBool(v) => arr(v.get(i), |x| Json::Bool(*x)),
+        VecI8(v) => arr(v.get(i), int),
+        VecU8(v) => arr(v.get(i), int),
+        VecI16(v) => arr(v.get(i), int),
+        VecU16(v) => arr(v.get(i), int),
+        VecI32(v) => arr(v.get(i), int),
+        VecU32(v) => arr(v.get(i), int),
+        VecI64(v) => arr(v.get(i), int),
+        VecU64(v) => arr(v.get(i), |x| Json::Int(*x as i64)),
+        VecF32(v) => arr(v.get(i), float),
+        VecF64(v) => arr(v.get(i), float),
+        VecStr(v) => arr(v.get(i), |s| Json::s(s.clone())),
+        Nested { .. } => Json::Null,
+        _ => Json::Null,
+    }
+}
+
+/// One `FieldValues` entry as a typed JSON value.
+fn field_json(values: &FieldValues, i: usize) -> Json {
+    use FieldValues::*;
+    match values {
+        Bool(v) => opt(v.get(i), |x| Json::Bool(*x)),
+        I8(v) => opt(v.get(i), int),
+        U8(v) => opt(v.get(i), int),
+        I16(v) => opt(v.get(i), int),
+        U16(v) => opt(v.get(i), int),
+        I32(v) => opt(v.get(i), int),
+        U32(v) => opt(v.get(i), int),
+        I64(v) => opt(v.get(i), int),
+        U64(v) => opt(v.get(i), |x| Json::Int(*x as i64)),
+        F32(v) => opt(v.get(i), float),
+        F64(v) => opt(v.get(i), float),
+        Str(v) => opt(v.get(i), |s| Json::s(s.clone())),
+        VecBool(v) => arr(v.get(i), |x| Json::Bool(*x)),
+        VecI8(v) => arr(v.get(i), int),
+        VecU8(v) => arr(v.get(i), int),
+        VecI16(v) => arr(v.get(i), int),
+        VecU16(v) => arr(v.get(i), int),
+        VecI32(v) => arr(v.get(i), int),
+        VecU32(v) => arr(v.get(i), int),
+        VecI64(v) => arr(v.get(i), int),
+        VecU64(v) => arr(v.get(i), |x| Json::Int(*x as i64)),
+        VecF32(v) => arr(v.get(i), float),
+        VecF64(v) => arr(v.get(i), float),
+        VecStr(v) => arr(v.get(i), |s| Json::s(s.clone())),
+        _ => Json::Null,
+    }
+}
+
+/// A JSON integer from any small integer type.
+fn int<T: Copy + Into<i64>>(x: &T) -> Json {
+    Json::Int((*x).into())
+}
+
+/// A JSON float from an `f32`/`f64`.
+fn float<T: Copy + Into<f64>>(x: &T) -> Json {
+    Json::F64((*x).into())
+}
+
+/// `f(x)` if present, else `null`.
+fn opt<T, F: Fn(&T) -> Json>(x: Option<&T>, f: F) -> Json {
+    x.map_or(Json::Null, f)
+}
+
+/// A JSON array of `f` over the per-entry list at `row`, or `null` if absent.
+fn arr<T, F: Fn(&T) -> Json>(row: Option<&Vec<T>>, f: F) -> Json {
+    row.map_or(Json::Null, |r| Json::Array(r.iter().map(&f).collect()))
 }
 
 /// Entry `i` of a per-entry list column as `[a, b, c]`.

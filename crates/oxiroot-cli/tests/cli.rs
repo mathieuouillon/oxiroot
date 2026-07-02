@@ -78,3 +78,55 @@ fn a_missing_object_is_an_error() {
     let (_out, ok) = oxroot(&["show", &spec("tree_flat.root", "NoSuch")]);
     assert!(!ok);
 }
+
+#[test]
+fn json_mode_emits_json() {
+    // stat: a JSON object with the file summary.
+    let (out, ok) = oxroot(&[
+        "stat",
+        fixture("tree_flat.root").to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(ok, "{out}");
+    assert!(out.trim_start().starts_with('{'), "{out}");
+    assert!(
+        out.contains("\"root_version\"") && out.contains("\"streamers\""),
+        "{out}"
+    );
+
+    // dump: typed rows with a columns list.
+    let (out, ok) = oxroot(&[
+        "dump",
+        &spec("tree_flat.root", "Events"),
+        "-n",
+        "2",
+        "--json",
+    ]);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains("\"columns\"") && out.contains("\"rows\""),
+        "{out}"
+    );
+
+    // ls: a JSON array.
+    let (out, ok) = oxroot(&["ls", fixture("graphs.root").to_str().unwrap(), "--json"]);
+    assert!(ok, "{out}");
+    assert!(out.trim_start().starts_with('['), "{out}");
+}
+
+#[test]
+fn shows_and_dumps_a_tree_in_a_nested_subdirectory() {
+    // fixtures/tree_subdir.root holds the tree at cal/run2/Events.
+    let (out, ok) = oxroot(&["show", &spec("tree_subdir.root", "cal/run2/Events")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("2 branches"), "{out}");
+
+    let (out, ok) = oxroot(&[
+        "dump",
+        &spec("tree_subdir.root", "cal/run2/Events"),
+        "-n",
+        "2",
+    ]);
+    assert!(ok, "{out}");
+    assert!(out.contains("showing 2"), "{out}");
+}

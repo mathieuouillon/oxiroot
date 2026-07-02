@@ -81,10 +81,39 @@ streamers    24 classes
     ...
 ```
 
+## Subdirectories
+
+Objects nested in `TDirectory`s are addressed with a `/`-path:
+`oxroot show data.root:cal/run2/Events` descends two levels and shows the tree
+there — the same for histograms, RNTuples, and `dump`. `ls -r` recurses one
+directory level; deeper objects are still reachable by naming their full path.
+
+## JSON output
+
+The global `--json` flag makes every command emit JSON instead of a table —
+handy for piping into `jq` or another tool:
+
+```console
+$ oxroot show data.root:Events --json
+{"name":"Events","class":"TTree","entries":10000,"branches":[{"name":"i","type":"int32_t"},{"name":"hits","type":"double[]"}],"unreadable":[]}
+
+$ oxroot dump data.root:Events -n 2 -b i,hits --json | jq
+{
+  "name": "Events",
+  "class": "TTree",
+  "entries": 10000,
+  "showing": 2,
+  "columns": ["i", "hits"],
+  "rows": [[0, [1, 2, 3]], [1, []]]
+}
+```
+
+Dump rows are typed — scalars become JSON numbers/booleans/strings and vector
+branches become JSON arrays; non-finite floats render as `null`. The writer is
+dependency-free, so `--json` adds no crates.
+
 ## Scope
 
-`oxroot` reads what the library reads. `show`/`dump` currently resolve
-top-level objects (and histograms/RNTuples one subdirectory deep); a `TTree`
-inside a subdirectory, and classes the library cannot decode, are reported
+`oxroot` reads what the library reads: classes it cannot decode are reported
 rather than guessed. `dump` reads an RNTuple field in full before showing the
 first `-n` entries.
