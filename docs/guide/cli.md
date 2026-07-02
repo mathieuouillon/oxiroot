@@ -1,0 +1,90 @@
+# Command-line inspector (`oxroot`)
+
+`oxroot` is a command-line tool for looking into a ROOT file — its objects, the
+structure of a `TTree` or RNTuple, and the actual data — without ROOT or Python.
+It ships in the `oxiroot-cli` crate and is built on the same readers as the
+library.
+
+```sh
+cargo install --path crates/oxiroot-cli   # installs the `oxroot` binary
+# or, from a checkout:
+cargo run -p oxiroot-cli -- <command> ...
+```
+
+Objects are addressed as `file.root:name` (or `file.root:subdir/name`), the same
+convention uproot uses.
+
+## `ls` — list objects
+
+```console
+$ oxroot ls data.root -l
+name    class          title                 cycle   entries
+Events  TTree          reconstructed events      1     10000
+pt      TH1D           transverse momentum       1         -
+events  ROOT::RNTuple  columnar events           1      5000
+```
+
+`-l` adds the cycle and (for `TTree`/RNTuple) the entry count; `-r` recurses one
+level into `TDirectory` subdirectories, prefixing names with `subdir/`.
+
+## `show` — structure of a TTree or RNTuple
+
+```console
+$ oxroot show data.root:Events
+TTree "Events"  (10000 entries, 4 branches)
+branch  type
+i       int32_t
+x       double
+hits    double[]
+tag     char*
+```
+
+Each branch's type is shown as a scalar (`double`), a fixed array (`double[3]`),
+a variable/vector (`double[]`), or a string (`char*`); branches oxiroot cannot
+read are listed with a leading `!` and the reason. An RNTuple shows its
+top-level fields with their C++ type names (`std::vector<float>`, `std::string`,
+…).
+
+## `dump` — print data
+
+```console
+$ oxroot dump data.root:Events -n 3 -b i,x,hits
+TTree "Events"  (10000 entries; showing 3)
+#  i   x      hits
+0  0   1.5    [1, 2, 3]
+1  1   2.5    []
+2  2   3.5    [4, 5]
+```
+
+`dump` adapts to the object:
+
+- **`TTree` / RNTuple** — the first `-n` entries as a column table; restrict the
+  columns with `-b name1,name2`.
+- **`TH1`** — bin edges, contents, and errors, with `mean` / `std` / `integral`
+  in the header. `TH2`/`TH3` print a shape-and-stats summary rather than the full
+  grid.
+- **`TProfile`** — per-bin mean-y.
+- **`TGraph`** — the first `-n` points.
+- **`TObjString` / `TParameter`** — the stored value.
+
+## `stat` — file summary
+
+```console
+$ oxroot stat data.root
+file         data.root
+size         2.4 MiB (2516481 B)
+ROOT version 6.30/04
+compression  zstd (level 5)
+objects      3
+streamers    24 classes
+    TTree (v20)
+    ...
+```
+
+## Scope
+
+`oxroot` reads what the library reads. `show`/`dump` currently resolve
+top-level objects (and histograms/RNTuples one subdirectory deep); a `TTree`
+inside a subdirectory, and classes the library cannot decode, are reported
+rather than guessed. `dump` reads an RNTuple field in full before showing the
+first `-n` entries.

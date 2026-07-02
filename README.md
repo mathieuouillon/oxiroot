@@ -53,6 +53,9 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - ➕ **`hadd`** — a pure-Rust file merger: histograms summed, `TTree` / RNTuple
   entries concatenated, other objects copied — verified against ROOT's own
   `hadd` (`oxiroot::hadd::merge_files`).
+- 🔎 **Command-line inspector** — `oxroot ls` / `show` / `dump` / `stat` looks
+  into any ROOT file (keys, `TTree`/RNTuple structure, entries, histogram bins)
+  from the shell — no ROOT, no Python (the `oxiroot-cli` crate).
 - 🎨 **Plotting** (optional) — render `TH1`/`TH2`/`TGraph`/`TProfile` to **SVG,
   PNG, and PDF** with a matplotlib-like API and an mplhep histogram style —
   grids, ratio plots, LaTeX (`$…$`) math labels — all pure Rust, no matplotlib,
@@ -655,6 +658,23 @@ ax2.save("heatmap.svg")?;
   (identical histogram sums, entry-for-entry tree concat) and read back by uproot
   and ROOT C++. See the [`merge` example](crates/oxiroot/examples/merge.rs).
 
+### Command-line inspector — `oxroot` (`oxiroot-cli`)
+
+- **Look into a ROOT file from the shell**, no ROOT or Python:
+  `cargo install --path crates/oxiroot-cli` builds the `oxroot` binary. Objects
+  are addressed `file.root:name` (uproot-style).
+- `oxroot ls [-l] [-r]` — list objects (name, class, title; `-l` adds cycle and
+  `TTree`/RNTuple entry count; `-r` recurses one `TDirectory` level).
+- `oxroot show file.root:Events` — a `TTree`'s branches with their types
+  (`double`, `double[3]`, `double[]`, `char*`; unreadable branches flagged), or
+  an RNTuple's fields with C++ type names.
+- `oxroot dump file.root:obj [-n N] [-b a,b]` — the first *N* `TTree`/RNTuple
+  entries as a column table, a `TH1`'s bins + stats, a `TGraph`'s points, or a
+  scalar value.
+- `oxroot stat file.root` — size, ROOT version, compression, key count, and the
+  embedded streamer classes.
+- See the [command-line inspector guide](docs/guide/cli.md).
+
 ### Compression
 
 - **Read:** Zstd, zlib, LZ4, and LZMA (XZ) decode — every codec ROOT writes
@@ -693,6 +713,7 @@ verified on read.
 | `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | `oxiroot-stat` | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
 | `oxiroot-plot` | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
+| `oxiroot-cli` | `oxroot`: a command-line inspector (`ls`/`show`/`dump`/`stat`) |
 
 Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib),

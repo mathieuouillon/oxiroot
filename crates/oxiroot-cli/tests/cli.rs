@@ -1,0 +1,80 @@
+//! Smoke tests for the `oxroot` binary, run over the shared fixtures.
+
+use std::path::PathBuf;
+use std::process::Command;
+
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures")
+        .join(name)
+}
+
+/// Run `oxroot` with `args`; return its stdout and whether it succeeded.
+fn oxroot(args: &[&str]) -> (String, bool) {
+    let out = Command::new(env!("CARGO_BIN_EXE_oxroot"))
+        .args(args)
+        .output()
+        .expect("run oxroot");
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        out.status.success(),
+    )
+}
+
+fn spec(name: &str, object: &str) -> String {
+    format!("{}:{object}", fixture(name).display())
+}
+
+#[test]
+fn stat_reports_version_and_streamers() {
+    let (out, ok) = oxroot(&["stat", fixture("tree_flat.root").to_str().unwrap()]);
+    assert!(ok, "{out}");
+    assert!(out.contains("ROOT version 6."), "{out}");
+    assert!(out.contains("streamers"), "{out}");
+}
+
+#[test]
+fn show_lists_tree_branches_with_types() {
+    let (out, ok) = oxroot(&["show", &spec("tree_flat.root", "Events")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("6 branches"), "{out}");
+    assert!(out.contains("f8") && out.contains("double"), "{out}");
+}
+
+#[test]
+fn show_lists_rntuple_fields_with_types() {
+    let (out, ok) = oxroot(&["show", &spec("rntuple_scalars_uncompressed.root", "ntpl")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("fields"), "{out}");
+    assert!(out.contains("std::vector<float>"), "{out}");
+}
+
+#[test]
+fn dump_prints_tree_entries() {
+    let (out, ok) = oxroot(&["dump", &spec("tree_flat.root", "Events"), "-n", "2"]);
+    assert!(ok, "{out}");
+    assert!(out.contains("showing 2"), "{out}");
+    // The header row lists the branches.
+    assert!(out.contains("i4") && out.contains("f8"), "{out}");
+}
+
+#[test]
+fn dump_histogram_shows_stats_and_bins() {
+    let (out, ok) = oxroot(&["dump", &spec("th1d_uncompressed.root", "h1")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("mean") && out.contains("integral"), "{out}");
+    assert!(out.contains("content"), "{out}");
+}
+
+#[test]
+fn ls_lists_keys() {
+    let (out, ok) = oxroot(&["ls", fixture("graphs.root").to_str().unwrap()]);
+    assert!(ok, "{out}");
+    assert!(out.contains("TGraphErrors"), "{out}");
+}
+
+#[test]
+fn a_missing_object_is_an_error() {
+    let (_out, ok) = oxroot(&["show", &spec("tree_flat.root", "NoSuch")]);
+    assert!(!ok);
+}

@@ -28,10 +28,12 @@ oxiroot-stat = { path = "crates/oxiroot-stat" }
 oxiroot-formula = { path = "crates/oxiroot-formula" }
 oxiroot-fit = { path = "crates/oxiroot-fit" }
 oxiroot-plot = { path = "crates/oxiroot-plot" }
+oxiroot = { path = "crates/oxiroot" }
 minuit2 = "0.5"
 argmin = { version = "0.11", default-features = false }
 argmin-math = { version = "0.5", features = ["vec"] }
 proptest = "1"
+clap = { version = "4", features = ["derive"] }
 
 [profile.release]
 opt-level = 3
