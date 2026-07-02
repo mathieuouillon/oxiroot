@@ -29,6 +29,10 @@ pub const K_ANY: i32 = 62;
 pub const K_OBJECT_PTR: i32 = 64;
 /// `fType` for a `TString` member.
 pub const K_TSTRING: i32 = 65;
+/// `fType` for a pointer to a non-`TObject` class (`TStreamerObjectAnyPointer`).
+pub const K_ANY_PTR: i32 = 69;
+/// `fType` for an STL container member (`TStreamerSTL`, e.g. `vector<double>`).
+pub const K_STL: i32 = 500;
 
 /// One member (or base class) to serialize into a `TStreamerInfo`. Opaque —
 /// build with [`base`], [`basic`], [`strf`], [`object`], [`any`], [`objptr`], or
@@ -53,6 +57,11 @@ enum Ek {
     Object,
     Any,
     ObjectPtr,
+    /// A pointer to a non-`TObject` class (`TStreamerObjectAnyPointer`).
+    AnyPtr,
+    /// An STL container (`TStreamerSTL`): its `fSTLtype` (vector = 1, map = 4)
+    /// and `fCtype` (the contained-type code, e.g. `double` = 8).
+    Stl(i32, i32),
     /// A `//[count]` pointer: the counter's name, and an optional
     /// `(count_class, count_version)` when the counter lives in a different class
     /// than the one declaring this element (e.g. a base class) — `None` uses the
@@ -138,6 +147,28 @@ pub fn objptr(name: &'static str, type_name: &'static str) -> El {
         kind: Ek::ObjectPtr,
     }
 }
+/// A pointer to a non-`TObject` class (e.g. `TF1Parameters* fParams`).
+pub fn objanyptr(name: &'static str, type_name: &'static str) -> El {
+    El {
+        name,
+        ty: K_ANY_PTR,
+        size: 8,
+        type_name,
+        kind: Ek::AnyPtr,
+    }
+}
+/// An STL container member (`TStreamerSTL`), e.g. a `vector<double>`. `stl_type`
+/// is the container kind (`vector` = 1, `map` = 4) and `ctype` the contained
+/// element-type code (`double` = 8, `TObject*` = 63, an object = 61).
+pub fn stl(name: &'static str, type_name: &'static str, stl_type: i32, ctype: i32) -> El {
+    El {
+        name,
+        ty: K_STL,
+        size: 24,
+        type_name,
+        kind: Ek::Stl(stl_type, ctype),
+    }
+}
 /// A `//[fCount]`-counted basic-type pointer member; `count` names the counter,
 /// which is assumed to live in the same class that declares this element.
 pub fn basicptr(
@@ -221,6 +252,8 @@ fn write_element(w: &mut WBuffer, el: &El, owner: &str, owner_version: i32) {
         Ek::Object => ("TStreamerObject", 2),
         Ek::Any => ("TStreamerObjectAny", 2),
         Ek::ObjectPtr => ("TStreamerObjectPointer", 2),
+        Ek::AnyPtr => ("TStreamerObjectAnyPointer", 1),
+        Ek::Stl(..) => ("TStreamerSTL", 3),
         Ek::BasicPtr(..) => ("TStreamerBasicPointer", 2),
     };
     let bc = begin_object_any(w, class);
@@ -228,6 +261,10 @@ fn write_element(w: &mut WBuffer, el: &El, owner: &str, owner_version: i32) {
     write_element_base(w, el);
     match el.kind {
         Ek::Base(base_version) => w.be_i32(base_version), // fBaseVersion
+        Ek::Stl(stl_type, ctype) => {
+            w.be_i32(stl_type); // fSTLtype
+            w.be_i32(ctype); // fCtype
+        }
         Ek::BasicPtr(count_name, count_owner) => {
             let (count_class, count_version) = count_owner.unwrap_or((owner, owner_version));
             w.be_i32(count_version); // fCountVersion

@@ -7,7 +7,9 @@
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::read_tobject;
-use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, objptr, strf, Cls};
+use oxiroot_io_core::streamer_gen::{
+    any, base, basic, basicptr, basicptr_in, objanyptr, objptr, stl, strf, Cls,
+};
 use oxiroot_io_core::RFile;
 
 use crate::base::object_bytes_any;
@@ -290,6 +292,79 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls> {
             basic("fTol", 8, 8, "double"),
         ],
     };
+    // ROOT's `TFormula`/`TF1`/`TF2`/`TF3` streamer infos (versions and checksums
+    // as ROOT writes them). A standalone `TF1`/`TF2`/`TF3` embeds these so uproot
+    // builds a model; ROOT C++ uses its own compiled streamers.
+    let tformula = || Cls {
+        name: "TFormula",
+        version: 14,
+        checksum: 3_342_972_029,
+        elements: vec![
+            base("TNamed", 1),
+            stl("fClingParameters", "vector<double>", 1, 8),
+            basic("fAllParametersSetted", 18, 1, "bool"),
+            stl("fParams", "map<TString,int,TFormulaParamOrder>", 4, 61),
+            strf("fFormula"),
+            basic("fNdim", 3, 4, "int"),
+            basic("fNumber", 3, 4, "int"),
+            stl("fLinearParts", "vector<TObject*>", 1, 63),
+            basic("fVectorized", 18, 1, "bool"),
+        ],
+    };
+    let tf1 = || Cls {
+        name: "TF1",
+        version: 12,
+        checksum: 1_914_961_880,
+        elements: vec![
+            base("TNamed", 1),
+            base("TAttLine", 2),
+            base("TAttFill", 2),
+            base("TAttMarker", 3),
+            basic("fXmin", 8, 8, "double"),
+            basic("fXmax", 8, 8, "double"),
+            basic("fNpar", 3, 4, "int"),
+            basic("fNdim", 3, 4, "int"),
+            basic("fNpx", 3, 4, "int"),
+            basic("fType", 3, 4, "TF1::EFType"),
+            basic("fNpfits", 3, 4, "int"),
+            basic("fNDF", 3, 4, "int"),
+            basic("fChisquare", 8, 8, "double"),
+            basic("fMinimum", 8, 8, "double"),
+            basic("fMaximum", 8, 8, "double"),
+            stl("fParErrors", "vector<double>", 1, 8),
+            stl("fParMin", "vector<double>", 1, 8),
+            stl("fParMax", "vector<double>", 1, 8),
+            stl("fSave", "vector<double>", 1, 8),
+            basic("fNormalized", 18, 1, "bool"),
+            basic("fNormIntegral", 8, 8, "double"),
+            objptr("fFormula", "TFormula*"),
+            objanyptr("fParams", "TF1Parameters*"),
+            objptr("fComposition", "TF1AbsComposition*"),
+        ],
+    };
+    let tf2 = || Cls {
+        name: "TF2",
+        version: 4,
+        checksum: 3_115_609_752,
+        elements: vec![
+            base("TF1", 12),
+            basic("fYmin", 8, 8, "double"),
+            basic("fYmax", 8, 8, "double"),
+            basic("fNpy", 3, 4, "int"),
+            any("fContour", 24, "TArrayD"),
+        ],
+    };
+    let tf3 = || Cls {
+        name: "TF3",
+        version: 3,
+        checksum: 3_522_165_386,
+        elements: vec![
+            base("TF2", 4),
+            basic("fZmin", 8, 8, "double"),
+            basic("fZmax", 8, 8, "double"),
+            basic("fNpz", 3, 4, "int"),
+        ],
+    };
     match class {
         "TObjString" => vec![Cls {
             name: "TObjString",
@@ -368,6 +443,10 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls> {
         // writes the base then the triangle, and uproot models it natively — so
         // only the shared base is needed.
         "TMatrixTSym<double>" => vec![matrix_base()],
+        // A function embeds its formula and its base classes, deepest first.
+        "TF1" => vec![tformula(), tf1()],
+        "TF2" => vec![tformula(), tf1(), tf2()],
+        "TF3" => vec![tformula(), tf1(), tf2(), tf3()],
         _ => Vec::new(),
     }
 }

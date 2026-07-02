@@ -98,12 +98,9 @@ They also go into a multi-object file or a subdirectory via the `RootFile`
 builder, and a graph's attached fitted functions (`fFunctions`) use the same
 `TF1`/`TFormula` serialization — see [Graphs](graphs.md).
 
-!!! note "uproot and `TF2`/`TF3`"
-    ROOT C++ reads oxiroot's `TF1`, `TF2`, and `TF3` and re-evaluates them, and
-    uproot reads a `TF1` with its built-in model. uproot has no built-in
-    `TF2`/`TF3` model, and oxiroot does not yet embed those classes'
-    `TStreamerInfo`, so a standalone `TF2`/`TF3` is currently not readable in
-    uproot (a `TF1` is).
+ROOT C++ and uproot both read oxiroot's `TF1`, `TF2`, and `TF3` and re-evaluate
+them: oxiroot embeds the `TF1`/`TF2`/`TF3`/`TFormula` `TStreamerInfo` (including
+the `std::vector<double>`/`std::map` members) so uproot builds a model for each.
 
 ## Fitting to a function's shape
 

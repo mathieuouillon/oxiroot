@@ -326,8 +326,9 @@ g.write_root("gfit.root", Compression::None)?;
   quadrature and a Richardson central derivative, matching `TF1::Integral` /
   `TF1::Derivative`.
 - The same engine powers `Model::from_formula`, so any formula is fittable, and
-  `TF1::to_model()` bridges a function to a fit. ROOT C++ reads oxiroot's
-  `TF1`/`TF2`/`TF3`; uproot reads `TF1` (it has no built-in `TF2`/`TF3` model).
+  `TF1::to_model()` bridges a function to a fit. oxiroot embeds the
+  `TF1`/`TF2`/`TF3`/`TFormula` `TStreamerInfo`, so **ROOT C++ and uproot both read
+  and re-evaluate** all three.
 - See the [`functions` example](crates/oxiroot/examples/functions.rs).
 
 [`oxiroot-formula`]: crates/oxiroot-formula

@@ -1,11 +1,10 @@
 //! Standalone `TF1`/`TF2`/`TF3` function keys: oxiroot reads the ROOT-C++-written
 //! `tf1.root`/`tf23.root` fixtures (a `TF1` embedding a `TFormula`, plus a `TF2`
 //! and `TF3`), evaluates the formulas in pure Rust, round-trips its own writes,
-//! and serializes byte-for-byte as ROOT does. ROOT C++ reads oxiroot's `TF1`/`TF2`/
-//! `TF3` output and re-evaluates them; uproot reads the `TF1` via its built-in
-//! model (checked out of band). uproot has no built-in `TF2`/`TF3` model and
-//! oxiroot does not yet embed those classes' `TStreamerInfo`, so a standalone
-//! `TF2`/`TF3` is not readable there — a gap ROOT does not share.
+//! and serializes byte-for-byte as ROOT does. ROOT C++ and uproot both read
+//! oxiroot's `TF1`/`TF2`/`TF3` output and re-evaluate them (checked out of band):
+//! oxiroot embeds the `TF1`/`TF2`/`TF3`/`TFormula` `TStreamerInfo` (with the
+//! `TStreamerSTL` members) so uproot builds a model for each.
 
 use std::path::PathBuf;
 
@@ -104,6 +103,25 @@ fn round_trips_tf1_tf2_tf3_through_oxiroot() {
     assert_eq!(TF3::read_root(&f, "f3").unwrap(), f3);
     // and the evaluation survives the round trip.
     assert!((TF1::read_root(&f, "f1").unwrap().eval(2.0) - 10.0 * (-1.0f64).exp()).abs() < 1e-12);
+    let _ = std::fs::remove_file(&out);
+}
+
+#[test]
+fn written_file_embeds_function_streamer_info() {
+    // uproot needs the embedded `TStreamerInfo` to model a standalone TF2/TF3.
+    // Verify the writer emits it: with no compression the class/member names
+    // appear literally in the file.
+    let out = std::env::temp_dir().join("oxiroot_tf_streamer.root");
+    TF2::new("f2", "[0]*x + y", 0.0, 1.0, 0.0, 1.0)
+        .unwrap()
+        .with_params(vec![2.0])
+        .write_root(&out, Compression::None)
+        .unwrap();
+    let bytes = std::fs::read(&out).unwrap();
+    let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    assert!(has(b"TFormula"), "TFormula streamer info not embedded");
+    assert!(has(b"TStreamerSTL"), "TStreamerSTL element not embedded");
+    assert!(has(b"fClingParameters"), "TFormula members not embedded");
     let _ = std::fs::remove_file(&out);
 }
 
