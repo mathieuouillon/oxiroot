@@ -383,7 +383,9 @@ fn dump_profile(profile: &TProfile, name: &str, json: bool) -> CmdResult {
 
 /// The first `n` points of a `TGraph`.
 fn dump_graph(graph: &TGraph, name: &str, n: usize, json: bool) -> CmdResult {
-    let count = graph.x.len().min(n);
+    // Bound by both coordinate lengths: a graph decoded from a corrupt file can
+    // have `fX.len() != fY.len()`, and indexing the shorter one would panic.
+    let count = graph.x.len().min(graph.y.len()).min(n);
     if json {
         let points = Json::Array(
             (0..count)
@@ -592,4 +594,20 @@ fn num(x: f64) -> String {
     }
     let s = format!("{x:.6}");
     s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dump_graph;
+    use oxiroot::hist::TGraph;
+
+    #[test]
+    fn dump_graph_survives_mismatched_x_y_lengths() {
+        // A corrupt graph with more x than y coordinates: dumping (either format)
+        // must clamp to the shorter length instead of panicking.
+        let mut graph = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]);
+        graph.y.truncate(1);
+        assert!(dump_graph(&graph, "g", 10, false).is_ok());
+        assert!(dump_graph(&graph, "g", 10, true).is_ok());
+    }
 }

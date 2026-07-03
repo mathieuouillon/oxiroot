@@ -54,7 +54,8 @@ pub fn locate_class(
             let key = d
                 .keys
                 .iter()
-                .find(|k| k.name == name && !k.is_deleted())
+                .filter(|k| k.name == name && !k.is_deleted())
+                .max_by_key(|k| k.cycle)
                 .ok_or_else(|| format!("no object named {name:?} in subdirectory {dir:?}"))?;
             Ok(key.class_name.clone())
         }

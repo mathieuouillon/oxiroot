@@ -38,10 +38,13 @@ impl RNTuple {
     /// top-directory RNTuple once the anchor key is located.
     pub fn open_in(file: &RFile, subdir: &str, name: &str) -> Result<RNTuple> {
         let dir = file.subdir(subdir)?;
+        // Pick the highest cycle, matching `RFile::key` / `object_in_keyed` and
+        // ROOT's rule that the newest cycle is current.
         let key = dir
             .keys
             .iter()
-            .find(|k| k.name == name && !k.is_deleted())
+            .filter(|k| k.name == name && !k.is_deleted())
+            .max_by_key(|k| k.cycle)
             .ok_or_else(|| {
                 Error::Format(format!("no key named {name:?} in subdirectory {subdir:?}"))
             })?;
