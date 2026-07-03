@@ -65,7 +65,12 @@ TTree "Events"  (10000 entries; showing 3)
   grid.
 - **`TProfile`** — per-bin mean-y.
 - **`TGraph`** — the first `-n` points.
+- **`TF1` / `TF2` / `TF3`** — the formula, parameters, and (for `TF1`) range.
 - **`TObjString` / `TParameter`** — the stored value.
+
+Any other class the library can read but has no dedicated view (e.g.
+`THnSparse`, `TEfficiency`) is reported by name and class rather than erroring —
+use `oxroot show`/`ls` for those.
 
 ## `stat` — file summary
 

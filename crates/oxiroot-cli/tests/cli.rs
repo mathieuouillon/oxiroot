@@ -137,6 +137,19 @@ fn json_mode_emits_json() {
 }
 
 #[test]
+fn dump_shows_a_function_and_falls_back_for_undumpable_classes() {
+    // A TF1: formula + params.
+    let (out, ok) = oxroot(&["dump", &spec("tf1.root", "myfunc")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("formula") && out.contains("params"), "{out}");
+
+    // A readable-but-undumpable class reports itself instead of erroring.
+    let (out, ok) = oxroot(&["dump", &spec("thnsparse.root", "hs")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("no dedicated `dump` view"), "{out}");
+}
+
+#[test]
 fn shows_and_dumps_a_tree_in_a_nested_subdirectory() {
     // fixtures/tree_subdir.root holds the tree at cal/run2/Events.
     let (out, ok) = oxroot(&["show", &spec("tree_subdir.root", "cal/run2/Events")]);

@@ -2,7 +2,8 @@
 
 use clap::Args as ClapArgs;
 use oxiroot::hist::{
-    Histogram, ParamValue, ReadRoot, TGraph, TObjString, TParameter, TProfile, TH1, TH2, TH3,
+    Histogram, ParamValue, ReadRoot, TGraph, TObjString, TParameter, TProfile, TF1, TF2, TF3, TH1,
+    TH2, TH3,
 };
 use oxiroot::ntuple::{FieldValues, RNTuple};
 use oxiroot::tree::{BranchValues, TTree};
@@ -45,6 +46,7 @@ pub fn run(args: Args, json: bool) -> CmdResult {
             args.entries,
             json,
         ),
+        Kind::Function => dump_function(&file, subdir, name, &class, json),
         Kind::ObjString => {
             let value = read_obj::<TObjString>(&file, subdir, name)?
                 .value()
@@ -58,8 +60,77 @@ pub fn run(args: Args, json: bool) -> CmdResult {
             emit_value(name, value, &text, json);
             Ok(())
         }
-        Kind::Other => Err(format!("dump: reading class {class:?} is not supported").into()),
+        // Readable by the library, but with no dedicated `dump` view: report the
+        // class rather than erroring, and point at `show`/`ls`.
+        Kind::Other => {
+            if json {
+                let out = Json::Object(vec![("name", Json::s(name)), ("class", Json::s(class))]);
+                println!("{}", out.render());
+            } else {
+                println!("{name}  {class}");
+                println!("(no dedicated `dump` view for {class}; try `oxroot show` or `ls`)");
+            }
+            Ok(())
+        }
     }
+}
+
+/// A `TF1`/`TF2`/`TF3`: its formula, parameters, and (for `TF1`) its range.
+fn dump_function(
+    file: &RFile,
+    subdir: Option<&str>,
+    name: &str,
+    class: &str,
+    json: bool,
+) -> CmdResult {
+    // All three share `formula`/`params`; only the read type and range differ.
+    let (formula, params, range) = match class {
+        "TF2" => {
+            let f = read_obj::<TF2>(file, subdir, name)?;
+            (f.formula().to_string(), f.params().to_vec(), None)
+        }
+        "TF3" => {
+            let f = read_obj::<TF3>(file, subdir, name)?;
+            (f.formula().to_string(), f.params().to_vec(), None)
+        }
+        _ => {
+            let f = read_obj::<TF1>(file, subdir, name)?;
+            (
+                f.formula().to_string(),
+                f.params().to_vec(),
+                Some(f.range()),
+            )
+        }
+    };
+
+    if json {
+        let out = Json::Object(vec![
+            ("name", Json::s(name)),
+            ("class", Json::s(class)),
+            ("formula", Json::s(formula)),
+            (
+                "params",
+                Json::Array(params.iter().map(|p| Json::F64(*p)).collect()),
+            ),
+            (
+                "range",
+                range.map_or(Json::Null, |(lo, hi)| {
+                    Json::Array(vec![Json::F64(lo), Json::F64(hi)])
+                }),
+            ),
+        ]);
+        println!("{}", out.render());
+        return Ok(());
+    }
+
+    println!("{class} {name:?}");
+    println!("formula  {formula}");
+    let ps: Vec<String> = params.iter().map(|p| num(*p)).collect();
+    println!("params   [{}]", ps.join(", "));
+    if let Some((lo, hi)) = range {
+        println!("range    [{}, {}]", num(lo), num(hi));
+    }
+    Ok(())
 }
 
 /// Read a `ReadRoot` object from the top directory or a subdirectory.
