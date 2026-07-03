@@ -245,6 +245,71 @@ impl RNTuple {
         Ok(values)
     }
 
+    /// Read the first `max_entries` entries of top-level field `name`, decoding
+    /// only the clusters that cover them — unlike [`read_field`](Self::read_field),
+    /// which decodes the whole field. Returns exactly `min(max_entries,
+    /// num_entries)` entries (so `read_field_prefix(.., m)` equals
+    /// `read_field(..)` truncated to `m`).
+    ///
+    /// The bound is at cluster granularity: the fewest whole clusters whose
+    /// entries reach `max_entries` are read through a truncated view of this
+    /// RNTuple, then the result is truncated to `max_entries`. Every column is
+    /// limited to the same clusters (cluster boundaries are shared), so
+    /// collection offsets and their child columns stay aligned.
+    pub fn read_field_prefix(
+        &self,
+        file: &RFile,
+        name: &str,
+        max_entries: usize,
+    ) -> Result<FieldValues> {
+        if max_entries as u64 >= self.num_entries() {
+            return self.read_field(file, name);
+        }
+
+        // Fewest whole clusters whose cumulative entries reach `max_entries`.
+        let mut kept = 0usize;
+        let mut view_entries = 0u64;
+        for summary in &self.summaries {
+            if view_entries >= max_entries as u64 {
+                break;
+            }
+            view_entries += summary.num_entries;
+            kept += 1;
+        }
+
+        // A schema-extension (deferred) column that only begins *after* the kept
+        // clusters would size its leading-default backfill to its real
+        // first-element index, overshooting the shortened view. That case is rare;
+        // fall back to the full read (then truncate) to stay exact.
+        let deferred_past_view = self.header.columns.iter().any(|c| {
+            c.first_element_index
+                .is_some_and(|f| f as u64 > view_entries)
+        });
+
+        let mut values = if deferred_past_view {
+            self.read_field(file, name)?
+        } else {
+            self.cluster_prefix(kept).read_field(file, name)?
+        };
+        values.truncate(max_entries);
+        Ok(values)
+    }
+
+    /// A lightweight view of this RNTuple limited to its first `kept` clusters:
+    /// the same schema, but `num_entries` and every column read cover only those
+    /// clusters. Cloning the schema is cheap next to decoding pages.
+    fn cluster_prefix(&self, kept: usize) -> RNTuple {
+        RNTuple {
+            anchor: self.anchor.clone(),
+            header: self.header.clone(),
+            footer: self.footer.clone(),
+            summaries: self.summaries[..kept].to_vec(),
+            page_clusters: self.page_clusters[..kept].to_vec(),
+            header_bytes: self.header_bytes.clone(),
+            footer_bytes: self.footer_bytes.clone(),
+        }
+    }
+
     /// Recursively reconstruct the values of field `field_idx` (a leaf, string,
     /// collection, or record) as flattened-at-this-level [`FieldValues`].
     fn read_field_tree(&self, file: &RFile, field_idx: usize) -> Result<FieldValues> {

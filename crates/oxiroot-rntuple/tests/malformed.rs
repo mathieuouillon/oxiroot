@@ -20,6 +20,9 @@ fn poke_rntuple(f: &RFile) {
         let names: Vec<String> = ntpl.field_names().iter().map(|s| s.to_string()).collect();
         for name in names {
             let _ = ntpl.read_field(f, &name);
+            // The cluster-bounded prefix read shares the decode path; exercise it
+            // (including the cluster-slicing / view) on the malformed bytes too.
+            let _ = ntpl.read_field_prefix(f, &name, 2);
         }
         // Run the (possibly corrupt) ntuple through the `hadd`-style merge —
         // exercises field concatenation + rebuild on malformed input.

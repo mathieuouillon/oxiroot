@@ -212,9 +212,10 @@ fn dump_rntuple(
     };
     let n = args.entries.min(ntuple.num_entries() as usize);
     let selected = select(&args.branches, ntuple.field_names());
+    // Read only the clusters covering the first `n` entries, not the whole field.
     let cols: Vec<(String, Option<FieldValues>)> = selected
         .iter()
-        .map(|f| (f.clone(), ntuple.read_field(file, f).ok()))
+        .map(|f| (f.clone(), ntuple.read_field_prefix(file, f, n).ok()))
         .collect();
 
     if json {

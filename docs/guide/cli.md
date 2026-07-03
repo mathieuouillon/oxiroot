@@ -121,5 +121,6 @@ dependency-free, so `--json` adds no crates.
 ## Scope
 
 `oxroot` reads what the library reads: classes it cannot decode are reported
-rather than guessed. `dump` reads an RNTuple field in full before showing the
-first `-n` entries.
+rather than guessed. `dump -n N` reads only the data it shows — a `TTree` decodes
+just the first `N` entries' baskets, and an RNTuple decodes only the clusters
+covering the first `N` entries (`RNTuple::read_field_prefix`).

@@ -145,6 +145,89 @@ impl FieldValues {
         self.len() == 0
     }
 
+    /// Truncate to the first `n` entries in place (a no-op if already `<= n`).
+    ///
+    /// Handles every variant, including the offset- and dense-packed collection
+    /// forms: a [`Nested`](FieldValues::Nested) keeps only the child items its
+    /// first `n` boundaries span, an [`Opt`](FieldValues::Opt) keeps only the
+    /// present values among the first `n`, and a [`Variant`](FieldValues::Variant)
+    /// keeps the entry-ordered prefix of each alternative it still references — so
+    /// `values.truncate(n)` equals reading only those first `n` entries.
+    pub fn truncate(&mut self, n: usize) {
+        use FieldValues::*;
+        if n >= self.len() {
+            return;
+        }
+        match self {
+            Bool(v) => v.truncate(n),
+            I8(v) => v.truncate(n),
+            U8(v) => v.truncate(n),
+            I16(v) => v.truncate(n),
+            U16(v) => v.truncate(n),
+            I32(v) => v.truncate(n),
+            I64(v) => v.truncate(n),
+            U32(v) => v.truncate(n),
+            U64(v) => v.truncate(n),
+            F32(v) => v.truncate(n),
+            F64(v) => v.truncate(n),
+            Str(v) => v.truncate(n),
+            VecBool(v) => v.truncate(n),
+            VecI8(v) => v.truncate(n),
+            VecU8(v) => v.truncate(n),
+            VecI16(v) => v.truncate(n),
+            VecU16(v) => v.truncate(n),
+            VecI32(v) => v.truncate(n),
+            VecI64(v) => v.truncate(n),
+            VecU32(v) => v.truncate(n),
+            VecU64(v) => v.truncate(n),
+            VecF32(v) => v.truncate(n),
+            VecF64(v) => v.truncate(n),
+            VecStr(v) => v.truncate(n),
+            // Every sub-field carries one value per entry.
+            Record(fields) => {
+                for (_, f) in fields.iter_mut() {
+                    f.truncate(n);
+                }
+            }
+            // `offsets` is one cumulative end per entry; the child holds the
+            // flattened items, so keep only those before the `n`-th boundary.
+            Nested { offsets, items } => {
+                let items_len = if n == 0 { 0 } else { offsets[n - 1] as usize };
+                offsets.truncate(n);
+                items.truncate(items_len);
+            }
+            // Alternatives are densely packed in entry order, so each keeps the
+            // prefix matching how many of the first `n` entries selected it (tags
+            // are 1-based; `0` is valueless).
+            Variant {
+                alternatives,
+                tags,
+                indices,
+            } => {
+                let mut counts = vec![0usize; alternatives.len()];
+                for &tag in tags.iter().take(n) {
+                    if let Some(slot) = (tag as usize)
+                        .checked_sub(1)
+                        .and_then(|a| counts.get_mut(a))
+                    {
+                        *slot += 1;
+                    }
+                }
+                tags.truncate(n);
+                indices.truncate(n);
+                for (kept, (_, values)) in counts.iter().zip(alternatives.iter_mut()) {
+                    values.truncate(*kept);
+                }
+            }
+            // `present` flags each entry; `values` holds only the present ones.
+            Opt { present, values } => {
+                let kept = present.iter().take(n).filter(|&&p| p).count();
+                present.truncate(n);
+                values.truncate(kept);
+            }
+        }
+    }
+
     /// Append `other`'s entries onto this field in place, concatenating them.
     ///
     /// Both fields must be the same scalar or vector variant; otherwise an error
