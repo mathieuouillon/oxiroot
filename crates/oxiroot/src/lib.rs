@@ -56,6 +56,15 @@ pub mod tree {
     pub use oxiroot_tree::*;
 }
 
+/// Pure-Rust statistics — special functions (`erf`, `gammainc`, `betainc`,
+/// `ndtri`), distributions (`Normal`/`StudentT`/`ChiSquared`/`FisherF`),
+/// descriptive stats (`skew`, `kurtosis`, `sem`, …), correlation (`pearsonr`,
+/// `spearmanr`), and hypothesis tests (`ttest_ind`, `normaltest`) — from
+/// `oxiroot-stat`, verified against `scipy.stats`.
+pub mod stat {
+    pub use oxiroot_stat::*;
+}
+
 /// Curve fitting for any 1-D data — histograms, graphs, or custom points (from
 /// `oxiroot-fit`). The [`FitData`](oxiroot_fit::FitData) trait + the blanket
 /// [`FitExt`](oxiroot_fit::FitExt) give `data.fit(&model)` to every dataset;

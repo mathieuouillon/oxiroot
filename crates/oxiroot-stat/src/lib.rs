@@ -1,12 +1,41 @@
-//! Special functions shared across oxiroot — the statistical distributions
-//! behind histogram comparison tests ([`oxiroot_hist`](https://crates.io/crates/oxiroot-hist)'s
-//! `chi2_test`/`kolmogorov_test`) and the goodness-of-fit p-value of
-//! [`oxiroot_fit`](https://crates.io/crates/oxiroot-fit).
+//! Pure-Rust statistics: special functions, distributions, descriptive
+//! statistics, correlation, and hypothesis tests — a dependency-free `f64` core
+//! whose numerics track [`scipy.stats`](https://docs.scipy.org/doc/scipy/reference/stats.html)
+//! (and `scipy.special`) function-for-function, verified against it.
 //!
-//! Dependency-free leaf crate (pure `f64` math): the incomplete gamma function
-//! (Cephes) with a Lanczos `ln Γ`, the χ² survival function, and the asymptotic
-//! Kolmogorov distribution. Faithful to ROOT's `TMath::Prob` /
-//! `TMath::KolmogorovProb`.
+//! It began as the special functions behind oxiroot's histogram comparison tests
+//! ([`oxiroot_hist`](https://crates.io/crates/oxiroot-hist)'s `chi2_test`/
+//! `kolmogorov_test`) and the goodness-of-fit p-value of
+//! [`oxiroot_fit`](https://crates.io/crates/oxiroot-fit), and now offers:
+//!
+//! - [`special`] — `erf`/`erfc`, `gammaln`, the regularized incomplete
+//!   gamma (`gammainc`/`gammaincc`) and beta (`betainc`) functions, and the
+//!   inverse normal CDF `ndtri`.
+//! - [`distributions`] — [`Normal`], [`StudentT`], [`ChiSquared`], and [`FisherF`]
+//!   with `pdf`/`cdf`/`sf`/`ppf`, plus Poisson/Binomial CDF & survival.
+//! - [`descriptive`] — `gmean`/`hmean`, `skew`, `kurtosis`, `moment`, `sem`,
+//!   `variation`, `iqr`, `median_abs_deviation`, `entropy`, `zscore`, `rankdata`, …
+//! - [`correlation`] — `pearsonr`, `spearmanr`.
+//! - [`hypothesis`] — `ttest_1samp`, `ttest_ind`, `normaltest`.
+//!
+//! The commonly-used items are also re-exported at the crate root.
+
+pub mod correlation;
+pub mod descriptive;
+pub mod distributions;
+pub mod hypothesis;
+pub mod special;
+
+pub use correlation::{pearsonr, spearmanr};
+pub use descriptive::{
+    entropy, gmean, hmean, iqr, kl_divergence, kurtosis, median, median_abs_deviation, moment,
+    quantile, rankdata, sem, skew, variation, zscore,
+};
+pub use distributions::{
+    binom_cdf, binom_sf, poisson_cdf, poisson_sf, ChiSquared, FisherF, Normal, StudentT,
+};
+pub use hypothesis::{normaltest, ttest_1samp, ttest_ind};
+pub use special::{beta, betainc, betaln, erf, erfc, gammainc, gammaincc, gammaln, ndtri};
 
 /// Chi-square survival function `P(X > chi2)` for `X ~ χ²(ndf)` — ROOT's
 /// `TMath::Prob`, i.e. the complemented regularized incomplete gamma
@@ -20,7 +49,7 @@ pub fn chi_square_prob(chi2: f64, ndf: usize) -> f64 {
     if chi2 <= 0.0 {
         return 1.0;
     }
-    igamc(ndf as f64 / 2.0, chi2 / 2.0)
+    special::gammaincc(ndf as f64 / 2.0, chi2 / 2.0)
 }
 
 /// ROOT's `TMath::KolmogorovProb(z)` — the asymptotic Kolmogorov distribution,
@@ -51,120 +80,6 @@ pub fn kolmogorov_prob(z: f64) -> f64 {
     }
 }
 
-// --- Incomplete gamma (Cephes), with a Lanczos ln Γ. ---
-
-const MACHEP: f64 = 1.1102230246251565e-16;
-const BIG: f64 = 4.503599627370496e15;
-const BIG_INV: f64 = 2.220446049250313e-16;
-/// `ln(f64::MAX)`; an exponent below `-MAX_LOG` underflows to 0.
-const MAX_LOG: f64 = 709.782712893384;
-
-/// Lanczos approximation to `ln Γ(x)` (g = 7).
-fn ln_gamma(x: f64) -> f64 {
-    const C: [f64; 9] = [
-        0.9999999999998099,
-        676.5203681218851,
-        -1259.1392167224028,
-        771.3234287776531,
-        -176.6150291621406,
-        12.507343278686905,
-        -0.13857109526572012,
-        9.984369578019572e-6,
-        1.5056327351493116e-7,
-    ];
-    if x < 0.5 {
-        let pi = std::f64::consts::PI;
-        pi.ln() - (pi * x).sin().abs().ln() - ln_gamma(1.0 - x)
-    } else {
-        let x = x - 1.0;
-        let t = x + 7.5;
-        let mut a = C[0];
-        for (i, &c) in C.iter().enumerate().skip(1) {
-            a += c / (x + i as f64);
-        }
-        0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + a.ln()
-    }
-}
-
-/// Regularized lower incomplete gamma `P(a, x)` (Cephes series).
-fn igam(a: f64, x: f64) -> f64 {
-    if x <= 0.0 || a <= 0.0 {
-        return 0.0;
-    }
-    if x > 1.0 && x > a {
-        return 1.0 - igamc(a, x);
-    }
-    let ax = a * x.ln() - x - ln_gamma(a);
-    if ax < -MAX_LOG {
-        return 0.0;
-    }
-    let ax = ax.exp();
-    let mut r = a;
-    let mut c = 1.0;
-    let mut ans = 1.0;
-    loop {
-        r += 1.0;
-        c *= x / r;
-        ans += c;
-        if c / ans <= MACHEP {
-            break;
-        }
-    }
-    ans * ax / a
-}
-
-/// Regularized complemented incomplete gamma `Q(a, x) = 1 - P(a, x)` (Cephes
-/// continued fraction).
-fn igamc(a: f64, x: f64) -> f64 {
-    if x <= 0.0 || a <= 0.0 {
-        return 1.0;
-    }
-    if x < 1.0 || x < a {
-        return 1.0 - igam(a, x);
-    }
-    let ax = a * x.ln() - x - ln_gamma(a);
-    if ax < -MAX_LOG {
-        return 0.0;
-    }
-    let ax = ax.exp();
-
-    let mut y = 1.0 - a;
-    let mut z = x + y + 1.0;
-    let mut c = 0.0;
-    let mut pkm2 = 1.0;
-    let mut qkm2 = x;
-    let mut pkm1 = x + 1.0;
-    let mut qkm1 = z * x;
-    let mut ans = pkm1 / qkm1;
-    loop {
-        c += 1.0;
-        y += 1.0;
-        z += 2.0;
-        let yc = y * c;
-        let pk = pkm1 * z - pkm2 * yc;
-        let qk = qkm1 * z - qkm2 * yc;
-        if qk != 0.0 {
-            let r = pk / qk;
-            let t = ((ans - r) / r).abs();
-            ans = r;
-            if t <= MACHEP {
-                break;
-            }
-        }
-        pkm2 = pkm1;
-        pkm1 = pk;
-        qkm2 = qkm1;
-        qkm1 = qk;
-        if pk.abs() > BIG {
-            pkm2 *= BIG_INV;
-            pkm1 *= BIG_INV;
-            qkm2 *= BIG_INV;
-            qkm1 *= BIG_INV;
-        }
-    }
-    ans * ax
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,7 +88,6 @@ mod tests {
     fn chi_square_prob_edges_and_midpoint() {
         assert_eq!(chi_square_prob(10.0, 0), 0.0);
         assert_eq!(chi_square_prob(0.0, 5), 1.0);
-        // P(X > ndf) for X ~ chi2(ndf) is ~0.37 near the mean for small ndf.
         let p = chi_square_prob(1.0, 1);
         assert!((p - 0.3173).abs() < 1e-3, "got {p}");
     }

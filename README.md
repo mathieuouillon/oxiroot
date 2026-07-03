@@ -32,6 +32,12 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   `TFormula` expression engine (arbitrary formulas, ROOT `gaus`/`expo`/`pol`
   shortcuts), with pure-Rust `eval`/`integral`/`derivative`; any formula is also
   fittable via `Model::from_formula`.
+- 📐 **Statistics** (`oxiroot::stat`) — a dependency-free, `scipy.stats`-verified
+  core: special functions (`erf`, `gammainc`, `betainc`, `ndtri`), the
+  `Normal`/`StudentT`/`ChiSquared`/`FisherF` distributions (`pdf`/`cdf`/`sf`/`ppf`)
+  plus Poisson/Binomial, descriptive stats (`skew`, `kurtosis`, `sem`, `iqr`,
+  `median_abs_deviation`, `entropy`, …), and `pearsonr`/`spearmanr` +
+  `ttest_ind`/`normaltest`.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
@@ -718,7 +724,7 @@ verified on read.
 | `oxiroot-hist` | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
 | `oxiroot-tree` | Classic `TTree` read/write |
 | `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
-| `oxiroot-stat` | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
+| `oxiroot-stat` | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) |
 | `oxiroot-plot` | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
 | `oxiroot-cli` | `oxroot`: a command-line inspector (`ls`/`show`/`dump`/`stat`) |
 

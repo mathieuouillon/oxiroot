@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Special functions (incomplete gamma, Kolmogorov distribution) shared by oxiroot's statistics and fitting"
+description = "Pure-Rust statistics — special functions, distributions, descriptive stats, correlation, and hypothesis tests, verified against scipy.stats"
 
 [dependencies]
 

@@ -13,6 +13,7 @@ oxiroot-compress = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }
 oxiroot-tree = { workspace = true }
+oxiroot-stat = { workspace = true }
 oxiroot-fit = { workspace = true, optional = true }
 oxiroot-plot = { workspace = true, optional = true }
 
