@@ -45,7 +45,10 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   `std::optional`/`std::unique_ptr` and `std::atomic`), read *unsplit* streamer
   fields, compressed, multi-cluster via a streaming writer, **several RNTuples per
   file / inside a `TDirectory`**, and **schema late extensions** (read and write
-  fields added via the footer's schema-extension record).
+  fields added via the footer's schema-extension record). A **bounded prefix
+  read** (`RNTuple::read_field_prefix(name, n)`) decodes only the clusters
+  covering the first *n* entries, so previewing a huge file (`oxroot dump -n 10`)
+  never touches the whole field.
 - 🗜 **Compression** — decode Zstd / zlib / LZ4 / LZMA; encode Zstd / zlib /
   LZ4 — all pure Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's

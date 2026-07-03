@@ -243,6 +243,46 @@ mod tests {
     }
 
     #[test]
+    fn hist2d_leaves_empty_bins_as_background() {
+        use artists::{Artist, MeshArtist};
+        use cmap::Colormap;
+        use draw::{DrawCommand, DrawGroup, Rect};
+        use style::Style;
+        use transform::Transform;
+
+        // Count the rectangles a mesh emits: one per *filled* cell, none for the
+        // empty (content 0) cells — they are left to show the background.
+        let paint = |values: Vec<Vec<f64>>| -> usize {
+            let edges = vec![0.0, 1.0, 2.0, 3.0];
+            let mesh = MeshArtist {
+                xedges: edges.clone(),
+                yedges: edges,
+                values,
+                cmap: Colormap::Viridis,
+                vmin: 1.0,
+                vmax: 9.0,
+            };
+            let t = Transform::new(Rect::new(0.0, 0.0, 300.0, 300.0), 0.0, 3.0, 0.0, 3.0);
+            let mut g = DrawGroup::new(None);
+            Artist::Mesh(mesh).draw(&t, &Style::default(), &mut g);
+            g.cmds
+                .iter()
+                .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+                .count()
+        };
+
+        // 3x3 grid with only two filled cells → two rects (seven empties undrawn).
+        let sparse = vec![
+            vec![5.0, 0.0, 0.0],
+            vec![0.0, 0.0, 0.0],
+            vec![0.0, 0.0, 9.0],
+        ];
+        assert_eq!(paint(sparse), 2, "empty bins must not be painted");
+        // A fully-filled grid paints every cell.
+        assert_eq!(paint(vec![vec![1.0; 3]; 3]), 9);
+    }
+
+    #[test]
     fn math_label_emits_glyph_paths() {
         use draw::{DrawCommand, DrawGroup};
         let fonts = FontSet::stix();
