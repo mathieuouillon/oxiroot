@@ -179,3 +179,58 @@ fn correlation_and_tests_match_scipy() {
     approx!(k2, 2.494040535868694, 1e-9);
     approx!(p, 0.2873597775644675, 1e-9);
 }
+
+#[test]
+fn describe_and_goodness_of_fit_match_scipy() {
+    let d = describe(&DATA);
+    assert_eq!(d.nobs, 8);
+    approx!(d.min, 2.0, 1e-12);
+    approx!(d.max, 9.0, 1e-12);
+    approx!(d.mean, 5.0, 1e-12);
+    approx!(d.variance, 4.571428571428571);
+    approx!(d.skewness, 0.65625, 1e-12);
+    approx!(d.kurtosis, -0.21875, 1e-12);
+
+    // scipy.stats.chisquare([10,12,8,15,11], [11.2; 5]).
+    let (chi2, p) = chisquare(&[10.0, 12.0, 8.0, 15.0, 11.0], &[11.2; 5]);
+    approx!(chi2, 2.392857142857143);
+    approx!(p, 0.6639184808868118);
+
+    // Two Kolmogorov–Smirnov samples.
+    const A: [f64; 10] = [0.1, 0.3, 0.55, 0.7, 0.9, 1.2, 1.4, 1.7, 2.0, 2.2];
+    const B: [f64; 10] = [0.2, 0.5, 0.6, 1.0, 1.1, 1.3, 1.9, 2.1, 2.5, 3.0];
+    let (d2, p2) = ks_2samp(&A, &B);
+    approx!(d2, 0.2, 1e-12);
+    // Asymptotic Kolmogorov p = kstwobign.sf(sqrt(n_a n_b/(n_a+n_b)) D).
+    approx!(p2, 0.9882610776435244, 3e-3);
+    let (d1, p1) = ks_1samp(&A, |x| Normal::standard().cdf(x));
+    approx!(d1, 0.539827837277029);
+    approx!(p1, 0.00588625843788155, 1e-4);
+}
+
+#[test]
+fn physics_helpers_match_reference() {
+    // Significance <-> p-value (one-sided, the HEP "n sigma").
+    approx!(significance_from_pvalue(2.8665157187919344e-07), 5.0, 1e-7);
+    approx!(pvalue_from_significance(5.0), 2.8665157187919344e-07);
+    approx!(pvalue_from_significance(3.0), 0.001349898031630093);
+
+    // Weighted mean and inverse-variance combination.
+    approx!(
+        weighted_mean(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0]),
+        2.3333333333333335
+    );
+    let (m, e) = combine_measurements(&[10.0, 12.0], &[1.0, 2.0]);
+    approx!(m, 10.4, 1e-12);
+    approx!(e, 0.8944271909999159);
+
+    // Clopper–Pearson (8/10) and Garwood Poisson (k = 5) 95% intervals.
+    let (lo, hi) = clopper_pearson(8.0, 10.0, 0.95);
+    approx!(lo, 0.4439045376923585, 1e-6);
+    approx!(hi, 0.9747892736731666, 1e-6);
+    let (lo, hi) = poisson_conf_interval(5.0, 0.95);
+    approx!(lo, 1.6234863901184204, 1e-5);
+    approx!(hi, 11.66833207932267, 1e-5);
+
+    approx!(betaincinv(2.0, 3.0, 0.5247999999999999), 0.4, 1e-9);
+}

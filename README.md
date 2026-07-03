@@ -35,9 +35,11 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 📐 **Statistics** (`oxiroot::stat`) — a dependency-free, `scipy.stats`-verified
   core: special functions (`erf`, `gammainc`, `betainc`, `ndtri`), the
   `Normal`/`StudentT`/`ChiSquared`/`FisherF` distributions (`pdf`/`cdf`/`sf`/`ppf`)
-  plus Poisson/Binomial, descriptive stats (`skew`, `kurtosis`, `sem`, `iqr`,
-  `median_abs_deviation`, `entropy`, …), and `pearsonr`/`spearmanr` +
-  `ttest_ind`/`normaltest`.
+  plus Poisson/Binomial, descriptive stats (`describe`, `skew`, `kurtosis`, `sem`,
+  `iqr`, `median_abs_deviation`, `entropy`, …), `pearsonr`/`spearmanr`, and tests
+  (`chisquare`, `ks_1samp`/`ks_2samp`, `ttest_ind`, `normaltest`). A **`physics`**
+  module adds HEP conventions: significance ↔ p-value ("nσ"), inverse-variance
+  measurement combination, and Clopper–Pearson / Garwood confidence intervals.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,

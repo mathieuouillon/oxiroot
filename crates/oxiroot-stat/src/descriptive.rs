@@ -188,6 +188,45 @@ pub fn zscore(data: &[f64]) -> Vec<f64> {
     data.iter().map(|&x| (x - m) / s).collect()
 }
 
+/// A one-shot descriptive summary — the fields of `scipy.stats.describe`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Describe {
+    /// Number of observations.
+    pub nobs: usize,
+    /// Minimum value.
+    pub min: f64,
+    /// Maximum value.
+    pub max: f64,
+    /// Arithmetic mean.
+    pub mean: f64,
+    /// Unbiased (sample, `ddof = 1`) variance.
+    pub variance: f64,
+    /// Biased Fisher–Pearson skewness (`g1`).
+    pub skewness: f64,
+    /// Biased Fisher (excess) kurtosis.
+    pub kurtosis: f64,
+}
+
+/// Compute a descriptive summary in one pass — `scipy.stats.describe` (variance
+/// uses `ddof = 1`; skewness and kurtosis are the biased Fisher estimators).
+#[must_use]
+pub fn describe(data: &[f64]) -> Describe {
+    let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
+    for &x in data {
+        min = min.min(x);
+        max = max.max(x);
+    }
+    Describe {
+        nobs: data.len(),
+        min,
+        max,
+        mean: mean(data),
+        variance: std_dev(data, 1).powi(2),
+        skewness: skew(data, true),
+        kurtosis: kurtosis(data, true, true),
+    }
+}
+
 /// Ranks of the data, ties assigned their average rank (1-based) —
 /// `scipy.stats.rankdata` (`method='average'`).
 #[must_use]

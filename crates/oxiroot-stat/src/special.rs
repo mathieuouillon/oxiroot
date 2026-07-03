@@ -222,6 +222,32 @@ fn betacf(a: f64, b: f64, x: f64) -> f64 {
     h
 }
 
+/// Inverse of the regularized incomplete beta in `x`: the `y`-quantile of a
+/// Beta(`a`, `b`) — `scipy.special.betaincinv`. Bisection on the monotone
+/// [`betainc`].
+#[must_use]
+pub fn betaincinv(a: f64, b: f64, y: f64) -> f64 {
+    if y <= 0.0 {
+        return 0.0;
+    }
+    if y >= 1.0 {
+        return 1.0;
+    }
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if betainc(a, b, mid) < y {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+        if hi - lo <= 1e-15 {
+            break;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
 /// Inverse of the standard normal CDF (the quantile / probit function) —
 /// `scipy.special.ndtri`. Acklam's rational approximation refined by one Halley
 /// step, accurate to full `f64` precision on `(0, 1)`.

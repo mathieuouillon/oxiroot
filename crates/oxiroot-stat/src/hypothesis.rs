@@ -36,6 +36,66 @@ pub fn normaltest(data: &[f64]) -> (f64, f64) {
     (k2, ChiSquared::new(2.0).sf(k2))
 }
 
+/// Pearson's chi-square goodness-of-fit test of observed vs expected counts —
+/// `scipy.stats.chisquare`. Returns `(χ², p)` with `k − 1` degrees of freedom
+/// (`p` from the χ² survival). The observed and expected totals should agree.
+#[must_use]
+pub fn chisquare(f_obs: &[f64], f_exp: &[f64]) -> (f64, f64) {
+    let chi2: f64 = f_obs
+        .iter()
+        .zip(f_exp)
+        .map(|(&o, &e)| (o - e) * (o - e) / e)
+        .sum();
+    (
+        chi2,
+        crate::chi_square_prob(chi2, f_obs.len().saturating_sub(1)),
+    )
+}
+
+/// Two-sample Kolmogorov–Smirnov test — `scipy.stats.ks_2samp`. Returns `(D, p)`
+/// where `D = max|F̂ₐ − F̂_b|`; `p` is the **asymptotic** Kolmogorov survival of
+/// `√(nₐn_b/(nₐ+n_b))·D` (like ROOT's `KolmogorovTest`), which differs from
+/// scipy's exact small-sample p-value.
+#[must_use]
+pub fn ks_2samp(a: &[f64], b: &[f64]) -> (f64, f64) {
+    let mut xa = a.to_vec();
+    let mut xb = b.to_vec();
+    xa.sort_by(f64::total_cmp);
+    xb.sort_by(f64::total_cmp);
+    let (na, nb) = (xa.len(), xb.len());
+    let (mut i, mut j, mut d) = (0, 0, 0.0f64);
+    while i < na && j < nb {
+        let (va, vb) = (xa[i], xb[j]);
+        if va <= vb {
+            i += 1;
+        }
+        if vb <= va {
+            j += 1;
+        }
+        d = d.max((i as f64 / na as f64 - j as f64 / nb as f64).abs());
+    }
+    let en = (na as f64 * nb as f64 / (na as f64 + nb as f64)).sqrt();
+    (d, crate::kolmogorov_prob(en * d))
+}
+
+/// One-sample Kolmogorov–Smirnov test against a reference CDF — `scipy.stats.ks_1samp`.
+/// Returns `(D, p)` where `D = maxᵢ max(F̂(xᵢ)−cdf(xᵢ), cdf(xᵢ)−F̂(xᵢ₋₁))`; `p` is
+/// the asymptotic Kolmogorov survival of `√n·D`.
+#[must_use]
+pub fn ks_1samp(data: &[f64], cdf: impl Fn(f64) -> f64) -> (f64, f64) {
+    let mut x = data.to_vec();
+    x.sort_by(f64::total_cmp);
+    let n = x.len();
+    let mut d = 0.0f64;
+    for (i, &xi) in x.iter().enumerate() {
+        let f = cdf(xi);
+        let d_plus = (i + 1) as f64 / n as f64 - f;
+        let d_minus = f - i as f64 / n as f64;
+        d = d.max(d_plus).max(d_minus);
+    }
+    (d, crate::kolmogorov_prob((n as f64).sqrt() * d))
+}
+
 /// The z-statistic of D'Agostino's skewness test (`scipy.stats.skewtest`).
 fn skewtest_z(data: &[f64]) -> f64 {
     let n = data.len() as f64;
