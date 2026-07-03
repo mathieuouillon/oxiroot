@@ -35,6 +35,7 @@ nav = [
     { "TTree" = "guide/ttree.md" },
     { "RNTuple" = "guide/rntuple.md" },
     { "Fitting" = "guide/fitting.md" },
+    { "Statistics" = "guide/statistics.md" },
     { "Plotting" = "guide/plotting.md" },
     { "Command-line inspector" = "guide/cli.md" },
     { "Merging files (hadd)" = "guide/hadd.md" },

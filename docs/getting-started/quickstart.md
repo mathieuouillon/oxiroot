@@ -85,6 +85,8 @@ Dive into any area:
 - **[TTree](../guide/ttree.md)** and **[RNTuple](../guide/rntuple.md)** — the two
   event-data formats.
 - **[Fitting](../guide/fitting.md)** — fit any 1-D data.
+- **[Statistics](../guide/statistics.md)** — `scipy.stats`-verified special
+  functions, distributions, and tests.
 - **[Multithreaded fill](../guide/multithreading.md)**,
   **[Compression](../guide/compression.md)**, and
   **[interop](../guide/interop.md)**.

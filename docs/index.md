@@ -57,7 +57,8 @@ let h = TH1::read_root(&RFile::open("hist.root")?, "pt")?;
 - **Guide** — a page per area:
   [Histograms](guide/histograms.md), [Graphs](guide/graphs.md),
   [TTree](guide/ttree.md), [RNTuple](guide/rntuple.md),
-  [Fitting](guide/fitting.md), [Plotting](guide/plotting.md),
+  [Fitting](guide/fitting.md), [Statistics](guide/statistics.md),
+  [Plotting](guide/plotting.md),
   [Multithreaded fill](guide/multithreading.md),
   [Compression](guide/compression.md), and
   [ROOT / uproot interop](guide/interop.md).
