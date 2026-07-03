@@ -665,7 +665,8 @@ ax2.save("heatmap.svg")?;
   are addressed `file.root:name` (uproot-style), with a `/`-path for nested
   `TDirectory`s (`file.root:cal/run2/Events`).
 - `oxroot ls [-l] [-r]` — list objects (name, class, title; `-l` adds cycle and
-  `TTree`/RNTuple entry count; `-r` recurses one `TDirectory` level).
+  `TTree`/RNTuple entry count; `-r` recurses into every `TDirectory`, by full
+  `dir/sub/name` path).
 - `oxroot show file.root:Events` — a `TTree`'s branches with their types
   (`double`, `double[3]`, `double[]`, `char*`; unreadable branches flagged), or
   an RNTuple's fields with C++ type names.

@@ -85,8 +85,9 @@ streamers    24 classes
 
 Objects nested in `TDirectory`s are addressed with a `/`-path:
 `oxroot show data.root:cal/run2/Events` descends two levels and shows the tree
-there — the same for histograms, RNTuples, and `dump`. `ls -r` recurses one
-directory level; deeper objects are still reachable by naming their full path.
+there — the same for histograms, RNTuples, and `dump`. `ls -r` recurses into
+**every** subdirectory, listing each object by its full `dir/sub/name` path (and,
+with `-l`, resolving entry counts for trees/RNTuples at any depth).
 
 ## JSON output
 

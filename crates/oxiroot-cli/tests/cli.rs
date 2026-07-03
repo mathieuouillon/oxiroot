@@ -74,6 +74,28 @@ fn ls_lists_keys() {
 }
 
 #[test]
+fn ls_recurse_descends_into_every_subdirectory() {
+    // fixtures/tree_subdir.root nests the tree three levels deep: cal/run2/Events.
+    let (out, ok) = oxroot(&["ls", fixture("tree_subdir.root").to_str().unwrap(), "-r"]);
+    assert!(ok, "{out}");
+    assert!(out.contains("cal/run2/Events"), "{out}");
+
+    // With -l, the nested tree's entry count is resolved (5), not a dash.
+    let (out, ok) = oxroot(&[
+        "ls",
+        fixture("tree_subdir.root").to_str().unwrap(),
+        "-l",
+        "-r",
+    ]);
+    assert!(ok, "{out}");
+    let line = out
+        .lines()
+        .find(|l| l.starts_with("cal/run2/Events"))
+        .unwrap_or("");
+    assert!(line.contains('5'), "{out}");
+}
+
+#[test]
 fn a_missing_object_is_an_error() {
     let (_out, ok) = oxroot(&["show", &spec("tree_flat.root", "NoSuch")]);
     assert!(!ok);

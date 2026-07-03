@@ -17,10 +17,14 @@ pub struct Args {
     /// Long listing: also show each object's cycle and entry count.
     #[arg(short, long)]
     long: bool,
-    /// Recurse one level into `TDirectory` subdirectories.
+    /// Recurse into every `TDirectory`, showing full `dir/sub/name` paths.
     #[arg(short, long)]
     recursive: bool,
 }
+
+/// A guard against runaway recursion on a crafted file (ROOT directory trees are
+/// acyclic, so real files never approach this).
+const MAX_DEPTH: usize = 64;
 
 /// One listed object.
 struct Row {
@@ -38,22 +42,15 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     let want_entries = args.long || json;
 
     let mut rows = Vec::new();
-    collect(&file, "", file.keys(), want_entries, &mut rows);
-    if args.recursive {
-        for key in file.keys().iter().filter(|k| !k.is_deleted()) {
-            if matches!(key.class_name.as_str(), "TDirectory" | "TDirectoryFile") {
-                if let Ok(dir) = file.subdir(&key.name) {
-                    collect(
-                        &file,
-                        &format!("{}/", key.name),
-                        &dir.keys,
-                        want_entries,
-                        &mut rows,
-                    );
-                }
-            }
-        }
-    }
+    collect(
+        &file,
+        "",
+        file.keys(),
+        want_entries,
+        args.recursive,
+        0,
+        &mut rows,
+    );
 
     if json {
         let array = Json::Array(
@@ -98,26 +95,78 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     Ok(())
 }
 
-/// Append one [`Row`] per non-deleted key, names prefixed with `prefix`.
-fn collect(file: &RFile, prefix: &str, keys: &[TKey], want_entries: bool, rows: &mut Vec<Row>) {
+/// Append one [`Row`] per non-deleted key in `dir_path` (`""` for the root
+/// directory); with `recursive`, descend into every `TDirectory`, naming keys by
+/// their full `dir/sub/name` path.
+fn collect(
+    file: &RFile,
+    dir_path: &str,
+    keys: &[TKey],
+    want_entries: bool,
+    recursive: bool,
+    depth: usize,
+    rows: &mut Vec<Row>,
+) {
     for key in keys.iter().filter(|k| !k.is_deleted()) {
+        let full = if dir_path.is_empty() {
+            key.name.clone()
+        } else {
+            format!("{dir_path}/{}", key.name)
+        };
         rows.push(Row {
-            name: format!("{prefix}{}", key.name),
+            name: full.clone(),
             class: key.class_name.clone(),
             title: key.title.clone(),
             cycle: key.cycle,
             entries: want_entries
-                .then(|| entry_count(file, &key.class_name, &key.name))
+                .then(|| entry_count(file, &key.class_name, &key.name, dir_path))
                 .flatten(),
         });
+        if recursive
+            && depth < MAX_DEPTH
+            && matches!(key.class_name.as_str(), "TDirectory" | "TDirectoryFile")
+        {
+            if let Ok(sub) = file.subdir(&full) {
+                collect(
+                    file,
+                    &full,
+                    &sub.keys,
+                    want_entries,
+                    recursive,
+                    depth + 1,
+                    rows,
+                );
+            }
+        }
     }
 }
 
-/// The entry count of a top-level `TTree`/RNTuple key, or `None` otherwise.
-fn entry_count(file: &RFile, class: &str, name: &str) -> Option<u64> {
+/// The entry count of a `TTree`/RNTuple key named `leaf` inside `dir_path`
+/// (`""` for the root directory), or `None` for any other class.
+fn entry_count(file: &RFile, class: &str, leaf: &str, dir_path: &str) -> Option<u64> {
     match classify(class) {
-        Kind::Tree => TTree::open(file, name).ok().map(|t| t.num_entries()),
-        Kind::RNtuple => RNTuple::open(file, name).ok().map(|n| n.num_entries()),
+        Kind::Tree => open_tree(file, dir_path, leaf).map(|t| t.num_entries()),
+        Kind::RNtuple => open_ntuple(file, dir_path, leaf).map(|n| n.num_entries()),
         _ => None,
     }
+}
+
+/// Open a `TTree` from the root directory or a subdirectory (`Ok`s only).
+fn open_tree(file: &RFile, dir_path: &str, leaf: &str) -> Option<TTree> {
+    if dir_path.is_empty() {
+        TTree::open(file, leaf)
+    } else {
+        TTree::open_in(file, dir_path, leaf)
+    }
+    .ok()
+}
+
+/// Open an RNTuple from the root directory or a subdirectory (`Ok`s only).
+fn open_ntuple(file: &RFile, dir_path: &str, leaf: &str) -> Option<RNTuple> {
+    if dir_path.is_empty() {
+        RNTuple::open(file, leaf)
+    } else {
+        RNTuple::open_in(file, dir_path, leaf)
+    }
+    .ok()
 }
