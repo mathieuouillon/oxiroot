@@ -1,7 +1,7 @@
 //! Hypothesis tests returning `(statistic, p_value)`, matching `scipy.stats`.
 
-use crate::descriptive::{kurtosis, mean, skew, std_dev};
-use crate::distributions::{ChiSquared, StudentT};
+use crate::descriptive::{kurtosis, mean, rankdata, skew, std_dev};
+use crate::distributions::{ChiSquared, Normal, StudentT};
 
 /// One-sample t-test of the sample mean against `popmean` —
 /// `scipy.stats.ttest_1samp`. Two-sided p-value.
@@ -94,6 +94,81 @@ pub fn ks_1samp(data: &[f64], cdf: impl Fn(f64) -> f64) -> (f64, f64) {
         d = d.max(d_plus).max(d_minus);
     }
     (d, crate::kolmogorov_prob((n as f64).sqrt() * d))
+}
+
+/// Mann–Whitney U rank-sum test (two-sided) — `scipy.stats.mannwhitneyu` with
+/// `method='asymptotic'`. Returns `(U₁, p)` where `U₁` is the statistic for the
+/// first sample and `p` is the normal approximation with continuity and tie
+/// corrections.
+#[must_use]
+pub fn mannwhitneyu(x: &[f64], y: &[f64]) -> (f64, f64) {
+    let (n1, n2) = (x.len(), y.len());
+    let mut all = x.to_vec();
+    all.extend_from_slice(y);
+    let ranks = rankdata(&all);
+    let r1: f64 = ranks[..n1].iter().sum();
+    let u1 = r1 - (n1 * (n1 + 1)) as f64 / 2.0;
+
+    let (n1f, n2f) = (n1 as f64, n2 as f64);
+    let n = n1f + n2f;
+    let mu = n1f * n2f / 2.0;
+    let tie = tie_correction(&all);
+    let sigma = (n1f * n2f / 12.0 * ((n + 1.0) - tie / (n * (n - 1.0)))).sqrt();
+    let mut num = u1 - mu;
+    num -= num.signum() * 0.5; // continuity correction
+    let z = num / sigma;
+    (u1, (2.0 * Normal::standard().sf(z.abs())).min(1.0))
+}
+
+/// Wilcoxon signed-rank test for paired samples — `scipy.stats.wilcoxon` with
+/// `method='approx'`. Zero differences are dropped; returns `(min(W⁺, W⁻), p)`
+/// with the normal approximation (tie-corrected, no continuity correction, to
+/// match scipy's default).
+#[must_use]
+pub fn wilcoxon(x: &[f64], y: &[f64]) -> (f64, f64) {
+    let diffs: Vec<f64> = x
+        .iter()
+        .zip(y)
+        .map(|(a, b)| a - b)
+        .filter(|d| *d != 0.0)
+        .collect();
+    let n = diffs.len();
+    let abs: Vec<f64> = diffs.iter().map(|d| d.abs()).collect();
+    let ranks = rankdata(&abs);
+    let (mut r_plus, mut r_minus) = (0.0, 0.0);
+    for (d, r) in diffs.iter().zip(&ranks) {
+        if *d > 0.0 {
+            r_plus += r;
+        } else {
+            r_minus += r;
+        }
+    }
+    let t = r_plus.min(r_minus);
+    let nf = n as f64;
+    let mean_t = nf * (nf + 1.0) / 4.0;
+    let tie = tie_correction(&abs);
+    let se = ((nf * (nf + 1.0) * (2.0 * nf + 1.0) - 0.5 * tie) / 24.0).sqrt();
+    let z = (t - mean_t) / se;
+    (t, (2.0 * Normal::standard().sf(z.abs())).min(1.0))
+}
+
+/// `Σ(tᵢ³ − tᵢ)` over the groups of tied values — the tie correction shared by
+/// the rank tests.
+fn tie_correction(values: &[f64]) -> f64 {
+    let mut s = values.to_vec();
+    s.sort_by(f64::total_cmp);
+    let mut total = 0.0;
+    let mut i = 0;
+    while i < s.len() {
+        let mut j = i;
+        while j + 1 < s.len() && s[j + 1] == s[i] {
+            j += 1;
+        }
+        let t = (j - i + 1) as f64;
+        total += t * t * t - t;
+        i = j + 1;
+    }
+    total
 }
 
 /// The z-statistic of D'Agostino's skewness test (`scipy.stats.skewtest`).

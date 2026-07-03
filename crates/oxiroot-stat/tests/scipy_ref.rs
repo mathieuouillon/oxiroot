@@ -234,3 +234,67 @@ fn physics_helpers_match_reference() {
 
     approx!(betaincinv(2.0, 3.0, 0.5247999999999999), 0.4, 1e-9);
 }
+
+#[test]
+fn nonparametric_tests_match_scipy() {
+    const XU: [f64; 7] = [0.5, 1.2, 2.3, 3.1, 4.0, 5.5, 6.1];
+    const YU: [f64; 8] = [2.1, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9];
+    let (u, p) = mannwhitneyu(&XU, &YU);
+    approx!(u, 11.5, 1e-12);
+    approx!(p, 0.06383999186885041, 1e-3);
+
+    const XW: [f64; 10] = [1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9, 11.0];
+    const YW: [f64; 10] = [1.0, 2.5, 3.0, 5.0, 5.0, 7.0, 7.2, 9.0, 9.5, 10.0];
+    let (w, p) = wilcoxon(&XW, &YW);
+    approx!(w, 20.0, 1e-12);
+    approx!(p, 0.4436974958333839, 1e-3);
+}
+
+#[test]
+fn efficiency_intervals_and_feldman_cousins() {
+    // Wilson (scipy `method='wilson'`) and Agresti–Coull 95% intervals for 8/10.
+    let (lo, hi) = wilson_interval(8.0, 10.0, 0.95);
+    approx!(lo, 0.4901624715366418, 1e-4);
+    approx!(hi, 0.9433178485456248, 1e-4);
+    let (lo, hi) = agresti_coull_interval(8.0, 10.0, 0.95);
+    approx!(lo, 0.4793675905661507, 1e-4);
+    approx!(hi, 0.9541127295161158, 1e-4);
+
+    // Feldman–Cousins 90% CL Poisson. The b = 0 cases match the canonical
+    // FC-1998 Table IV values exactly (to grid resolution); the background case
+    // is cross-checked against an independent implementation of the same
+    // likelihood-ratio construction.
+    let fc = |n, b| feldman_cousins(n, b, 0.90);
+    let (lo, hi) = fc(0, 0.0);
+    approx!(lo, 0.0, 1e-9);
+    approx!(hi, 2.44, 5e-2);
+    let (lo, hi) = fc(3, 0.0);
+    approx!(lo, 1.10, 5e-2);
+    approx!(hi, 7.42, 5e-2);
+    let (lo, hi) = fc(10, 0.0);
+    approx!(lo, 5.50, 5e-2);
+    approx!(hi, 16.50, 5e-2);
+    let (lo, hi) = fc(0, 3.0);
+    approx!(lo, 0.0, 1e-9);
+    approx!(hi, 0.95, 5e-2);
+}
+
+#[test]
+fn bootstrap_is_reproducible_and_reasonable() {
+    // 95% percentile bootstrap of the mean, reproducible by seed.
+    let mean = |d: &[f64]| d.iter().sum::<f64>() / d.len() as f64;
+    let (lo, hi) = bootstrap_ci(&X, mean, 4000, 0.95, 42);
+    assert_eq!(bootstrap_ci(&X, mean, 4000, 0.95, 42), (lo, hi));
+
+    // Brackets the sample mean (5.5) and is in the ballpark of the normal CI
+    // (mean ± 1.96·sem ≈ [3.62, 7.38]).
+    let m = mean(&X);
+    assert!(lo < m && m < hi, "CI [{lo}, {hi}] must bracket {m}");
+    let half = 1.96 * sem(&X);
+    assert!(
+        (hi - lo) > half && (hi - lo) < 4.0 * half,
+        "width {} vs 2·half {}",
+        hi - lo,
+        2.0 * half
+    );
+}

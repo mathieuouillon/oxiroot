@@ -16,10 +16,12 @@
 //! - [`descriptive`] — `gmean`/`hmean`, `skew`, `kurtosis`, `moment`, `sem`,
 //!   `variation`, `iqr`, `median_abs_deviation`, `entropy`, `zscore`, `rankdata`, …
 //! - [`correlation`] — `pearsonr`, `spearmanr`.
-//! - [`hypothesis`] — `ttest_1samp`, `ttest_ind`, `normaltest`, `chisquare`,
-//!   `ks_1samp`/`ks_2samp`.
+//! - [`hypothesis`] — `ttest_1samp`/`ttest_ind`, `normaltest`, `chisquare`,
+//!   `ks_1samp`/`ks_2samp`, and the nonparametric `mannwhitneyu`/`wilcoxon`.
 //! - [`physics`] — HEP helpers: significance ↔ p-value, weighted means /
-//!   measurement combination, and Clopper–Pearson / Garwood confidence intervals.
+//!   measurement combination, Clopper–Pearson / Garwood / Wilson / Agresti–Coull
+//!   confidence intervals, and the `feldman_cousins` unified interval.
+//! - [`resample`] — a seeded percentile `bootstrap_ci`.
 //!
 //! The commonly-used items are also re-exported at the crate root.
 
@@ -28,6 +30,7 @@ pub mod descriptive;
 pub mod distributions;
 pub mod hypothesis;
 pub mod physics;
+pub mod resample;
 pub mod special;
 
 pub use correlation::{pearsonr, spearmanr};
@@ -38,11 +41,15 @@ pub use descriptive::{
 pub use distributions::{
     binom_cdf, binom_sf, poisson_cdf, poisson_sf, ChiSquared, FisherF, Normal, StudentT,
 };
-pub use hypothesis::{chisquare, ks_1samp, ks_2samp, normaltest, ttest_1samp, ttest_ind};
-pub use physics::{
-    clopper_pearson, combine_measurements, poisson_conf_interval, pvalue_from_significance,
-    significance_from_pvalue, weighted_mean, weighted_std,
+pub use hypothesis::{
+    chisquare, ks_1samp, ks_2samp, mannwhitneyu, normaltest, ttest_1samp, ttest_ind, wilcoxon,
 };
+pub use physics::{
+    agresti_coull_interval, clopper_pearson, combine_measurements, feldman_cousins,
+    poisson_conf_interval, pvalue_from_significance, significance_from_pvalue, weighted_mean,
+    weighted_std, wilson_interval,
+};
+pub use resample::bootstrap_ci;
 pub use special::{
     beta, betainc, betaincinv, betaln, erf, erfc, gammainc, gammaincc, gammaln, ndtri,
 };
