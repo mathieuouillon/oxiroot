@@ -101,6 +101,27 @@ leptons.sort_by(|a, b| a.mass().partial_cmp(&b.mass()).unwrap());
 assert_eq!(leptons.iter().map(|p| p.name()).collect::<Vec<_>>(), ["e-", "mu-", "tau-"]);
 ```
 
+### Named constants (`literals`)
+
+For the everyday particles, the `literals` module (mirroring scikit-hep's
+`particle.literals`) gives friendly named accessors, so you do not have to
+remember PDG IDs or the exact table name:
+
+```rust
+use oxiroot::particle::literals as lp;
+
+assert_eq!(lp::proton().pdg_id(), 2212);
+assert_eq!(lp::electron().charge(), Some(-1.0));
+assert!(lp::jpsi().is_self_conjugate());
+let m_z = lp::z().mass().unwrap();
+```
+
+Covers the quarks, leptons and neutrinos, gauge bosons and the Higgs, the light
+and heavy-flavour mesons (`pi_plus`, `k_short`, `d_zero`, `b_plus`, `jpsi`,
+`upsilon_1s`, …) and the common baryons (`proton`, `neutron`, `lambda`,
+`sigma_plus`, `omega_minus`, `lambda_c_plus`, …). For anything else (resonances,
+di-quarks) use `from_name` / `from_pdgid`.
+
 ### Antiparticles
 
 `invert()` returns the antiparticle: the same particle when it is self-conjugate,

@@ -9,7 +9,7 @@
 //! a meson? its charge?), and look particles up in the bundled PDG table for
 //! their mass, width, lifetime, and quantum numbers.
 
-use oxiroot::particle::{Particle, PdgId};
+use oxiroot::particle::{literals, Particle, PdgId};
 
 fn main() {
     // --- 1. Decode PDG IDs straight from their digits — no table needed. ------
@@ -71,8 +71,10 @@ fn main() {
         );
     }
 
-    // --- 3. The muon lifetime, cross-checked against the textbook value. ------
-    let muon = Particle::from_name("mu-").unwrap();
+    // --- 3. The muon lifetime, via a `literals` named constant. ---------------
+    // `literals::muon()` is the friendly way to reach a common particle, instead
+    // of Particle::from_name("mu-") or Particle::from_pdgid(13).
+    let muon = literals::muon();
     println!(
         "\nMuon: mean lifetime {:.1} ns (PDG ≈ 2196.9 ns), cτ = {:.1} m",
         muon.lifetime().unwrap(),

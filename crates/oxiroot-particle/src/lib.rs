@@ -24,15 +24,20 @@
 //! assert!(PdgId::new(211).is_meson()); // pi+
 //! assert_eq!(PdgId::new(-11).charge(), Some(1.0)); // positron
 //!
-//! // Physical properties from the bundled table.
+//! // Physical properties from the bundled table — by name, id, or a `literals`
+//! // constant.
 //! let muon = Particle::from_name("mu-").unwrap();
 //! assert!((muon.mass().unwrap() - 105.6583755).abs() < 1e-4); // MeV
 //! assert!((muon.lifetime().unwrap() - 2197.0).abs() < 1.0); // ns
+//! assert_eq!(oxiroot_particle::literals::proton().charge(), Some(1.0));
 //!
 //! // Iterate / filter the table.
 //! let n_leptons = Particle::all().filter(|p| p.pdgid().is_lepton()).count();
 //! assert!(n_leptons >= 12); // e, mu, tau, 3 neutrinos, and their antiparticles
 //! ```
+//!
+//! The [`literals`] module gives friendly named accessors for the common
+//! particles ([`literals::electron`], [`literals::jpsi`], …).
 //!
 //! # Data provenance
 //!
@@ -50,6 +55,7 @@
 
 mod data;
 mod enums;
+pub mod literals;
 mod particle;
 mod pdgid;
 

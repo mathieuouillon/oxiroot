@@ -464,12 +464,16 @@ assert_eq!(PdgId::new(-11).charge(), Some(1.0)); // positron
 let u235 = PdgId::new(1000922350);
 assert_eq!((u235.a(), u235.z()), (Some(235), Some(92))); // uranium-235
 
-// Physical properties from the bundled table (MeV, ns, mm).
-let muon = Particle::from_name("mu-").unwrap();
+// Physical properties from the bundled table (MeV, ns, mm), by name, id, or a
+// `literals` named constant.
+let muon = oxiroot::particle::literals::muon();
 assert!((muon.mass().unwrap() - 105.6583755).abs() < 1e-4);
 assert!((muon.lifetime().unwrap() - 2196.98).abs() < 0.1); // τ = ħ/Γ
 assert_eq!(Particle::from_name("pi+").unwrap().invert().unwrap().name(), "pi-");
 ```
+
+`particle::literals` mirrors scikit-hep's `particle.literals` — friendly named
+accessors like `literals::proton()`, `literals::electron()`, `literals::jpsi()`.
 
 ### Object collections (`oxiroot::hist`)
 
