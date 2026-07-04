@@ -426,7 +426,7 @@ assert_eq!(THStack::read_root(&f, "hs")?.hists().len(), 2);
 assert_eq!(TMultiGraph::read_root(&f, "mg")?.graphs()[0].name, "obs");
 ```
 
-### Linear algebra (`oxiroot::hist`)
+### Linear algebra (`oxiroot::linalg`)
 
 `TVectorD` (a vector), `TMatrixD` (a dense matrix), and `TMatrixDSym` (a symmetric
 matrix — the shape a fit's covariance takes) read and write byte-for-byte as
@@ -730,6 +730,45 @@ verified on read.
   auto-switches to the big format, and the `TFile`/`TTree` writers reject an
   over-2 GiB write instead of silently truncating their 32-bit seek pointers.
 - `Error` is `#[non_exhaustive]` and preserves the underlying `io::ErrorKind`.
+
+## Examples
+
+Every example under [`crates/oxiroot/examples/`](crates/oxiroot/examples) is a
+self-contained, runnable file. Run any of them with `cargo run -p oxiroot
+--example <name>`; the default build already has the `fit` and `plot` features
+on, so nothing extra is needed.
+
+| Example | What it shows |
+|---|---|
+| **Start here** | |
+| [`analysis`](crates/oxiroot/examples/analysis.rs) | End-to-end mini analysis: weighted/variable-bin histograms → scale/merge/normalize → subdirectories → a columnar dataset → read-back |
+| [`inspect`](crates/oxiroot/examples/inspect.rs) | Introspect *any* ROOT file you did not write — a programmatic `oxroot ls` |
+| **Statistics** — `oxiroot::stat` | |
+| [`stat_intro`](crates/oxiroot/examples/stat_intro.rs) | Descriptive stats + the `Normal`/`StudentT`/`ChiSquared`/`FisherF` distributions and confidence intervals |
+| [`stat_tests`](crates/oxiroot/examples/stat_tests.rs) | Hypothesis tests (t-test, Mann–Whitney, KS), correlation (Pearson/Spearman), goodness-of-fit, normality |
+| [`stat_physics`](crates/oxiroot/examples/stat_physics.rs) | A HEP counting experiment: discovery significance, Feldman–Cousins, Garwood/Clopper–Pearson intervals, combining measurements |
+| [`lineshapes`](crates/oxiroot/examples/lineshapes.rs) | HEP peak shapes (Crystal Ball, Voigt, Breit–Wigner, Novosibirsk, ARGUS…) + a Crystal Ball fit |
+| **Fitting** — `oxiroot::fit` | |
+| [`fit`](crates/oxiroot/examples/fit.rs) | Fit a Gaussian peak (χ² *and* likelihood), a peak-on-background, a `TGraph`, and raw points — one API |
+| [`robust_fit`](crates/oxiroot/examples/robust_fit.rs) | Outlier-resistant losses (`SoftL1`/`Huber`/`Cauchy`) versus ordinary least squares |
+| **Histograms & profiles** | |
+| [`profile`](crates/oxiroot/examples/profile.rs) | `TProfile` / `TProfile2D` — the mean of *y* in slices of *x* |
+| [`efficiency`](crates/oxiroot/examples/efficiency.rs) | `TEfficiency` turn-on curve with a Clopper–Pearson interval |
+| [`sparse`](crates/oxiroot/examples/sparse.rs) | `THnSparse` — a memory-efficient N-dimensional histogram |
+| [`threaded`](crates/oxiroot/examples/threaded.rs) | Multithreaded fill with `ThreadedHist` (ROOT's `TThreadedObject` analog) |
+| **Graphs & functions** | |
+| [`graphs`](crates/oxiroot/examples/graphs.rs) | `TGraph` / `TGraphErrors` / `TGraphAsymmErrors` / `TGraph2D` / `TMultiGraph` |
+| [`functions`](crates/oxiroot/examples/functions.rs) | `TF1`/`TF2`/`TF3` from formulas: `eval` / `integral` / `derivative` + round-trip |
+| **Objects & linear algebra** | |
+| [`objects`](crates/oxiroot/examples/objects.rs) | Store run provenance (`TObjString` / `TParameter` / `TList`) next to your data |
+| [`linalg`](crates/oxiroot/examples/linalg.rs) | `TVectorD` / `TMatrixD` / `TMatrixDSym` round-trip (a fit-covariance shape) |
+| **I/O & formats** | |
+| [`tree`](crates/oxiroot/examples/tree.rs) | `TTree` write + read, introspection, entry ranges, streaming `TTreeWriter` |
+| [`rntuple`](crates/oxiroot/examples/rntuple.rs) | A basic flat RNTuple write/read, plus several RNTuples in one file |
+| [`rntuple_nested`](crates/oxiroot/examples/rntuple_nested.rs) | Nested RNTuple fields: vector-of-string, vector-of-vector, vector-of-record |
+| [`compression`](crates/oxiroot/examples/compression.rs) | The `None` / `Zstd` / `Zlib` / `Lz4` size trade-off — every codec lossless |
+| [`merge`](crates/oxiroot/examples/merge.rs) | A pure-Rust `hadd`: sum histograms, concatenate trees / RNTuples |
+| [`plot`](crates/oxiroot/examples/plot.rs) | Render histograms and graphs to SVG / PNG / PDF (matplotlib + mplhep look; needs `plot`) |
 
 ## Workspace layout
 
