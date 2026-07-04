@@ -12,7 +12,8 @@
 //!    LaTeX axis label (the default matplotlib look). Also saved at 220 DPI.
 //! 2. `mplhep` — the same histogram as a step staircase with error bars in the
 //!    mplhep style (in-pointing ticks, minors, all four sides), with a bold
-//!    `CMS Preliminary` experiment label and luminosity/energy above the frame.
+//!    `CMS Preliminary` experiment label and luminosity/energy above the frame,
+//!    a fitted Gaussian, and a ROOT-style fit stat box (with the `fit` feature).
 //! 3. `heatmap` — a 2-D TH2 as a viridis color mesh with a colorbar.
 //! 4. `ratio` — a main panel over a data/MC ratio panel sharing the x-axis.
 
@@ -79,6 +80,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .hep_rhs("138 fb$^{-1}$ (13 TeV)");
     hep.xlabel("$m_{\\mu\\mu}$ [GeV]");
     hep.ylabel("Events / 2 GeV");
+    // Fit the peak and add a ROOT-style stat box in the HEP style, too. The box
+    // adopts the mplhep frame colour/weight and stacks under the legend.
+    #[cfg(feature = "fit")]
+    {
+        use oxiroot::fit::Model;
+        let model = Model::gaussian("gaus").estimate_from(&mc);
+        let r = mc.fit(&model);
+        let fitted = model.with_params(r.params.clone());
+        hep.model_with(
+            &fitted,
+            50.0..130.0,
+            oxiroot::plot::CurveOpts::new()
+                .color(Color::hex("#d62728"))
+                .linewidth(2.0)
+                .label("fit"),
+        );
+        hep.fit_stats(&fitted, &r);
+    }
     hep.legend();
     save_both(&hep, &out, "mplhep")?;
 
