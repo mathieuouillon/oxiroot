@@ -12,7 +12,6 @@
 mod base;
 mod collections;
 mod compare;
-mod linalg;
 mod naming;
 mod objects;
 mod objlist;
@@ -54,7 +53,6 @@ pub use fit::{FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Mode
 pub use graph::{GraphErrors, GraphFunction, TGraph};
 pub use graph2d::TGraph2D;
 pub use graphmultierrors::TGraphMultiErrors;
-pub use linalg::{TMatrixD, TMatrixDSym, TVectorD};
 pub use merge::{merge_histogram_files, HistMergeOutcome};
 pub use objects::{ParamValue, TObjString, TParameter};
 pub use objlist::{FromMember, ListKind, ObjList, TMap};

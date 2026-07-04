@@ -8,6 +8,7 @@
 //! class back-references ROOT emits for repeated member types resolve. (uproot
 //! reads `TList`/`TObjArray` but has no `TMap` model — see [`TMap`].)
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
@@ -19,14 +20,14 @@ use oxiroot_io_core::RFile;
 use crate::base::object_bytes_any_keyed;
 use crate::collections::write_object;
 use crate::graph::{decode_tgraph, TGraph};
-use crate::linalg::{
-    decode_tmatrixd, decode_tmatrixdsym, decode_tvectord, TMatrixD, TMatrixDSym, TVectorD,
-};
 use crate::objects::{decode_tobjstring, decode_tparameter, TObjString, TParameter};
 use crate::th1::{decode_th1, TH1};
 use crate::th2::{decode_th2, TH2};
 use crate::th3::{decode_th3, TH3};
 use crate::write::WriteRoot;
+use oxiroot_linalg::{
+    decode_tmatrixd, decode_tmatrixdsym, decode_tvectord, TMatrixD, TMatrixDSym, TVectorD,
+};
 
 /// Whether an [`ObjList`] serializes as a `TList` (ordered, with per-element
 /// options) or a `TObjArray` (an indexed array).
@@ -160,6 +161,9 @@ impl WriteRoot for ObjList {
             }
         }
         w.into_vec()
+    }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
     }
 }
 
@@ -430,6 +434,9 @@ impl WriteRoot for TMap {
         }
         w.end_object(obj);
         w.into_vec()
+    }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
     }
 }
 

@@ -18,6 +18,7 @@ pub mod compression;
 pub mod error;
 pub mod file;
 pub mod object;
+pub mod object_io;
 pub mod streamer;
 pub mod streamer_gen;
 pub mod streamer_info;
@@ -31,6 +32,7 @@ pub use file::{
     Subdir, TDatime, TKey, TUuid, KSTART_BIG_FILE,
 };
 pub use object::{ObjHeader, TagReader};
+pub use object_io::{object_bytes_any, object_bytes_any_keyed, record_of, ReadRoot, WriteRoot};
 pub use streamer::{
     read_tnamed, read_tobject, skip_versioned, write_tnamed, write_tobject, TNamed, TObjectHeader,
 };

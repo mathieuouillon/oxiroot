@@ -4,12 +4,12 @@
 //! as ROOT serializes them, so ROOT and uproot read what oxiroot writes and vice
 //! versa.
 
+use std::borrow::Cow;
+
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::read_tobject;
-use oxiroot_io_core::streamer_gen::{
-    any, base, basic, basicptr, basicptr_in, objanyptr, objptr, stl, strf, Cls,
-};
+use oxiroot_io_core::streamer_gen::{any, base, basic, objanyptr, objptr, stl, strf, Cls};
 use oxiroot_io_core::RFile;
 
 use crate::base::object_bytes_any;
@@ -85,6 +85,9 @@ impl WriteRoot for TObjString {
         w.string(&self.value); // fString
         w.end_object(obj);
         w.into_vec()
+    }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
     }
 }
 
@@ -226,6 +229,9 @@ impl WriteRoot for TParameter {
         w.end_object(obj);
         w.into_vec()
     }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
+    }
 }
 
 pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Result<TParameter> {
@@ -274,22 +280,6 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls> {
             base("TObject", 1),
             strf("fName"),
             basic("fVal", ty, size, type_name),
-        ],
-    };
-    // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
-    let matrix_base = || Cls {
-        name: "TMatrixTBase<double>",
-        version: 5,
-        checksum: 2_333_786_657,
-        elements: vec![
-            base("TObject", 1),
-            basic("fNrows", 3, 4, "int"),
-            basic("fNcols", 3, 4, "int"),
-            basic("fRowLwb", 3, 4, "int"),
-            basic("fColLwb", 3, 4, "int"),
-            basic("fNelems", 6, 4, "int"),
-            basic("fNrowIndex", 3, 4, "int"),
-            basic("fTol", 8, 8, "double"),
         ],
     };
     // ROOT's `TFormula`/`TF1`/`TF2`/`TF3` streamer infos (versions and checksums
@@ -407,47 +397,13 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls> {
                 basic("fMinimum", 8, 8, "double"),
             ],
         }],
-        "TVectorT<double>" => vec![Cls {
-            name: "TVectorT<double>",
-            version: 4,
-            checksum: 1_779_256_495,
-            elements: vec![
-                base("TObject", 1),
-                basic("fNrows", 6, 4, "int"),
-                basic("fRowLwb", 3, 4, "int"),
-                basicptr("fElements", 48, 8, "double*", "fNrows"),
-            ],
-        }],
-        "TMatrixT<double>" => vec![
-            matrix_base(),
-            Cls {
-                name: "TMatrixT<double>",
-                version: 4,
-                checksum: 135_074_716,
-                elements: vec![
-                    base("TMatrixTBase<double>", 5),
-                    // fNelems lives in the TMatrixTBase<double> base, not here.
-                    basicptr_in(
-                        "fElements",
-                        48,
-                        8,
-                        "double*",
-                        "fNelems",
-                        "TMatrixTBase<double>",
-                        5,
-                    ),
-                ],
-            },
-        ],
-        // ROOT emits no `TMatrixTSym<double>` streamer — its custom Streamer
-        // writes the base then the triangle, and uproot models it natively — so
-        // only the shared base is needed.
-        "TMatrixTSym<double>" => vec![matrix_base()],
         // A function embeds its formula and its base classes, deepest first.
         "TF1" => vec![tformula(), tf1()],
         "TF2" => vec![tformula(), tf1(), tf2()],
         "TF3" => vec![tformula(), tf1(), tf2(), tf3()],
-        _ => Vec::new(),
+        // The linear-algebra classes (`TVectorT`/`TMatrixT`/`TMatrixTSym`/
+        // `TMatrixTBase`) now live in `oxiroot-linalg`; delegate to it.
+        _ => oxiroot_linalg::streamer_classes(class),
     }
 }
 

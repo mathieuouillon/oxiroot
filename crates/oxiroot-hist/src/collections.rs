@@ -8,6 +8,7 @@
 //! position-independent. Reading uses [`TagReader`], which resolves both the
 //! class tags oxiroot writes and the back-references ROOT writes.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use oxiroot_io_core::buffer::{RBuffer, WBuffer, K_BYTE_COUNT_MASK};
@@ -202,6 +203,9 @@ impl WriteRoot for THStack {
         w.end_object(obj);
         w.into_vec()
     }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
+    }
 }
 
 fn decode_thstack(class: &str, object: &[u8], keylen: usize) -> Result<THStack> {
@@ -313,6 +317,9 @@ impl WriteRoot for TMultiGraph {
         w.be_f64(UNSET_LIMIT); // fMinimum
         w.end_object(obj);
         w.into_vec()
+    }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
     }
 }
 

@@ -8,6 +8,9 @@ use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::RFile;
+// The generic object-byte readers now live in `oxiroot-io-core`; re-export them
+// here so the histogram modules keep addressing them as `crate::base::…`.
+pub(crate) use oxiroot_io_core::{object_bytes_any, object_bytes_any_keyed};
 
 use crate::axis::TAxis;
 
@@ -258,32 +261,6 @@ pub(crate) fn object_bytes_keyed(
     let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
         .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
     Ok((object, keylen))
-}
-
-/// Return a key's class name together with its decompressed object bytes,
-/// without checking the class.
-pub(crate) fn object_bytes_any(file: &RFile, name: &str) -> Result<(String, Vec<u8>)> {
-    let key = file
-        .key(name)
-        .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
-    let payload = key.payload(file.data())?;
-    let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
-        .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
-    Ok((key.class_name.clone(), object))
-}
-
-/// Like [`object_bytes_any`], but also return the key's header length, needed by
-/// the object-reference map ([`oxiroot_io_core::object::TagReader`]) to resolve
-/// the class back-references inside a collection (a `THStack`'s `TList` of
-/// histograms, a `TMultiGraph`'s `TList` of graphs).
-pub(crate) fn object_bytes_any_keyed(file: &RFile, name: &str) -> Result<(String, Vec<u8>, usize)> {
-    let key = file
-        .key(name)
-        .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
-    let payload = key.payload(file.data())?;
-    let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
-        .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
-    Ok((key.class_name.clone(), object, key.key_len as usize))
 }
 
 /// Fetch a histogram object, requiring a 4-character class with the given

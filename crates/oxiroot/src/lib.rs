@@ -46,6 +46,12 @@ pub mod hist {
     pub use oxiroot_hist::*;
 }
 
+/// ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym` (from
+/// `oxiroot-linalg`), with byte-exact ROOT read/write.
+pub mod linalg {
+    pub use oxiroot_linalg::*;
+}
+
 /// RNTuple, ROOT's columnar event-data format (from `oxiroot-rntuple`).
 pub mod ntuple {
     pub use oxiroot_rntuple::*;
@@ -103,10 +109,11 @@ pub mod prelude {
         merge_all, Chi2TestKind, Chi2TestResult, Dir, ErrorMode, FromMember, GraphErrors,
         GraphFunction, Hist, Histogram, KsTestResult, ListKind, Merge, ObjList, ParamValue,
         PolyBin, Precision, ReadRoot, Rng, RootFile, SparseBin, TAxis, TEfficiency, TGraph,
-        TGraph2D, TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMap, TMatrixD, TMatrixDSym,
-        TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D, TVectorD,
-        ThreadedHist, WriteRoot, TF1, TF2, TF3, TH1, TH2, TH3,
+        TGraph2D, TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMap, TMultiGraph, TObjString,
+        TParameter, TProfile, TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TF1, TF2, TF3, TH1,
+        TH2, TH3,
     };
+    pub use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
     pub use oxiroot_rntuple::{
         write_rntuple_file, Column, Field, FieldValues, Ntuple, NtupleDir, NtupleFile, RNTuple,

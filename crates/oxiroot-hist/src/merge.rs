@@ -20,10 +20,12 @@ use std::path::Path;
 use oxiroot_io_core::error::Result;
 use oxiroot_io_core::{Compression, RFile};
 
+use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
+
 use crate::{
     ReadRoot, RootFile, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
-    THnSparse, TMap, TMatrixD, TMatrixDSym, TMultiGraph, TObjString, TParameter, TProfile,
-    TProfile2D, TProfile3D, TVectorD, WriteRoot, TF1, TF2, TF3, TH1, TH2, TH3,
+    THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D,
+    WriteRoot, TF1, TF2, TF3, TH1, TH2, TH3,
 };
 
 /// What [`merge_histogram_files`] did with each key: the names that were summed

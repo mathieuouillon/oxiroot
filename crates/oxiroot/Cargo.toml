@@ -12,6 +12,7 @@ oxiroot-io-core = { workspace = true }
 oxiroot-compress = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }
+oxiroot-linalg = { workspace = true }
 oxiroot-tree = { workspace = true }
 oxiroot-stat = { workspace = true }
 oxiroot-fit = { workspace = true, optional = true }

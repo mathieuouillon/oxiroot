@@ -7,7 +7,6 @@ use crate::collections::{THStack, TMultiGraph};
 use crate::graph::TGraph;
 use crate::graph2d::TGraph2D;
 use crate::graphmultierrors::TGraphMultiErrors;
-use crate::linalg::{TMatrixD, TMatrixDSym, TVectorD};
 use crate::objects::{TObjString, TParameter};
 use crate::objlist::{ObjList, TMap};
 use crate::tefficiency::TEfficiency;
@@ -21,25 +20,10 @@ use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
-/// Read a ROOT object of this type from an open file by key name, auto-detecting
-/// the on-disk precision where one applies (`TH1D`/`F`/`I`/`S`/`C`/`L` all read
-/// into a [`TH1`]). This is the way to read any single object:
-///
-/// ```no_run
-/// use oxiroot_hist::{ReadRoot, TH1};
-/// use oxiroot_io_core::RFile;
-/// let f = RFile::open("in.root")?;
-/// let h = TH1::read_root(&f, "h")?; // any of TH1D/F/I/S/C/L
-/// let s = TH1::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-pub trait ReadRoot: Sized {
-    /// Read the object stored under key `name` in the file's top directory.
-    fn read_root(file: &RFile, name: &str) -> Result<Self>;
-    /// Read the object stored under key `name` inside subdirectory `dir` (written
-    /// via [`RootFile::dir`](crate::RootFile::dir)).
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self>;
-}
+// The `ReadRoot` trait now lives in `oxiroot-io-core`; re-export it so
+// `oxiroot_hist::ReadRoot` keeps resolving. This module registers the histogram
+// family's implementations.
+pub use oxiroot_io_core::ReadRoot;
 
 macro_rules! impl_read_root {
     ($ty:ty, $read:path, $read_in:path) => {
@@ -124,21 +108,6 @@ impl_read_root!(
     TMultiGraph,
     crate::collections::read_tmultigraph,
     crate::collections::read_tmultigraph_in
-);
-impl_read_root!(
-    TVectorD,
-    crate::linalg::read_tvectord,
-    crate::linalg::read_tvectord_in
-);
-impl_read_root!(
-    TMatrixD,
-    crate::linalg::read_tmatrixd,
-    crate::linalg::read_tmatrixd_in
-);
-impl_read_root!(
-    TMatrixDSym,
-    crate::linalg::read_tmatrixdsym,
-    crate::linalg::read_tmatrixdsym_in
 );
 impl_read_root!(
     ObjList,

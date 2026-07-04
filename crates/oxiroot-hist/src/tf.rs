@@ -15,6 +15,8 @@
 //! ```
 
 use oxiroot_formula::{derivative, integrate, Formula};
+use std::borrow::Cow;
+
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
@@ -366,6 +368,9 @@ impl WriteRoot for TF1 {
         write_tf1_body(&mut w, &self.core.fields(self.xmin, self.xmax, 1, 100));
         w.into_vec()
     }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
+    }
 }
 
 impl WriteRoot for TF2 {
@@ -387,6 +392,9 @@ impl WriteRoot for TF2 {
             self.ymax,
         );
         w.into_vec()
+    }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
     }
 }
 
@@ -411,6 +419,9 @@ impl WriteRoot for TF3 {
             self.zmax,
         );
         w.into_vec()
+    }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
     }
 }
 

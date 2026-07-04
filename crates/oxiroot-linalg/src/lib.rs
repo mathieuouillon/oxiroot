@@ -1,16 +1,22 @@
-//! Linear-algebra objects: [`TVectorD`] (a vector of doubles), [`TMatrixD`] (a
-//! dense matrix), and [`TMatrixDSym`] (a symmetric matrix — the shape a fit's
+//! ROOT linear-algebra objects: [`TVectorD`] (a vector of doubles), [`TMatrixD`]
+//! (a dense matrix), and [`TMatrixDSym`] (a symmetric matrix — the shape a fit's
 //! covariance takes). All read and write byte-for-byte as ROOT serializes them
 //! (the `TVectorT<double>` / `TMatrixT<double>` / `TMatrixTSym<double>` template
 //! instantiations), so ROOT and uproot read what oxiroot writes and vice versa.
+//!
+//! This is a leaf crate: it owns these three types and their ROOT persistence,
+//! and depends only on [`oxiroot_io_core`]. Read one back with
+//! [`ReadRoot::read_root`]; write one with [`WriteRoot::write_root`] (or put
+//! several objects in a file via the builder in `oxiroot-hist` / the `oxiroot`
+//! facade).
+
+use std::borrow::Cow;
 
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tobject, write_tobject};
-use oxiroot_io_core::RFile;
-
-use crate::base::object_bytes_any;
-use crate::write::WriteRoot;
+use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, streamer_info_list, Cls};
+use oxiroot_io_core::{object_bytes_any, RFile, ReadRoot, WriteRoot};
 
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default
 /// `DBL_EPSILON`. Matched so written files equal ROOT's byte-for-byte.
@@ -113,9 +119,25 @@ impl WriteRoot for TVectorD {
         w.end_object(obj);
         w.into_vec()
     }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        Cow::Owned(streamer_info_list(&streamer_classes("TVectorT<double>")))
+    }
 }
 
-pub(crate) fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<TVectorD> {
+impl ReadRoot for TVectorD {
+    fn read_root(file: &RFile, name: &str) -> Result<TVectorD> {
+        let (class, object) = object_bytes_any(file, name)?;
+        decode_tvectord(name, &class, &object)
+    }
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<TVectorD> {
+        let (class, object) = file.object_in(dir, name)?;
+        decode_tvectord(name, &class, &object)
+    }
+}
+
+/// Decode a `TVectorT<double>` object body (as stored under a key) into a
+/// [`TVectorD`]. `class` is checked; `object` is the decompressed payload.
+pub fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<TVectorD> {
     if class != "TVectorT<double>" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TVectorD"
@@ -132,16 +154,6 @@ pub(crate) fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<
         name: name.to_string(),
         elements,
     })
-}
-
-pub(crate) fn read_tvectord(file: &RFile, name: &str) -> Result<TVectorD> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tvectord(name, &class, &object)
-}
-
-pub(crate) fn read_tvectord_in(file: &RFile, subdir: &str, name: &str) -> Result<TVectorD> {
-    let (class, object) = file.object_in(subdir, name)?;
-    decode_tvectord(name, &class, &object)
 }
 
 // --- TMatrixD ---------------------------------------------------------------
@@ -228,9 +240,24 @@ impl WriteRoot for TMatrixD {
         w.end_object(obj);
         w.into_vec()
     }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        Cow::Owned(streamer_info_list(&streamer_classes("TMatrixT<double>")))
+    }
 }
 
-pub(crate) fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<TMatrixD> {
+impl ReadRoot for TMatrixD {
+    fn read_root(file: &RFile, name: &str) -> Result<TMatrixD> {
+        let (class, object) = object_bytes_any(file, name)?;
+        decode_tmatrixd(name, &class, &object)
+    }
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<TMatrixD> {
+        let (class, object) = file.object_in(dir, name)?;
+        decode_tmatrixd(name, &class, &object)
+    }
+}
+
+/// Decode a `TMatrixT<double>` object body into a [`TMatrixD`].
+pub fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<TMatrixD> {
     if class != "TMatrixT<double>" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TMatrixD"
@@ -249,16 +276,6 @@ pub(crate) fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<
         ncols,
         elements,
     })
-}
-
-pub(crate) fn read_tmatrixd(file: &RFile, name: &str) -> Result<TMatrixD> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tmatrixd(name, &class, &object)
-}
-
-pub(crate) fn read_tmatrixd_in(file: &RFile, subdir: &str, name: &str) -> Result<TMatrixD> {
-    let (class, object) = file.object_in(subdir, name)?;
-    decode_tmatrixd(name, &class, &object)
 }
 
 // --- TMatrixDSym ------------------------------------------------------------
@@ -345,9 +362,25 @@ impl WriteRoot for TMatrixDSym {
         }
         w.into_vec()
     }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        Cow::Owned(streamer_info_list(&streamer_classes("TMatrixTSym<double>")))
+    }
 }
 
-pub(crate) fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMatrixDSym> {
+impl ReadRoot for TMatrixDSym {
+    fn read_root(file: &RFile, name: &str) -> Result<TMatrixDSym> {
+        let (class, object) = object_bytes_any(file, name)?;
+        decode_tmatrixdsym(name, &class, &object)
+    }
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<TMatrixDSym> {
+        let (class, object) = file.object_in(dir, name)?;
+        decode_tmatrixdsym(name, &class, &object)
+    }
+}
+
+/// Decode a `TMatrixTSym<double>` object body (upper triangle on disk) into a
+/// full [`TMatrixDSym`].
+pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMatrixDSym> {
     if class != "TMatrixTSym<double>" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TMatrixDSym"
@@ -372,12 +405,67 @@ pub(crate) fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Resu
     })
 }
 
-pub(crate) fn read_tmatrixdsym(file: &RFile, name: &str) -> Result<TMatrixDSym> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tmatrixdsym(name, &class, &object)
-}
+// --- Streamer info ----------------------------------------------------------
 
-pub(crate) fn read_tmatrixdsym_in(file: &RFile, subdir: &str, name: &str) -> Result<TMatrixDSym> {
-    let (class, object) = file.object_in(subdir, name)?;
-    decode_tmatrixdsym(name, &class, &object)
+/// The `TStreamerInfo` [`Cls`] entries describing a matrix/vector `class` — the
+/// deepest base first — so a written file is self-describing (uproot reads it;
+/// ROOT C++ uses its own compiled streamers). Returns an empty vector for a
+/// non-matrix class. `oxiroot-hist`'s central streamer collector delegates the
+/// matrix class names here.
+pub fn streamer_classes(class: &str) -> Vec<Cls> {
+    // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
+    let matrix_base = || Cls {
+        name: "TMatrixTBase<double>",
+        version: 5,
+        checksum: 2_333_786_657,
+        elements: vec![
+            base("TObject", 1),
+            basic("fNrows", 3, 4, "int"),
+            basic("fNcols", 3, 4, "int"),
+            basic("fRowLwb", 3, 4, "int"),
+            basic("fColLwb", 3, 4, "int"),
+            basic("fNelems", 6, 4, "int"),
+            basic("fNrowIndex", 3, 4, "int"),
+            basic("fTol", 8, 8, "double"),
+        ],
+    };
+    match class {
+        "TVectorT<double>" => vec![Cls {
+            name: "TVectorT<double>",
+            version: 4,
+            checksum: 1_779_256_495,
+            elements: vec![
+                base("TObject", 1),
+                basic("fNrows", 6, 4, "int"),
+                basic("fRowLwb", 3, 4, "int"),
+                basicptr("fElements", 48, 8, "double*", "fNrows"),
+            ],
+        }],
+        "TMatrixT<double>" => vec![
+            matrix_base(),
+            Cls {
+                name: "TMatrixT<double>",
+                version: 4,
+                checksum: 135_074_716,
+                elements: vec![
+                    base("TMatrixTBase<double>", 5),
+                    // fNelems lives in the TMatrixTBase<double> base, not here.
+                    basicptr_in(
+                        "fElements",
+                        48,
+                        8,
+                        "double*",
+                        "fNelems",
+                        "TMatrixTBase<double>",
+                        5,
+                    ),
+                ],
+            },
+        ],
+        // ROOT emits no `TMatrixTSym<double>` streamer — its custom Streamer
+        // writes the base then the triangle, and uproot models it natively — so
+        // only the shared base is needed.
+        "TMatrixTSym<double>" | "TMatrixTBase<double>" => vec![matrix_base()],
+        _ => Vec::new(),
+    }
 }

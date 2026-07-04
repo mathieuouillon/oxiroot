@@ -4,6 +4,7 @@
 //! against a ROOT-written fixture), filling the data-bearing members from a
 //! [`TH1`] and the cosmetic/auxiliary members with ROOT's defaults.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use oxiroot_io_core::buffer::WBuffer;
@@ -13,19 +14,11 @@ use oxiroot_io_core::{
     update_root_file, write_root_file_with_dirs, write_root_file_with_streamers, Compression,
     ObjectRecord, Subdir,
 };
-
-/// Derive the in-file name from `path`, build the file bytes, and write them,
-/// returning the crate [`Result`]. Shared by every `write_*_file` entry point so
-/// they agree on path handling, the default name, and the error type.
-fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Result<Vec<u8>>) -> Result<()> {
-    let path = path.as_ref();
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    std::fs::write(path, build(file_name)?)?;
-    Ok(())
-}
+// The object framework (the `WriteRoot` trait + `record_of`) now lives in
+// `oxiroot-io-core`; re-export the trait so `oxiroot_hist::WriteRoot` and the
+// in-crate `crate::write::WriteRoot` path both keep resolving.
+pub(crate) use oxiroot_io_core::record_of;
+pub use oxiroot_io_core::WriteRoot;
 
 use crate::axis::TAxis;
 use crate::base::Precision;
@@ -42,68 +35,15 @@ use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
-/// A ROOT object this crate can serialize — a histogram (`TH1`/`TH2`/`TH3`), a
-/// profile ([`TProfile`]/[`TProfile2D`]/[`TProfile3D`]), a [`TEfficiency`], a
-/// [`THnSparse`], a [`TH2Poly`], or a [`TGraph`].
-///
-/// This one trait is the way to write any single object:
-///
-/// ```no_run
-/// use oxiroot_hist::{Compression, Hist, WriteRoot};
-/// let h = Hist::reg(100, 0.0, 1.0).double().named("h");
-/// h.write_root("out.root", Compression::None)?; // works for any writable type
-/// let bytes = h.to_root_bytes();                // just the streamed object payload
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-///
-/// The result reads in ROOT, uproot, and this crate. Use [`RootFile`] to put
-/// several objects (and/or subdirectories) in one file. A `TH1`/`TH2`/`TH3`'s
-/// on-disk precision follows its [`precision`](TH1::precision) (set via
-/// [`with_precision`](TH1::with_precision)); the other types have a fixed class.
-pub trait WriteRoot {
-    /// The ROOT class name written for this object (e.g. `"TH1D"`, `"TProfile"`).
-    fn root_class(&self) -> String;
-    /// The object's key name (`fName`).
-    fn root_name(&self) -> &str;
-    /// The object's title (`fTitle`).
-    fn root_title(&self) -> &str;
-    /// Serialize the streamed object payload (no file/key framing) — the bytes
-    /// stored under the object's key.
-    #[must_use]
-    fn to_root_bytes(&self) -> Vec<u8>;
-
-    /// The class names of any objects this one *contains* (a collection's
-    /// members), so their `TStreamerInfo` is embedded too. Empty for the leaf
-    /// types; overridden by `ObjList`.
-    fn contained_classes(&self) -> Vec<String> {
-        Vec::new()
-    }
-
-    /// Write this object as the sole content of a new ROOT file at `path`.
-    fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()>
-    where
-        Self: Sized,
-    {
-        if self.root_name().is_empty() {
-            return Err(Error::Format(format!(
-                "cannot write an unnamed {}; give it a key name with `.named(\"...\")`",
-                self.root_class()
-            )));
-        }
-        let class = self.root_class();
-        let contained = self.contained_classes();
-        let streamers = streamer_info_for(
-            std::iter::once(class.as_str()).chain(contained.iter().map(String::as_str)),
-        )?;
-        write_named(path, |file_name| {
-            write_root_file_with_streamers(
-                file_name,
-                &[record_of(self)],
-                compression.setting(),
-                Some(streamers.as_ref()),
-            )
-        })
-    }
+/// The `TList<TStreamerInfo>` blob a histogram-family object embeds when written
+/// on its own — the baked histogram blob plus any extra classes it (or its
+/// collection members) use. This is the [`WriteRoot::streamer_blob`]
+/// implementation shared by every writable type in this crate.
+pub(crate) fn hist_streamer_blob(obj: &dyn WriteRoot) -> Cow<'static, [u8]> {
+    let class = obj.root_class();
+    let contained = obj.contained_classes();
+    streamer_info_for(std::iter::once(class.as_str()).chain(contained.iter().map(String::as_str)))
+        .unwrap_or(Cow::Borrowed(HIST_STREAMER_INFO))
 }
 
 /// `TH1`/`TH2`/`TH3` serialize at the precision carried by their `class_name`;
@@ -132,6 +72,9 @@ macro_rules! impl_write_root_hist {
                 }
                 w.into_vec()
             }
+            fn streamer_blob(&self) -> Cow<'static, [u8]> {
+                crate::write::hist_streamer_blob(self)
+            }
         }
     };
 }
@@ -156,6 +99,9 @@ macro_rules! impl_write_root_fixed {
             fn to_root_bytes(&self) -> Vec<u8> {
                 $bytes(self)
             }
+            fn streamer_blob(&self) -> Cow<'static, [u8]> {
+                crate::write::hist_streamer_blob(self)
+            }
         }
     };
 }
@@ -178,6 +124,9 @@ impl WriteRoot for TGraph {
     }
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraph_to_bytes(self)
+    }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
     }
 }
 
@@ -1110,6 +1059,9 @@ impl WriteRoot for TGraph2D {
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraph2d_to_bytes(self)
     }
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
+    }
 }
 
 /// Write an *objectwise* `vector<TArrayD>` (version `0x000a`): a count, then each
@@ -1184,17 +1136,8 @@ impl WriteRoot for TGraphMultiErrors {
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraphmultierrors_to_bytes(self)
     }
-}
-
-/// The on-disk record for any writable object — its class, name, title, and
-/// streamed payload. Shared by the [`WriteRoot`] single-object path and the
-/// [`RootFile`] builder.
-fn record_of(object: &dyn WriteRoot) -> ObjectRecord {
-    ObjectRecord {
-        class_name: object.root_class(),
-        name: object.root_name().to_string(),
-        title: object.root_title().to_string(),
-        object: object.to_root_bytes(),
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        crate::write::hist_streamer_blob(self)
     }
 }
 

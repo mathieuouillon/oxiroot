@@ -722,10 +722,11 @@ verified on read.
 | Crate | Purpose |
 |-------|---------|
 | `oxiroot` | Facade: `prelude` + re-exports of everything below |
-| `oxiroot-io-core` | `TFile` container, buffer primitives, streamer + object-reference engine, `Error` |
+| `oxiroot-io-core` | `TFile` container, buffer primitives, streamer + object-reference engine, the `WriteRoot`/`ReadRoot` object framework, `Error` |
 | `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
 | `oxiroot-hist` | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
+| `oxiroot-linalg` | ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym` |
 | `oxiroot-tree` | Classic `TTree` read/write |
 | `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | `oxiroot-stat` | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) |

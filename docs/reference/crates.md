@@ -7,10 +7,11 @@ surface, or pull in a single leaf crate to compile only what you use.
 | Crate | Purpose |
 |-------|---------|
 | [`oxiroot`](../api/oxiroot/index.html) | Facade: `prelude` + re-exports of everything below |
-| [`oxiroot-io-core`](../api/oxiroot_io_core/index.html) | `TFile` container, buffer primitives, streamer + object-reference engine, `Error` |
+| [`oxiroot-io-core`](../api/oxiroot_io_core/index.html) | `TFile` container, buffer primitives, streamer + object-reference engine, the `WriteRoot`/`ReadRoot` object framework, `Error` |
 | [`oxiroot-compress`](../api/oxiroot_compress/index.html) | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | [`oxiroot-rntuple`](../api/oxiroot_rntuple/index.html) | RNTuple reader/writer (spec v1.0.0.0) |
 | [`oxiroot-hist`](../api/oxiroot_hist/index.html) | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
+| [`oxiroot-linalg`](../api/oxiroot_linalg/index.html) | ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym`, with byte-exact ROOT read/write |
 | [`oxiroot-tree`](../api/oxiroot_tree/index.html) | Classic `TTree` read/write |
 | [`oxiroot-fit`](../api/oxiroot_fit/index.html) | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | [`oxiroot-stat`](../api/oxiroot_stat/index.html) | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
@@ -19,9 +20,11 @@ surface, or pull in a single leaf crate to compile only what you use.
 ## Dependency graph
 
 The leaf crates layer cleanly: `io-core` and `compress` underpin the format
-crates (`rntuple`, `hist`, `tree`); `stat` is a dependency-free leaf shared by
-`hist` (compatibility tests) and `fit` (goodness-of-fit); `fit` is optional and
-only pulled in by the `fit` feature.
+crates (`rntuple`, `hist`, `tree`); the `WriteRoot`/`ReadRoot` object framework
+lives in `io-core`, so `linalg` (the `TVectorD`/`TMatrixD`/`TMatrixDSym` objects)
+is a leaf on `io-core` alone, and `hist` builds on it for the matrix classes.
+`stat` is a dependency-free leaf shared by `hist` (compatibility tests) and `fit`
+(goodness-of-fit); `fit` is optional and only pulled in by the `fit` feature.
 
 ```text
                        oxiroot  (facade + prelude)
