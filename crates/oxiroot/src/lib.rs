@@ -71,6 +71,15 @@ pub mod stat {
     pub use oxiroot_stat::*;
 }
 
+/// PDG particle data — the [`PdgId`](oxiroot_particle::PdgId) Monte Carlo
+/// numbering-scheme decoder (is it a lepton? meson? baryon? its charge/spin/quark
+/// content) plus a bundled [`Particle`](oxiroot_particle::Particle) table (mass,
+/// width, lifetime, quantum numbers). From `oxiroot-particle`, a Rust take on
+/// scikit-hep `particle` and verified against it.
+pub mod particle {
+    pub use oxiroot_particle::*;
+}
+
 /// Curve fitting for any 1-D data — histograms, graphs, or custom points (from
 /// `oxiroot-fit`). The [`FitData`](oxiroot_fit::FitData) trait + the blanket
 /// [`FitExt`](oxiroot_fit::FitExt) give `data.fit(&model)` to every dataset;

@@ -447,6 +447,30 @@ let cov = TMatrixDSym::read_root(&f, "cov")?;
 assert_eq!(cov.get(0, 1), cov.get(1, 0)); // symmetric
 ```
 
+### Particle data (`oxiroot::particle`)
+
+A Rust take on [scikit-hep `particle`](https://github.com/scikit-hep/particle):
+decode a PDG Monte Carlo ID straight from its digits (`PdgId`), and look particles
+up in a bundled ~600-particle PDG table (`Particle`) for their mass, width,
+lifetime, and quantum numbers. Dependency-free and **verified against the
+`particle` package** the way `oxiroot::stat` is verified against `scipy.stats`.
+
+```rust
+use oxiroot::particle::{Particle, PdgId};
+
+// No table needed — the ID's digits say what it is.
+assert!(PdgId::new(2212).is_baryon());          // proton
+assert_eq!(PdgId::new(-11).charge(), Some(1.0)); // positron
+let u235 = PdgId::new(1000922350);
+assert_eq!((u235.a(), u235.z()), (Some(235), Some(92))); // uranium-235
+
+// Physical properties from the bundled table (MeV, ns, mm).
+let muon = Particle::from_name("mu-").unwrap();
+assert!((muon.mass().unwrap() - 105.6583755).abs() < 1e-4);
+assert!((muon.lifetime().unwrap() - 2196.98).abs() < 0.1); // τ = ħ/Γ
+assert_eq!(Particle::from_name("pi+").unwrap().invert().unwrap().name(), "pi-");
+```
+
 ### Object collections (`oxiroot::hist`)
 
 `ObjList` stores a bare `TList` or `TObjArray` of mixed objects under one key —
@@ -750,6 +774,7 @@ on, so nothing extra is needed.
 | [`stat_tests`](crates/oxiroot/examples/stat_tests.rs) | Hypothesis tests (t-test, Mann–Whitney, KS), correlation (Pearson/Spearman), goodness-of-fit, normality |
 | [`stat_physics`](crates/oxiroot/examples/stat_physics.rs) | A HEP counting experiment: discovery significance, Feldman–Cousins, Garwood/Clopper–Pearson intervals, combining measurements |
 | [`lineshapes`](crates/oxiroot/examples/lineshapes.rs) | HEP peak shapes (Crystal Ball, Voigt, Breit–Wigner, Novosibirsk, ARGUS…) + a Crystal Ball fit |
+| [`particles`](crates/oxiroot/examples/particles.rs) | PDG particle data — decode IDs (`PdgId`) and look up masses/widths/lifetimes (`Particle`) |
 | **Fitting** — `oxiroot::fit` | |
 | [`fit`](crates/oxiroot/examples/fit.rs) | Fit a Gaussian peak (χ² *and* likelihood), a peak-on-background, a `TGraph`, and raw points — one API |
 | [`robust_fit`](crates/oxiroot/examples/robust_fit.rs) | Outlier-resistant losses (`SoftL1`/`Huber`/`Cauchy`) versus ordinary least squares |
@@ -785,6 +810,7 @@ on, so nothing extra is needed.
 | `oxiroot-tree` | Classic `TTree` read/write |
 | `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | `oxiroot-stat` | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) |
+| `oxiroot-particle` | PDG particle data — the numbering-scheme decoder + a bundled particle table (verified vs scikit-hep `particle`) |
 | `oxiroot-plot` | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
 | `oxiroot-cli` | `oxroot`: a command-line inspector (`ls`/`show`/`dump`/`stat`) |
 

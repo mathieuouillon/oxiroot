@@ -1,0 +1,13 @@
+[package]
+name = "oxiroot-particle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure-Rust PDG particle data — the Monte Carlo numbering-scheme decoder plus a bundled particle table (masses, widths, quantum numbers), modelled on scikit-hep/particle"
+
+[dependencies]
+
+[lints]
+workspace = true

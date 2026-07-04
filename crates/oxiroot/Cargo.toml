@@ -15,6 +15,7 @@ oxiroot-hist = { workspace = true }
 oxiroot-linalg = { workspace = true }
 oxiroot-tree = { workspace = true }
 oxiroot-stat = { workspace = true }
+oxiroot-particle = { workspace = true }
 oxiroot-fit = { workspace = true, optional = true }
 oxiroot-plot = { workspace = true, optional = true }
 

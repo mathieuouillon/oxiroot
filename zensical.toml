@@ -36,6 +36,7 @@ nav = [
     { "RNTuple" = "guide/rntuple.md" },
     { "Fitting" = "guide/fitting.md" },
     { "Statistics" = "guide/statistics.md" },
+    { "Particle data" = "guide/particle.md" },
     { "Plotting" = "guide/plotting.md" },
     { "Command-line inspector" = "guide/cli.md" },
     { "Merging files (hadd)" = "guide/hadd.md" },
