@@ -203,11 +203,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             oxiroot::plot::CurveOpts::new()
                 .color(Color::hex("#d62728"))
                 .linewidth(2.0)
-                .label(format!(
-                    "Gaussian fit ($\\chi^2$/ndf = {:.1})",
-                    r.chi2 / r.ndf.max(1) as f64
-                )),
+                .label("Gaussian fit"),
         );
+        // A ROOT-style stat box: the function name, chi2/ndf, and each fitted
+        // parameter with its error. Anchored top-right; because a legend is also
+        // shown there, the box is stacked directly beneath it.
+        ax.fit_stats(&fitted, &r);
         ax.xlabel("$m_{\\mu\\mu}$ [GeV]");
         ax.ylabel("Events / 2 GeV");
         ax.legend();

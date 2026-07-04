@@ -28,11 +28,13 @@ fn rounded_rect(rect: Rect, r: f32) -> Path {
     }
 }
 
-/// Draw the legend into `g` (the unclipped axis group).
-pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
+/// The legend's bounding rectangle within `box_` (the frame), or `None` when
+/// there is nothing to draw. Shared by [`draw_legend`] and the stat box, which
+/// stacks beneath the legend when both sit top-right.
+pub(crate) fn legend_rect(ax: &Axes, box_: Rect) -> Option<Rect> {
     let items = ax.legend_items();
     if items.is_empty() {
-        return;
+        return None;
     }
     let s = &ax.style;
     let fs = s.px(s.legend_size_pt);
@@ -53,6 +55,22 @@ pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
     let margin = s.px(s.axes_linewidth_pt) + 0.5 * fs; // borderaxespad ~0.5
     let x0 = box_.right() - margin - box_w;
     let y0 = box_.y + margin;
+    Some(Rect::new(x0, y0, box_w, box_h))
+}
+
+/// Draw the legend into `g` (the unclipped axis group).
+pub(crate) fn draw_legend(g: &mut DrawGroup, ax: &Axes, box_: Rect) {
+    let items = ax.legend_items();
+    let Some(rect) = legend_rect(ax, box_) else {
+        return;
+    };
+    let (x0, y0, box_w, box_h) = (rect.x, rect.y, rect.w, rect.h);
+    let s = &ax.style;
+    let fs = s.px(s.legend_size_pt);
+    let pad = 0.4 * fs;
+    let gap = 0.8 * fs;
+    let handle_w = 2.0 * fs;
+    let row_h = fs * 1.5;
 
     if s.legend_frame {
         // matplotlib `fancybox`: a rounded white box (framealpha 0.8) with a light

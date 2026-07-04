@@ -593,3 +593,53 @@ fn custom_font_rejects_garbage() {
         "a non-font math argument must be rejected"
     );
 }
+
+/// The fit stat box (`Axes::fit_stats`) draws a framed panel of extra glyphs, and
+/// its options change what is listed — all rendered deterministically.
+#[cfg(feature = "fit")]
+#[test]
+fn fit_stats_box_renders() {
+    use oxiroot_fit::{FitExt, Model, Points};
+    use oxiroot_plot::StatBox;
+
+    // A clean Gaussian sampled as (x, y, sigma) points, fitted through Points
+    // (which impls FitData, so this needs no oxiroot-hist fit feature).
+    let xs: Vec<f64> = (0..40).map(|i| 50.0 + 2.0 * i as f64).collect();
+    let ys: Vec<f64> = xs
+        .iter()
+        .map(|&x| 1000.0 * (-0.5 * ((x - 90.0) / 8.0).powi(2)).exp())
+        .collect();
+    let sig: Vec<f64> = ys.iter().map(|&y| y.sqrt().max(1.0)).collect();
+    let model = Model::gaussian("gaus").with_params(vec![1000.0, 90.0, 8.0]);
+    let r = Points::new(&xs, &ys, &sig).fit(&model);
+    let fitted = model.with_params(r.params.clone());
+
+    let render = |stats: Option<StatBox>| {
+        let mut ax = Axes::new();
+        ax.hist(&gauss_hist());
+        ax.model(&fitted, 50.0..130.0);
+        if let Some(opts) = stats {
+            ax.fit_stats_with(&fitted, &r, opts);
+        }
+        ax.to_svg_string()
+    };
+
+    let without = render(None);
+    let with = render(Some(StatBox::new()));
+    // The box adds its frame plus a header, a χ²/ndf line, and three parameter
+    // rows — many extra glyph paths.
+    assert!(
+        occurrences(&with, "<path") > occurrences(&without, "<path") + 15,
+        "stat box should add many glyph paths: {} -> {}",
+        occurrences(&without, "<path"),
+        occurrences(&with, "<path"),
+    );
+    // Enabling the probability line adds one more row of glyphs than the default.
+    let with_prob = render(Some(StatBox::new().prob(true)));
+    assert!(
+        occurrences(&with_prob, "<path") > occurrences(&with, "<path"),
+        "the Prob line should add glyphs"
+    );
+    // Deterministic.
+    assert_eq!(with, render(Some(StatBox::new())));
+}

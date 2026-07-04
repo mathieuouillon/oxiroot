@@ -149,8 +149,7 @@ let mut ax = Axes::new();
 ax.hist_with(&h, HistOpts::new().histtype(HistType::Fill).label("data"));
 ax.model_with(                                   // the `fit` feature
     &fitted, 50.0..130.0,
-    CurveOpts::new().color(Color::hex("#d62728"))
-        .label(format!("fit ($\\chi^2$/ndf = {:.1})", r.chi2 / r.ndf.max(1) as f64)),
+    CurveOpts::new().color(Color::hex("#d62728")).label("Gaussian fit"),
 );
 ax.legend();
 ax.save("fit.png")?;
@@ -162,6 +161,57 @@ ax.save("fit.png")?;
 `ax.model`/`ax.model_with` need the **`fit` feature** (they pull `oxiroot-fit`);
 the closure-based `ax.function`/`ax.function_with` are always available and work
 for the same purpose (`ax.function(|x| fitted.eval(x), 50.0..130.0)`).
+
+## Fit statistics box
+
+`ax.fit_stats(&model, &result)` draws a ROOT-style statistics box — the analog of
+`TPaveStats` with `gStyle->SetOptFit` — listing the **function name**, the
+**χ²/ndf** of the fit, and every **fitted parameter with its uncertainty**. The
+parameter *names* come from the `Model`, the *values* and errors from the
+[`FitResult`](fitting.md#reading-the-result), so pass the model you fitted and the
+result it produced:
+
+```rust
+use oxiroot::plot::{Axes, Color, CurveOpts};
+use oxiroot::prelude::*;   // the `plot` + `fit` features are on by default
+
+let model = Model::gaussian("gaus").estimate_from(&h);
+let r = h.fit(&model);
+let fitted = model.with_params(r.params.clone());
+
+let mut ax = Axes::new();
+ax.hist(&h);
+ax.model_with(&fitted, 50.0..130.0, CurveOpts::new().color(Color::hex("#d62728")).label("fit"));
+ax.fit_stats(&fitted, &r);   // name + χ²/ndf + each parameter ± error
+ax.legend();                 // the box stacks beneath the legend when both are top-right
+ax.save("fit.png")?;
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+The box is anchored top-right by default; when a legend is also shown there it is
+stacked directly beneath it. Use `ax.fit_stats_with(&model, &result, opts)` with a
+[`StatBox`](../api/oxiroot/plot/struct.StatBox.html) to change what is listed or
+where it sits:
+
+| `StatBox` setter | Effect | Default |
+|---|---|---|
+| `corner(Corner::…)` | Anchor to `UpperRight` / `UpperLeft` / `LowerRight` / `LowerLeft`. | `UpperRight` |
+| `name(bool)` | Show the function name header. | `true` |
+| `chi2(bool)` | Show the `χ²/ndf = <chi2> / <ndf>` line. | `true` |
+| `prob(bool)` | Show the goodness-of-fit probability (`p`-value) line. | `false` |
+| `errors(bool)` | Show each parameter's `± error`. | `true` |
+| `sig_figs(usize)` | Significant figures for the numbers. | `4` |
+| `title(str)` | Override the header text. | model name |
+
+```rust
+# use oxiroot::plot::{Axes, StatBox, Corner};
+# use oxiroot::prelude::*;
+# fn demo(ax: &mut Axes, fitted: &Model, r: &FitResult) {
+ax.fit_stats_with(fitted, r, StatBox::new().corner(Corner::UpperLeft).prob(true));
+# }
+```
+
+`fit_stats`/`fit_stats_with` and `StatBox`/`Corner` need the **`fit` feature**.
 
 ## Layouts: grids and ratio plots
 

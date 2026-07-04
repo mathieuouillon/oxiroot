@@ -98,6 +98,8 @@ mod draw;
 mod legend;
 mod mathtext;
 mod render;
+#[cfg(feature = "fit")]
+mod statbox;
 mod text;
 mod ticker;
 mod transform;
@@ -113,6 +115,8 @@ pub use figure::{
 };
 pub use fonts::FontSet;
 pub use gridspec::GridSpec;
+#[cfg(feature = "fit")]
+pub use statbox::{Corner, StatBox};
 pub use style::Style;
 
 #[cfg(test)]

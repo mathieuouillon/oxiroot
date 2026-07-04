@@ -46,6 +46,9 @@ pub struct Axes {
     show_yticklabels: bool,
     /// Drop the `(bottom, top)` y tick labels (avoids overlap at a shared seam).
     ylabel_prune: (bool, bool),
+    /// A ROOT-style fit statistics box (`TPaveStats`), set by [`Axes::fit_stats`].
+    #[cfg(feature = "fit")]
+    stats: Option<crate::statbox::StatData>,
 }
 
 impl Axes {
@@ -70,6 +73,8 @@ impl Axes {
             show_xticklabels: true,
             show_yticklabels: true,
             ylabel_prune: (false, false),
+            #[cfg(feature = "fit")]
+            stats: None,
         }
     }
 
@@ -584,6 +589,51 @@ impl Axes {
         self.function_with(|x| model.eval(x), range, opts)
     }
 
+    /// Draw a ROOT-style fit statistics box (the analog of `TPaveStats` with
+    /// `gStyle->SetOptFit`): the function name, the χ²/ndf of the fit, and every
+    /// fitted parameter with its uncertainty. The parameter *names* come from
+    /// `model`, the *values* and errors from `result`, so pass the model you
+    /// fitted and the [`FitResult`](oxiroot_fit::FitResult) it produced.
+    ///
+    /// Anchored top-right by default; when a legend is also shown there, the box
+    /// is stacked beneath it. Use [`fit_stats_with`](Axes::fit_stats_with) to
+    /// pick the corner or change what is listed.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use oxiroot_plot::Axes;
+    /// # use oxiroot_fit::{FitData, FitExt, Model};
+    /// # fn demo(data: &impl FitData) {
+    /// let model = Model::gaussian("gaus");
+    /// let result = data.fit(&model);
+    /// let fitted = model.with_params(result.params.clone());
+    /// let mut ax = Axes::new();
+    /// ax.model(&fitted, 0.0..10.0);
+    /// ax.fit_stats(&fitted, &result); // function name + χ²/ndf + parameters
+    /// # }
+    /// ```
+    #[cfg(feature = "fit")]
+    pub fn fit_stats(
+        &mut self,
+        model: &oxiroot_fit::Model,
+        result: &oxiroot_fit::FitResult,
+    ) -> &mut Self {
+        self.fit_stats_with(model, result, crate::statbox::StatBox::new())
+    }
+
+    /// Draw a fit statistics box with explicit [`StatBox`](crate::StatBox)
+    /// options (corner, which lines to show, significant figures, header text).
+    #[cfg(feature = "fit")]
+    pub fn fit_stats_with(
+        &mut self,
+        model: &oxiroot_fit::Model,
+        result: &oxiroot_fit::FitResult,
+        opts: crate::statbox::StatBox,
+    ) -> &mut Self {
+        self.stats = Some(crate::statbox::build(model, result, &opts));
+        self
+    }
+
     /// Resolve the data limits, honoring explicit limits and autoscaling the rest.
     fn limits(&self) -> (f64, f64, f64, f64) {
         let auto = self
@@ -969,6 +1019,18 @@ impl Axes {
         // Legend.
         if self.show_legend {
             crate::legend::draw_legend(&mut axis, self, box_);
+        }
+
+        // Fit statistics box (ROOT's TPaveStats). Stacked beneath the legend when
+        // both are anchored top-right.
+        #[cfg(feature = "fit")]
+        if let Some(data) = &self.stats {
+            let legend_rect = if self.show_legend {
+                crate::legend::legend_rect(self, box_)
+            } else {
+                None
+            };
+            crate::statbox::draw_stats(&mut axis, self, box_, data, legend_rect);
         }
 
         // Colorbar.

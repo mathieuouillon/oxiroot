@@ -326,6 +326,12 @@ if fit.valid {
     A `Chi2` fit drops empty points and a fixed parameter does not count toward
     `ndf`, so reduced-χ² and p-values reflect only what actually entered the fit.
 
+!!! tip "Show the result on a plot"
+    With the `plot` feature, `ax.fit_stats(&fitted, &fit)` draws a ROOT-style
+    statistics box — the function name, χ²/ndf, and every parameter with its
+    error — next to the fitted curve. See
+    [Plotting → Fit statistics box](plotting.md#fit-statistics-box).
+
 ## Minimizer backends
 
 `FitOptions::minimizer(...)` selects the optimizer:

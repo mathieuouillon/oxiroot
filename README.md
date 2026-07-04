@@ -550,7 +550,9 @@ ax2.save("heatmap.svg")?;
   `ax.hep_rhs("138 fb$^{-1}$ (13 TeV)")` the luminosity/energy above the frame.
 - **Overlay a fit** — `ax.function(|x| …, x0..x1)` draws any closure as a smooth
   curve; with the `fit` feature, `ax.model(&model, x0..x1)` overlays a fitted
-  [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) `Model` directly on a histogram.
+  [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) `Model` directly on a histogram,
+  and `ax.fit_stats(&model, &result)` adds a ROOT-style stat box (`TPaveStats`) with
+  the function name, χ²/ndf, and each fitted parameter ± its error.
 - **Multi-panel layouts** — `subplots_grid(rows, cols)` and a custom `GridSpec`
   (height/width ratios, spacing) with `fig.sharex()`/`sharey()` and a `suptitle`,
   plus a one-call `ratio_subplots()` for the HEP main-over-ratio plot (shared
