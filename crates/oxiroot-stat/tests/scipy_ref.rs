@@ -298,3 +298,110 @@ fn bootstrap_is_reproducible_and_reasonable() {
         2.0 * half
     );
 }
+
+#[test]
+// The reference values are copied verbatim from scipy / ROOT output; some happen
+// to equal a std constant (1/π) or carry more digits than f64 needs.
+#[allow(clippy::approx_constant, clippy::excessive_precision)]
+fn hep_lineshapes_match_reference() {
+    // Crystal Ball (unit peak) vs scipy.stats.crystalball.pdf(x, 1.5, 3) / pdf(0).
+    approx!(crystal_ball(0.0, 0.0, 1.0, 1.5, 3.0), 1.0, 1e-12);
+    for &(x, r) in &[
+        (-4.0, 0.028501725529402444),
+        (-2.5, 0.09619332366173326),
+        (-1.5, 0.32465246735834974),
+        (-0.5, 0.8824969025845955),
+        (1.5, 0.32465246735834974),
+        (2.5, 0.04393693362340741),
+    ] {
+        approx!(crystal_ball(x, 0.0, 1.0, 1.5, 3.0), r);
+    }
+    // alpha < 0 mirrors the tail to the high side.
+    approx!(
+        crystal_ball(2.5, 0.0, 1.0, -1.5, 3.0),
+        crystal_ball(-2.5, 0.0, 1.0, 1.5, 3.0),
+        1e-12
+    );
+
+    // Breit–Wigner == scipy.stats.cauchy(loc=0, scale=gamma/2).
+    approx!(breit_wigner(-1.0, 0.0, 2.0), 0.15915494309189535);
+    approx!(breit_wigner(0.0, 0.0, 2.0), 0.3183098861837907);
+
+    // Voigt == scipy.special.voigt_profile(x, sigma=1, gamma=0.5); Humlicek w4 ≈ 1e-6.
+    for &(x, r) in &[
+        (-3.0, 0.028336408162199005),
+        (-1.0, 0.20017963759083915),
+        (0.0, 0.27895547038929436),
+    ] {
+        approx!(voigtian(x, 0.0, 1.0, 0.5), r, 1e-5);
+    }
+
+    // Moyal == scipy.stats.moyal.pdf.
+    for &(x, r) in &[
+        (-2.0, 0.026958231758816037),
+        (0.0, 0.24197072451914337),
+        (1.0, 0.20131624406488796),
+        (5.0, 0.032637037799244456),
+    ] {
+        approx!(moyal(x, 0.0, 1.0), r);
+    }
+
+    // Landau == ROOT's TMath::Landau (Kölbig `denlan`): landau(v, 0, 1) == landau_pdf(v).
+    for &(v, r) in &[
+        (-2.0, 0.04398547840678685),
+        (0.0, 0.1788541609),
+        (1.0, 0.145206637130862),
+        (5.0, 0.03916341957924747),
+        (20.0, 0.003004979394102356),
+    ] {
+        approx!(landau(v, 0.0, 1.0), r, 1e-8);
+    }
+    // Unit-area Landau vs ROOT TMath::Landau(x, 0, 2, norm=true).
+    approx!(landau(-2.0, 0.0, 2.0), 0.07569595567970359, 1e-8);
+    approx!(landau(5.0, 0.0, 2.0), 0.04411210045807406, 1e-8);
+
+    // Self-consistency for the shapes scipy/ROOT do not provide directly.
+    // Double CB: unit peak at the mean, tails continuous at the boundaries.
+    approx!(
+        double_crystal_ball(5.0, 5.0, 1.0, 1.2, 3.0, 1.8, 4.0),
+        1.0,
+        1e-12
+    );
+    for &a in &[1.2_f64, 1.8] {
+        let xb = 5.0 - a; // low boundary t = -a (sigma = 1)
+        approx!(
+            double_crystal_ball(xb - 1e-6, 5.0, 1.0, a, 3.0, 2.0, 4.0),
+            double_crystal_ball(xb + 1e-6, 5.0, 1.0, a, 3.0, 2.0, 4.0),
+            1e-4
+        );
+    }
+    // Novosibirsk: unit peak at `peak`; tail = 0 recovers the Gaussian.
+    approx!(novosibirsk(2.0, 2.0, 0.5, 0.3), 1.0, 1e-12);
+    approx!(
+        novosibirsk(2.5, 2.0, 0.5, 0.0),
+        gaussian(2.5, 2.0, 0.5),
+        1e-12
+    );
+    // Bifurcated Gaussian: a different width on each side (t = ∓1 → exp(-½)).
+    approx!(
+        bifurcated_gaussian(-1.0, 0.0, 1.0, 2.0),
+        (-0.5f64).exp(),
+        1e-12
+    );
+    approx!(
+        bifurcated_gaussian(2.0, 0.0, 1.0, 2.0),
+        (-0.5f64).exp(),
+        1e-12
+    );
+    // ARGUS: zero outside (0, m0), positive inside.
+    assert_eq!(argus(-1.0, 5.0, -3.0, 0.5), 0.0);
+    assert_eq!(argus(6.0, 5.0, -3.0, 0.5), 0.0);
+    assert!(argus(3.0, 5.0, -3.0, 0.5) > 0.0);
+    // Relativistic BW: unit area over the physical (0, ∞), mode at M.
+    let (m, g, n, hi) = (91.19, 2.5, 400_000usize, 400.0);
+    let dx = hi / n as f64;
+    let area: f64 = (0..n)
+        .map(|i| relativistic_breit_wigner((i as f64 + 0.5) * dx, m, g) * dx)
+        .sum();
+    approx!(area, 1.0, 3e-3);
+}

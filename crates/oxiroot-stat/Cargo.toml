@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Pure-Rust statistics — special functions, distributions, descriptive stats, correlation, and hypothesis tests, verified against scipy.stats"
+description = "Pure-Rust statistics — special functions, distributions, descriptive stats, correlation, hypothesis tests, and HEP lineshapes (Crystal Ball, Voigt, …), verified against scipy.stats"
 
 [dependencies]
 

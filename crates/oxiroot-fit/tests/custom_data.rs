@@ -120,6 +120,65 @@ fn user_fitdata_impl_fits_an_exponential() {
     );
 }
 
+#[test]
+fn crystal_ball_recovers_its_peak() {
+    // Generate a Crystal Ball peak from the model itself, then fit it back.
+    let (c0, m0, s0, a0, n0) = (10.0, 2.0, 0.5, 1.2, 3.0);
+    let truth = Model::crystal_ball("cb").with_params(vec![c0, m0, s0, a0, n0]);
+    let xs: Vec<f64> = (-40..=120).map(|i| i as f64 * 0.05).collect(); // [-2, 6]
+    let ys: Vec<f64> = xs.iter().map(|&x| truth.eval(x)).collect();
+    let data = Points::new(&xs, &ys, &vec![0.02; xs.len()]);
+
+    // estimate_from seeds the (constant, mean, sigma) core, leaving (alpha, n).
+    let seeded = Model::crystal_ball("cb").estimate_from(&data);
+    assert!(
+        rel_close(seeded.params[1], m0, 0.2),
+        "seeded mean {}",
+        seeded.params[1]
+    );
+    assert_eq!(seeded.params[3], 1.5, "alpha default left untouched");
+
+    let model = Model::crystal_ball("cb")
+        .with_params(vec![c0, m0, s0, a0, n0])
+        .lower_limit("sigma", 0.0)
+        .lower_limit("n", 1.01);
+    let fit = data.fit(&model);
+    assert!(fit.valid);
+    assert!(rel_close(fit.params[1], m0, 1e-2), "mean {}", fit.params[1]);
+    assert!(
+        rel_close(fit.params[2], s0, 1e-2),
+        "sigma {}",
+        fit.params[2]
+    );
+    assert!(
+        fit.chi2 / (fit.ndf as f64) < 1e-3,
+        "chi2/ndf {}",
+        fit.chi2 / (fit.ndf as f64)
+    );
+}
+
+#[test]
+fn voigtian_model_is_a_valid_fit() {
+    // A Voigt profile fits cleanly (mean/sigma/gamma seeded near truth).
+    let truth = Model::voigtian("v").with_params(vec![8.0, 1.0, 0.6, 0.4]);
+    let xs: Vec<f64> = (-60..=80).map(|i| i as f64 * 0.05).collect();
+    let ys: Vec<f64> = xs.iter().map(|&x| truth.eval(x)).collect();
+    let data = Points::new(&xs, &ys, &vec![0.02; xs.len()]);
+    let fit = data.fit(
+        &Model::voigtian("v")
+            .with_params(vec![8.0, 1.0, 0.6, 0.4])
+            .lower_limit("sigma", 0.0)
+            .lower_limit("gamma", 0.0),
+    );
+    assert!(fit.valid);
+    assert!(
+        rel_close(fit.params[1], 1.0, 1e-2),
+        "mean {}",
+        fit.params[1]
+    );
+    assert!(fit.chi2 < 1e-3, "chi2 {}", fit.chi2);
+}
+
 // --- The optional Nelder–Mead (`argmin`) backend ---------------------------
 
 #[cfg(feature = "argmin")]

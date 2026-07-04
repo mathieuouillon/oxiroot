@@ -243,6 +243,51 @@ grid; its `background = 0` limits reproduce the canonical
 [Feldman & Cousins (1998)](https://arxiv.org/abs/physics/9711021) Table IV
 values (e.g. `feldman_cousins(0, 0.0, 0.90)` → upper limit `2.44`).
 
+## HEP lineshapes
+
+The `lineshapes` module has the peak, tail, and background functions physicists
+fit to mass and energy-loss spectra. The **peaked shapes** are normalized to unit
+peak; `breit_wigner`, `relativistic_breit_wigner`, `voigtian`, `moyal`, and
+`landau` are **unit-area densities**; `argus` is the conventional (unnormalized)
+background.
+
+| Function | Shape |
+| --- | --- |
+| `crystal_ball(x, mean, sigma, alpha, n)` | Gaussian core + power-law tail (RooFit `RooCBShape`) |
+| `double_crystal_ball(x, mean, sigma, …)` | independent power-law tail on each side |
+| `breit_wigner(x, mean, gamma)` / `relativistic_breit_wigner` | Lorentzian / PDG resonance |
+| `voigtian(x, mean, sigma, gamma)` | Gaussian ⊗ Lorentzian (resolution-broadened) |
+| `novosibirsk(x, peak, sigma, tail)` | asymmetric peak |
+| `bifurcated_gaussian(x, mean, sigma_lo, sigma_hi)` | different width each side |
+| `argus(x, m0, c, p)` | kinematic-endpoint background |
+| `moyal` / `landau(x, mean, sigma)` | energy-loss densities (`landau` = ROOT's `TMath::Landau`) |
+
+Conventions match RooFit / ROOT and, where they exist, `scipy` — `crystal_ball`
+equals `scipy.stats.crystalball`, `breit_wigner` equals `scipy.stats.cauchy`,
+`voigtian` equals `scipy.special.voigt_profile`, `moyal` equals
+`scipy.stats.moyal`.
+
+```rust
+use oxiroot::stat::*;
+
+let y = crystal_ball(101.0, 100.0, 2.5, 1.5, 3.0); // CB value at x = 101
+let v = voigtian(0.0, 0.0, 1.0, 0.5);              // 0.27896 (== voigt_profile)
+```
+
+Every peak is also a ready-to-fit [`Model`](fitting.md) with an amplitude
+parameter — `Model::crystal_ball`, `voigtian`, `double_crystal_ball`,
+`breit_wigner`, `novosibirsk`, `argus` — so you fit one to a histogram directly
+(`estimate_from` seeds the Gaussian core):
+
+```rust
+use oxiroot::prelude::*;
+
+let mut h = Hist::reg(80, 90.0, 110.0).double().named("mass");
+// … fill h …
+let model = Model::crystal_ball("cb").estimate_from(&h).lower_limit("sigma", 0.0);
+let result = h.fit(&model);
+```
+
 ## Bootstrap
 
 `bootstrap_ci` gives a percentile confidence interval for **any** statistic of a

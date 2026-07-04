@@ -98,11 +98,27 @@ function object is [`TF1`](functions.md); `TF1::to_model()` converts one to a
 | `Model::exponential(name)` | `exp([0] + [1]·x)` (ROOT `"expo"`) | `constant`, `slope` |
 | `Model::polynomial(name, degree)` | `Σ p[k]·x^k` (ROOT `"polN"`) | `p0` … `p<degree>` |
 
+Plus the HEP lineshapes (`constant ·` the shapes from
+[`oxiroot::stat::lineshapes`](statistics.md#hep-lineshapes)) — a Gaussian peak
+with tails, resonances, and a phase-space background:
+
+| Constructor | Shape | Parameters |
+| --- | --- | --- |
+| `Model::crystal_ball(name)` | Crystal Ball (Gaussian core + power-law tail) | `constant`, `mean`, `sigma`, `alpha`, `n` |
+| `Model::double_crystal_ball(name)` | tails on both sides | `constant`, `mean`, `sigma`, `alpha_lo`, `n_lo`, `alpha_hi`, `n_hi` |
+| `Model::breit_wigner(name)` | Lorentzian resonance | `constant`, `mean`, `gamma` |
+| `Model::voigtian(name)` | Gaussian ⊗ Lorentzian | `constant`, `mean`, `sigma`, `gamma` |
+| `Model::novosibirsk(name)` | asymmetric peak | `constant`, `peak`, `sigma`, `tail` |
+| `Model::argus(name)` | endpoint background | `constant`, `m0`, `c`, `power` |
+
+`estimate_from` seeds the `constant`/`mean`/`sigma` core of the Gaussian, Crystal
+Ball, double Crystal Ball, and Voigt models; seed the rest with `with_params`.
+
 ### Arbitrary formulas
 
 `Model::from_formula(name, formula)` builds a model from any ROOT
 [`TFormula`](functions.md) string — `"[0]*exp(-[1]*x)+[2]"`, `"gaus(0)+pol1(3)"`,
-… — so you are not limited to the three built-in shapes. The parameter count is
+… — so you are not limited to the built-in shapes. The parameter count is
 inferred from the formula; seed the values with `with_params`.
 
 ```rust
@@ -158,12 +174,13 @@ let model = Model::gaussian("g")
 ```
 
 !!! tip
-    `estimate_from` only knows the built-in Gaussian shape — it sets
-    `(constant, mean, sigma)` to the peak height and the `y`-weighted mean and
-    standard deviation of the data. For other shapes, supply initial values with
-    `with_params` (or in `Model::new`). It is especially useful for histograms
-    built with `set_bin_content` rather than `fill`, whose stored moment sums are
-    zero.
+    `estimate_from` seeds the Gaussian-core shapes (the Gaussian, Crystal Ball,
+    double Crystal Ball, and Voigt peaks): it sets the leading `(constant, mean,
+    sigma)` to the peak height and the `y`-weighted mean and standard deviation of
+    the data, leaving any tail parameters at their defaults. For other shapes,
+    supply initial values with `with_params` (or in `Model::new`). It is
+    especially useful for histograms built with `set_bin_content` rather than
+    `fill`, whose stored moment sums are zero.
 
 `Model::eval(x)` evaluates the function at `x` with its current parameters —
 handy after `fit_into` (below) to draw the fitted curve.

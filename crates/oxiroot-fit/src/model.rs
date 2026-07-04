@@ -148,6 +148,83 @@ impl Model {
         })
     }
 
+    /// A **Crystal Ball** peak `constant · CB(x; mean, sigma, alpha, n)` — a
+    /// Gaussian core with a power-law low-side tail (RooFit's `RooCBShape`).
+    /// Parameters `constant`, `mean`, `sigma`, `alpha`, `n`; a negative `alpha`
+    /// moves the tail to the high side. Seed the core with
+    /// [`estimate_from`](Self::estimate_from) and keep the width/tail positive
+    /// with `.lower_limit("sigma", 0.0).lower_limit("n", 1.0)`.
+    pub fn crystal_ball(name: &str) -> Model {
+        Model::new(
+            name,
+            &["constant", "mean", "sigma", "alpha", "n"],
+            vec![1.0, 0.0, 1.0, 1.5, 2.0],
+            |x, p| p[0] * oxiroot_stat::crystal_ball(x, p[1], p[2], p[3], p[4]),
+        )
+    }
+
+    /// A **double-sided Crystal Ball** `constant · DSCB(x)` — a Gaussian core with
+    /// an independent power-law tail on each side. Parameters `constant`, `mean`,
+    /// `sigma`, `alpha_lo`, `n_lo`, `alpha_hi`, `n_hi`.
+    pub fn double_crystal_ball(name: &str) -> Model {
+        Model::new(
+            name,
+            &[
+                "constant", "mean", "sigma", "alpha_lo", "n_lo", "alpha_hi", "n_hi",
+            ],
+            vec![1.0, 0.0, 1.0, 1.5, 2.0, 1.5, 2.0],
+            |x, p| p[0] * oxiroot_stat::double_crystal_ball(x, p[1], p[2], p[3], p[4], p[5], p[6]),
+        )
+    }
+
+    /// A **Breit–Wigner** resonance `constant · BW(x; mean, gamma)` (a Lorentzian
+    /// of full width `gamma`). Parameters `constant`, `mean`, `gamma`.
+    pub fn breit_wigner(name: &str) -> Model {
+        Model::new(
+            name,
+            &["constant", "mean", "gamma"],
+            vec![1.0, 0.0, 1.0],
+            |x, p| p[0] * oxiroot_stat::breit_wigner(x, p[1], p[2]),
+        )
+    }
+
+    /// A **Voigt profile** `constant · V(x; mean, sigma, gamma)` — a Lorentzian of
+    /// half-width `gamma` convolved with a Gaussian of width `sigma` (a
+    /// resolution-broadened resonance). Parameters `constant`, `mean`, `sigma`,
+    /// `gamma`.
+    pub fn voigtian(name: &str) -> Model {
+        Model::new(
+            name,
+            &["constant", "mean", "sigma", "gamma"],
+            vec![1.0, 0.0, 1.0, 1.0],
+            |x, p| p[0] * oxiroot_stat::voigtian(x, p[1], p[2], p[3]),
+        )
+    }
+
+    /// A **Novosibirsk** peak `constant · N(x; peak, sigma, tail)` — an asymmetric
+    /// Gaussian whose skew is set by `tail`. Parameters `constant`, `peak`,
+    /// `sigma`, `tail`.
+    pub fn novosibirsk(name: &str) -> Model {
+        Model::new(
+            name,
+            &["constant", "peak", "sigma", "tail"],
+            vec![1.0, 0.0, 1.0, 0.1],
+            |x, p| p[0] * oxiroot_stat::novosibirsk(x, p[1], p[2], p[3]),
+        )
+    }
+
+    /// An **ARGUS** endpoint background `constant · ARGUS(x; m0, c, p)`. Parameters
+    /// `constant`, `m0` (kinematic endpoint), `c` (curvature), `power` (the `√`
+    /// exponent, ROOT's default `0.5`).
+    pub fn argus(name: &str) -> Model {
+        Model::new(
+            name,
+            &["constant", "m0", "c", "power"],
+            vec![1.0, 10.0, -1.0, 0.5],
+            |x, p| p[0] * oxiroot_stat::argus(x, p[1], p[2], p[3]),
+        )
+    }
+
     /// Build a model from an arbitrary ROOT [`TFormula`](oxiroot_formula) string
     /// (`"[0]+[1]*x"`, `"gaus"`, `"[0]*exp(-[1]*x)+[2]"`, …). Parameters are
     /// `[0], [1], …` and the variable is `x`; the parameter count is inferred
@@ -185,10 +262,12 @@ impl Model {
         (self.func)(x, &self.params)
     }
 
-    /// Whether this is the built-in Gaussian shape (parameters
-    /// `constant`/`mean`/`sigma`), the one shape that needs data-driven seeding.
-    fn is_gaussian(&self) -> bool {
-        self.param_names.len() == 3
+    /// Whether the model's first three parameters are the Gaussian-core triple
+    /// `constant`/`mean`/`sigma` — the Gaussian and the peaks built on a Gaussian
+    /// core (Crystal Ball, double Crystal Ball, Voigt), the shapes
+    /// [`estimate_from`](Self::estimate_from) can seed.
+    fn has_gaussian_core(&self) -> bool {
+        self.param_names.len() >= 3
             && self.param_names[0] == "constant"
             && self.param_names[1] == "mean"
             && self.param_names[2] == "sigma"
@@ -199,10 +278,13 @@ impl Model {
     /// `set_bin_content` rather than `fill`). Works for any [`FitData`] —
     /// histogram, graph, or raw points.
     ///
-    /// For the [`gaussian`](Self::gaussian) shape this sets `(constant, mean,
-    /// sigma)` to the peak height and the `y`-weighted mean and standard
-    /// deviation of the data. For other shapes it is a no-op (seed those with
-    /// [`with_params`](Self::with_params)).
+    /// For shapes with a Gaussian core (the [`gaussian`](Self::gaussian),
+    /// [`crystal_ball`](Self::crystal_ball),
+    /// [`double_crystal_ball`](Self::double_crystal_ball), and
+    /// [`voigtian`](Self::voigtian) peaks) this sets the leading `(constant, mean,
+    /// sigma)` to the peak height and the `y`-weighted mean and standard deviation
+    /// of the data, leaving any tail parameters at their defaults. For other
+    /// shapes it is a no-op (seed those with [`with_params`](Self::with_params)).
     ///
     /// ```
     /// # use oxiroot_fit::{FitExt, Model, Points};
@@ -213,10 +295,11 @@ impl Model {
     /// ```
     #[must_use]
     pub fn estimate_from(mut self, data: &impl FitData) -> Model {
-        if self.is_gaussian() {
+        if self.has_gaussian_core() {
             let (constant, mean, sigma) = gaussian_seed(&data.points());
-            self.params = vec![constant, mean, sigma];
-            self.constraints.resize(3, Constraint::default());
+            self.params[0] = constant;
+            self.params[1] = mean;
+            self.params[2] = sigma;
         }
         self
     }

@@ -18,6 +18,9 @@
 //! - [`correlation`] — `pearsonr`, `spearmanr`.
 //! - [`hypothesis`] — `ttest_1samp`/`ttest_ind`, `normaltest`, `chisquare`,
 //!   `ks_1samp`/`ks_2samp`, and the nonparametric `mannwhitneyu`/`wilcoxon`.
+//! - [`lineshapes`] — HEP fit shapes: the Crystal Ball (and double-sided),
+//!   Breit–Wigner / relativistic Breit–Wigner, the Voigt profile, Novosibirsk,
+//!   ARGUS, the bifurcated Gaussian, Moyal, and Landau.
 //! - [`physics`] — HEP helpers: significance ↔ p-value, weighted means /
 //!   measurement combination, Clopper–Pearson / Garwood / Wilson / Agresti–Coull
 //!   confidence intervals, and the `feldman_cousins` unified interval.
@@ -29,6 +32,7 @@ pub mod correlation;
 pub mod descriptive;
 pub mod distributions;
 pub mod hypothesis;
+pub mod lineshapes;
 pub mod physics;
 pub mod resample;
 pub mod special;
@@ -43,6 +47,10 @@ pub use distributions::{
 };
 pub use hypothesis::{
     chisquare, ks_1samp, ks_2samp, mannwhitneyu, normaltest, ttest_1samp, ttest_ind, wilcoxon,
+};
+pub use lineshapes::{
+    argus, bifurcated_gaussian, breit_wigner, crystal_ball, double_crystal_ball, gaussian, landau,
+    moyal, novosibirsk, relativistic_breit_wigner, voigtian,
 };
 pub use physics::{
     agresti_coull_interval, clopper_pearson, combine_measurements, feldman_cousins,

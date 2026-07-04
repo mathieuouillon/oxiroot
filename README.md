@@ -41,7 +41,12 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   `mannwhitneyu`/`wilcoxon`) plus a seeded `bootstrap_ci`. A **`physics`** module
   adds HEP conventions: significance ↔ p-value ("nσ"), inverse-variance
   measurement combination, Clopper–Pearson / Garwood / Wilson / Agresti–Coull
-  efficiency intervals, and the **Feldman–Cousins** unified interval.
+  efficiency intervals, and the **Feldman–Cousins** unified interval. A
+  **`lineshapes`** module has the HEP fit shapes — **Crystal Ball** (and
+  double-sided), Breit–Wigner / relativistic BW, the **Voigt** profile,
+  Novosibirsk, ARGUS, bifurcated Gaussian, Moyal, and **Landau** — each also a
+  ready-to-fit [`Model`](#fitting-oxirootfit-fit-feature) (`Model::crystal_ball`,
+  `voigtian`, …).
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
