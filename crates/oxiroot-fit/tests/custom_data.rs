@@ -181,12 +181,15 @@ fn voigtian_model_is_a_valid_fit() {
 
 #[test]
 fn robust_loss_matches_scipy_least_squares() {
-    use oxiroot_fit::{curve_fit_opts, FitOptions, Loss};
+    use oxiroot_fit::Loss;
     // A clean line y = 1 + 2x with one big outlier at x = 7.
     let x: Vec<f64> = (0..20).map(|i| i as f64).collect();
     let mut y: Vec<f64> = x.iter().map(|&x| 1.0 + 2.0 * x).collect();
     y[7] += 50.0;
     let sigma = vec![1.0; x.len()];
+    let data = Points::new(&x, &y, &sigma);
+    // Seed at the truth so the aggressive losses start inside their basin.
+    let line = || Model::new("line", &["a", "b"], vec![1.0, 2.0], |x, p| p[0] + p[1] * x);
 
     // scipy.optimize.least_squares(resid, x0=[1,2], loss=…, f_scale=1) → x.
     let refs = [
@@ -197,15 +200,7 @@ fn robust_loss_matches_scipy_least_squares() {
         (Loss::Arctan, 1.00000072901667, 1.9999999680255847),
     ];
     for (loss, a, b) in refs {
-        // Seed at the truth so the aggressive losses start inside their basin.
-        let fit = curve_fit_opts(
-            |x, p| p[0] + p[1] * x,
-            &x,
-            &y,
-            &sigma,
-            &[1.0, 2.0],
-            &FitOptions::new().loss(loss),
-        );
+        let fit = data.fit_opts(&line(), &FitOptions::new().loss(loss));
         assert!(fit.valid, "{loss:?} did not converge");
         assert!(
             rel_close(fit.params[0], a, 1e-2),

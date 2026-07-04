@@ -3,7 +3,7 @@
 
 use crate::engine::run_fit;
 use crate::model::Model;
-use crate::result::{FitMethod, FitOptions, FitResult};
+use crate::result::{FitOptions, FitResult};
 
 /// One data point a model is fit against: an independent value `x`, a measured
 /// value `y`, and a Gaussian uncertainty `sigma` on `y`.
@@ -104,18 +104,12 @@ impl FitData for [Point] {
 /// prelude) to call these.
 pub trait FitExt: FitData {
     /// Fit `model` by chi-square minimization over the full range (ROOT's
-    /// default `Fit`); shorthand for [`fit_with`](Self::fit_with) with
-    /// [`FitMethod::Chi2`].
+    /// default `Fit`) — shorthand for [`fit_opts`](Self::fit_opts) with the
+    /// default [`FitOptions`]. To pick a different cost, a range, or a robust
+    /// loss, build a [`FitOptions`] and use [`fit_opts`](Self::fit_opts).
     #[must_use]
     fn fit(&self, model: &Model) -> FitResult {
-        self.fit_with(model, FitMethod::Chi2)
-    }
-
-    /// Fit `model` over the full range with the chosen [`FitMethod`]; shorthand
-    /// for [`fit_opts`](Self::fit_opts).
-    #[must_use]
-    fn fit_with(&self, model: &Model, method: FitMethod) -> FitResult {
-        self.fit_opts(model, &FitOptions::new().method(method))
+        self.fit_opts(model, &FitOptions::new())
     }
 
     /// Fit `model` with full control over the cost and range ([`FitOptions`]),

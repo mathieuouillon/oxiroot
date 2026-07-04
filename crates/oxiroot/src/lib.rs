@@ -101,18 +101,16 @@ pub mod prelude {
 
     #[cfg(feature = "fit")]
     pub use oxiroot_fit::{
-        curve_fit, curve_fit_opts, FitData, FitExt, FitMethod, FitOptions, FitResult, Loss,
-        Minimizer, Model, Point, Points,
+        FitData, FitExt, FitMethod, FitOptions, FitResult, Loss, Minimizer, Model, Point, Points,
     };
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     pub use oxiroot_hist::{
-        merge_all, Chi2TestKind, Chi2TestResult, Dir, ErrorMode, FromMember, GraphErrors,
-        GraphFunction, Hist, Histogram, KsTestResult, ListKind, Merge, ObjList, ParamValue,
-        PolyBin, Precision, ReadRoot, Rng, RootFile, SparseBin, TAxis, TEfficiency, TGraph,
-        TGraph2D, TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMap, TMultiGraph, TObjString,
-        TParameter, TProfile, TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TF1, TF2, TF3, TH1,
-        TH2, TH3,
+        Chi2TestKind, Chi2TestResult, Dir, ErrorMode, FromMember, GraphErrors, GraphFunction, Hist,
+        Histogram, KsTestResult, ListKind, Merge, ObjList, ParamValue, PolyBin, Precision,
+        ReadRoot, Rng, RootFile, SparseBin, TAxis, TEfficiency, TGraph, TGraph2D,
+        TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMap, TMultiGraph, TObjString, TParameter,
+        TProfile, TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TF1, TF2, TF3, TH1, TH2, TH3,
     };
     pub use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 

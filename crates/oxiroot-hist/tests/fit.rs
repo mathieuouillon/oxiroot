@@ -90,7 +90,7 @@ fn likelihood_fit_of_a_constant_equals_the_mean() {
     // mean of the bin counts; the chi-square estimate is a different (smaller)
     // value. This pins the likelihood path analytically and distinguishes it
     // from chi-square.
-    use oxiroot_hist::FitMethod;
+    use oxiroot_hist::{FitMethod, FitOptions};
     let counts = [10.0, 20.0, 30.0, 40.0];
     let mut h = Hist::reg(counts.len() as i32, 0.0, counts.len() as f64)
         .double()
@@ -100,13 +100,13 @@ fn likelihood_fit_of_a_constant_equals_the_mean() {
     }
     let mean = counts.iter().sum::<f64>() / counts.len() as f64; // 25.0
 
-    let like = h.fit_with(
+    let like = h.fit_opts(
         &Model::polynomial("pol0", 0).with_params(vec![mean]),
-        FitMethod::Likelihood,
+        &FitOptions::new().method(FitMethod::Likelihood),
     );
-    let chi2 = h.fit_with(
+    let chi2 = h.fit_opts(
         &Model::polynomial("pol0", 0).with_params(vec![mean]),
-        FitMethod::Chi2,
+        &FitOptions::new().method(FitMethod::Chi2),
     );
     assert!(like.valid && chi2.valid);
     assert!(
@@ -123,7 +123,7 @@ fn likelihood_fit_of_a_constant_equals_the_mean() {
 
 #[test]
 fn likelihood_gaussian_recovers_shape() {
-    use oxiroot_hist::FitMethod;
+    use oxiroot_hist::{FitMethod, FitOptions};
     // hg is a high-statistics gaussian (const=1000, mean=0.5, sigma=1.3); the
     // Poisson likelihood fit recovers it (at high stats it agrees with chi-square).
     let hg = read("hg");
@@ -134,7 +134,7 @@ fn likelihood_gaussian_recovers_shape() {
         .sum::<f64>()
         / total;
     let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
-    let r = hg.fit_with(&model, FitMethod::Likelihood);
+    let r = hg.fit_opts(&model, &FitOptions::new().method(FitMethod::Likelihood));
     assert!(r.valid);
     assert!(
         rel_close(r.params[0], 1000.0, 1e-2),
@@ -147,7 +147,7 @@ fn likelihood_gaussian_recovers_shape() {
 
 #[test]
 fn likelihood_and_chi2_diverge_on_low_statistics() {
-    use oxiroot_hist::FitMethod;
+    use oxiroot_hist::{FitMethod, FitOptions};
     // On a low-statistics, imperfect gaussian the two estimators genuinely
     // differ (where ROOT's "L" on a SetBinContent histogram falls back to chi2).
     let hgl = read("hgl");
@@ -158,8 +158,8 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
         .sum::<f64>()
         / total;
     let model = || Model::gaussian("g").with_params(vec![hgl.maximum(), mean, 1.3]);
-    let chi2 = hgl.fit_with(&model(), FitMethod::Chi2);
-    let like = hgl.fit_with(&model(), FitMethod::Likelihood);
+    let chi2 = hgl.fit_opts(&model(), &FitOptions::new().method(FitMethod::Chi2));
+    let like = hgl.fit_opts(&model(), &FitOptions::new().method(FitMethod::Likelihood));
     assert!(chi2.valid && like.valid);
     assert!(
         (chi2.params[0] - like.params[0]).abs() > 0.5,

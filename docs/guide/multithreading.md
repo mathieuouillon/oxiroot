@@ -4,7 +4,7 @@
 [`TThreadedObject<TH1>`](https://root.cern/doc/master/classROOT_1_1TThreadedObject.html):
 share one accumulator across threads, fill it from any of them, then merge the
 per-thread copies into a single histogram that is identical to a serial fill.
-This page covers `ThreadedHist`, the `Merge` trait and `merge_all`, and the
+This page covers `ThreadedHist`, the `Merge` trait (and its `merge_all`), and the
 optional `rayon`-powered `fill_par`.
 
 ## The model
@@ -122,7 +122,7 @@ println!("filled across {} thread-local copies", hist.num_slots());
     summation order. You can assert `merged.values() == serial.values()` and
     `merged.entries == serial.entries` against a reference serial fill.
 
-## `Merge` and `merge_all`
+## The `Merge` trait
 
 `merge()` is built on the `Merge` trait, implemented for `TH1`, `TH2`, `TH3`,
 and `TProfile`. `Merge::merge(&mut self, other)` is the bin-by-bin combine of
@@ -130,20 +130,17 @@ and `TProfile`. `Merge::merge(&mut self, other)` is the bin-by-bin combine of
 [`Error::BinningMismatch`](../api/oxiroot/index.html) (leaving `self` unchanged)
 when the binnings differ.
 
-The free function `merge_all` folds an iterator of histograms into one — an
-in-memory equivalent of ROOT's `hadd`. It returns `Ok(None)` for an empty
-iterator, or the binning-mismatch error from the first incompatible pair.
+Its `Merge::merge_all` folds an iterator of histograms into one — an in-memory
+equivalent of ROOT's `hadd`. It returns `Ok(None)` for an empty iterator, or the
+binning-mismatch error from the first incompatible pair:
 
 ```rust
 use oxiroot::prelude::*;
 
 // Combine partial histograms (e.g. one per input file) into a single result.
 let partials: Vec<TH1> = load_partial_histograms();
-let total: Option<TH1> = merge_all(partials)?;
+let total: Option<TH1> = TH1::merge_all(partials)?;
 ```
-
-`Merge` is also available as a method form (`Merge::merge_all`) on any
-implementing type.
 
 ## Data-parallel fill with `rayon`
 
@@ -184,7 +181,7 @@ oxiroot = { version = "*" } # the `rayon` feature is on by default
 | --- | --- |
 | `ThreadedHist` | You control thread spawning, want to fill from arbitrary call sites, or are filling more than one histogram in the same scope. |
 | `fill_par` | One histogram, data already in a `&[T]`, and you want the parallelism handled for you (requires `rayon`). |
-| `merge_all` | You already have a collection of compatible histograms to combine (in-memory `hadd`). |
+| `Merge::merge_all` | You already have a collection of compatible histograms to combine (in-memory `hadd`). |
 
 A full runnable example lives at
 [`crates/oxiroot/examples/threaded.rs`](https://github.com/mathieuouillon/oxiroot/blob/main/crates/oxiroot/examples/threaded.rs)

@@ -58,7 +58,8 @@ fn main() {
     // manual moment loop, and it works even for set_bin_content histograms.
     let model = Model::gaussian("z").estimate_from(&peak);
     let chi2 = peak.fit(&model); // chi-square (the default)
-    let like = peak.fit_with(&model, FitMethod::Likelihood); // Poisson likelihood
+                                 // Poisson likelihood, via FitOptions:
+    let like = peak.fit_opts(&model, &FitOptions::new().method(FitMethod::Likelihood));
 
     println!("Gaussian peak fit (truth: mean = {true_mean}, sigma = {true_sigma}):");
     let (p, e) = (&chi2.params, &chi2.errors);

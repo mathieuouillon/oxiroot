@@ -18,7 +18,10 @@ fn open() -> RFile {
 fn reads_several_branches_at_once() {
     let f = open();
     let t = TTree::open(&f, "Events").expect("open tree");
-    let cols = t.read_branches(&f, &["i4", "b1"]).expect("read");
+    let cols: Vec<BranchValues> = ["i4", "b1"]
+        .iter()
+        .map(|&n| t.read_branch(&f, n).expect("read"))
+        .collect();
     assert_eq!(cols.len(), 2);
     assert_eq!(cols[0], BranchValues::I32(vec![0, 1, 2, 3, 4]));
     assert_eq!(

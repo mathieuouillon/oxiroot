@@ -25,7 +25,7 @@ dataset the `.fit(...)` methods for free.
 | Item | Role |
 | --- | --- |
 | `FitData` | Trait with one method, `fn points(&self) -> Vec<Point>` |
-| `FitExt` | Blanket trait adding `fit` / `fit_with` / `fit_opts` / `fit_into` to any `FitData` |
+| `FitExt` | Blanket trait adding `fit` / `fit_opts` / `fit_into` to any `FitData` |
 | `Point` | One `(x, y, sigma)` triple |
 | `Points` | A standalone collection of `Point`s |
 | `Model` | A named parametric fit function `f(x, params)` |
@@ -187,13 +187,12 @@ handy after `fit_into` (below) to draw the fitted curve.
 
 ## Costs and the fit methods
 
-`FitExt` gives a dataset four entry points; they layer on top of one another:
+`FitExt` gives a dataset three entry points; they layer on top of one another:
 
 | Method | Signature | Behaviour |
 | --- | --- | --- |
 | `fit` | `fit(&model) -> FitResult` | Chi-square over the full range (ROOT's default) |
-| `fit_with` | `fit_with(&model, method) -> FitResult` | Full range with a chosen `FitMethod` |
-| `fit_opts` | `fit_opts(&model, &opts) -> FitResult` | Full control via `FitOptions` |
+| `fit_opts` | `fit_opts(&model, &opts) -> FitResult` | Full control via `FitOptions` (cost, range, robust loss, MINOS) |
 | `fit_into` | `fit_into(&mut model, &opts) -> FitResult` | Like `fit_opts`, but writes the best-fit parameters back into the model |
 
 The cost being minimized is a `FitMethod`:
@@ -208,8 +207,9 @@ The cost being minimized is a `FitMethod`:
 use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
-let chi2 = peak.fit(&model);                          // χ², the default
-let like = peak.fit_with(&model, FitMethod::Likelihood); // Poisson likelihood
+let chi2 = peak.fit(&model);                             // χ², the default
+let opts = FitOptions::new().method(FitMethod::Likelihood);
+let like = peak.fit_opts(&model, &opts);                 // Poisson likelihood
 ```
 
 !!! warning
@@ -288,25 +288,6 @@ let fit = peak.fit_opts(&model, &opts);
     Fit with `Linear` first and use those parameters to seed the robust fit
     (`SoftL1`/`Huber` are forgiving; `Cauchy`/`Arctan` need a close start). A
     robust loss also weakens the χ² / `p_value` interpretation of the result.
-
-## Quick fits with `curve_fit`
-
-For a one-off fit of a bare closure to `(x, y)` data — with no named `Model` —
-use `curve_fit`, the analogue of `scipy.optimize.curve_fit`. Parameters are named
-`p0`, `p1`, … and `result.covariance` is scipy's `pcov`:
-
-```rust
-use oxiroot::prelude::*;
-
-let x = [0.0, 1.0, 2.0, 3.0, 4.0];
-let y = [1.0, 3.0, 5.0, 7.0, 9.0];
-let fit = curve_fit(|x, p| p[0] + p[1] * x, &x, &y, &[0.0, 0.0]);
-assert!((fit.params[1] - 2.0).abs() < 1e-6); // slope ≈ 2
-```
-
-`curve_fit_opts(f, x, y, sigma, p0, &opts)` adds per-point errors and full
-`FitOptions` (a robust `loss`, a fit range, a Pearson/likelihood cost). For
-bounds, build a `Model` and use `.lower_limit(...)`.
 
 ## Reading the result
 

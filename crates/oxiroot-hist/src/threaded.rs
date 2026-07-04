@@ -9,11 +9,12 @@
 //! thread, fill locally without locking, merge at the end", and the merged
 //! histogram is identical to a serial fill (up to floating-point summation order).
 //!
-//! - [`Merge`] — the reduction trait (`merge` == `add(other, 1.0)`).
+//! - [`Merge`] — the reduction trait (`merge` == `add(other, 1.0)`); its
+//!   [`merge_all`](Merge::merge_all) folds an iterator of histograms into one
+//!   (an in-memory `hadd`).
 //! - [`ThreadedHist`] — the accumulator: share `&ThreadedHist`, call
 //!   [`fill`](ThreadedHist::fill) from any thread (each gets its own copy), then
 //!   [`merge`](ThreadedHist::merge) at the end. Works with [`std::thread::scope`].
-//! - [`merge_all`] — fold an iterator of histograms into one (in-memory `hadd`).
 //! - [`fill_par`] — one-call parallel fill of a slice (requires the `rayon`
 //!   feature).
 
@@ -62,17 +63,6 @@ macro_rules! impl_merge {
     )+};
 }
 impl_merge!(TH1, TH2, TH3, TProfile);
-
-/// Fold an iterator of histograms into a single merged histogram (`Ok(None)` if
-/// empty). Equivalent to ROOT's `hadd` over in-memory objects, and the reducer
-/// behind [`ThreadedHist::merge`]. Errors on binning mismatch.
-pub fn merge_all<H, I>(items: I) -> Result<Option<H>>
-where
-    H: Merge,
-    I: IntoIterator<Item = H>,
-{
-    H::merge_all(items)
-}
 
 /// A multithreaded fill accumulator — the pure-Rust analog of ROOT's
 /// `TThreadedObject<TH1>`.

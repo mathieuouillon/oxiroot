@@ -69,7 +69,7 @@ pub use th3::TH3;
 pub use thnsparse::{SparseBin, THnSparse};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;
-pub use threaded::{merge_all, Merge, ThreadedHist};
+pub use threaded::{Merge, ThreadedHist};
 pub use tprofile::{ErrorMode, TProfile};
 pub use tprofile2d::TProfile2D;
 pub use tprofile3d::TProfile3D;

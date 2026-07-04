@@ -174,7 +174,6 @@ let values: &[f64] = energy.as_f64().expect("energy is a TLeafD branch");
 | Method | Returns |
 |---|---|
 | `read_branch(file, name)` | All entries of one branch as `BranchValues`. |
-| `read_branches(file, &[name, …])` | A `Vec<BranchValues>` in the requested order (a columnar `arrays`-style read). |
 | `read_branch_range(file, name, start, stop)` | Only entries `[start, stop)`, fetching just the baskets that cover the window. |
 | `read_branch_flat(file, name)` | A `Jagged` view — cumulative `offsets` over one flat scalar `BranchValues`, no `Vec<Vec<_>>` allocation (numeric branches only). |
 
@@ -187,8 +186,11 @@ use oxiroot::prelude::*;
 let window = t.read_branch_range(&file, "event", 3, 7)?;
 let evts: &[i32] = window.as_i32().unwrap();
 
-// Several columns at once.
-let cols = t.read_branches(&file, &["event", "energy"])?;
+// Several columns — read_branch in a loop.
+for name in ["event", "energy"] {
+    let col = t.read_branch(&file, name)?;
+    // …use col…
+}
 ```
 
 ### `BranchValues`

@@ -1,8 +1,8 @@
-//! Multithreaded fill (`ThreadedHist`, `merge_all`, `fill_par`): a parallel fill
-//! must equal the serial fill (bin contents and entries exactly; moment sums to
-//! rounding, since summation order differs).
+//! Multithreaded fill (`ThreadedHist`, `Merge::merge_all`, `fill_par`): a
+//! parallel fill must equal the serial fill (bin contents and entries exactly;
+//! moment sums to rounding, since summation order differs).
 
-use oxiroot_hist::{merge_all, Hist, ThreadedHist, TH1};
+use oxiroot_hist::{Hist, Merge, ThreadedHist, TH1};
 
 fn data() -> Vec<f64> {
     // Deterministic, varied, all in-range over [0, 100).
@@ -92,16 +92,16 @@ fn threaded_fill_2d_merges() {
 #[test]
 fn merge_all_folds_or_none() {
     assert!(
-        merge_all(Vec::<TH1>::new()).unwrap().is_none(),
+        TH1::merge_all(Vec::<TH1>::new()).unwrap().is_none(),
         "empty → None"
     );
 
     let one = serial(&[0.5, 0.5]);
-    let merged = merge_all(vec![one.clone()]).unwrap().unwrap();
+    let merged = TH1::merge_all(vec![one.clone()]).unwrap().unwrap();
     assert_eq!(merged, one, "single item → itself");
 
     let parts: Vec<TH1> = data().chunks(250).map(serial).collect();
-    let merged = merge_all(parts).unwrap().unwrap();
+    let merged = TH1::merge_all(parts).unwrap().unwrap();
     assert_eq!(
         merged.values(),
         serial(&data()).values(),
@@ -114,7 +114,7 @@ fn merge_rejects_mismatched_binning() {
     let a = Hist::reg(4, 0.0, 4.0).double().named("h");
     let b = Hist::reg(5, 0.0, 5.0).double().named("h");
     assert!(
-        merge_all(vec![a, b]).is_err(),
+        TH1::merge_all(vec![a, b]).is_err(),
         "incompatible binnings error"
     );
 }

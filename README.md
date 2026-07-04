@@ -216,9 +216,8 @@ cargo run -p oxiroot --example analysis
   `crystal_ball`/`voigtian`/…, an arbitrary formula, or a custom closure) and a
   pure-Rust Minuit2 minimizer; anything implementing the `FitData` trait gets
   `.fit(&model)` (Neyman/Pearson χ² or binned Poisson likelihood), returning
-  parameters, parabolic + MINOS errors, covariance, and `chi2`/`ndf`. `curve_fit`
-  mirrors `scipy.optimize.curve_fit`, and a robust `Loss`
-  (`Huber`/`SoftL1`/`Cauchy`/`Arctan` — scipy's `least_squares` `loss`)
+  parameters, parabolic + MINOS errors, covariance, and `chi2`/`ndf`. A robust
+  `Loss` (`Huber`/`SoftL1`/`Cauchy`/`Arctan` — scipy's `least_squares` `loss`)
   down-weights outliers.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
   `TThreadedObject<TH1>`: share `&hist`, call `hist.fill(x)` from any thread —
@@ -256,9 +255,9 @@ Fitting lives in its **own crate** (`oxiroot-fit`), so it works on **any 1-D
 data**, not just histograms. A dataset implements the `FitData` trait (yielding
 `(x, y, σ)` points) and the blanket `FitExt` gives it `.fit(&model)`. `TH1` and
 `TGraph` implement `FitData` out of the box, and `Points` (or your own `FitData`
-impl) covers everything else. `fit` is χ² by default; `fit_with` picks the cost
-(Neyman or Pearson chi-square, or a binned Poisson likelihood) and `fit_opts`
-adds a fit range and opt-in MINOS errors. A `Model` is a built-in shape
+impl) covers everything else. `fit` is χ² by default; `fit_opts` picks the cost
+(Neyman or Pearson chi-square, or a binned Poisson likelihood), a fit range, a
+robust loss, and opt-in MINOS errors. A `Model` is a built-in shape
 (`gaussian`, `exponential`, `polynomial`), any formula string
 (`Model::from_formula`), or a closure `f(x, params)`, with per-parameter limits,
 fixing, and a data-driven seed. The fit returns the
@@ -292,7 +291,8 @@ let fit = h.fit(&model);
 println!("mean = {:.3} ± {:.3}", fit.params[1], fit.errors[1]);
 println!("chi2/ndf = {:.2}, p = {:.3}", fit.chi2_per_ndf(), fit.p_value());
 
-let ml = h.fit_with(&model, FitMethod::Likelihood); // binned Poisson likelihood
+// binned Poisson likelihood, via FitOptions:
+let ml = h.fit_opts(&model, &FitOptions::new().method(FitMethod::Likelihood));
 
 // Full control: fit the core ±window, keep sigma positive, and ask for MINOS.
 let opts = FitOptions::new().range(85.0, 97.0).with_minos(true);
@@ -594,7 +594,7 @@ ax2.save("heatmap.svg")?;
   branch straight to disk, then `finish`), so only the current batch is held in
   memory — the way ROOT's `TTree::Fill` flushes baskets. ROOT-C++- and
   uproot-verified across many baskets, compressed and not.
-- `read_branch` reads a whole branch, `read_branches` several at once,
+- `read_branch` reads a whole branch,
   `read_branch_range(start, stop)` only the baskets covering a window, and
   `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `TChain` spans many
   files (optional `rayon` decodes baskets in parallel). Introspect with
