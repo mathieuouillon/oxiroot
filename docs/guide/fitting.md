@@ -6,11 +6,13 @@ ROOT uses. This page covers the standalone `oxiroot-fit` crate, the `FitData` /
 `FitExt` abstraction, building models, choosing a cost and minimizer, and
 reading back results.
 
-Everything here is gated behind the **`fit`** feature.
+Everything here comes from the **`fit`** feature, which is **on by default** — a
+plain `oxiroot` dependency already has it. (Turn it off, along with the other
+extras, with `default-features = false`.)
 
 ```toml
 # Cargo.toml
-oxiroot = { version = "*", features = ["fit"] }
+oxiroot = { version = "*" } # the `fit` feature is on by default
 ```
 
 ## The fitting abstraction
@@ -48,7 +50,7 @@ moment loop is needed.
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit
+// the `fit` feature is on by default
 let mut peak = Hist::reg(60, 80.0, 100.0).double().named("mass");
 peak.sumw2(); // track per-bin errors for the chi-square
 for _ in 0..10_000 {
@@ -71,7 +73,7 @@ The same `data.fit(&model)` call works on a `TGraph` or on raw points:
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit
+// the `fit` feature is on by default
 // Raw (x, y, sigma) measurements.
 let data = Points::new(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 5.0, 7.0], &[0.1; 4]);
 let line = Model::polynomial("line", 1).with_params(vec![0.0, 1.0]);
@@ -119,7 +121,7 @@ below is a Gaussian signal on a flat background:
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit
+// the `fit` feature is on by default
 // params: [norm, mean, sigma, background-per-bin].
 let sig_bkg = Model::new(
     "sig+bkg",
@@ -149,7 +151,7 @@ These chainable methods return the `Model`, so they compose:
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit
+// the `fit` feature is on by default
 let model = Model::gaussian("g")
     .estimate_from(&data)        // seed (constant, mean, sigma) from the data
     .lower_limit("sigma", 0.0);  // keep the width non-negative
@@ -188,7 +190,7 @@ The cost being minimized is a `FitMethod`:
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit
+// the `fit` feature is on by default
 let chi2 = peak.fit(&model);                          // χ², the default
 let like = peak.fit_with(&model, FitMethod::Likelihood); // Poisson likelihood
 ```
@@ -214,7 +216,7 @@ minimizer backend. Construct it with `FitOptions::new()` and chain setters:
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit
+// the `fit` feature is on by default
 let opts = FitOptions::new()
     .method(FitMethod::Chi2)
     .range(85.0, 97.0)
@@ -228,7 +230,7 @@ fitted curve afterwards:
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit
+// the `fit` feature is on by default
 let mut model = sig_bkg;
 let fit = withbkg.fit_into(&mut model, &FitOptions::new());
 // model.eval(x) now draws the *fitted* curve:
@@ -254,7 +256,7 @@ let height_at_peak = model.eval(fit.params[1]);
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit
+// the `fit` feature is on by default
 let fit = peak.fit_opts(&model, &FitOptions::new().with_minos(true));
 if fit.valid {
     println!("mean   = {:.3} ± {:.3}", fit.params[1], fit.errors[1]);
@@ -291,7 +293,7 @@ penalty, and derives errors from a central-difference Hessian. The
 ```rust
 use oxiroot::prelude::*;
 
-// needs --features fit,argmin
+// the `fit` + `argmin` features are both on by default
 let fit = peak.fit_opts(
     &Model::gaussian("z").estimate_from(&peak),
     &FitOptions::new().minimizer(Minimizer::NelderMead),

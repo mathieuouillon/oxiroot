@@ -165,11 +165,11 @@ assert_eq!(hist.entries, data.len() as f64);
 The closure `|h, item|` applies one element, so it generalizes beyond 1-D — for
 example `|h, ev| h.fill_weight(ev.x, ev.w)` over a slice of event structs.
 
-Enable the feature in `Cargo.toml`:
+`fill_par` comes from the **`rayon`** feature, which is on by default:
 
 ```toml
 [dependencies]
-oxiroot = { version = "*", features = ["rayon"] }
+oxiroot = { version = "*" } # the `rayon` feature is on by default
 ```
 
 !!! warning "Summation order"

@@ -30,24 +30,32 @@ use oxiroot::prelude::*;
 
 ## Optional features
 
-Everything off by default builds as pure, safe Rust with a minimal dependency
-set. Turn on extras à la carte:
+The `oxiroot` facade is **batteries-included**: every optional capability is on
+by default, so there is nothing extra to enable. Opt out with
+`default-features = false` (then re-enable à la carte) when you want just the
+lean, pure-Rust format core.
 
-| Feature | Effect |
-|---------|--------|
-| `mmap` | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
-| `rayon` | Data-parallel histogram fill (`hist::fill_par`); adds `rayon`. |
-| `fit` | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
-| `argmin` | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
+| Feature | Default | Effect |
+|---------|:---:|--------|
+| `mmap` | ✅ | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
+| `rayon` | ✅ | Data-parallel histogram fill (`hist::fill_par`) and TTree basket decode; adds `rayon`. |
+| `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
+| `argmin` | ✅ | Gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
+| `plot` | ✅ | Plotting to SVG/PNG/PDF (`oxiroot::plot`); adds `tiny-skia`/`ab_glyph` and the ReX TeX engine. |
 
 ```toml
 [dependencies]
-oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", features = ["fit", "rayon"] }
+# Batteries-included — fitting, plotting, rayon, mmap, and argmin all on:
+oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
+
+# …or the lean format core only (drops the extra dependencies):
+# oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
 ```
 
-!!! tip "Fitting on the command line"
-    Examples that fit need the feature flag, e.g.
-    `cargo run -p oxiroot --example fit --features fit`.
+!!! tip "Leaner builds"
+    The extras pull real dependencies (the Minuit2 port, the ReX TeX engine, …).
+    If you only read and write ROOT files, `default-features = false` keeps the
+    build minimal; re-enable individual features as you need them.
 
 ## Build & test
 

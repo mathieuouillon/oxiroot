@@ -12,7 +12,8 @@ behind the **`plot` feature** and exposed as `oxiroot::plot`.
 
 ```toml
 [dependencies]
-oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", features = ["plot"] }
+# the `plot` feature is on by default:
+oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 ```
 
 !!! note "How it works"
@@ -136,7 +137,7 @@ smooth line — the way to overlay an analytic curve on a histogram. To overlay 
 
 ```rust
 use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType};
-use oxiroot::prelude::*;   // needs `--features plot,fit`
+use oxiroot::prelude::*;   // the `plot` + `fit` features are on by default
 use oxiroot::fit::TF1;
 
 // Fit a Gaussian to the histogram, then overlay the fitted curve.
@@ -312,7 +313,7 @@ fig.with_axes([ax]).save("pt.png")?;
 ## Worked example
 
 ```sh
-cargo run -p oxiroot --example plot --features plot
+cargo run -p oxiroot --example plot
 ```
 
 It renders a Z → μμ overlay, an mplhep step plot with a grid, a 2-D heatmap,

@@ -85,8 +85,13 @@ independent, so a histogram-only project never compiles the others.
 
 ```toml
 [dependencies]
-# Everything — histograms, graphs, TTree, RNTuple — through the facade:
+# Everything — histograms, graphs, TTree, RNTuple, fitting, plotting — through
+# the facade. The optional capabilities (fit, plot, rayon, mmap, argmin) are ON
+# BY DEFAULT, so nothing extra to enable:
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
+
+# …leaner, just the format core (drops the fitting/plotting/rayon/mmap deps):
+# oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
 
 # …or depend on just one crate from the same repo:
 oxiroot-hist    = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
@@ -199,8 +204,8 @@ cargo run -p oxiroot --example analysis
   `UU`/`UW`/`WW` weighting schemes) and `kolmogorov_test`, returning ROOT-matched
   p-values. Alphanumeric (labelled) axes round-trip through `TAxis::labels`
   (read **and** write, with `set_label`).
-- **Fitting** (optional `fit` feature) — fit a parametric model to **any 1-D
-  data**: a histogram, a `TGraph`, or your own `(x, y, σ)` points. The standalone
+- **Fitting** (the `fit` feature, on by default) — fit a parametric model to
+  **any 1-D data**: a histogram, a `TGraph`, or your own `(x, y, σ)` points. The standalone
   [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) crate provides the `Model`
   (built-in `gaussian`/`exponential`/`polynomial`, or a custom closure) and a
   pure-Rust Minuit2 minimizer; anything implementing the `FitData` trait gets
@@ -219,7 +224,7 @@ cargo run -p oxiroot --example analysis
   let merged = hist.merge()?;
   ```
   No `Arc`, no manual slots; `with_local(|h| …)` batches fills or reaches any
-  method, and the optional `rayon` feature adds a one-call
+  method, and the `rayon` feature (on by default) adds a one-call
   `fill_par(&template, &data, |h, &x| h.fill(x))`. See
   [`examples/threaded.rs`](crates/oxiroot/examples/threaded.rs).
 - Write one object with `h.write_root(path, compression)`. For several objects,
@@ -265,7 +270,7 @@ let fit = data.fit_opts(&model, &FitOptions::new().minimizer(Minimizer::NelderMe
 ```
 
 ```rust
-use oxiroot::prelude::*; // needs `--features fit`
+use oxiroot::prelude::*; // the `fit` feature is on by default
 
 let mut h = Hist::reg(60, 80.0, 100.0).double().named("mass").titled("di-muon mass");
 h.sumw2();
@@ -308,7 +313,7 @@ A runnable worked example (fits a Z → μμ peak, then the same models to a
 `TGraph` and to raw points):
 
 ```sh
-cargo run -p oxiroot --example fit --features fit
+cargo run -p oxiroot --example fit
 ```
 
 ### Graphs (`oxiroot::hist`)
@@ -498,11 +503,11 @@ labels are typeset as real LaTeX math by the pure-Rust
   <img src="docs/images/plot-ratio.png" alt="A main panel over a data/MC ratio panel sharing the x-axis" width="46%">
 </p>
 
-<sub>All figures are produced by `cargo run -p oxiroot --example plot --features plot` (PNG, SVG **and** PDF). Left: the plain matplotlib look (fancybox legend, STIX serif, LaTeX labels). Right: the HEP-publication look (`Style::mplhep()` + `ax.hep_label("CMS", "Preliminary")`).</sub>
+<sub>All figures are produced by `cargo run -p oxiroot --example plot` (PNG, SVG **and** PDF). Left: the plain matplotlib look (fancybox legend, STIX serif, LaTeX labels). Right: the HEP-publication look (`Style::mplhep()` + `ax.hep_label("CMS", "Preliminary")`).</sub>
 
 ```rust
 use oxiroot::plot::{Axes, HistType, HistOpts, ErrorbarOpts, Hist2dOpts, Color};
-use oxiroot::prelude::*; // needs `--features plot`
+use oxiroot::prelude::*; // the `plot` feature is on by default
 
 // A filled MC histogram with "data" points overlaid + a legend.
 let mut ax = Axes::new();
@@ -555,7 +560,7 @@ ax2.save("heatmap.svg")?;
   `Style::mplhep()` switches to in-pointing ticks on all four sides with minor ticks.
 - A worked example renders a Z → μμ overlay and a 2-D heatmap to PNG **and** SVG:
   ```sh
-  cargo run -p oxiroot --example plot --features plot
+  cargo run -p oxiroot --example plot
   ```
 
 ### TTree (`oxiroot::tree`)
@@ -741,15 +746,17 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 
 ### Optional features
 
-| Feature | Effect |
-|---------|--------|
-| `mmap` | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
-| `rayon` | Data-parallel histogram fill (`hist::fill_par`); adds `rayon`. |
-| `fit` | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
-| `argmin` | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
-| `plot` | Plotting (`oxiroot::plot`): SVG/PNG rendering of `TH1`/`TH2`/`TGraph`/`TProfile`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
+| Feature | Default | Effect |
+|---------|:---:|--------|
+| `mmap` | ✅ | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
+| `rayon` | ✅ | Data-parallel histogram fill (`hist::fill_par`) and TTree basket decode; adds `rayon`. |
+| `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
+| `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
+| `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `TH1`/`TH2`/`TGraph`/`TProfile`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
 
-All are off by default, so the default build stays pure safe Rust.
+All are **on by default** — the facade is batteries-included. For a lean,
+pure-Rust format core with a minimal dependency set, opt out with
+`default-features = false` and re-enable what you need.
 
 ## Build & test
 

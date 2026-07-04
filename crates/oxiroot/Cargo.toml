@@ -19,6 +19,11 @@ oxiroot-fit = { workspace = true, optional = true }
 oxiroot-plot = { workspace = true, optional = true }
 
 [features]
+# Batteries-included: the facade turns on every optional capability by default —
+# fitting (Minuit2 plus the argmin Nelder–Mead backend), plotting, the
+# data-parallel helpers, and the mmap read path. Opt out of the extra
+# dependencies with `default-features = false`, then re-enable what you need.
+default = ["fit", "plot", "rayon", "mmap", "argmin"]
 # Enable the memory-mapped read path (`RFile::open_mmap`).
 mmap = ["oxiroot-io-core/mmap"]
 # Enable data-parallel helpers: the histogram fill (`hist::fill_par`) and
