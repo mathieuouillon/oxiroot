@@ -101,7 +101,8 @@ pub mod prelude {
 
     #[cfg(feature = "fit")]
     pub use oxiroot_fit::{
-        FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points,
+        curve_fit, curve_fit_opts, FitData, FitExt, FitMethod, FitOptions, FitResult, Loss,
+        Minimizer, Model, Point, Points,
     };
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;

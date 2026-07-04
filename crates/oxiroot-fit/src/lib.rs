@@ -25,15 +25,22 @@
 //! ([`Model::from_formula`]). Costs: Neyman χ², Pearson χ², or binned Poisson
 //! likelihood ([`FitMethod`]).
 //!
+//! For a quick fit of a bare closure to `(x, y)` data, [`curve_fit`] mirrors
+//! `scipy.optimize.curve_fit`. Outlier-resistant fits use a robust [`Loss`]
+//! (`Huber`/`SoftL1`/`Cauchy`/`Arctan` — `scipy.optimize.least_squares`'s `loss`)
+//! set via [`FitOptions::loss`].
+//!
 //! The evaluable, persistable ROOT function objects `TF1`/`TF2`/`TF3` live in
 //! [`oxiroot_hist`](https://crates.io/crates/oxiroot-hist); a `TF1` converts to a
 //! `Model` for fitting.
 
+mod curve;
 mod data;
 mod engine;
 mod model;
 mod result;
 
+pub use curve::{curve_fit, curve_fit_opts};
 pub use data::{FitData, FitExt, Point, Points};
 pub use model::Model;
-pub use result::{FitMethod, FitOptions, FitResult, Minimizer};
+pub use result::{FitMethod, FitOptions, FitResult, Loss, Minimizer};

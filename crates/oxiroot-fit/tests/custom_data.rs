@@ -179,6 +179,47 @@ fn voigtian_model_is_a_valid_fit() {
     assert!(fit.chi2 < 1e-3, "chi2 {}", fit.chi2);
 }
 
+#[test]
+fn robust_loss_matches_scipy_least_squares() {
+    use oxiroot_fit::{curve_fit_opts, FitOptions, Loss};
+    // A clean line y = 1 + 2x with one big outlier at x = 7.
+    let x: Vec<f64> = (0..20).map(|i| i as f64).collect();
+    let mut y: Vec<f64> = x.iter().map(|&x| 1.0 + 2.0 * x).collect();
+    y[7] += 50.0;
+    let sigma = vec![1.0; x.len()];
+
+    // scipy.optimize.least_squares(resid, x0=[1,2], loss=…, f_scale=1) → x.
+    let refs = [
+        (Loss::Linear, 5.285714411727748, 1.8120300679952164),
+        (Loss::SoftL1, 1.0914099344442483, 1.9959849285160467),
+        (Loss::Huber, 1.091127098321343, 1.9960031974420465),
+        (Loss::Cauchy, 1.001821862595328, 1.9999200936968842),
+        (Loss::Arctan, 1.00000072901667, 1.9999999680255847),
+    ];
+    for (loss, a, b) in refs {
+        // Seed at the truth so the aggressive losses start inside their basin.
+        let fit = curve_fit_opts(
+            |x, p| p[0] + p[1] * x,
+            &x,
+            &y,
+            &sigma,
+            &[1.0, 2.0],
+            &FitOptions::new().loss(loss),
+        );
+        assert!(fit.valid, "{loss:?} did not converge");
+        assert!(
+            rel_close(fit.params[0], a, 1e-2),
+            "{loss:?} intercept {} vs scipy {a}",
+            fit.params[0]
+        );
+        assert!(
+            rel_close(fit.params[1], b, 1e-2),
+            "{loss:?} slope {} vs scipy {b}",
+            fit.params[1]
+        );
+    }
+}
+
 // --- The optional Nelder–Mead (`argmin`) backend ---------------------------
 
 #[cfg(feature = "argmin")]

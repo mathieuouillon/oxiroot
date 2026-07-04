@@ -6,7 +6,7 @@ use minuit2::{MnMigrad, MnMinos};
 
 use crate::data::Point;
 use crate::model::Model;
-use crate::result::{FitMethod, FitOptions, FitResult, Minimizer};
+use crate::result::{FitMethod, FitOptions, FitResult, Loss, Minimizer};
 
 /// Fit `model` to `all` under `opts`. The points entering the fit are those with
 /// `x` in `opts.range` (default: all); Neyman chi-square additionally drops
@@ -48,20 +48,30 @@ pub(crate) fn run_fit(all: &[Point], model: &Model, opts: &FitOptions) -> FitRes
 
     let func = &model.func;
     let method = opts.method;
+    let loss = opts.loss;
+    // Robust-loss residual scale squared; a non-positive `f_scale` means 1.
+    let fs2 = {
+        let fs = if opts.f_scale > 0.0 {
+            opts.f_scale
+        } else {
+            1.0
+        };
+        fs * fs
+    };
     let cost = |p: &[f64]| -> f64 {
         match method {
             FitMethod::Chi2 => points
                 .iter()
                 .map(|&(x, y, e)| {
                     let d = (y - func(x, p)) / e;
-                    d * d
+                    robust(d * d, loss, fs2)
                 })
                 .sum(),
             FitMethod::PearsonChi2 => points
                 .iter()
                 .map(|&(x, y, _)| {
                     let f = func(x, p).max(1e-300); // expected (model) variance
-                    (y - f) * (y - f) / f
+                    robust((y - f) * (y - f) / f, loss, fs2)
                 })
                 .sum(),
             FitMethod::Likelihood => {
@@ -85,6 +95,23 @@ pub(crate) fn run_fit(all: &[Point], model: &Model, opts: &FitOptions) -> FitRes
         Minimizer::Minuit2 => minimize_minuit2(model, &cost, ndf, opts.minos),
         #[cfg(feature = "argmin")]
         Minimizer::NelderMead => minimize_argmin(model, &cost, ndf),
+    }
+}
+
+/// Apply a robust loss `ρ` to a squared residual `z` at residual scale `C`
+/// (`fs2 = C²`): the point's cost contribution is `C²·ρ(z / C²)`, matching the
+/// `loss` of `scipy.optimize.least_squares`. [`Loss::Linear`] returns `z`
+/// unchanged (an ordinary least-squares fit), so the default path is untouched.
+fn robust(z: f64, loss: Loss, fs2: f64) -> f64 {
+    match loss {
+        Loss::Linear => z,
+        Loss::SoftL1 => 2.0 * fs2 * ((1.0 + z / fs2).sqrt() - 1.0),
+        Loss::Huber => {
+            let u = z / fs2;
+            fs2 * if u <= 1.0 { u } else { 2.0 * u.sqrt() - 1.0 }
+        }
+        Loss::Cauchy => fs2 * (1.0 + z / fs2).ln(),
+        Loss::Arctan => fs2 * (z / fs2).atan(),
     }
 }
 

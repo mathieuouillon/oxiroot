@@ -229,6 +229,8 @@ minimizer backend. Construct it with `FitOptions::new()` and chain setters:
 | `range(lo, hi)` | Fit only points whose `x` lies in `[lo, hi]` |
 | `with_minos(bool)` | Also compute asymmetric MINOS errors |
 | `minimizer(Minimizer)` | Choose the optimizer backend |
+| `loss(Loss)` | Robust loss to down-weight outliers (see [below](#robust-fitting-outliers)) |
+| `f_scale(f64)` | Residual scale for the robust loss (default `1.0`) |
 
 ```rust
 use oxiroot::prelude::*;
@@ -253,6 +255,58 @@ let fit = withbkg.fit_into(&mut model, &FitOptions::new());
 // model.eval(x) now draws the *fitted* curve:
 let height_at_peak = model.eval(fit.params[1]);
 ```
+
+## Robust fitting (outliers)
+
+A least-squares fit (`Chi2`/`PearsonChi2`) can be dragged off by a few outliers,
+because each point's cost grows with the *square* of its residual. A **robust
+loss** `ρ` — the `loss` of
+[`scipy.optimize.least_squares`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html)
+— grows sub-quadratically instead, so a far-out point pulls on the fit far less:
+
+| `Loss` | `ρ(z)` | Character |
+| --- | --- | --- |
+| `Linear` (default) | `z` | Ordinary least squares |
+| `SoftL1` | `2(√(1+z) − 1)` | Gentle, everywhere smooth |
+| `Huber` | `z` if `z ≤ 1` else `2√z − 1` | Quadratic core, linear tails |
+| `Cauchy` | `ln(1 + z)` | Strong suppression |
+| `Arctan` | `arctan(z)` | Most aggressive (bounded influence) |
+
+`z` is the squared residual; `f_scale` sets the residual at which a point starts
+to count as an outlier (`ρ` is applied as `C²·ρ(z / C²)` with `C = f_scale`).
+
+```rust
+use oxiroot::prelude::*;
+
+let opts = FitOptions::new().loss(Loss::Huber).f_scale(1.5);
+let fit = peak.fit_opts(&model, &opts);
+```
+
+!!! warning "Seed robust fits well"
+    A robust loss has a **small basin of attraction** — points already far from
+    the model barely pull, so a gradient minimizer can stall far from the answer.
+    Fit with `Linear` first and use those parameters to seed the robust fit
+    (`SoftL1`/`Huber` are forgiving; `Cauchy`/`Arctan` need a close start). A
+    robust loss also weakens the χ² / `p_value` interpretation of the result.
+
+## Quick fits with `curve_fit`
+
+For a one-off fit of a bare closure to `(x, y)` data — with no named `Model` —
+use `curve_fit`, the analogue of `scipy.optimize.curve_fit`. Parameters are named
+`p0`, `p1`, … and `result.covariance` is scipy's `pcov`:
+
+```rust
+use oxiroot::prelude::*;
+
+let x = [0.0, 1.0, 2.0, 3.0, 4.0];
+let y = [1.0, 3.0, 5.0, 7.0, 9.0];
+let fit = curve_fit(|x, p| p[0] + p[1] * x, &x, &y, &[0.0, 0.0]);
+assert!((fit.params[1] - 2.0).abs() < 1e-6); // slope ≈ 2
+```
+
+`curve_fit_opts(f, x, y, sigma, p0, &opts)` adds per-point errors and full
+`FitOptions` (a robust `loss`, a fit range, a Pearson/likelihood cost). For
+bounds, build a `Model` and use `.lower_limit(...)`.
 
 ## Reading the result
 

@@ -210,12 +210,16 @@ cargo run -p oxiroot --example analysis
   p-values. Alphanumeric (labelled) axes round-trip through `TAxis::labels`
   (read **and** write, with `set_label`).
 - **Fitting** (the `fit` feature, on by default) — fit a parametric model to
-  **any 1-D data**: a histogram, a `TGraph`, or your own `(x, y, σ)` points. The standalone
-  [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) crate provides the `Model`
-  (built-in `gaussian`/`exponential`/`polynomial`, or a custom closure) and a
+  **any 1-D data**: a histogram, a `TGraph`, or your own `(x, y, σ)` points. The
+  standalone [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) crate provides the
+  `Model` (built-in `gaussian`/`exponential`/`polynomial`, the HEP peaks
+  `crystal_ball`/`voigtian`/…, an arbitrary formula, or a custom closure) and a
   pure-Rust Minuit2 minimizer; anything implementing the `FitData` trait gets
   `.fit(&model)` (Neyman/Pearson χ² or binned Poisson likelihood), returning
-  parameters, parabolic + MINOS errors, covariance, and `chi2`/`ndf`.
+  parameters, parabolic + MINOS errors, covariance, and `chi2`/`ndf`. `curve_fit`
+  mirrors `scipy.optimize.curve_fit`, and a robust `Loss`
+  (`Huber`/`SoftL1`/`Cauchy`/`Arctan` — scipy's `least_squares` `loss`)
+  down-weights outliers.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
   `TThreadedObject<TH1>`: share `&hist`, call `hist.fill(x)` from any thread —
   each thread transparently gets its own copy — then `hist.merge()` combines them

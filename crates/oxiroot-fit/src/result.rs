@@ -38,10 +38,35 @@ pub enum Minimizer {
     NelderMead,
 }
 
+/// A robust loss `ρ` applied to each squared residual of a least-squares fit
+/// ([`Chi2`](FitMethod::Chi2) / [`PearsonChi2`](FitMethod::PearsonChi2)) — the
+/// `loss` of [`scipy.optimize.least_squares`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html).
+/// [`Linear`](Self::Linear) (the default) is an ordinary least-squares fit; the
+/// others grow sub-quadratically, so a far-out point (an outlier) pulls on the
+/// fit far less than its squared residual would suggest. Set the residual scale
+/// at which a point starts to count as an outlier with
+/// [`FitOptions::f_scale`](FitOptions::f_scale).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Loss {
+    /// Ordinary least squares, `ρ(z) = z` (no down-weighting). The default.
+    #[default]
+    Linear,
+    /// Smooth-L1, `ρ(z) = 2(√(1 + z) − 1)` — a gentle, everywhere-smooth robustness.
+    SoftL1,
+    /// Huber, `ρ(z) = z` for `z ≤ 1`, else `2√z − 1` — a quadratic core with
+    /// linear tails.
+    Huber,
+    /// Cauchy / Lorentzian, `ρ(z) = ln(1 + z)` — strong outlier suppression.
+    Cauchy,
+    /// Arctan, `ρ(z) = arctan(z)` — the most aggressive (bounded influence).
+    Arctan,
+}
+
 /// Options controlling a fit ([`FitExt::fit_opts`](crate::FitExt::fit_opts)).
 /// Construct with [`new`](Self::new) and the chainable setters; the defaults are
 /// a full-range chi-square fit minimized with [`Minimizer::Minuit2`].
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct FitOptions {
     /// The cost to minimize.
@@ -55,6 +80,26 @@ pub struct FitOptions {
     pub minos: bool,
     /// Which optimizer backend to use.
     pub minimizer: Minimizer,
+    /// Robust [`Loss`] applied to each squared residual (least-squares costs
+    /// only; ignored by [`Likelihood`](FitMethod::Likelihood)).
+    pub loss: Loss,
+    /// The residual scale `C` for a robust [`loss`](Self::loss): a point begins to
+    /// be treated as an outlier once its residual exceeds ~`C`. Default `1.0`;
+    /// irrelevant to [`Loss::Linear`].
+    pub f_scale: f64,
+}
+
+impl Default for FitOptions {
+    fn default() -> FitOptions {
+        FitOptions {
+            method: FitMethod::default(),
+            range: None,
+            minos: false,
+            minimizer: Minimizer::default(),
+            loss: Loss::default(),
+            f_scale: 1.0,
+        }
+    }
 }
 
 impl FitOptions {
@@ -85,6 +130,18 @@ impl FitOptions {
     #[must_use]
     pub fn minimizer(mut self, minimizer: Minimizer) -> FitOptions {
         self.minimizer = minimizer;
+        self
+    }
+    /// Use a robust [`Loss`] to down-weight outliers (least-squares costs only).
+    #[must_use]
+    pub fn loss(mut self, loss: Loss) -> FitOptions {
+        self.loss = loss;
+        self
+    }
+    /// Set the robust-loss residual scale (see [`f_scale`](Self::f_scale)).
+    #[must_use]
+    pub fn f_scale(mut self, f_scale: f64) -> FitOptions {
+        self.f_scale = f_scale;
         self
     }
 }
