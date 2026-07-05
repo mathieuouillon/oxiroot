@@ -137,16 +137,20 @@ fn json_mode_emits_json() {
 }
 
 #[test]
-fn dump_shows_a_function_and_falls_back_for_undumpable_classes() {
-    // A TF1: formula + params.
+fn dump_shows_a_function_and_generically_dumps_other_classes() {
+    // A TF1: formula + params (a class with a dedicated `dump` view).
     let (out, ok) = oxroot(&["dump", &spec("tf1.root", "myfunc")]);
     assert!(ok, "{out}");
     assert!(out.contains("formula") && out.contains("params"), "{out}");
 
-    // A readable-but-undumpable class reports itself instead of erroring.
+    // A class without a dedicated view is walked generically via its streamer
+    // info: the class name and its members appear rather than an error.
     let (out, ok) = oxroot(&["dump", &spec("thnsparse.root", "hs")]);
     assert!(ok, "{out}");
-    assert!(out.contains("no dedicated `dump` view"), "{out}");
+    assert!(
+        out.contains("THnSparse") && out.contains("fNdimensions"),
+        "{out}"
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! The ROOT compression codecs and their size/speed trade-off. Builds one
 //! sizeable `TTree` (a few thousand-entry f64/i32 branches), writes it once per
-//! codec — `None`, `Zstd(1)`, `Zstd(9)`, `Zlib(6)`, `Lz4(4)` — and tabulates the
+//! codec — `None`, `Zstd(1)`, `Zstd(9)`, `Zlib(6)`, `Lz4(4)`, `Lzma(5)` — and tabulates the
 //! on-disk size and the ratio vs the uncompressed baseline. It then reads one
 //! compressed file back and asserts the branches equal the originals, proving
 //! ROOT compression is lossless. Every codec here is one the writer can encode.
@@ -68,6 +68,7 @@ fn main() -> Result<()> {
         ("Zstd(9)", Compression::Zstd(9)),
         ("Zlib(6)", Compression::Zlib(6)),
         ("Lz4(4)", Compression::Lz4(4)),
+        ("Lzma(5)", Compression::Lzma(5)),
     ];
 
     let mut paths = Vec::new();
@@ -98,7 +99,10 @@ fn main() -> Result<()> {
         // The level lives inside the Compression value; None has no level.
         let level = match comp {
             Compression::None => "-".to_string(),
-            Compression::Zstd(l) | Compression::Zlib(l) | Compression::Lz4(l) => l.to_string(),
+            Compression::Zstd(l)
+            | Compression::Zlib(l)
+            | Compression::Lz4(l)
+            | Compression::Lzma(l) => l.to_string(),
         };
         let ratio = sizes[i] as f64 / baseline;
         println!("{label:<10} {level:>5} {:>10} {ratio:>12.3}", sizes[i]);

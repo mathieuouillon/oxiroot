@@ -1,9 +1,9 @@
 # Compression
 
-oxiroot reads every compression codec ROOT writes (except the legacy `CS`) and
-writes the three most common ones, all in pure Rust. This page covers the
-`Compression` enum that every writer takes, the read/write codec coverage, and
-ROOT's on-disk block framing.
+oxiroot reads *and writes* every compression codec ROOT writes (except the
+legacy `CS`), all in pure Rust. This page covers the `Compression` enum that
+every writer takes, the read/write codec coverage, and ROOT's on-disk block
+framing.
 
 ## Choosing compression on write
 
@@ -52,6 +52,7 @@ re-exported through `oxiroot::prelude`. It is `Copy` and defaults to
 | `Zstd(u32)`     | Zstandard     | 1–22 (ROOT default 5)  | yes    | yes    |
 | `Zlib(u32)`     | zlib / DEFLATE| 1–9 (ROOT default 1)   | yes    | yes    |
 | `Lz4(u32)`      | LZ4           | 1–9                    | yes    | yes    |
+| `Lzma(u32)`     | LZMA (XZ)     | 1–9 (ROOT default 5)   | yes    | yes    |
 
 Two helpers are available on the enum:
 
@@ -70,22 +71,21 @@ assert!(!Compression::None.is_enabled());
 ```
 
 !!! note "Level handling differs per backend"
-    The level tunes the zlib backend. The pure-Rust Zstd and LZ4 backends are
-    fast-mode only and ignore the level — the output is always valid ROOT
-    framing and reads back correctly in ROOT, uproot, and oxiroot. There is no
-    `Compression::Lzma` variant: LZMA is decode-only (see below).
+    The level tunes the zlib and LZMA backends (LZMA maps the level straight onto
+    the XZ preset). The pure-Rust Zstd and LZ4 backends are fast-mode only and
+    ignore the level — the output is always valid ROOT framing and reads back
+    correctly in ROOT, uproot, and oxiroot.
 
 ## Read vs. write coverage
 
-oxiroot decodes **every codec ROOT writes except the legacy `CS`**, and encodes
-the three in active use.
+oxiroot decodes **and encodes every codec ROOT writes except the legacy `CS`**.
 
 | Codec        | Block tag | Read   | Write       |
 |--------------|-----------|--------|-------------|
 | Zstandard    | `ZS`      | yes    | yes         |
 | zlib/DEFLATE | `ZL`      | yes    | yes         |
 | LZ4          | `L4`      | yes    | yes         |
-| LZMA (XZ)    | `XZ`      | yes    | no (decode-only) |
+| LZMA (XZ)    | `XZ`      | yes    | yes         |
 | old ROOT     | `CS`      | no     | no          |
 
 Reading is fully automatic: a `TKey`'s payload (or an RNTuple page) carries its
@@ -93,10 +93,9 @@ own algorithm tag, so the reader picks the codec per block. Uncompressed
 payloads — written with `Compression::None` or where the compressed form would
 not be smaller — pass through directly.
 
-!!! warning "LZMA is decode-only"
-    Files written by ROOT with LZMA read back fine, but oxiroot cannot *produce*
-    LZMA. There is no enum variant for it, and the underlying encoder rejects the
-    LZMA algorithm code with an error. Use `Zstd`, `Zlib`, or `Lz4` for writing.
+`Compression::Lzma(level)` writes a complete XZ stream per block (block tag
+`XZ`), exactly as ROOT's own liblzma path does, so official ROOT and uproot read
+it back unchanged.
 
 ## On-disk block framing
 
@@ -135,7 +134,7 @@ All codecs are pure Rust, so the no-libROOT promise holds with no C toolchain:
 | Zstandard    | [`ruzstd`](https://crates.io/crates/ruzstd)          |
 | zlib/DEFLATE | [`miniz_oxide`](https://crates.io/crates/miniz_oxide)|
 | LZ4          | [`lz4_flex`](https://crates.io/crates/lz4_flex)      |
-| LZMA (XZ)    | [`lzma-rs`](https://crates.io/crates/lzma-rs) (decode)|
+| LZMA (XZ)    | [`lzma-rust2`](https://crates.io/crates/lzma-rust2)  |
 
 The LZ4 XXH64 integrity check uses
 [`xxhash-rust`](https://crates.io/crates/xxhash-rust), shared with RNTuple's

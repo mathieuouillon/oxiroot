@@ -373,6 +373,7 @@ fn comp_str(c: Compression) -> J {
         Compression::Zstd(_) => J::Str("zstd".into()),
         Compression::Zlib(_) => J::Str("zlib".into()),
         Compression::Lz4(_) => J::Str("lz4".into()),
+        Compression::Lzma(_) => J::Str("lzma".into()),
     }
 }
 

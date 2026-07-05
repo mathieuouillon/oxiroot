@@ -48,7 +48,7 @@ All pure Rust — the no-libROOT promise holds end to end:
 - [`ruzstd`](https://crates.io/crates/ruzstd) — Zstd
 - [`miniz_oxide`](https://crates.io/crates/miniz_oxide) — zlib
 - [`lz4_flex`](https://crates.io/crates/lz4_flex) — LZ4
-- [`lzma-rs`](https://crates.io/crates/lzma-rs) — LZMA / XZ (decode only)
+- [`lzma-rust2`](https://crates.io/crates/lzma-rust2) — LZMA / XZ (encode + decode)
 - [`xxhash-rust`](https://crates.io/crates/xxhash-rust) — RNTuple XXH3 + LZ4 XXH64
 - [`minuit2`](https://crates.io/crates/minuit2) — Minuit2 MIGRAD (with the `fit` feature)
 - [`argmin`](https://crates.io/crates/argmin) — Nelder–Mead backend (with the `argmin` feature)

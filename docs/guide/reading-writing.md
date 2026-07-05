@@ -124,9 +124,10 @@ every object's payload:
 | `Compression::Zstd(level)` | Zstandard (the modern ROOT default). |
 | `Compression::Zlib(level)` | zlib/deflate (older ROOT default). |
 | `Compression::Lz4(level)` | LZ4 with ROOT's XXH64 block check. |
+| `Compression::Lzma(level)` | LZMA (XZ stream), ROOT's high-ratio codec. |
 
-See [Compression](compression.md) for the full codec matrix (LZMA is decode-only)
-and how each is verified against ROOT and uproot.
+See [Compression](compression.md) for the full codec matrix and how each is
+verified against ROOT and uproot.
 
 ## Same-name collisions are loud
 

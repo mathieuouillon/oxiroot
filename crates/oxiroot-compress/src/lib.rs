@@ -5,9 +5,9 @@
 //! of the rest of the workspace and owns the (eventually feature-gated) choice
 //! of codec backends.
 //!
-//! **Decode** is implemented for Zstd, zlib, LZ4, and LZMA (XZ) — every codec
-//! ROOT writes except the legacy `CS`. **Encode** is available for Zstd, zlib,
-//! and LZ4. All backends are pure Rust and validated against real ROOT output.
+//! **Decode and encode** are both implemented for Zstd, zlib, LZ4, and LZMA
+//! (XZ) — every codec ROOT writes except the legacy `CS`. All backends are pure
+//! Rust and validated against real ROOT output.
 
 mod codec;
 mod header;
@@ -151,10 +151,10 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
 ///
 /// `settings == 0` means "store uncompressed": the input is returned unchanged
 /// (the caller stores it without a block header). Otherwise the data is encoded
-/// into ROOT compression blocks. Supported encoders are Zstd (5), zlib (1), and
-/// LZ4 (4); LZMA (2) is decode-only. The level tunes the zlib backend; the
-/// pure-Rust Zstd and LZ4 backends ignore it (the output is always valid and
-/// ROOT reads it back correctly).
+/// into ROOT compression blocks. Supported encoders are Zstd (5), zlib (1),
+/// LZ4 (4), and LZMA (2). The level tunes the zlib backend; the pure-Rust Zstd,
+/// LZ4, and LZMA backends ignore it (the output is always valid and ROOT reads
+/// it back correctly).
 pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
     if settings == 0 {
         return Ok(src.to_vec());
@@ -163,13 +163,9 @@ pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
     // (tag, method byte) for each supported encoder, matching ROOT's framing.
     let (tag, method): ([u8; 2], u8) = match algorithm {
         1 => (*b"ZL", 8), // zlib, Z_DEFLATED
+        2 => (*b"XZ", 0), // LZMA, an XZ stream (method byte 0, per R__zipLZMA)
         4 => (*b"L4", 1), // LZ4, version byte 1
         5 => (*b"ZS", 1), // Zstd
-        2 => {
-            return Err(CompressError::Codec(
-                "LZMA encoding is not supported (decode only)".into(),
-            ))
-        }
         other => {
             return Err(CompressError::Codec(format!(
                 "encoding algorithm {other} is not supported"
@@ -181,6 +177,7 @@ pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
     for chunk in src.chunks(MAX_CHUNK_SIZE.max(1)) {
         let frame = match algorithm {
             1 => codec::zlib_encode(chunk, level),
+            2 => codec::lzma_encode(chunk, level)?,
             4 => codec::lz4_encode(chunk),
             5 => codec::zstd_encode(chunk, level),
             _ => unreachable!("algorithm validated above"),
@@ -282,9 +279,14 @@ mod tests {
     }
 
     #[test]
-    fn lzma_encoding_is_rejected() {
-        // LZMA is decode-only; asking to encode it is an explicit error.
-        assert!(matches!(compress(b"x", 205), Err(CompressError::Codec(_))));
+    fn compress_lzma_round_trips() {
+        // LZMA level 5 -> settings 205. The block must carry the "XZ" tag (a
+        // complete XZ stream) and decode back to the original bytes.
+        let data = b"the quick brown fox jumps over the lazy dog. ".repeat(40);
+        let compressed = compress(&data, 205).unwrap();
+        assert_eq!(&compressed[0..2], b"XZ", "wrong block tag for LZMA");
+        assert!(compressed.len() < data.len(), "should actually shrink");
+        assert_eq!(decompress(&compressed, data.len()).unwrap(), data);
     }
 
     #[test]

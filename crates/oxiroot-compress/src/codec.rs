@@ -1,11 +1,11 @@
 //! Codec backends for ROOT compression blocks.
 //!
 //! All pure-Rust: Zstd via `ruzstd`, zlib via `miniz_oxide`, LZ4 via `lz4_flex`
-//! (block format), and LZMA via `lzma-rs` (an XZ stream). Decode is available
-//! for every algorithm ROOT writes except the legacy `CS`; encode is available
-//! for Zstd, zlib, and LZ4.
+//! (block format), and LZMA via `lzma-rust2` (an XZ stream). Every algorithm
+//! ROOT writes can be both decoded and encoded here except the legacy `CS`,
+//! which ROOT itself no longer writes.
 
-use std::io::Read;
+use std::io::{Read, Write};
 
 use xxhash_rust::xxh64::xxh64;
 
@@ -57,14 +57,18 @@ pub(crate) fn lz4_decode(
         .map_err(|e| CompressError::Codec(format!("lz4: {e}")))
 }
 
-/// Decode a ROOT LZMA block payload (a complete XZ stream).
+/// Decode a ROOT LZMA block payload (a complete XZ stream). `uncompressed_size`
+/// is the block header's declared output size (always ≤ 16 MiB, so it bounds the
+/// speculative allocation; the caller verifies the produced length afterward).
 pub(crate) fn lzma_decode(
     payload: &[u8],
     uncompressed_size: usize,
 ) -> Result<Vec<u8>, CompressError> {
     let mut out = Vec::with_capacity(uncompressed_size.min(crate::MAX_CHUNK_SIZE));
-    let mut input = payload;
-    lzma_rs::xz_decompress(&mut input, &mut out)
+    // A ROOT block holds exactly one XZ stream, so `allow_multiple_streams=false`.
+    let mut reader = lzma_rust2::XzReader::new(payload, false);
+    reader
+        .read_to_end(&mut out)
         .map_err(|e| CompressError::Codec(format!("lzma: {e}")))?;
     Ok(out)
 }
@@ -96,4 +100,22 @@ pub(crate) fn lz4_encode(data: &[u8]) -> Vec<u8> {
 /// option, not an interop concern.)
 pub(crate) fn zstd_encode(data: &[u8], _level: u8) -> Vec<u8> {
     ruzstd::encoding::compress_to_vec(data, ruzstd::encoding::CompressionLevel::Fastest)
+}
+
+/// Encode `data` as a ROOT LZMA block payload: a complete XZ stream (pure-Rust
+/// `lzma-rust2`). ROOT writes exactly this — an `.xz` container — after a block's
+/// 9-byte `XZ` header, so official ROOT and uproot read it back.
+///
+/// `level` is ROOT's 1..=9, mapped straight onto the XZ preset (also 0..=9), so
+/// the ratio actually tracks the requested level.
+pub(crate) fn lzma_encode(data: &[u8], level: u8) -> Result<Vec<u8>, CompressError> {
+    let options = lzma_rust2::XzOptions::with_preset(u32::from(level));
+    let mut writer = lzma_rust2::XzWriter::new(Vec::new(), options)
+        .map_err(|e| CompressError::Codec(format!("lzma: {e}")))?;
+    writer
+        .write_all(data)
+        .map_err(|e| CompressError::Codec(format!("lzma: {e}")))?;
+    writer
+        .finish()
+        .map_err(|e| CompressError::Codec(format!("lzma: {e}")))
 }

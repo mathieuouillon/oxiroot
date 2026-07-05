@@ -44,7 +44,7 @@ let h = TH1::read_root(&RFile::open("hist.root")?, "pt")?;
 | Graphs `TGraph`/`TGraphErrors`/`TGraphAsymmErrors` | ✅ | ✅ |
 | `TTree` (scalars, arrays, strings, `std::vector`, split structs) | ✅ | ✅ |
 | RNTuple (scalars, strings, vectors, nested, records) | ✅ | ✅ |
-| Compression Zstd / zlib / LZ4 / LZMA | ✅ | ✅ (no LZMA) |
+| Compression Zstd / zlib / LZ4 / LZMA | ✅ | ✅ |
 | Curve fitting (Minuit2, optional argmin) | — | — |
 | Plotting → SVG / PNG (matplotlib look, LaTeX) | — | ✅ |
 

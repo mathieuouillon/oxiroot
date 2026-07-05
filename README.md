@@ -68,8 +68,8 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   read** (`RNTuple::read_field_prefix(name, n)`) decodes only the clusters
   covering the first *n* entries, so previewing a huge file (`oxroot dump -n 10`)
   never touches the whole field.
-- 🗜 **Compression** — decode Zstd / zlib / LZ4 / LZMA; encode Zstd / zlib /
-  LZ4 — all pure Rust, all read back by ROOT and uproot.
+- 🗜 **Compression** — decode *and* encode Zstd / zlib / LZ4 / LZMA — all pure
+  Rust, all read back by ROOT and uproot.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
   `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
 - ➕ **`hadd`** — a pure-Rust file merger: histograms summed, `TTree` / RNTuple
@@ -744,13 +744,14 @@ ax2.save("heatmap.svg")?;
 
 - **Read:** Zstd, zlib, LZ4, and LZMA (XZ) decode — every codec ROOT writes
   except the legacy `CS`. Uncompressed objects pass through directly.
-- **Write:** Zstd, zlib, and LZ4 via `Compression::{Zstd, Zlib, Lz4}(level)`,
-  or `Compression::None`. Files written with `Zlib`/`Lz4` match older ROOT
-  defaults and read back in ROOT and uproot; LZMA is decode-only.
+- **Write:** Zstd, zlib, LZ4, and LZMA via
+  `Compression::{Zstd, Zlib, Lz4, Lzma}(level)`, or `Compression::None`. Files
+  written with any of them match ROOT's own block framing and read back in ROOT
+  and uproot.
 
-All four codecs are pure Rust (`ruzstd`, `miniz_oxide`, `lz4_flex`, `lzma-rs`),
-so the no-libROOT promise holds. LZ4 blocks carry ROOT's XXH64 integrity check,
-verified on read.
+All four codecs are pure Rust (`ruzstd`, `miniz_oxide`, `lz4_flex`,
+`lzma-rust2`), so the no-libROOT promise holds. LZ4 blocks carry ROOT's XXH64
+integrity check, verified on read.
 
 ### Robustness & large files
 
@@ -825,7 +826,7 @@ on, so nothing extra is needed.
 Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib),
 [`lz4_flex`](https://crates.io/crates/lz4_flex) (LZ4),
-[`lzma-rs`](https://crates.io/crates/lzma-rs) (LZMA/XZ decode), and
+[`lzma-rust2`](https://crates.io/crates/lzma-rust2) (LZMA/XZ), and
 [`xxhash-rust`](https://crates.io/crates/xxhash-rust) (RNTuple XXH3 + LZ4 XXH64).
 
 ### Optional features
@@ -910,8 +911,6 @@ Grouped by the ROOT feature each fills.
   - **Delete / compact in update mode** — append mode ships; rewriting a key at
     a new cycle and purging old cycles (`TFile::Purge`) does not.
   - **Read an object at an explicit cycle** (`name;N`).
-- **Compression** — **LZMA (XZ) encode**, for full parity with the four codecs
-  already decoded (Zstd / zlib / LZ4 are also encoded today).
 - **Axes** — **time axes** (`TAxis` `fTimeDisplay` / `fTimeFormat`) on histograms
   and graphs, for monitoring-style time series.
 - **`RDataFrame`-style analysis** *(far future)* — a lazy, columnar analysis

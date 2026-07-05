@@ -320,9 +320,9 @@ For schema introspection and raw decoding, the reader also exposes:
 ## Compression
 
 The `compression` argument on every write path is a `Compression`: `None`, or
-`Zstd`, `Zlib`, or `Lz4` at a given level (e.g. `Compression::Zstd(5)`). Pages
-are compressed only when the result is actually smaller, exactly as ROOT does.
-On read, oxiroot decodes Zstd, zlib, LZ4, and LZMA. See
+`Zstd`, `Zlib`, `Lz4`, or `Lzma` at a given level (e.g. `Compression::Zstd(5)`).
+Pages are compressed only when the result is actually smaller, exactly as ROOT
+does. oxiroot both reads and writes Zstd, zlib, LZ4, and LZMA. See
 [Compression](compression.md) for the full codec matrix.
 
 ## Interoperability
