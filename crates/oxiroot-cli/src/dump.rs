@@ -7,7 +7,7 @@ use oxiroot::hist::{
 };
 use oxiroot::ntuple::{FieldValues, RNTuple};
 use oxiroot::tree::{BranchValues, TTree};
-use oxiroot::RFile;
+use oxiroot::{RFile, Value};
 
 use crate::json::Json;
 use crate::util::{classify, locate_class, parse_spec, split_obj, CmdResult, Kind, Table};
@@ -60,18 +60,70 @@ pub fn run(args: Args, json: bool) -> CmdResult {
             emit_value(name, value, &text, json);
             Ok(())
         }
-        // Readable by the library, but with no dedicated `dump` view: report the
-        // class rather than erroring, and point at `show`/`ls`.
-        Kind::Other => {
-            if json {
-                let out = Json::Object(vec![("name", Json::s(name)), ("class", Json::s(class))]);
-                println!("{}", out.render());
-            } else {
-                println!("{name}  {class}");
-                println!("(no dedicated `dump` view for {class}; try `oxroot show` or `ls`)");
-            }
-            Ok(())
-        }
+        // Any other class: decode it generically from its TStreamerInfo into a
+        // dynamic value tree and print it (rootprint-style) — so an unknown class
+        // is shown, not refused.
+        Kind::Other => dump_generic(&file, subdir, name, json),
+    }
+}
+
+/// Dump an arbitrary object via the generic, streamer-info-driven reader.
+fn dump_generic(file: &RFile, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
+    let value = match subdir {
+        Some(dir) => file.get_value_in(dir, name)?,
+        None => file.get_value(name)?,
+    };
+    if json {
+        println!("{}", value_to_json(&value).render());
+    } else {
+        println!("{value}");
+    }
+    Ok(())
+}
+
+/// Convert a decoded [`Value`] tree to the CLI's JSON model. Object members
+/// become a `members` array of `{name, value}` (dynamic keys can't be `Object`
+/// fields, which take `&'static str`).
+fn value_to_json(v: &Value) -> Json {
+    match v {
+        Value::Null => Json::Null,
+        Value::Bool(b) => Json::Bool(*b),
+        Value::I8(x) => Json::Int(i64::from(*x)),
+        Value::I16(x) => Json::Int(i64::from(*x)),
+        Value::I32(x) => Json::Int(i64::from(*x)),
+        Value::I64(x) => Json::Int(*x),
+        Value::U8(x) => Json::Int(i64::from(*x)),
+        Value::U16(x) => Json::Int(i64::from(*x)),
+        Value::U32(x) => Json::Int(i64::from(*x)),
+        // A u64 above i64::MAX can't be an exact JSON `Int` (which is i64); emit
+        // it as a string so the value stays correct rather than wrapping negative.
+        Value::U64(x) => i64::try_from(*x).map_or_else(|_| Json::s(x.to_string()), Json::Int),
+        Value::F32(x) => Json::F64(f64::from(*x)),
+        Value::F64(x) => Json::F64(*x),
+        Value::Str(s) => Json::s(s.clone()),
+        Value::Array(items) => Json::Array(items.iter().map(value_to_json).collect()),
+        Value::Object { class, members } => Json::Object(vec![
+            ("class", Json::s(class.clone())),
+            (
+                "members",
+                Json::Array(
+                    members
+                        .iter()
+                        .map(|(n, val)| {
+                            Json::Object(vec![
+                                ("name", Json::s(n.clone())),
+                                ("value", value_to_json(val)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ]),
+        Value::Unsupported { class, reason } => Json::Object(vec![
+            ("class", Json::s(class.clone())),
+            ("unsupported", Json::s(reason.clone())),
+        ]),
+        _ => Json::Null,
     }
 }
 

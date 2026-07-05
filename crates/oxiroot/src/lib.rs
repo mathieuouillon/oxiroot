@@ -32,7 +32,9 @@
 //! everything else.
 
 #[doc(inline)]
-pub use oxiroot_io_core::{buffer, error, file, Compression, Error, RFile, Result};
+pub use oxiroot_io_core::{
+    buffer, error, file, read_object, Compression, Error, RFile, Result, Value,
+};
 
 pub mod hadd;
 

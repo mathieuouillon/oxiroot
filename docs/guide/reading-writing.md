@@ -38,6 +38,37 @@ let same = TH1::read_root(&RFile::open("hist.root")?, "pt")?;
     objects can coexist in memory; the name matters only at write time. See
     [Histograms](histograms.md) for the construction model.
 
+## Any class: the generic reader
+
+The typed readers (`TH1::read_root`, …) need a Rust model for the class. When you
+just want to *inspect* an object — including a class oxiroot has no model for —
+`RFile::get_value` decodes it generically, driven entirely by the file's
+`TStreamerInfo`, into a dynamic [`Value`](../api/oxiroot/enum.Value.html) tree:
+
+```rust
+use oxiroot::{RFile, Value};
+
+let f = RFile::open("hist.root")?;
+let h = f.get_value("pt")?; // a TH1D, decoded from streamer info alone
+
+assert_eq!(h.class(), Some("TH1D"));
+assert_eq!(h.get("fTitle").and_then(Value::as_str), Some("transverse momentum"));
+// Members nest: fXaxis is a TAxis object, fArray is the bin-content array.
+let nbins = h.get("fXaxis").and_then(|a| a.get("fNbins")).and_then(Value::as_i64);
+let bins = h.get("fArray").and_then(Value::as_array);
+
+println!("{h}"); // pretty rootprint-style tree
+# Ok::<(), oxiroot::Error>(())
+```
+
+`Value` is a tree of primitives, `Str`, `Array`, and `Object { class, members }`
+(members keep their on-disk order); accessors are `class()`, `get(name)`,
+`as_f64()`/`as_i64()`/`as_str()`/`as_array()`, and `Display` renders the tree.
+This is the engine behind `oxroot dump` for classes without a dedicated view. A
+member the reader cannot decode (memberwise STL, a class with no streamer info)
+becomes `Value::Unsupported` rather than failing the whole object, and
+`get_value_in(dir, name)` reads from a subdirectory.
+
 ## Several objects, subdirectories, appending: `RootFile`
 
 For more than one object, a `TDirectory`, or appending to an existing file, use

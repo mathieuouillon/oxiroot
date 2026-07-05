@@ -12,7 +12,9 @@ use super::header::FileHeader;
 use super::key::TKey;
 use crate::buffer::RBuffer;
 use crate::error::{Error, Result};
+use crate::read_object::read_object;
 use crate::streamer_info::{parse_streamer_info, StreamerRegistry};
+use crate::value::Value;
 
 /// Backing storage for a file's raw bytes: an owned in-memory buffer or, with
 /// the `mmap` feature, a read-only memory map of the file on disk. Both deref to
@@ -168,6 +170,27 @@ impl RFile {
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
         Ok((key.class_name.clone(), object, key.key_len as usize))
+    }
+
+    /// Read a top-level object of **any** class into a dynamic [`Value`] tree,
+    /// driven entirely by the file's `TStreamerInfo` — no typed model required.
+    /// This is the generic reader behind rootls / rootprint-style inspection; use
+    /// it when you do not have (or do not want) a `TH1`/`TGraph`/… struct.
+    ///
+    /// A class the reader cannot decode comes back as [`Value::Unsupported`]
+    /// rather than an error.
+    pub fn get_value(&self, name: &str) -> Result<Value> {
+        let (class, object, keylen) = crate::object_io::object_bytes_any_keyed(self, name)?;
+        let reg = self.streamer_registry()?;
+        Ok(read_object(&reg, &class, &object, keylen))
+    }
+
+    /// Like [`get_value`](Self::get_value) but for an object in subdirectory
+    /// `subdir` (a `/`-separated path).
+    pub fn get_value_in(&self, subdir: &str, name: &str) -> Result<Value> {
+        let (class, object, keylen) = self.object_in_keyed(subdir, name)?;
+        let reg = self.streamer_registry()?;
+        Ok(read_object(&reg, &class, &object, keylen))
     }
 
     /// The file's free-segment list (informational).

@@ -10,6 +10,7 @@
 
 use oxiroot::file::TKey;
 use oxiroot::prelude::*;
+use oxiroot::Value;
 
 /// A ROOT `TDirectory` can appear on disk under either class name (the in-memory
 /// class oxiroot writes vs. the on-disk class official ROOT C++ records).
@@ -135,6 +136,31 @@ fn main() -> Result<()> {
     println!(
         "resolved deeply-nested TTree `cal/run2/Events`: {} entries",
         events.num_entries(),
+    );
+
+    // --- Generic object reader: decode ANY class from its TStreamerInfo. -------
+    // `get_value` returns a dynamic `Value` tree driven entirely by the file's
+    // `TStreamerInfo` — no typed model (TH1/TGraph/…) required. This is what lets
+    // oxiroot inspect arbitrary classes (rootprint-style); an undecodable member
+    // becomes `Value::Unsupported` instead of failing.
+    let file = RFile::open(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/analysis.root"
+    ))?;
+    let h = file.get_value("h")?; // a TH1D, read purely from its streamer info
+    let bins: Vec<f64> = h
+        .get("fArray")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().take(5).filter_map(Value::as_f64).collect())
+        .unwrap_or_default();
+    println!(
+        "\ngeneric read of `h` ({}): title = {:?}, x-bins = {}, first cells = {bins:?}",
+        h.class().unwrap_or("?"),
+        h.get("fTitle").and_then(Value::as_str).unwrap_or(""),
+        h.get("fXaxis")
+            .and_then(|a| a.get("fNbins"))
+            .and_then(Value::as_i64)
+            .unwrap_or(0),
     );
 
     Ok(())

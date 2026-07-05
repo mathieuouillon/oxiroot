@@ -19,9 +19,11 @@ pub mod error;
 pub mod file;
 pub mod object;
 pub mod object_io;
+pub mod read_object;
 pub mod streamer;
 pub mod streamer_gen;
 pub mod streamer_info;
+pub mod value;
 
 pub use compression::Compression;
 pub use error::{Error, Result};
@@ -33,7 +35,9 @@ pub use file::{
 };
 pub use object::{ObjHeader, TagReader};
 pub use object_io::{object_bytes_any, object_bytes_any_keyed, record_of, ReadRoot, WriteRoot};
+pub use read_object::read_object;
 pub use streamer::{
     read_tnamed, read_tobject, skip_versioned, write_tnamed, write_tobject, TNamed, TObjectHeader,
 };
 pub use streamer_info::{parse_streamer_info, StreamerElement, StreamerInfo, StreamerRegistry};
+pub use value::Value;

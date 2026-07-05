@@ -18,6 +18,10 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   handful of small pure-Rust crates (compression codecs and a hasher).
 - 🔄 **Two-way interop** — every reader and writer is validated against both
   official ROOT (C++) and uproot, in both directions.
+- 🔍 **Inspect any class** — `RFile::get_value` decodes *any* object from its
+  `TStreamerInfo` into a dynamic `Value` tree (rootls / rootprint-style), even
+  classes with no typed model — and `oxroot dump` prints it. Undecodable members
+  degrade to `Unsupported`, never a crash.
 - 📊 **Histograms & profiles** — `TH1`/`TH2`/`TH3` (every precision, uniform or
   irregular bins), `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`,
   N-dimensional `THnSparse`, and polygon-binned `TH2Poly` — all read **and** write.

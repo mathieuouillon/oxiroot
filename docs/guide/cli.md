@@ -67,10 +67,23 @@ TTree "Events"  (10000 entries; showing 3)
 - **`TGraph`** — the first `-n` points.
 - **`TF1` / `TF2` / `TF3`** — the formula, parameters, and (for `TF1`) range.
 - **`TObjString` / `TParameter`** — the stored value.
+- **Any other class** — decoded generically from its `TStreamerInfo` into a
+  member tree (rootprint-style), so an unknown class is *shown*, not refused:
 
-Any other class the library can read but has no dedicated view (e.g.
-`THnSparse`, `TEfficiency`) is reported by name and class rather than erroring —
-use `oxroot show`/`ls` for those.
+```console
+$ oxroot dump file.root:someObject
+TF1 "myfunc"
+  fFormula: TFormula
+    fFormula: "[p0]*sin([p1]*x)+[p2]"
+    fClingParameters: [3] 2, 1.5, 0.5
+  fXmin: 0
+  fXmax: 6.283
+```
+
+`--json` emits the same tree as nested JSON. A member the reader can't decode
+(memberwise STL, a class the file doesn't describe) is marked `<unsupported …>`
+rather than aborting the dump. The same decode is available in code via
+`RFile::get_value`.
 
 ## `stat` — file summary
 
