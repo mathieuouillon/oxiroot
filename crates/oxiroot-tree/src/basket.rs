@@ -10,9 +10,18 @@
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::RFile;
 
 /// Key version at or above which a `TKey` uses 64-bit seek pointers.
 const KEY_BIG_VERSION: u16 = 1000;
+
+/// Bytes fetched at a basket's start to parse its key header before the record
+/// length (`fNbytes`) is known. A basket key is `"TBasket"` + the branch
+/// name/title + a 19-byte extension — comfortably under this even for long
+/// names. Kept modest so a remote read does not over-fetch: the (possibly much
+/// larger) basket data is fetched separately at its exact size once `fNbytes` is
+/// known. A small basket whose whole record fits here is read in a single fetch.
+const BASKET_HEADER_PROBE: u64 = 1024;
 
 /// A decoded basket: its entry count and uncompressed buffer.
 pub(crate) struct Basket {
@@ -30,11 +39,22 @@ pub(crate) struct Basket {
 }
 
 impl Basket {
-    /// Read and decompress the basket at file offset `seek` within `file_data`.
-    pub fn read(file_data: &[u8], seek: u64) -> Result<Basket> {
-        let mut r = RBuffer::new(file_data);
-        let key_start = seek as usize;
-        r.seek(key_start)?;
+    /// Read and decompress the basket at file offset `seek`, fetching only the
+    /// basket's own bytes from `file` — so over a remote source a branch reads
+    /// just its baskets, not the whole file. `nbytes` is the record's exact
+    /// on-disk size (`fBasketBytes`) when the branch recorded it — then the whole
+    /// basket is fetched in one exact request; otherwise the key header is probed
+    /// to discover the size.
+    pub fn read(file: &RFile, seek: u64, nbytes: Option<usize>) -> Result<Basket> {
+        // With the exact size known, fetch the whole record at once; otherwise
+        // probe a bounded window to parse the key header (which reveals `fNbytes`).
+        let avail = file.size().saturating_sub(seek);
+        let want = match nbytes {
+            Some(n) => (n as u64).min(avail),
+            None => BASKET_HEADER_PROBE.min(avail),
+        };
+        let head = file.read_at(seek, want as usize)?;
+        let mut r = RBuffer::new(&head);
 
         // Standard TKey header.
         let nbytes = r.be_i32()?;
@@ -67,16 +87,27 @@ impl Basket {
         let on_disk = nbytes
             .checked_sub(key_len)
             .ok_or_else(|| Error::Format("basket fKeyLen exceeds fNbytes".into()))?;
-        let data_start = key_start
-            .checked_add(key_len)
-            .filter(|&s| s.checked_add(on_disk).is_some_and(|e| e <= file_data.len()))
-            .ok_or_else(|| Error::Format("basket data runs past end of file".into()))?;
-        let raw = &file_data[data_start..data_start + on_disk];
+
+        // The (possibly compressed) data starts at fSeekKey + fKeyLen and runs to
+        // the record end (fNbytes). Reuse the bytes already in the probe window
+        // and fetch only the tail past it — so no byte is fetched twice and a
+        // basket costs exactly its on-disk size over a remote source.
+        let record_end = key_len + on_disk;
+        let raw: Vec<u8> = if record_end <= head.len() {
+            head[key_len..record_end].to_vec()
+        } else {
+            let have = head.len();
+            let tail = file.read_at(seek + have as u64, record_end - have)?;
+            let mut buf = Vec::with_capacity(on_disk);
+            buf.extend_from_slice(&head[key_len..have]);
+            buf.extend_from_slice(&tail);
+            buf
+        };
 
         let data = if on_disk == obj_len as usize {
-            raw.to_vec()
+            raw
         } else {
-            oxiroot_compress::decompress(raw, obj_len as usize)
+            oxiroot_compress::decompress(&raw, obj_len as usize)
                 .map_err(|e| Error::Format(format!("decompressing basket: {e}")))?
         };
 

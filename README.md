@@ -70,6 +70,10 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   never touches the whole field.
 - 🗜 **Compression** — decode *and* encode Zstd / zlib / LZ4 / LZMA — all pure
   Rust, all read back by ROOT and uproot.
+- 🌐 **Remote reads** — open a file over HTTP(S) with `RFile::open_url` and read
+  only the byte ranges each object touches, never downloading the file whole —
+  the way ROOT and uproot read remote data (the `http` feature). A large local
+  file can be read the same lazy way with `RFile::open_ranged`.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
   `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
 - ➕ **`hadd`** — a pure-Rust file merger: histograms summed, `TTree` / RNTuple
@@ -838,6 +842,7 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 | `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `TH1`/`TH2`/`TGraph`/`TProfile`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
+| `http` | — | Remote reads over HTTP(S) byte-range requests (`RFile::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
 
 All are **on by default** — the facade is batteries-included. For a lean,
 pure-Rust format core with a minimal dependency set, opt out with
@@ -903,9 +908,9 @@ Grouped by the ROOT feature each fills.
   already powers the `TTree` reader), so oxiroot can inspect arbitrary ROOT files
   (`rootls` / `rootprint`-style), not only the typed hist/graph/tree/RNTuple
   models.
-- **Remote reads** — open a file over HTTP(S) range requests (and, longer term,
-  XRootD `root://`) so a file can be read without downloading it whole, as ROOT
-  and uproot do.
+- **Remote reads** — **XRootD `root://`** support. HTTP(S) range reads already
+  ship (`RFile::open_url`, the `http` feature); `root://` (the protocol most CERN
+  data is served over) is the remaining transport.
 - **`TFile` container**
   - **Arbitrary-depth `TDirectory` write** — the builder nests one level today.
   - **Delete / compact in update mode** — append mode ships; rewriting a key at

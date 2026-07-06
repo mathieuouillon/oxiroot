@@ -15,5 +15,11 @@ path = "src/main.rs"
 oxiroot = { workspace = true }
 clap = { workspace = true }
 
+[features]
+# Read ROOT files from an `http(s)://` URL via byte-range requests. Off by
+# default so the plain `oxroot` binary needs no networking/TLS stack; build with
+# `--features http` for remote inspection.
+http = ["oxiroot/http"]
+
 [lints]
 workspace = true

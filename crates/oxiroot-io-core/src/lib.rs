@@ -30,8 +30,8 @@ pub use error::{Error, Result};
 pub use file::{
     guard_small_format, key_len, key_len_fmt, update_root_file, write_key_header,
     write_key_header_cycle, write_key_header_fmt, write_root_file, write_root_file_with_dirs,
-    write_root_file_with_streamers, Directory, FileHeader, FreeSegment, ObjectRecord, RFile,
-    Subdir, TDatime, TKey, TUuid, KSTART_BIG_FILE,
+    write_root_file_with_streamers, ByteSource, BytesSource, Directory, FileHeader, FileSource,
+    FreeSegment, ObjectRecord, RFile, Subdir, TDatime, TKey, TUuid, KSTART_BIG_FILE,
 };
 pub use object::{ObjHeader, TagReader};
 pub use object_io::{object_bytes_any, object_bytes_any_keyed, record_of, ReadRoot, WriteRoot};

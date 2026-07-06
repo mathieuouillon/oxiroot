@@ -6,40 +6,34 @@
 
 use std::path::Path;
 
+use bytes::Bytes;
+
 use super::directory::Directory;
 use super::free::{read_free, FreeSegment};
 use super::header::FileHeader;
 use super::key::TKey;
+use super::source::{ByteSource, BytesSource, FileSource};
 use crate::buffer::RBuffer;
 use crate::error::{Error, Result};
 use crate::read_object::read_object;
 use crate::streamer_info::{parse_streamer_info, StreamerRegistry};
 use crate::value::Value;
 
-/// Backing storage for a file's raw bytes: an owned in-memory buffer or, with
-/// the `mmap` feature, a read-only memory map of the file on disk. Both deref to
-/// `&[u8]`, so all parsing is identical regardless of source.
-enum FileData {
-    Owned(Vec<u8>),
-    #[cfg(feature = "mmap")]
-    Mapped(memmap2::Mmap),
-}
+/// Bytes fetched from the start of the file to parse its header. The TFile
+/// header is ~100 bytes (a little more in the 64-bit form); 512 covers it with
+/// room to spare and is a single small read for a remote source.
+const HEADER_PROBE: u64 = 512;
 
-impl std::ops::Deref for FileData {
-    type Target = [u8];
-    fn deref(&self) -> &[u8] {
-        match self {
-            FileData::Owned(v) => v,
-            #[cfg(feature = "mmap")]
-            FileData::Mapped(m) => m,
-        }
-    }
-}
-
-/// An open ROOT file. Its bytes are either read fully into memory or, with the
-/// `mmap` feature and `RFile::open_mmap`, memory-mapped.
+/// An open ROOT file, read through a [`ByteSource`]. The default
+/// [`open`](Self::open) reads the whole file into memory; [`open_ranged`] and
+/// (with the `http` feature) [`open_url`](Self::open_url) read only the byte
+/// ranges each object touches, never downloading the file whole.
+///
+/// The header, root directory, and key list are parsed at open (a few small
+/// ranged reads); object, page, and basket bytes are fetched on demand.
 pub struct RFile {
-    data: FileData,
+    source: Box<dyn ByteSource>,
+    size: u64,
     header: FileHeader,
     root_dir: Directory,
 }
@@ -47,7 +41,7 @@ pub struct RFile {
 impl std::fmt::Debug for RFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RFile")
-            .field("bytes", &self.data.len())
+            .field("bytes", &self.size)
             .field("version", &self.header.version)
             .field("keys", &self.root_dir.keys.len())
             .finish()
@@ -58,6 +52,14 @@ impl RFile {
     /// Open and parse a ROOT file from disk (read fully into memory).
     pub fn open(path: impl AsRef<Path>) -> Result<RFile> {
         Self::from_bytes(std::fs::read(path)?)
+    }
+
+    /// Open a local ROOT file using positioned reads, fetching only the byte
+    /// ranges each object touches instead of reading the whole file up front —
+    /// the local analog of [`open_url`](Self::open_url), useful for large files
+    /// where only some objects are read.
+    pub fn open_ranged(path: impl AsRef<Path>) -> Result<RFile> {
+        Self::from_source(Box::new(FileSource::open(path)?))
     }
 
     /// Open and parse a ROOT file by memory-mapping it, avoiding a full read into
@@ -74,22 +76,38 @@ impl RFile {
         // denied everywhere else); memmap2's `map` is unavoidably `unsafe`.
         #[allow(unsafe_code)]
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
-        Self::from_backing(FileData::Mapped(mmap))
+        Self::from_source(Box::new(super::source::MmapSource::new(mmap)))
+    }
+
+    /// Open a ROOT file over HTTP(S), reading only the byte ranges each object
+    /// touches via range requests — never downloading the file whole, the way
+    /// ROOT and uproot read remote files. The server must honor
+    /// `Range: bytes=…` requests (`Accept-Ranges: bytes`).
+    ///
+    /// Requires the `http` feature.
+    #[cfg(feature = "http")]
+    pub fn open_url(url: &str) -> Result<RFile> {
+        Self::from_source(Box::new(super::http::HttpSource::open(url)?))
     }
 
     /// Parse a ROOT file already held in memory.
     pub fn from_bytes(data: Vec<u8>) -> Result<RFile> {
-        Self::from_backing(FileData::Owned(data))
+        Self::from_source(Box::new(BytesSource::new(data)))
     }
 
-    fn from_backing(data: FileData) -> Result<RFile> {
+    /// Parse a ROOT file from an arbitrary [`ByteSource`]. The header, root
+    /// directory, and key list are read at open; everything else is on demand.
+    pub fn from_source(source: Box<dyn ByteSource>) -> Result<RFile> {
+        let size = source.len();
+        let head = source.read_at(0, HEADER_PROBE.min(size) as usize)?;
         let header = {
-            let mut r = RBuffer::new(&data);
+            let mut r = RBuffer::new(&head);
             FileHeader::read(&mut r)?
         };
-        let root_dir = Directory::read_root(&data, &header)?;
+        let root_dir = Directory::read_root(&*source, &header)?;
         Ok(RFile {
-            data,
+            source,
+            size,
             header,
             root_dir,
         })
@@ -145,7 +163,7 @@ impl RFile {
                 k.name == name && (k.class_name == "TDirectory" || k.class_name == "TDirectoryFile")
             })
             .ok_or_else(|| Error::Format(format!("no subdirectory named {name:?}")))?;
-        Directory::read(&self.data, key.payload_start(self.data.len())?)
+        Directory::read(&*self.source, key.payload_start(self.size as usize)? as u64)
     }
 
     /// Return the class name and decompressed object bytes for key `name` inside
@@ -166,8 +184,8 @@ impl RFile {
             .filter(|k| k.name == name && !k.is_deleted())
             .max_by_key(|k| k.cycle)
             .ok_or_else(|| Error::Format(format!("no key {name:?} in subdirectory {subdir:?}")))?;
-        let payload = key.payload(&self.data)?;
-        let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
+        let payload = self.key_payload(key)?;
+        let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
         Ok((key.class_name.clone(), object, key.key_len as usize))
     }
@@ -195,42 +213,91 @@ impl RFile {
 
     /// The file's free-segment list (informational).
     pub fn free_segments(&self) -> Result<Vec<FreeSegment>> {
-        read_free(&self.data, &self.header)
+        read_free(&*self.source, &self.header)
     }
 
     /// Parse the file's `TStreamerInfo` records (at `fSeekInfo`) into a registry
     /// describing every class stored in the file.
     pub fn streamer_registry(&self) -> Result<StreamerRegistry> {
-        if self.header.seek_info == 0 || self.header.nbytes_info == 0 {
+        let Some((object, keylen)) = self.streamer_info_decompressed()? else {
             return Ok(StreamerRegistry::default());
-        }
-        let mut r = RBuffer::new(&self.data);
-        r.seek(self.header.seek_info as usize)?;
-        let key = TKey::read(&mut r)?;
-        let payload = key.payload(&self.data)?;
-        let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
-            .map_err(|e| Error::Format(format!("decompressing streamer info: {e}")))?;
-        parse_streamer_info(&object, key.key_len as usize)
+        };
+        parse_streamer_info(&object, keylen)
     }
 
     /// The decompressed streamer-info object (the `TList<TStreamerInfo>` bytes at
     /// `fSeekInfo`), or `None` if the file has none. Used to carry a file's
     /// streamer info across a rewrite.
     pub fn streamer_info_object(&self) -> Result<Option<Vec<u8>>> {
+        Ok(self.streamer_info_decompressed()?.map(|(object, _)| object))
+    }
+
+    /// Fetch the `[fSeekInfo, fNbytesInfo]` record and return its decompressed
+    /// object bytes plus the wrapping key's `fKeyLen`, or `None` if the file has
+    /// no streamer info. Only that one record is read.
+    fn streamer_info_decompressed(&self) -> Result<Option<(Vec<u8>, usize)>> {
         if self.header.seek_info == 0 || self.header.nbytes_info == 0 {
             return Ok(None);
         }
-        let mut r = RBuffer::new(&self.data);
-        r.seek(self.header.seek_info as usize)?;
-        let key = TKey::read(&mut r)?;
-        let payload = key.payload(&self.data)?;
+        let win = self.read_at(self.header.seek_info, self.header.nbytes_info as usize)?;
+        let key = TKey::read(&mut RBuffer::new(&win))?;
+        let payload = payload_in_window(&win, &key)?;
         let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing streamer info: {e}")))?;
-        Ok(Some(object))
+        Ok(Some((object, key.key_len as usize)))
     }
 
-    /// The raw file bytes (used by object readers in later milestones).
-    pub fn data(&self) -> &[u8] {
-        &self.data
+    /// Total size of the file in bytes.
+    pub fn size(&self) -> u64 {
+        self.size
     }
+
+    /// Read exactly `len` bytes at absolute `offset` from the underlying source.
+    /// For a resident (in-memory / mmap) file this is a zero-copy slice; for a
+    /// ranged local or remote file it fetches just that range. Object, RNTuple
+    /// page, and TTree basket readers go through this so they touch only the
+    /// bytes they need.
+    pub fn read_at(&self, offset: u64, len: usize) -> Result<Bytes> {
+        self.source.read_at(offset, len)
+    }
+
+    /// Fetch a key's (possibly compressed) object payload — the `fNbytes −
+    /// fKeyLen` bytes after its header. Bounds-checked against the file size;
+    /// errors (never panics) on a malformed key.
+    pub fn key_payload(&self, key: &TKey) -> Result<Bytes> {
+        let start = key.payload_start(self.size as usize)? as u64;
+        let len = key
+            .total_bytes()
+            .checked_sub(u32::from(key.key_len))
+            .ok_or_else(|| Error::Format(format!("key {:?}: fKeyLen exceeds fNbytes", key.name)))?
+            as usize;
+        self.read_at(start, len)
+    }
+}
+
+/// An [`RFile`] is itself a byte source (delegating to its backing), so page and
+/// basket decoders can take a `&dyn ByteSource` and be unit-tested against a
+/// bare in-memory buffer without a full file.
+impl ByteSource for RFile {
+    fn len(&self) -> u64 {
+        self.size
+    }
+
+    fn read_at(&self, offset: u64, len: usize) -> Result<Bytes> {
+        self.source.read_at(offset, len)
+    }
+}
+
+/// Slice a wrapping key's payload out of a window fetched at the key's own
+/// offset: the payload begins `fKeyLen` bytes into the record and runs for
+/// `fNbytes − fKeyLen` bytes. Bounds-checked against the window.
+fn payload_in_window<'a>(win: &'a [u8], key: &TKey) -> Result<&'a [u8]> {
+    let start = key.key_len as usize;
+    let len = key
+        .total_bytes()
+        .checked_sub(u32::from(key.key_len))
+        .ok_or_else(|| Error::Format(format!("key {:?}: fKeyLen exceeds fNbytes", key.name)))?
+        as usize;
+    win.get(start..start + len)
+        .ok_or_else(|| Error::Format(format!("key {:?}: payload runs past record", key.name)))
 }

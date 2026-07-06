@@ -17,7 +17,7 @@ fn fixture(name: &str) -> Vec<u8> {
 /// Exercise every read path on an opened file (each must be panic-free).
 fn poke(f: &RFile) {
     for k in f.keys() {
-        let _ = k.payload(f.data());
+        let _ = f.key_payload(k);
     }
     let _ = f.streamer_registry();
     let _ = f.streamer_info_object();

@@ -97,6 +97,10 @@ struct Branch {
     n_baskets: usize,
     /// File offset of each basket (`fBasketSeek`).
     basket_seek: Vec<u64>,
+    /// On-disk byte size of each basket (`fBasketBytes`), so a basket is fetched
+    /// at its exact size — never over-fetched — over a ranged/remote source.
+    /// Empty when the file omits it; then the reader probes the key header.
+    basket_bytes: Vec<u64>,
     /// First entry number of each basket (`fBasketEntry`, `n_baskets` values),
     /// for selecting the baskets that cover an entry range.
     basket_entry: Vec<i64>,
@@ -208,8 +212,8 @@ impl TTree {
         // so it adapts to the version the file was written with.
         let registry = file.streamer_registry()?;
 
-        let payload = key.payload(file.data())?;
-        let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
+        let payload = file.key_payload(key)?;
+        let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing TTree: {e}")))?;
         let mut tree = read_tree(&object, key.key_len as usize, &registry, &key.class_name)?;
         tree.streamer_classes = registry
@@ -471,11 +475,18 @@ fn read_baskets(
     branch: &Branch,
     indices: impl Iterator<Item = usize>,
 ) -> Result<Vec<Basket>> {
-    let data = file.data();
     let seek_of = |i: usize| -> Result<u64> {
         branch.basket_seek.get(i).copied().ok_or_else(|| {
             Error::Format(format!("branch {:?}: missing basket {i} seek", branch.name))
         })
+    };
+    // `fBasketBytes` gives the exact on-disk record size (one exact fetch, no
+    // over-read); `None` when the file omits it (the reader probes the header).
+    let bytes_of = |i: usize| -> Option<usize> {
+        branch
+            .basket_bytes
+            .get(i)
+            .and_then(|&b| (b > 0).then_some(b as usize))
     };
 
     #[cfg(feature = "rayon")]
@@ -483,17 +494,17 @@ fn read_baskets(
         use rayon::prelude::*;
         let indices: Vec<usize> = indices.collect();
         // par_iter().collect() into a Result preserves order and short-circuits
-        // on the first error; the file data and branch are read-only (Sync).
+        // on the first error; the file source and branch are read-only (Sync).
         indices
             .into_par_iter()
-            .map(|i| Basket::read(data, seek_of(i)?))
+            .map(|i| Basket::read(file, seek_of(i)?, bytes_of(i)))
             .collect()
     }
     #[cfg(not(feature = "rayon"))]
     {
         let mut out = Vec::new();
         for i in indices {
-            out.push(Basket::read(data, seek_of(i)?)?);
+            out.push(Basket::read(file, seek_of(i)?, bytes_of(i))?);
         }
         Ok(out)
     }
@@ -1185,10 +1196,11 @@ fn read_tbranch_base(
     Ok((out, sub, leaves))
 }
 
-/// Assemble `(write_basket, basket_entry, basket_seek)` from a branch's captured
-/// members: `fBasketEntry` is truncated to `fWriteBasket` (the live baskets) and
-/// `fBasketSeek` clamped to non-negative file offsets.
-fn basket_locators(out: &Members) -> (usize, Vec<i64>, Vec<u64>) {
+/// Assemble `(write_basket, basket_entry, basket_seek, basket_bytes)` from a
+/// branch's captured members: `fBasketEntry` is truncated to `fWriteBasket` (the
+/// live baskets), `fBasketSeek`/`fBasketBytes` are clamped to non-negative and
+/// taken up to the live basket count.
+fn basket_locators(out: &Members) -> (usize, Vec<i64>, Vec<u64>, Vec<u64>) {
     let write_basket = member_int(out, "fWriteBasket").max(0) as usize;
     let basket_entry = out
         .get("fBasketEntry")
@@ -1198,7 +1210,17 @@ fn basket_locators(out: &Members) -> (usize, Vec<i64>, Vec<u64>) {
         .get("fBasketSeek")
         .map(|m| m.ints().iter().map(|&s| s.max(0) as u64).collect())
         .unwrap_or_default();
-    (write_basket, basket_entry, basket_seek)
+    let basket_bytes = out
+        .get("fBasketBytes")
+        .map(|m| {
+            m.ints()
+                .iter()
+                .take(write_basket)
+                .map(|&b| b.max(0) as u64)
+                .collect()
+        })
+        .unwrap_or_default();
+    (write_basket, basket_entry, basket_seek, basket_bytes)
 }
 
 /// Read one `TBranch` body (after its object header) by walking the file's
@@ -1219,7 +1241,7 @@ fn read_branch(
 
     let name = member_str(&out, "fName");
     let title = member_str(&out, "fTitle");
-    let (write_basket, basket_entry, basket_seek) = basket_locators(&out);
+    let (write_basket, basket_entry, basket_seek, basket_bytes) = basket_locators(&out);
 
     // A branch with its own sub-branches (other than the split-element path) is
     // not handled here.
@@ -1252,6 +1274,7 @@ fn read_branch(
             leaf_len: leaf.len,
             n_baskets: write_basket,
             basket_seek,
+            basket_bytes,
             basket_entry,
             elem_header: 0,
             leaflist: None,
@@ -1277,6 +1300,7 @@ fn read_branch(
             leaf_len: leaf.len,
             n_baskets: write_basket,
             basket_seek: basket_seek.clone(),
+            basket_bytes: basket_bytes.clone(),
             basket_entry: basket_entry.clone(),
             elem_header: 0,
             leaflist: Some((leaf.offset, stride)),
@@ -1320,7 +1344,7 @@ fn read_branch_element(
     let class_name = member_str(&out, "fClassName");
     let f_type = member_int(&out, "fType") as i32;
     let f_streamer_type = member_int(&out, "fStreamerType") as i32;
-    let (write_basket, basket_entry, basket_seek) = basket_locators(&out);
+    let (write_basket, basket_entry, basket_seek, basket_bytes) = basket_locators(&out);
 
     // Any branch with sub-branches is a split parent — an STL/clones collection
     // (`fType` 3/4), or a split single object or its sub-object member (`fType`
@@ -1371,6 +1395,7 @@ fn read_branch_element(
         leaf_len: 1,
         n_baskets: write_basket,
         basket_seek,
+        basket_bytes,
         basket_entry,
         elem_header,
         leaflist: None,
@@ -1401,7 +1426,7 @@ fn read_branch_object(
     let name = member_str(&out, "fName");
     let title = member_str(&out, "fTitle");
     let class_name = member_str(&out, "fClassName");
-    let (write_basket, basket_entry, basket_seek) = basket_locators(&out);
+    let (write_basket, basket_entry, basket_seek, basket_bytes) = basket_locators(&out);
 
     if !sub.is_empty() {
         diag.push((
@@ -1434,6 +1459,7 @@ fn read_branch_object(
             leaf_len: 1,
             n_baskets: write_basket,
             basket_seek: basket_seek.clone(),
+            basket_bytes: basket_bytes.clone(),
             basket_entry: basket_entry.clone(),
             elem_header: 0,
             leaflist: None,

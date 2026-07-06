@@ -69,6 +69,37 @@ member the reader cannot decode (memberwise STL, a class with no streamer info)
 becomes `Value::Unsupported` rather than failing the whole object, and
 `get_value_in(dir, name)` reads from a subdirectory.
 
+## Remote and lazy reads
+
+`RFile::open` reads the whole file into memory. When you only need a few objects
+from a large file — or the file lives on a web server — you can instead read only
+the byte ranges each object touches, the way ROOT and uproot do:
+
+```rust
+use oxiroot::RFile;
+
+// Local, positioned reads — never slurps the whole file:
+let f = RFile::open_ranged("big.root")?;
+
+// Remote, over HTTP(S) byte-range requests (the `http` feature):
+let f = RFile::open_url("https://example.org/data/big.root")?;
+let h = oxiroot::hist::TH1::read_root(&f, "pt")?; // fetches only that key's bytes
+# Ok::<(), oxiroot::Error>(())
+```
+
+Both return an ordinary [`RFile`]; every reader (histograms, graphs, `TTree`
+branches, RNTuple fields, `get_value`) works unchanged and pulls only what it
+reads — a single `TTree` branch fetches just its baskets, an RNTuple field just
+its pages. Opening parses only the header, directory, key list, and streamer
+info (a few small ranges).
+
+`open_url` needs the `http` feature (adds the pure-Rust `ureq`/rustls client, off
+by default) and a server that honors `Range` requests (`Accept-Ranges: bytes`).
+The `oxroot` CLI accepts a URL anywhere it takes a path when built with
+`--features http`: `oxroot dump https://example.org/data/big.root:events -n 5`.
+
+[`RFile`]: ../api/oxiroot/struct.RFile.html
+
 ## Several objects, subdirectories, appending: `RootFile`
 
 For more than one object, a `TDirectory`, or appending to an existing file, use

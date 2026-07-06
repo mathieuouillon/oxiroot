@@ -64,7 +64,7 @@ fn tf1_bytes_are_byte_exact_against_root() {
         .to_root_bytes();
     let key = f.key("myfunc").unwrap();
     let root =
-        oxiroot_compress::decompress(key.payload(f.data()).unwrap(), key.obj_len as usize).unwrap();
+        oxiroot_compress::decompress(&f.key_payload(key).unwrap(), key.obj_len as usize).unwrap();
     assert_eq!(obj.len(), root.len(), "TF1 object length differs from ROOT");
     for (i, (&a, &b)) in obj.iter().zip(&root).enumerate() {
         if a != b {

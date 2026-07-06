@@ -18,7 +18,9 @@ fn open_mmap_matches_open() {
     let owned = RFile::open(&path).expect("open");
     let mapped = RFile::open_mmap(&path).expect("open_mmap");
 
-    assert_eq!(mapped.data(), owned.data(), "same bytes");
+    assert_eq!(mapped.size(), owned.size(), "same length");
+    let whole = |f: &RFile| f.read_at(0, f.size() as usize).expect("read whole");
+    assert_eq!(whole(&mapped), whole(&owned), "same bytes");
     let names = |f: &RFile| -> Vec<String> { f.keys().iter().map(|k| k.name.clone()).collect() };
     assert_eq!(names(&mapped), names(&owned), "same keys");
 }

@@ -21,7 +21,7 @@ pub struct Args {
 pub fn run(args: Args, json: bool) -> CmdResult {
     let (path, obj) = parse_spec(&args.spec);
     let obj = obj.ok_or("show needs an object: `file.root:name`")?;
-    let file = RFile::open(&path)?;
+    let file = crate::util::open_root(&path)?;
     let (subdir, name) = split_obj(&obj);
     let class = locate_class(&file, subdir, name)?;
 

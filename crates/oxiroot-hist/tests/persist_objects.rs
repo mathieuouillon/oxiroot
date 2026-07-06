@@ -79,7 +79,7 @@ fn byte_exact_against_root() {
     for (name, obj) in cases {
         let key = f.key(name).unwrap();
         let root_bytes =
-            oxiroot_compress::decompress(key.payload(f.data()).unwrap(), key.obj_len as usize)
+            oxiroot_compress::decompress(&f.key_payload(key).unwrap(), key.obj_len as usize)
                 .unwrap();
         assert_eq!(
             obj.to_root_bytes(),

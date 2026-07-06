@@ -8,11 +8,17 @@
 
 use super::header::FileHeader;
 use super::key::TKey;
+use super::source::ByteSource;
 use crate::buffer::RBuffer;
 use crate::error::Result;
 
 /// Directory version above which seek pointers are 64-bit.
 const DIR_BIG_VERSION: i16 = 1000;
+
+/// Upper bound on a `TDirectory` record's fixed header (big form is 42 bytes:
+/// `i16 + 2*u32 + 2*i32 + 3*u64`). Fetched as one window before the seek
+/// pointers are known.
+const DIR_RECORD_MAX: usize = 64;
 
 /// A parsed `TDirectory` record together with its key list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,11 +44,15 @@ pub struct Directory {
 }
 
 impl Directory {
-    /// Read a directory record at absolute `offset` within `data`, loading its
-    /// key list.
-    pub fn read(data: &[u8], offset: usize) -> Result<Directory> {
-        let mut r = RBuffer::new(data);
-        r.seek(offset)?;
+    /// Read a directory record at absolute `offset` from `source`, loading its
+    /// key list. Only the directory record and its key-list record are fetched —
+    /// two small ranges — so this stays lazy over a remote source.
+    pub fn read(source: &dyn ByteSource, offset: u64) -> Result<Directory> {
+        // The directory record's fixed header is at most `DIR_RECORD_MAX` bytes;
+        // fetch that window (clamped to the file) and parse it standalone.
+        let avail = source.len().saturating_sub(offset);
+        let win = source.read_at(offset, DIR_RECORD_MAX.min(avail as usize))?;
+        let mut r = RBuffer::new(&win);
 
         let version = r.be_i16()?;
         let datime_c = r.be_u32()?;
@@ -55,7 +65,7 @@ impl Directory {
             (r.be_u32()? as u64, r.be_u32()? as u64, r.be_u32()? as u64)
         };
 
-        let keys = read_keys(data, seek_keys as usize)?;
+        let keys = read_keys(source, seek_keys, nbytes_keys)?;
 
         Ok(Directory {
             version,
@@ -71,19 +81,28 @@ impl Directory {
     }
 
     /// Read the root directory of a file (located at `begin + nbytes_name`).
-    pub fn read_root(data: &[u8], header: &FileHeader) -> Result<Directory> {
-        Self::read(data, header.begin as usize + header.nbytes_name as usize)
+    pub fn read_root(source: &dyn ByteSource, header: &FileHeader) -> Result<Directory> {
+        Self::read(source, header.begin + header.nbytes_name as u64)
     }
 }
 
 /// Read a directory's key list: a wrapping `TKey`, an `i32` count, then that
-/// many `TKey` headers.
-fn read_keys(data: &[u8], seek_keys: usize) -> Result<Vec<TKey>> {
+/// many `TKey` headers. `nbytes_keys` (`fNbytesKeys`) is the exact on-disk size
+/// of the record, so exactly that window is fetched.
+fn read_keys(source: &dyn ByteSource, seek_keys: u64, nbytes_keys: i32) -> Result<Vec<TKey>> {
     if seek_keys == 0 {
         return Ok(Vec::new());
     }
-    let mut r = RBuffer::new(data);
-    r.seek(seek_keys)?;
+    let avail = source.len().saturating_sub(seek_keys);
+    // Trust `fNbytesKeys` when present; otherwise fall back to the rest of the
+    // file so a zero/negative count still reads (key lists are small).
+    let want = if nbytes_keys > 0 {
+        (nbytes_keys as u64).min(avail)
+    } else {
+        avail
+    };
+    let win = source.read_at(seek_keys, want as usize)?;
+    let mut r = RBuffer::new(&win);
 
     // The record at `seek_keys` is itself a TKey; its payload is the key list.
     let _wrapper = TKey::read(&mut r)?;

@@ -38,7 +38,7 @@ struct Row {
 /// Run `oxroot ls`.
 pub fn run(args: Args, json: bool) -> CmdResult {
     let (path, _) = parse_spec(&args.file);
-    let file = RFile::open(&path)?;
+    let file = crate::util::open_root(&path)?;
     let want_entries = args.long || json;
 
     let mut rows = Vec::new();

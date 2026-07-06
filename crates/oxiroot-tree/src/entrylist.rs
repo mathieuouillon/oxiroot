@@ -40,8 +40,8 @@ impl TEntryList {
                 key.class_name
             )));
         }
-        let payload = key.payload(file.data())?;
-        let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
+        let payload = file.key_payload(key)?;
+        let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing TEntryList: {e}")))?;
         read_entry_list(&object, key.key_len as usize)
     }

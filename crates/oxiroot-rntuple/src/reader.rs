@@ -63,20 +63,20 @@ impl RNTuple {
             )));
         }
 
-        let anchor_payload = key.payload(file.data())?;
-        let anchor_object = oxiroot_compress::decompress(anchor_payload, key.obj_len as usize)
+        let anchor_payload = file.key_payload(key)?;
+        let anchor_object = oxiroot_compress::decompress(&anchor_payload, key.obj_len as usize)
             .map_err(|e| Error::Format(format!("decompressing anchor: {e}")))?;
         let anchor = RNTupleAnchor::read(&anchor_object)?;
 
         let header_bytes = read_blob(
-            file.data(),
+            file,
             anchor.seek_header,
             anchor.nbytes_header,
             anchor.len_header,
             "header",
         )?;
         let footer_bytes = read_blob(
-            file.data(),
+            file,
             anchor.seek_footer,
             anchor.nbytes_footer,
             anchor.len_footer,
@@ -111,7 +111,7 @@ impl RNTuple {
         let mut page_clusters = Vec::new();
         for group in &footer.cluster_groups {
             let blob = read_blob(
-                file.data(),
+                file,
                 group.page_list.offset,
                 group.page_list.size as u64,
                 group.page_list_len,
@@ -189,7 +189,7 @@ impl RNTuple {
         }
 
         let values = read_column(
-            file.data(),
+            file,
             descriptor.column_type,
             descriptor.bits_on_storage,
             &pages,
@@ -535,7 +535,7 @@ impl RNTuple {
                 .get(column_index)
                 .ok_or_else(|| Error::Format(format!("cluster missing column {column_index}")))?;
             let local = match read_column(
-                file.data(),
+                file,
                 descriptor.column_type,
                 descriptor.bits_on_storage,
                 &column.pages,
@@ -595,12 +595,10 @@ fn backfill_leading(values: ColumnValues, k: usize) -> ColumnValues {
     }
 }
 
-fn read_blob(data: &[u8], seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
-    let start = seek as usize;
-    let end = start
-        .checked_add(nbytes as usize)
-        .filter(|&e| e <= data.len())
-        .ok_or_else(|| Error::Format(format!("{what} blob at {seek} runs past end of file")))?;
-    oxiroot_compress::decompress(&data[start..end], len as usize)
+fn read_blob(file: &RFile, seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
+    let win = file
+        .read_at(seek, nbytes as usize)
+        .map_err(|_| Error::Format(format!("{what} blob at {seek} runs past end of file")))?;
+    oxiroot_compress::decompress(&win, len as usize)
         .map_err(|e| Error::Format(format!("decompressing {what}: {e}")))
 }

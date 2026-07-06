@@ -39,7 +39,7 @@ fn reads_th1d_uncompressed_container() {
     assert!(k.is_uncompressed());
     assert_eq!(k.payload_len(), k.obj_len as usize);
     // The key's payload range must lie within the file.
-    assert!(k.payload_range().end <= f.data().len());
+    assert!(k.payload_range().end as u64 <= f.size());
 }
 
 #[test]
@@ -98,18 +98,19 @@ fn decompresses_zstd_object_matching_uncompressed() {
 
     // The uncompressed fixture stores the object verbatim.
     assert!(unc_key.is_uncompressed());
-    let unc_obj = &unc.data()[unc_key.payload_range()];
+    let unc_obj = unc.key_payload(unc_key).expect("uncompressed payload");
 
     // The zstd fixture stores it compressed; decode it via the real ROOT block
     // framing + ruzstd and require a byte-for-byte match with the plain object.
     assert!(!zst_key.is_uncompressed());
-    let zst_payload = &zst.data()[zst_key.payload_range()];
+    let zst_payload = zst.key_payload(zst_key).expect("zstd payload");
     let decoded =
-        oxiroot_compress::decompress(zst_payload, zst_key.obj_len as usize).expect("zstd decode");
+        oxiroot_compress::decompress(&zst_payload, zst_key.obj_len as usize).expect("zstd decode");
 
     assert_eq!(decoded.len(), zst_key.obj_len as usize);
     assert_eq!(
-        decoded, unc_obj,
+        &decoded[..],
+        &unc_obj[..],
         "decompressed Zstd object must match the uncompressed one"
     );
 }

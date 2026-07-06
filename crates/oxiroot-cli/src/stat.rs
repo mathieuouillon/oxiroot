@@ -1,7 +1,6 @@
 //! `oxroot stat` — a one-screen summary of a ROOT file.
 
 use clap::Args as ClapArgs;
-use oxiroot::RFile;
 
 use crate::json::Json;
 use crate::util::{compression_label, parse_spec, root_version, CmdResult};
@@ -16,8 +15,10 @@ pub struct Args {
 /// Run `oxroot stat`.
 pub fn run(args: Args, json: bool) -> CmdResult {
     let (path, _) = parse_spec(&args.file);
-    let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-    let file = RFile::open(&path)?;
+    let file = crate::util::open_root(&path)?;
+    // The source's own length works for both local files and remote URLs (where
+    // `std::fs::metadata` would fail).
+    let size = file.size();
     let header = file.header();
     let keys = file.keys().iter().filter(|k| !k.is_deleted()).count();
     let mut streamers: Vec<(String, i32)> = file

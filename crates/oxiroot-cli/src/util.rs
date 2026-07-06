@@ -11,13 +11,52 @@ use oxiroot::RFile;
 /// by `main`.
 pub type CmdResult = Result<(), Box<dyn Error>>;
 
+/// Whether `target` is an `http(s)://` URL rather than a local path.
+pub fn is_url(target: &str) -> bool {
+    target.starts_with("http://") || target.starts_with("https://")
+}
+
+/// Open a ROOT file from a local path or, with the `http` feature, an
+/// `http(s)://` URL (read lazily via byte-range requests).
+pub fn open_root(target: &str) -> Result<RFile, Box<dyn Error>> {
+    if is_url(target) {
+        #[cfg(feature = "http")]
+        {
+            return Ok(RFile::open_url(target)?);
+        }
+        #[cfg(not(feature = "http"))]
+        {
+            return Err(format!(
+                "{target}: reading from a URL needs the `http` feature \
+                 (rebuild oxroot with `--features http`)"
+            )
+            .into());
+        }
+    }
+    Ok(RFile::open(target)?)
+}
+
 /// Split a `file.root:dir/object` spec into the file path and an optional
 /// in-file object path.
 ///
 /// The object path is whatever follows the last `:` — unless that would name a
 /// file which doesn't exist while the whole spec does (a `:` inside the
-/// filename), in which case the whole spec is treated as the file.
+/// filename), in which case the whole spec is treated as the file. For a URL,
+/// only a `:` in the final path segment (after the last `/`) separates the
+/// object, so the scheme's `://` and any `host:port` colon are not mistaken for
+/// it.
 pub fn parse_spec(spec: &str) -> (String, Option<String>) {
+    if is_url(spec) {
+        let seg = spec.rfind('/').map_or(0, |i| i + 1);
+        if let Some(rel) = spec[seg..].find(':') {
+            let cut = seg + rel;
+            let obj = &spec[cut + 1..];
+            if !obj.is_empty() {
+                return (spec[..cut].to_string(), Some(obj.to_string()));
+            }
+        }
+        return (spec.to_string(), None);
+    }
     if let Some((file, obj)) = spec.rsplit_once(':') {
         let split_names_a_file = Path::new(file).exists() || !Path::new(spec).exists();
         if !file.is_empty() && !obj.is_empty() && split_names_a_file {

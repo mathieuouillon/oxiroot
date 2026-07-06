@@ -34,6 +34,11 @@ oxiroot = { path = "crates/oxiroot" }
 minuit2 = "0.5"
 argmin = { version = "0.11", default-features = false }
 argmin-math = { version = "0.5", features = ["vec"] }
+bytes = "1"
+# Pure-Rust blocking HTTP client (rustls, no OpenSSL), for the optional `http`
+# remote-read feature. `default-features = false` drops gzip transfer decoding,
+# which would break byte-range semantics on a compressed response.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 proptest = "1"
 clap = { version = "4", features = ["derive"] }
 

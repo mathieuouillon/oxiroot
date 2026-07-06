@@ -54,6 +54,8 @@ All pure Rust — the no-libROOT promise holds end to end:
 - [`argmin`](https://crates.io/crates/argmin) — Nelder–Mead backend (with the `argmin` feature)
 - [`rayon`](https://crates.io/crates/rayon) — data-parallel fill / basket decode (with the `rayon` feature)
 - [`memmap2`](https://crates.io/crates/memmap2) — memory-mapped reads (with the `mmap` feature)
+- [`bytes`](https://crates.io/crates/bytes) — zero-copy byte ranges behind the reader
+- [`ureq`](https://crates.io/crates/ureq) — HTTP(S) client (rustls) for remote range reads (with the `http` feature)
 
 ## API reference
 

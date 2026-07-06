@@ -232,8 +232,8 @@ pub(crate) fn object_bytes(file: &RFile, name: &str, class: &str) -> Result<Vec<
             key.class_name
         )));
     }
-    let payload = key.payload(file.data())?;
-    oxiroot_compress::decompress(payload, key.obj_len as usize)
+    let payload = file.key_payload(key)?;
+    oxiroot_compress::decompress(&payload, key.obj_len as usize)
         .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))
 }
 
@@ -257,8 +257,8 @@ pub(crate) fn object_bytes_keyed(
         )));
     }
     let keylen = key.key_len as usize;
-    let payload = key.payload(file.data())?;
-    let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
+    let payload = file.key_payload(key)?;
+    let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
         .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
     Ok((object, keylen))
 }

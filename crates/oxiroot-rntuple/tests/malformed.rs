@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::{BytesSource, RFile};
 use oxiroot_rntuple::{concat_ntuples, read_column, ColumnType, Locator, PageInfo, RNTuple};
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -62,7 +62,9 @@ fn rntuple_truncation_never_panics() {
 
 #[test]
 fn read_column_rejects_bits_type_mismatch() {
-    let data = vec![0u8; 16];
+    // A bare in-memory byte source (not a full ROOT file): the column decoder
+    // only needs `read_at`, so it can be unit-tested directly.
+    let src = BytesSource::new(vec![0u8; 16]);
     let pages = vec![PageInfo {
         num_elements: 4,
         has_checksum: false,
@@ -74,7 +76,7 @@ fn read_column_rejects_bits_type_mismatch() {
 
     // Int32 declared with 64 bits would slice 8-byte chunks into a 4-byte type
     // (try_into().unwrap() panic) — the guard rejects it first.
-    assert!(read_column(&data, ColumnType::Int32, 64, &pages, None).is_err());
+    assert!(read_column(&src, ColumnType::Int32, 64, &pages, None).is_err());
 
     // Bit declared with 0 bits would size the page to 0 and index out of range.
     let bit_pages = vec![PageInfo {
@@ -82,8 +84,8 @@ fn read_column_rejects_bits_type_mismatch() {
         has_checksum: false,
         locator: Locator { size: 1, offset: 0 },
     }];
-    assert!(read_column(&data, ColumnType::Bit, 0, &bit_pages, None).is_err());
+    assert!(read_column(&src, ColumnType::Bit, 0, &bit_pages, None).is_err());
 
     // The matching width still decodes.
-    assert!(read_column(&data, ColumnType::Int32, 32, &pages, None).is_ok());
+    assert!(read_column(&src, ColumnType::Int32, 32, &pages, None).is_ok());
 }

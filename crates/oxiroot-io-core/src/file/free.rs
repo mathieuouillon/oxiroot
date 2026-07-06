@@ -8,6 +8,7 @@
 
 use super::header::FileHeader;
 use super::key::TKey;
+use super::source::ByteSource;
 use crate::buffer::RBuffer;
 use crate::error::Result;
 
@@ -24,12 +25,20 @@ pub struct FreeSegment {
 }
 
 /// Read the file's free-segment list. Returns an empty list when there is none.
-pub fn read_free(data: &[u8], header: &FileHeader) -> Result<Vec<FreeSegment>> {
+/// Fetches only the `[fSeekFree, fNbytesFree]` record, so it stays lazy over a
+/// remote source.
+pub fn read_free(source: &dyn ByteSource, header: &FileHeader) -> Result<Vec<FreeSegment>> {
     if header.seek_free == 0 || header.nfree == 0 {
         return Ok(Vec::new());
     }
-    let mut r = RBuffer::new(data);
-    r.seek(header.seek_free as usize)?;
+    let avail = source.len().saturating_sub(header.seek_free);
+    let want = if header.nbytes_free > 0 {
+        u64::from(header.nbytes_free).min(avail)
+    } else {
+        avail
+    };
+    let win = source.read_at(header.seek_free, want as usize)?;
+    let mut r = RBuffer::new(&win);
 
     // The free list is wrapped in a TKey; its payload is `nfree` TFree records.
     let _wrapper = TKey::read(&mut r)?;

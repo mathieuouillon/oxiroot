@@ -20,7 +20,7 @@ fn serializes_th1d_byte_identical_to_root() {
     let f = RFile::open(fixture("th1d_uncompressed.root")).expect("open fixture");
     let key = f.key("h1").expect("h1 key");
     assert!(key.is_uncompressed());
-    let expected: &[u8] = &f.data()[key.payload_range()];
+    let expected: Vec<u8> = f.key_payload(key).expect("payload").to_vec();
 
     let h = TH1::read_root(&f, "h1").expect("read TH1D");
     let written = h.to_root_bytes();
