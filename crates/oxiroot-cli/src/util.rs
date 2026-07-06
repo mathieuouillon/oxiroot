@@ -11,24 +11,28 @@ use oxiroot::RFile;
 /// by `main`.
 pub type CmdResult = Result<(), Box<dyn Error>>;
 
-/// Whether `target` is an `http(s)://` URL rather than a local path.
+/// Whether `target` is a remote URL (`http(s)://` or `root://`) rather than a
+/// local path.
 pub fn is_url(target: &str) -> bool {
-    target.starts_with("http://") || target.starts_with("https://")
+    ["http://", "https://", "root://", "roots://"]
+        .iter()
+        .any(|s| target.starts_with(s))
 }
 
-/// Open a ROOT file from a local path or, with the `http` feature, an
-/// `http(s)://` URL (read lazily via byte-range requests).
+/// Open a ROOT file from a local path or a remote URL — `http(s)://` (the `http`
+/// feature) or `root://` XRootD (the `xrootd` feature) — read lazily via
+/// byte-range requests.
 pub fn open_root(target: &str) -> Result<RFile, Box<dyn Error>> {
     if is_url(target) {
-        #[cfg(feature = "http")]
+        #[cfg(any(feature = "http", feature = "xrootd"))]
         {
             return Ok(RFile::open_url(target)?);
         }
-        #[cfg(not(feature = "http"))]
+        #[cfg(not(any(feature = "http", feature = "xrootd")))]
         {
             return Err(format!(
-                "{target}: reading from a URL needs the `http` feature \
-                 (rebuild oxroot with `--features http`)"
+                "{target}: reading from a URL needs the `http` or `xrootd` feature \
+                 (rebuild oxroot with `--features http` and/or `--features xrootd`)"
             )
             .into());
         }

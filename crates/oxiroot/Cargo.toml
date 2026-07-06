@@ -30,6 +30,9 @@ mmap = ["oxiroot-io-core/mmap"]
 # Enable remote reads over HTTP(S) byte-range requests (`RFile::open_url`). Opt
 # in — off by default so the standard build pulls no networking/TLS stack.
 http = ["oxiroot-io-core/http"]
+# Enable remote reads over the XRootD `root://` protocol (`RFile::open_url`).
+# Opt-in; pure `std::net` (unix auth), so it adds no dependencies.
+xrootd = ["oxiroot-io-core/xrootd"]
 # Enable data-parallel helpers: the histogram fill (`hist::fill_par`) and
 # parallel TTree basket decode.
 rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]

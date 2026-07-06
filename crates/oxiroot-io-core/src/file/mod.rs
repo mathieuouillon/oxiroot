@@ -10,6 +10,8 @@ mod key;
 mod rfile;
 mod source;
 mod writer;
+#[cfg(feature = "xrootd")]
+mod xrootd;
 
 pub use directory::Directory;
 pub use free::{read_free, FreeSegment};
@@ -24,3 +26,5 @@ pub use writer::{
     write_key_header_cycle, write_key_header_fmt, write_root_file, write_root_file_with_dirs,
     write_root_file_with_streamers, ObjectRecord, Subdir, KSTART_BIG_FILE,
 };
+#[cfg(feature = "xrootd")]
+pub use xrootd::XrootdSource;

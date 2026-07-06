@@ -79,15 +79,29 @@ impl RFile {
         Self::from_source(Box::new(super::source::MmapSource::new(mmap)))
     }
 
-    /// Open a ROOT file over HTTP(S), reading only the byte ranges each object
-    /// touches via range requests — never downloading the file whole, the way
-    /// ROOT and uproot read remote files. The server must honor
-    /// `Range: bytes=…` requests (`Accept-Ranges: bytes`).
+    /// Open a ROOT file from a remote URL, reading only the byte ranges each
+    /// object touches — never downloading the file whole, the way ROOT and
+    /// uproot read remote data. The scheme selects the transport:
     ///
-    /// Requires the `http` feature.
-    #[cfg(feature = "http")]
+    /// - `http://` / `https://` — HTTP(S) byte-range requests (`http` feature).
+    ///   The server must honor `Range` requests (`Accept-Ranges: bytes`).
+    /// - `root://` — the XRootD protocol (`xrootd` feature), with `unix` auth
+    ///   for public/world-readable files (e.g. `root://eospublic.cern.ch`).
+    ///
+    /// Requires the matching feature for the URL's scheme.
+    #[cfg(any(feature = "http", feature = "xrootd"))]
     pub fn open_url(url: &str) -> Result<RFile> {
-        Self::from_source(Box::new(super::http::HttpSource::open(url)?))
+        #[cfg(feature = "xrootd")]
+        if url.starts_with("root://") || url.starts_with("roots://") {
+            return Self::from_source(Box::new(super::xrootd::XrootdSource::open(url)?));
+        }
+        #[cfg(feature = "http")]
+        if url.starts_with("http://") || url.starts_with("https://") {
+            return Self::from_source(Box::new(super::http::HttpSource::open(url)?));
+        }
+        Err(Error::Format(format!(
+            "unsupported or unavailable URL scheme (need the http/xrootd feature): {url:?}"
+        )))
     }
 
     /// Parse a ROOT file already held in memory.

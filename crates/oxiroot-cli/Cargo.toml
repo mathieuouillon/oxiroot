@@ -20,6 +20,9 @@ clap = { workspace = true }
 # default so the plain `oxroot` binary needs no networking/TLS stack; build with
 # `--features http` for remote inspection.
 http = ["oxiroot/http"]
+# Read ROOT files from a `root://` (XRootD) URL. Pure std::net (unix auth), no
+# extra dependencies; build with `--features xrootd`.
+xrootd = ["oxiroot/xrootd"]
 
 [lints]
 workspace = true

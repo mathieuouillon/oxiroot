@@ -83,20 +83,32 @@ let f = RFile::open_ranged("big.root")?;
 
 // Remote, over HTTP(S) byte-range requests (the `http` feature):
 let f = RFile::open_url("https://example.org/data/big.root")?;
-let h = oxiroot::hist::TH1::read_root(&f, "pt")?; // fetches only that key's bytes
+
+// Remote, over CERN's XRootD protocol (the `xrootd` feature):
+let f = RFile::open_url("root://eospublic.cern.ch//eos/root-eos/hsimple.root")?;
+
+let h = oxiroot::hist::TH1::read_root(&f, "hpx")?; // fetches only that key's bytes
 # Ok::<(), oxiroot::Error>(())
 ```
 
-Both return an ordinary [`RFile`]; every reader (histograms, graphs, `TTree`
+All return an ordinary [`RFile`]; every reader (histograms, graphs, `TTree`
 branches, RNTuple fields, `get_value`) works unchanged and pulls only what it
 reads — a single `TTree` branch fetches just its baskets, an RNTuple field just
 its pages. Opening parses only the header, directory, key list, and streamer
 info (a few small ranges).
 
-`open_url` needs the `http` feature (adds the pure-Rust `ureq`/rustls client, off
-by default) and a server that honors `Range` requests (`Accept-Ranges: bytes`).
-The `oxroot` CLI accepts a URL anywhere it takes a path when built with
-`--features http`: `oxroot dump https://example.org/data/big.root:events -n 5`.
+`open_url` dispatches on the URL scheme:
+
+- `http://` / `https://` — the `http` feature (adds the pure-Rust `ureq`/rustls
+  client). The server must honor `Range` requests (`Accept-Ranges: bytes`).
+- `root://` — the `xrootd` feature (pure `std::net`, no dependencies). It uses
+  the credential-free `unix` security protocol, so it reads world-readable /
+  open data from servers that offer it (e.g. `root://eospublic.cern.ch`);
+  GSI/Kerberos/token security is not implemented.
+
+Both features are off by default. The `oxroot` CLI accepts a URL anywhere it
+takes a path when built with the matching feature:
+`oxroot dump root://eospublic.cern.ch//eos/root-eos/hsimple.root:ntuple -n 5`.
 
 [`RFile`]: ../api/oxiroot/struct.RFile.html
 

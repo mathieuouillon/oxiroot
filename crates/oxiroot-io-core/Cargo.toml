@@ -20,6 +20,9 @@ mmap = ["dep:memmap2"]
 # Opt-in remote reads over HTTP(S) byte-range requests (`RFile::open_url`). Off
 # by default so the default build pulls no networking/TLS stack.
 http = ["dep:ureq"]
+# Opt-in remote reads over the XRootD `root://` protocol (`RFile::open_url`).
+# Pure `std::net` (unix auth, no crypto) — adds no dependencies.
+xrootd = []
 
 # Render every read path (mmap, http) in the docs.rs API reference.
 [package.metadata.docs.rs]
