@@ -2,9 +2,9 @@
 
 use crate::cmap::Colormap;
 use crate::draw::{DrawCommand, DrawGroup, Rect, Stroke};
+use crate::norm::Norm;
 use crate::style::Style;
 use crate::text::{self, FontStyle, HAlign, VAlign};
-use crate::ticker;
 
 /// Everything needed to draw a colorbar next to the axes.
 #[derive(Debug, Clone)]
@@ -12,6 +12,7 @@ pub(crate) struct ColorbarSpec {
     pub vmin: f64,
     pub vmax: f64,
     pub cmap: Colormap,
+    pub norm: Norm,
     pub label: Option<String>,
 }
 
@@ -40,23 +41,21 @@ pub(crate) fn draw_colorbar(g: &mut DrawGroup, rect: Rect, spec: &ColorbarSpec, 
         stroke: Some(Stroke::line(fg, s.px(s.axes_linewidth_pt))),
     });
 
-    // Ticks + labels on the right edge.
-    let span = (spec.vmax - spec.vmin).max(f64::MIN_POSITIVE);
+    // Ticks + labels on the right edge. The norm chooses the tick values
+    // (log/symlog give decade ticks) and their fractional position along the bar.
     let target = ((rect.h / 50.0).round() as usize).clamp(3, 9);
-    let ticks = ticker::ticks(spec.vmin, spec.vmax, target);
-    let step = ticker::nice_step(spec.vmin, spec.vmax, target);
-    let labels = ticker::format_ticks(&ticks, step);
+    let ticks = spec.norm.colorbar_ticks(spec.vmin, spec.vmax, target);
     let tlen = s.px(s.tick_major_len_pt);
     let pad = s.px(s.tick_pad_pt);
     let tlab = s.px(s.tick_label_size_pt);
     let tickstroke = Stroke::line(fg, s.px(s.tick_major_width_pt));
 
     let mut max_w = 0.0_f32;
-    for (&v, lab) in ticks.iter().zip(&labels) {
-        if v < spec.vmin || v > spec.vmax {
+    for (v, lab) in &ticks {
+        let Some(frac) = spec.norm.normalize(*v, spec.vmin, spec.vmax) else {
             continue;
-        }
-        let py = rect.bottom() - ((v - spec.vmin) / span) as f32 * rect.h;
+        };
+        let py = rect.bottom() - frac as f32 * rect.h;
         g.push(DrawCommand::Line {
             p0: (rect.right(), py),
             p1: (rect.right() + tlen, py),

@@ -7,7 +7,7 @@
 use oxiroot_hist::{Hist, TGraph, TProfile, TH1, TH2};
 use oxiroot_plot::{
     ratio_subplots, subplots, subplots_grid, Axes, Color, CurveOpts, Error, ErrorbarOpts, FontSet,
-    Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
+    Hist2dOpts, HistOpts, HistType, Norm, PdfPages, SaveOpts, Style,
 };
 
 // --- deterministic fixtures (a tiny LCG → reproducible bytes, no rng dep) ---
@@ -642,4 +642,123 @@ fn fit_stats_box_renders() {
     );
     // Deterministic.
     assert_eq!(with, render(Some(StatBox::new())));
+}
+
+// --- multi-page PDF ------------------------------------------------------------
+
+#[test]
+fn pdf_pages_writes_one_page_per_figure() {
+    // Three distinct figures collected into a single multi-page vector PDF.
+    let mut pdf = PdfPages::new();
+    for _ in 0..3 {
+        let (fig, mut ax) = subplots();
+        ax.hist(&gauss_hist());
+        pdf.add(&fig.with_axes([ax]));
+    }
+    assert_eq!(pdf.len(), 3);
+    assert!(!pdf.is_empty());
+
+    let bytes = pdf.to_bytes();
+    assert!(bytes.starts_with(b"%PDF-1.4") && bytes.ends_with(b"%%EOF\n"));
+
+    let s = String::from_utf8_lossy(&bytes);
+    // The page tree advertises three kids...
+    assert!(s.contains("/Count 3"), "page tree should hold 3 kids");
+    // ...and there are exactly three Page objects (the Pages tree node is
+    // "/Type /Pages", so "/Type /Page /Parent" matches only real pages).
+    assert_eq!(
+        s.matches("/Type /Page /Parent").count(),
+        3,
+        "one Page object per figure"
+    );
+}
+
+#[test]
+fn pdf_pages_saves_and_matches_single_page_document() {
+    let dir = std::env::temp_dir().join("oxiroot_plot_pdfpages_test");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let (fig, mut ax) = subplots();
+    ax.hist(&gauss_hist());
+    let fig = fig.with_axes([ax]);
+
+    // A one-figure PdfPages document is a valid, single-page PDF on disk.
+    let mut pdf = PdfPages::new();
+    pdf.add(&fig);
+    let path = dir.join("one.pdf");
+    pdf.save(&path).unwrap();
+    let disk = std::fs::read(&path).unwrap();
+    assert!(disk.starts_with(b"%PDF-1.4") && disk.ends_with(b"%%EOF\n"));
+    assert_eq!(pdf.len(), 1);
+    assert_eq!(
+        String::from_utf8_lossy(&disk)
+            .matches("/Type /Page /Parent")
+            .count(),
+        1,
+    );
+}
+
+// --- log / symlog color norm ---------------------------------------------------
+
+#[test]
+fn log_norm_changes_heatmap_and_is_valid() {
+    let h = th2();
+    let linear = {
+        let mut ax = Axes::new();
+        ax.hist2d_with(&h, Hist2dOpts::new().label("entries"));
+        ax.to_png_bytes(SaveOpts::new()).unwrap()
+    };
+    let log = {
+        let mut ax = Axes::new();
+        ax.hist2d_with(&h, Hist2dOpts::new().label("entries").log());
+        ax.to_png_bytes(SaveOpts::new()).unwrap()
+    };
+    // Both render to real PNGs...
+    assert!(linear.starts_with(b"\x89PNG") && log.starts_with(b"\x89PNG"));
+    // ...but the log norm must actually change the rendered colors.
+    assert_ne!(linear, log, "Norm::Log should change the heatmap");
+}
+
+#[test]
+fn log_norm_colorbar_shows_decade_ticks() {
+    // A wide dynamic range so the log colorbar spans multiple decades.
+    let mut h = Hist::reg(6, 0.0, 6.0)
+        .reg(1, 0.0, 1.0)
+        .double()
+        .named("wide");
+    for (ix, w) in [1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0]
+        .iter()
+        .enumerate()
+    {
+        h.fill_weight(ix as f64 + 0.5, 0.5, *w);
+    }
+    let mut ax = Axes::new();
+    ax.hist2d_with(&h, Hist2dOpts::new().label("weight").log());
+    let svg = ax.to_svg_string();
+    assert!(svg.starts_with("<svg"));
+    // The colorbar tick labels are drawn as glyph paths, so we can't grep the
+    // text out of the SVG directly — but the log render must differ from the
+    // linear one, which exercises the decade-tick path end to end.
+    let mut ax_lin = Axes::new();
+    ax_lin.hist2d_with(&h, Hist2dOpts::new().label("weight"));
+    assert_ne!(svg, ax_lin.to_svg_string());
+}
+
+#[test]
+fn symlog_norm_handles_data_straddling_zero() {
+    // A row of cells running from strongly negative to strongly positive — the
+    // regime where a plain log norm masks everything and only SymLog works.
+    let mut h = Hist::reg(5, 0.0, 5.0).reg(1, 0.0, 1.0).double().named("pm");
+    for (ix, w) in [-1000.0, -10.0, 0.0, 10.0, 1000.0].iter().enumerate() {
+        h.fill_weight(ix as f64 + 0.5, 0.5, *w);
+    }
+    let mut ax = Axes::new();
+    ax.hist2d_with(
+        &h,
+        Hist2dOpts::new()
+            .label("signed")
+            .norm(Norm::SymLog { linthresh: 1.0 }),
+    );
+    let png = ax.to_png_bytes(SaveOpts::new()).unwrap();
+    assert!(png.starts_with(b"\x89PNG"));
 }

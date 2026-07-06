@@ -577,7 +577,9 @@ ax2.save("heatmap.svg")?;
   (`TH1`, mplhep step/fill/band/errorbar staircase with `√N`/Sumw2 error bars),
   `errorbar`/`errorbar_with` (`TGraph`, all three error variants), `profile`
   (`TProfile`), `hist2d`/`hist2d_with` (`TH2` color mesh with a colorbar and the
-  real matplotlib `viridis`/`plasma` colormaps), `plot`, `function` (overlay any
+  real matplotlib `viridis`/`plasma` colormaps; `Hist2dOpts::log()`/`.norm(Norm::…)`
+  switches to a log / symlog color scale with a decade colorbar, like matplotlib's
+  `LogNorm`/`SymLogNorm`), `plot`, `function` (overlay any
   analytic or fitted curve), `grid`, `xlabel`/`ylabel`/`title`, `xlim`/`ylim`
   (taking a `Range`, e.g. `ax.xlim(0.0..100.0)`), and `legend`. The `*_with`
   methods take an options builder; the bare ones use defaults.
@@ -599,6 +601,8 @@ ax2.save("heatmap.svg")?;
   `.svg`, **and `.pdf`** (a hand-written vector PDF). `SaveOpts` sets the **DPI**
   for a sharper PNG (`save_with(path, SaveOpts::new().dpi(300.0))`) or a
   transparent background; `to_png_bytes`/`to_svg_string` render in memory.
+  `PdfPages` collects several figures into one **multi-page** vector PDF
+  (matplotlib's `PdfPages`).
 - **Fonts** — the default is **STIX Two** (a LaTeX-like serif: STIX Two Text +
   STIX Two Math) for a publication look with text and math in one typeface.
   `ax.fonts(FontSet::dejavu())` switches to the matplotlib sans-serif look, and

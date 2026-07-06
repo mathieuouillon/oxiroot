@@ -253,9 +253,19 @@ impl Builder {
     }
 }
 
-/// Render the IR to a single-page PDF document.
+/// One rendered page: its content stream, the translucent `ExtGState` pairs it
+/// references, and its media size. Assembled into a document by [`render_pages`].
+pub(crate) struct PdfPage {
+    content: String,
+    gstates: Vec<(u8, u8)>,
+    width: u32,
+    height: u32,
+}
+
+/// Render the IR for a single page into a [`PdfPage`] (content stream + alpha
+/// state), ready to be assembled — alone or with others — into a document.
 #[must_use]
-pub fn render(groups: &[DrawGroup], width: u32, height: u32, bg: Color) -> Vec<u8> {
+pub(crate) fn page(groups: &[DrawGroup], width: u32, height: u32, bg: Color) -> PdfPage {
     let mut b = Builder::new(height as f32);
 
     // Opaque background fills the page first (skip when transparent).
@@ -284,25 +294,54 @@ pub fn render(groups: &[DrawGroup], width: u32, height: u32, bg: Color) -> Vec<u
         }
     }
 
-    assemble(&b.content, &b.gstates, width, height)
+    PdfPage {
+        content: b.content,
+        gstates: b.gstates,
+        width,
+        height,
+    }
 }
 
-/// Assemble the PDF objects, the classic xref table, and the trailer with
-/// byte-exact offsets.
-fn assemble(content: &str, gstates: &[(u8, u8)], width: u32, height: u32) -> Vec<u8> {
-    let has_alpha = !gstates.is_empty();
+/// Render the IR to a single-page PDF document.
+#[must_use]
+pub fn render(groups: &[DrawGroup], width: u32, height: u32, bg: Color) -> Vec<u8> {
+    render_pages(&[page(groups, width, height, bg)])
+}
 
-    // ExtGState objects are numbered right after Contents (object 4): 5, 6, …
-    let extgstate = if has_alpha {
-        let mut s = String::from(" /Resources << /ExtGState <<");
-        for i in 0..gstates.len() {
-            let _ = write!(s, " /GS{} {} 0 R", i + 1, 5 + i);
-        }
-        s.push_str(" >> >>");
-        s
-    } else {
-        String::new()
-    };
+/// Object numbers for one page: its `/Page`, its `/Contents`, and its per-page
+/// `/ExtGState` objects (one per translucent alpha pair).
+struct PageObjs {
+    page: usize,
+    contents: usize,
+    extg: Vec<usize>,
+}
+
+/// Assemble one or more rendered pages into a single PDF document (PDF 1.4):
+/// object 1 is the Catalog, object 2 the Pages tree, then each page contributes
+/// a Page object, a Contents object, and its ExtGState objects — numbered in
+/// emission order so the xref offsets stay byte-exact.
+#[must_use]
+pub(crate) fn render_pages(pages: &[PdfPage]) -> Vec<u8> {
+    // Pre-assign object numbers (Catalog=1, Pages=2, then per page in order).
+    let mut next = 3usize;
+    let mut objs: Vec<PageObjs> = Vec::with_capacity(pages.len());
+    for p in pages {
+        let page = next;
+        let contents = next + 1;
+        next += 2;
+        let extg: Vec<usize> = (0..p.gstates.len())
+            .map(|_| {
+                let n = next;
+                next += 1;
+                n
+            })
+            .collect();
+        objs.push(PageObjs {
+            page,
+            contents,
+            extg,
+        });
+    }
 
     let mut buf: Vec<u8> = Vec::new();
     buf.extend_from_slice(b"%PDF-1.4\n");
@@ -311,6 +350,7 @@ fn assemble(content: &str, gstates: &[(u8, u8)], width: u32, height: u32) -> Vec
     let mut offsets: Vec<usize> = Vec::new();
     let put = |buf: &mut Vec<u8>, offsets: &mut Vec<usize>, n: usize, body: &str| {
         offsets.push(buf.len());
+        debug_assert_eq!(offsets.len(), n, "objects must be emitted in number order");
         buf.extend_from_slice(format!("{n} 0 obj\n").as_bytes());
         buf.extend_from_slice(body.as_bytes());
         buf.extend_from_slice(b"\nendobj\n");
@@ -322,35 +362,54 @@ fn assemble(content: &str, gstates: &[(u8, u8)], width: u32, height: u32) -> Vec
         1,
         "<< /Type /Catalog /Pages 2 0 R >>",
     );
+    let kids: String = objs.iter().map(|o| format!("{} 0 R ", o.page)).collect();
     put(
         &mut buf,
         &mut offsets,
         2,
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    );
-    put(
-        &mut buf,
-        &mut offsets,
-        3,
         &format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}]{extgstate} /Contents 4 0 R >>"
+            "<< /Type /Pages /Kids [{}] /Count {} >>",
+            kids.trim_end(),
+            pages.len()
         ),
     );
-    put(
-        &mut buf,
-        &mut offsets,
-        4,
-        &format!(
-            "<< /Length {} >>\nstream\n{content}\nendstream",
-            content.len()
-        ),
-    );
-    if has_alpha {
-        for (i, (ca, cap)) in gstates.iter().enumerate() {
+
+    for (p, o) in pages.iter().zip(&objs) {
+        // A page's translucent alpha states are its own /ExtGState resources.
+        let resources = if o.extg.is_empty() {
+            String::new()
+        } else {
+            let mut s = String::from(" /Resources << /ExtGState <<");
+            for (i, &e) in o.extg.iter().enumerate() {
+                let _ = write!(s, " /GS{} {} 0 R", i + 1, e);
+            }
+            s.push_str(" >> >>");
+            s
+        };
+        put(
+            &mut buf,
+            &mut offsets,
+            o.page,
+            &format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}]{resources} /Contents {} 0 R >>",
+                p.width, p.height, o.contents
+            ),
+        );
+        put(
+            &mut buf,
+            &mut offsets,
+            o.contents,
+            &format!(
+                "<< /Length {} >>\nstream\n{}\nendstream",
+                p.content.len(),
+                p.content
+            ),
+        );
+        for (&e, (ca, cap)) in o.extg.iter().zip(&p.gstates) {
             put(
                 &mut buf,
                 &mut offsets,
-                5 + i,
+                e,
                 &format!(
                     "<< /Type /ExtGState /ca {} /CA {} >>",
                     num(f32::from(*ca) / 255.0),

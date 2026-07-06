@@ -18,7 +18,9 @@
 //!   [`Axes::profile`] (`TProfile`); [`Axes::plot`] for raw `(x, y)`.
 //! - **2-D histograms** — [`Axes::hist2d`]/[`Axes::hist2d_with`] render a `TH2` as
 //!   a color mesh with a colorbar and the real matplotlib `viridis`/`plasma`
-//!   [`Colormap`]s.
+//!   [`Colormap`]s. [`Hist2dOpts::log`] (or [`Hist2dOpts::norm`] with a [`Norm`])
+//!   switches to a log / symlog color scale with a decade colorbar, like
+//!   matplotlib's `LogNorm`/`SymLogNorm`.
 //! - **Curves** — [`Axes::function`] overlays any analytic closure; with the
 //!   `fit` feature, `Axes::model` overlays a fitted `oxiroot_fit::Model`.
 //! - **Decoration** — `xlabel`/`ylabel`/`title` (with LaTeX), `xlim`/`ylim`,
@@ -28,7 +30,8 @@
 //! - **Output** — [`Axes::save`]/[`Figure::save`] choose the format from the
 //!   file extension (`.png`, `.svg`, `.pdf`); [`SaveOpts`] sets the DPI for a
 //!   sharper PNG or a transparent background, and `to_png_bytes`/`to_svg_string`
-//!   render in memory.
+//!   render in memory. [`PdfPages`] collects several figures into one multi-page
+//!   vector PDF (matplotlib's `PdfPages`).
 //!
 //! The default look reproduces a plain matplotlib figure; [`Style::mplhep`]
 //! switches to the in-pointing, all-sides, minor-tick HEP style.
@@ -97,6 +100,7 @@ mod colorbar;
 mod draw;
 mod legend;
 mod mathtext;
+pub mod norm;
 mod render;
 #[cfg(feature = "fit")]
 mod statbox;
@@ -111,10 +115,11 @@ pub use color::{Color, ParseColorError, TAB10};
 pub use error::{Error, Result};
 pub use figure::{
     ratio_subplots, ratio_subplots_with, subplots, subplots_grid, subplots_grid_with,
-    subplots_with, Figure, SaveOpts,
+    subplots_with, Figure, PdfPages, SaveOpts,
 };
 pub use fonts::FontSet;
 pub use gridspec::GridSpec;
+pub use norm::Norm;
 #[cfg(feature = "fit")]
 pub use statbox::{Corner, StatBox};
 pub use style::Style;
@@ -265,6 +270,7 @@ mod tests {
                 cmap: Colormap::Viridis,
                 vmin: 1.0,
                 vmax: 9.0,
+                norm: norm::Norm::Linear,
             };
             let t = Transform::new(Rect::new(0.0, 0.0, 300.0, 300.0), 0.0, 3.0, 0.0, 3.0);
             let mut g = DrawGroup::new(None);

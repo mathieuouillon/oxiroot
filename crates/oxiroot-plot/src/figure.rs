@@ -261,6 +261,72 @@ impl Default for Figure {
     }
 }
 
+/// Collect several figures into a single multi-page vector PDF (matplotlib's
+/// `PdfPages`). Each added figure becomes one page, at its own size; save the
+/// whole document with [`save`](PdfPages::save).
+///
+/// # Examples
+/// ```no_run
+/// use oxiroot_plot::{subplots, PdfPages};
+/// let mut pdf = PdfPages::new();
+/// for k in 0..3 {
+///     let (fig, mut ax) = subplots();
+///     ax.plot(&[0.0, 1.0], &[0.0, k as f64]);
+///     pdf.add(&fig);
+/// }
+/// pdf.save("report.pdf").unwrap(); // one PDF, three pages
+/// ```
+#[derive(Default)]
+pub struct PdfPages {
+    pages: Vec<pdf::PdfPage>,
+}
+
+impl PdfPages {
+    /// A new, empty document.
+    #[must_use]
+    pub fn new() -> Self {
+        PdfPages::default()
+    }
+
+    /// Append `fig` as the next page (default save options). Returns `&mut self`
+    /// so calls can be chained.
+    pub fn add(&mut self, fig: &Figure) -> &mut Self {
+        self.add_with(fig, SaveOpts::default())
+    }
+
+    /// Append `fig` as the next page with explicit options (DPI, transparency).
+    pub fn add_with(&mut self, fig: &Figure, opts: SaveOpts) -> &mut Self {
+        let (groups, w, h) = fig.render_groups(opts.dpi);
+        self.pages
+            .push(pdf::page(&groups, w, h, fig.background(opts.transparent)));
+        self
+    }
+
+    /// The number of pages added so far.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Whether no pages have been added yet.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.pages.is_empty()
+    }
+
+    /// The assembled multi-page PDF as bytes.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        pdf::render_pages(&self.pages)
+    }
+
+    /// Write the multi-page PDF to `path`.
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
+        std::fs::write(path, self.to_bytes())?;
+        Ok(())
+    }
+}
+
 /// Create a figure and a single axes sharing the default style (matplotlib's
 /// `subplots()`).
 #[must_use]

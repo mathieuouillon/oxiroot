@@ -572,6 +572,7 @@ pub(crate) struct MeshArtist {
     pub cmap: crate::cmap::Colormap,
     pub vmin: f64,
     pub vmax: f64,
+    pub norm: crate::norm::Norm,
 }
 
 impl MeshArtist {
@@ -597,14 +598,6 @@ impl MeshArtist {
         if nx == 0 {
             return;
         }
-        let span = {
-            let s = self.vmax - self.vmin;
-            if s.abs() < f64::EPSILON {
-                1.0
-            } else {
-                s
-            }
-        };
         for ix in 0..nx {
             if self.xedges.len() < ix + 2 {
                 break;
@@ -621,11 +614,15 @@ impl MeshArtist {
                 }
                 // Empty bins (no data) are left undrawn so the page background
                 // shows through, instead of being painted the colormap's value-0
-                // color (ROOT COLZ / mplhep `cmin` behavior).
+                // color (ROOT COLZ / mplhep `cmin` behavior). Values the norm
+                // cannot place (e.g. ≤ 0 under a log norm) are likewise skipped.
                 if col[iy] == 0.0 {
                     continue;
                 }
-                let color = self.cmap.sample((col[iy] - self.vmin) / span);
+                let Some(frac) = self.norm.normalize(col[iy], self.vmin, self.vmax) else {
+                    continue;
+                };
+                let color = self.cmap.sample(frac);
                 let y0 = t.y(self.yedges[iy]);
                 let y1 = t.y(self.yedges[iy + 1]);
                 let (ry, rh) = (y0.min(y1), (y1 - y0).abs());

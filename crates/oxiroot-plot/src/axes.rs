@@ -471,11 +471,15 @@ impl Axes {
         // exactly 0) are not drawn — they show the page background, like ROOT's
         // COLZ — so they must not anchor the color scale at 0 either.
         let (mut dmin, mut dmax) = (f64::INFINITY, f64::NEG_INFINITY);
+        let mut dmin_pos = f64::INFINITY; // smallest strictly-positive value, for log
         for row in &values {
             for &v in row {
                 if v != 0.0 {
                     dmin = dmin.min(v);
                     dmax = dmax.max(v);
+                }
+                if v > 0.0 {
+                    dmin_pos = dmin_pos.min(v);
                 }
             }
         }
@@ -484,7 +488,18 @@ impl Axes {
             dmin = 0.0;
             dmax = 1.0;
         }
-        let vmin = opts.vmin.unwrap_or(dmin);
+        // A log scale needs a strictly-positive floor; fall back to the smallest
+        // positive bin (or 1) when the user did not set an explicit vmin.
+        let default_min = if matches!(opts.norm, crate::norm::Norm::Log) {
+            if dmin_pos.is_finite() {
+                dmin_pos
+            } else {
+                1.0
+            }
+        } else {
+            dmin
+        };
+        let vmin = opts.vmin.unwrap_or(default_min);
         let vmax = opts.vmax.unwrap_or(dmax);
         let nx = values.len();
         let ny = values.first().map_or(0, Vec::len);
@@ -496,6 +511,7 @@ impl Axes {
             vmin,
             vmax,
             cmap: opts.cmap,
+            norm: opts.norm,
             label: opts.label,
         });
         self.add_artist(Artist::Mesh(MeshArtist {
@@ -505,6 +521,7 @@ impl Axes {
             cmap: opts.cmap,
             vmin,
             vmax,
+            norm: opts.norm,
         }));
         self
     }
@@ -1182,6 +1199,7 @@ pub struct Hist2dOpts {
     pub(crate) cmap: Colormap,
     pub(crate) vmin: Option<f64>,
     pub(crate) vmax: Option<f64>,
+    pub(crate) norm: crate::norm::Norm,
     pub(crate) label: Option<String>,
 }
 
@@ -1203,6 +1221,19 @@ impl Hist2dOpts {
         self.vmin = Some(range.start);
         self.vmax = Some(range.end);
         self
+    }
+    /// Set the color normalization ([`Norm::Linear`](crate::Norm::Linear) default,
+    /// [`Norm::Log`](crate::Norm::Log), or [`Norm::SymLog`](crate::Norm::SymLog)).
+    #[must_use]
+    pub fn norm(mut self, norm: crate::norm::Norm) -> Self {
+        self.norm = norm;
+        self
+    }
+    /// Shorthand for a base-10 log color scale (`.norm(Norm::Log)`): the colorbar
+    /// gets decade ticks and non-positive bins are masked.
+    #[must_use]
+    pub fn log(self) -> Self {
+        self.norm(crate::norm::Norm::Log)
     }
     /// Set the colorbar label.
     #[must_use]
