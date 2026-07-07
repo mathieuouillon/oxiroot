@@ -7,10 +7,10 @@
 //! [`update_root_file`] appends extra objects to an existing file *in place*,
 //! leaving its existing bytes (objects, subdirectories, an RNTuple) untouched.
 
-use crate::buffer::WBuffer;
+use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
 
-use super::header::BIG_FILE_VERSION;
+use super::header::{FileHeader, BIG_FILE_VERSION};
 use super::key::TKey;
 use super::rfile::RFile;
 
@@ -121,6 +121,29 @@ pub fn write_dir_record_fmt(
     w.be_u16(1); // UUID version
     w.bytes(&[0u8; 16]); // UUID
     (p_nbytes_keys, p_seek_keys)
+}
+
+/// Write the **root** (top) directory record, always reserving the big (60-byte)
+/// on-disk size even when the file is small. When `!big` the 48-byte small record
+/// is followed by 12 zero pad bytes, so the slot is 60 bytes either way. This
+/// mirrors ROOT's `TDirectoryFile::Sizeof()` (which reserves the 64-bit-seek
+/// width whenever the file version ≥ 40000) and lets [`update_root_file`] later
+/// widen the record to the 64-bit form *in place* — without shifting the objects,
+/// subdirectories, or RNTuple that follow it. The name key's `obj_len` for this
+/// record must therefore be `name_title_len + dir_record_total(true)` (= +60).
+pub fn write_root_dir_record_fmt(
+    w: &mut WBuffer,
+    seek_dir: u64,
+    seek_parent: u64,
+    nbytes_name: u32,
+    big: bool,
+) -> (crate::buffer::Patch, crate::buffer::Patch) {
+    let handles = write_dir_record_fmt(w, seek_dir, seek_parent, nbytes_name, big);
+    if !big {
+        // Reserve the extra width the 64-bit form needs (three seeks widen 4→8).
+        w.bytes(&[0u8; 12]);
+    }
+    handles
 }
 
 /// Key version written for the small (32-bit seek) form; the big form adds 1000,
@@ -366,11 +389,13 @@ fn write_streamers_pass(
         w.u8(0);
     }
 
-    // --- Root directory name key + object (at fBEGIN = 100). ---
+    // --- Root directory name key + object (at fBEGIN = 100). The root record is
+    // always reserved at the big (60-byte) size so the file can later be appended
+    // into the 64-bit form in place (as ROOT reserves it). ---
     let first_klen = key_len_fmt(DIR_CLASS, file_name, "", big);
     let name_title_len = (1 + file_name.len()) + 1; // object name=file_name, title=""
     let f_nbytes_name = first_klen as usize + name_title_len; // dir record starts here
-    let first_obj_len = name_title_len as u32 + dir_record_total(big);
+    let first_obj_len = name_title_len as u32 + dir_record_total(true);
 
     write_key_header_fmt(
         &mut w,
@@ -387,7 +412,7 @@ fn write_streamers_pass(
     w.string(file_name); // object: name
     w.string(""); // object: title
     let (p_dir_nbytes_keys, p_dir_seek_keys) =
-        write_dir_record_fmt(&mut w, 100, 0, f_nbytes_name as u32, big);
+        write_root_dir_record_fmt(&mut w, 100, 0, f_nbytes_name as u32, big);
 
     // --- One key + object per stored object. ---
     let mut seeks = Vec::with_capacity(objects.len());
@@ -509,8 +534,15 @@ fn write_streamers_pass(
 /// objects and a relocated root key list are written after them, and only the
 /// file header and directory record are patched. Because nothing existing moves,
 /// it preserves files that contain subdirectories and an RNTuple (whose anchor
-/// and page locators hold absolute file offsets). Only the small (32-bit) TFile
-/// form is supported; a big-format file returns an error.
+/// and page locators hold absolute file offsets).
+///
+/// When the appended result would cross 2 GiB (or the existing file is already
+/// the 64-bit form), the output is written in ROOT's big (64-bit) container form:
+/// the new keys and the root key list use 64-bit seeks, and the file header and
+/// root directory record are rewritten in place in big form. This needs the root
+/// directory record to have been reserved at its 64-bit width (60 bytes) — every
+/// oxiroot- or ROOT-written file is; a legacy file that reserved only 48 bytes
+/// returns an error rather than corrupting the object that follows it.
 ///
 /// The file's existing streamer info is kept (the appended standard objects are
 /// read via ROOT/uproot's built-in dictionaries); `streamer_info` is only used
@@ -522,14 +554,28 @@ pub fn update_root_file(
     compression: u32,
     streamer_info: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
+    update_root_file_threshold(
+        existing,
+        file_name,
+        new_objects,
+        compression,
+        streamer_info,
+        KSTART_BIG_FILE,
+    )
+}
+
+/// Like [`update_root_file`] but with the big-file threshold injectable for tests.
+#[doc(hidden)]
+pub fn update_root_file_threshold(
+    existing: &[u8],
+    file_name: &str,
+    new_objects: &[ObjectRecord],
+    compression: u32,
+    streamer_info: Option<&[u8]>,
+    threshold: u64,
+) -> Result<Vec<u8>> {
     let file = RFile::from_bytes(existing.to_vec())?;
     let header = file.header().clone();
-    if header.is_big() {
-        return Err(Error::Format(
-            "appending to a big-format (>2 GiB) TFile is not supported".into(),
-        ));
-    }
-    let begin = header.begin;
     let end = header.end as usize;
     if existing.len() < end {
         return Err(Error::Format(format!(
@@ -542,10 +588,56 @@ pub fn update_root_file(
     // are relisted, pointing at their unchanged offsets, in the new key list.
     let existing_keys: Vec<&TKey> = file.keys().iter().filter(|k| !k.is_deleted()).collect();
 
+    // An already-big file must stay big. Otherwise build the small form first and
+    // only rebuild big if it would overflow the 32-bit seek pointers.
+    if !header.is_big() {
+        let small = append_pass(
+            existing,
+            &header,
+            &existing_keys,
+            file_name,
+            new_objects,
+            compression,
+            streamer_info,
+            false,
+        )?;
+        if small.len() as u64 <= threshold {
+            return Ok(small);
+        }
+    }
+    append_pass(
+        existing,
+        &header,
+        &existing_keys,
+        file_name,
+        new_objects,
+        compression,
+        streamer_info,
+        true,
+    )
+}
+
+/// One append pass in the small (32-bit) or big (64-bit) container form: keep the
+/// existing bytes, append the new keys + payloads + root key list, then patch the
+/// header and root directory record in place.
+#[allow(clippy::too_many_arguments)]
+fn append_pass(
+    existing: &[u8],
+    header: &FileHeader,
+    existing_keys: &[&TKey],
+    file_name: &str,
+    new_objects: &[ObjectRecord],
+    compression: u32,
+    streamer_info: Option<&[u8]>,
+    big: bool,
+) -> Result<Vec<u8>> {
+    let begin = header.begin;
+    let end = header.end as usize;
+
     // A new object whose name matches an existing key (or an earlier new object)
     // gets the next-higher cycle, as ROOT does.
     let mut max_cycle: std::collections::HashMap<&str, u16> = std::collections::HashMap::new();
-    for k in &existing_keys {
+    for k in existing_keys {
         let e = max_cycle.entry(k.name.as_str()).or_insert(0);
         *e = (*e).max(k.cycle);
     }
@@ -574,7 +666,7 @@ pub fn update_root_file(
         let payload = on_disk_payload(&obj.object, compression);
         let seek = out.len() as u64;
         let mut w = WBuffer::new();
-        write_key_header_cycle(
+        write_key_header_fmt(
             &mut w,
             &obj.class_name,
             &obj.name,
@@ -584,6 +676,7 @@ pub fn update_root_file(
             seek,
             begin,
             cycle,
+            big,
         );
         out.extend_from_slice(&w.into_vec());
         out.extend_from_slice(&payload);
@@ -600,12 +693,12 @@ pub fn update_root_file(
 
     // --- Append a streamer info record only if the file has none. ---
     let (seek_info, nbytes_info) = if header.seek_info != 0 {
-        (header.seek_info as u32, header.nbytes_info) // keep existing
+        (header.seek_info, header.nbytes_info) // keep existing
     } else if let Some(si) = streamer_info {
         let payload = on_disk_payload(si, compression);
         let seek = out.len() as u64;
         let mut w = WBuffer::new();
-        write_key_header(
+        write_key_header_fmt(
             &mut w,
             TLIST_CLASS,
             STREAMER_INFO_NAME,
@@ -614,29 +707,36 @@ pub fn update_root_file(
             payload.len() as u32,
             seek,
             begin,
+            1,
+            big,
         );
         out.extend_from_slice(&w.into_vec());
         out.extend_from_slice(&payload);
-        let klen = key_len(TLIST_CLASS, STREAMER_INFO_NAME, STREAMER_INFO_TITLE) as u32;
-        (seek as u32, klen + payload.len() as u32)
+        let klen = key_len_fmt(TLIST_CLASS, STREAMER_INFO_NAME, STREAMER_INFO_TITLE, big) as u32;
+        (seek, klen + payload.len() as u32)
     } else {
         (0, 0)
     };
 
-    // --- Append the new root key list (existing keys + new keys). ---
+    // --- Append the new root key list (existing keys + new keys). A key-list
+    // entry's format must match the actual on-disk key it describes (its `fKeyLen`
+    // sets a reader's payload offset), so an existing key is relisted in its
+    // ORIGINAL format — a small on-disk key stays a small entry even in a big
+    // file's key list, which ROOT/uproot read fine. New keys were written on-disk
+    // in `big` form, so their entries are `big`. ---
     let keylist_seek = out.len() as u64;
     let entry_headers: usize = existing_keys
         .iter()
-        .map(|k| key_len(&k.class_name, &k.name, &k.title) as usize)
+        .map(|k| k.key_len as usize)
         .chain(
             new_keys
                 .iter()
-                .map(|k| key_len(&k.class, &k.name, &k.title) as usize),
+                .map(|k| key_len_fmt(&k.class, &k.name, &k.title, big) as usize),
         )
         .sum();
     let keylist_obj_len = (4 + entry_headers) as u32;
     let mut w = WBuffer::new();
-    write_key_header(
+    write_key_header_fmt(
         &mut w,
         DIR_CLASS,
         file_name,
@@ -645,13 +745,15 @@ pub fn update_root_file(
         keylist_obj_len,
         keylist_seek,
         begin,
+        1,
+        big,
     );
     let nkeys = existing_keys.len() + new_keys.len();
     w.be_i32(nkeys as i32);
-    for k in &existing_keys {
+    for k in existing_keys {
         let klen = k.key_len as u32;
         let payload_len = (k.nbytes as u32).saturating_sub(klen);
-        write_key_header_cycle(
+        write_key_header_fmt(
             &mut w,
             &k.class_name,
             &k.name,
@@ -661,10 +763,11 @@ pub fn update_root_file(
             k.seek_key,
             begin,
             k.cycle,
+            k.version > 1000, // preserve the on-disk key's format
         );
     }
     for k in &new_keys {
-        write_key_header_cycle(
+        write_key_header_fmt(
             &mut w,
             &k.class,
             &k.name,
@@ -674,29 +777,88 @@ pub fn update_root_file(
             k.seek,
             begin,
             k.cycle,
+            big,
         );
     }
     out.extend_from_slice(&w.into_vec());
-    let keylist_nbytes = key_len(DIR_CLASS, file_name, "") as u32 + keylist_obj_len;
+    let keylist_nbytes = key_len_fmt(DIR_CLASS, file_name, "", big) as u32 + keylist_obj_len;
 
     let f_end = out.len();
-    guard_small_format(f_end)?;
-
-    // --- Patch the header pointers and the directory record in place. ---
-    // Small-format header field offsets: fEND=12, fSeekFree=16, fNbytesFree=20,
-    // nfree=24, fSeekInfo=37, fNbytesInfo=41.
-    patch_be_u32(&mut out, 12, f_end as u32); // fEND
-    patch_be_u32(&mut out, 16, 0); // fSeekFree (drop the stale free list)
-    patch_be_u32(&mut out, 20, 0); // fNbytesFree
-    patch_be_u32(&mut out, 24, 0); // nfree
-    patch_be_u32(&mut out, 37, seek_info); // fSeekInfo
-    patch_be_u32(&mut out, 41, nbytes_info); // fNbytesInfo
-
-    // The root directory record sits at fBEGIN + fNbytesName; patch its fSeekKeys
-    // / fNbytesKeys (small-format offsets 26 / 10 within the record).
     let dir_record = begin as usize + header.nbytes_name as usize;
-    patch_be_u32(&mut out, dir_record + 10, keylist_nbytes); // fNbytesKeys
-    patch_be_u32(&mut out, dir_record + 26, keylist_seek as u32); // fSeekKeys
+
+    if !big {
+        guard_small_format(f_end)?;
+        // --- Patch the small-format header pointers + directory record in place.
+        // Header offsets: fEND=12, fSeekFree=16, fNbytesFree=20, nfree=24,
+        // fSeekInfo=37, fNbytesInfo=41; dir-record offsets: fNbytesKeys=10,
+        // fSeekKeys=26.
+        patch_be_u32(&mut out, 12, f_end as u32);
+        patch_be_u32(&mut out, 16, 0);
+        patch_be_u32(&mut out, 20, 0);
+        patch_be_u32(&mut out, 24, 0);
+        patch_be_u32(&mut out, 37, seek_info as u32);
+        patch_be_u32(&mut out, 41, nbytes_info);
+        patch_be_u32(&mut out, dir_record + 10, keylist_nbytes);
+        patch_be_u32(&mut out, dir_record + 26, keylist_seek as u32);
+        return Ok(out);
+    }
+
+    // --- Big output: rewrite the file header and root directory record in place.
+    // The header always fits in `0..fBEGIN`; the directory record must have been
+    // reserved at the 64-bit (60-byte) width, or its object would be overrun. ---
+    let name_title_len = (1 + file_name.len()) + 1;
+    let name_key = TKey::read(&mut RBuffer::new(&existing[begin as usize..]))?;
+    let reserved = (name_key.obj_len as usize).saturating_sub(name_title_len);
+    if reserved < dir_record_total(true) as usize {
+        return Err(Error::Format(format!(
+            "cannot append into the 64-bit form: this file's root directory record \
+             reserves {reserved} bytes, but the big form needs {}. Rewrite the file \
+             with RootFile::create (which reserves the 64-bit width) first.",
+            dir_record_total(true)
+        )));
+    }
+
+    // Rewrite the 100-byte header in big form (preserving name/compress/UUID).
+    let ver = if header.is_big() {
+        header.version
+    } else {
+        header.version + BIG_FILE_VERSION
+    };
+    let mut h = WBuffer::new();
+    h.bytes(b"root");
+    h.be_u32(ver);
+    h.be_u32(begin as u32); // fBEGIN
+    h.be_u64(f_end as u64); // fEND
+    h.be_u64(0); // fSeekFree
+    h.be_u32(0); // fNbytesFree
+    h.be_u32(0); // nfree
+    h.be_u32(header.nbytes_name); // fNbytesName
+    h.u8(8); // fUnits
+    h.be_u32(header.compress); // fCompress
+    h.be_u64(seek_info); // fSeekInfo
+    h.be_u32(nbytes_info); // fNbytesInfo
+    h.be_u16(header.uuid.version);
+    h.bytes(&header.uuid.bytes);
+    while h.len() < begin as usize {
+        h.u8(0);
+    }
+    let h = h.into_vec();
+    out[..h.len()].copy_from_slice(&h);
+
+    // Rewrite the root directory record in big form into its 60-byte slot.
+    let mut d = WBuffer::new();
+    d.be_i16(1005); // version (>1000 ⇒ 64-bit seeks)
+    d.be_u32(DATIME); // fDatimeC
+    d.be_u32(DATIME); // fDatimeM
+    d.be_u32(keylist_nbytes); // fNbytesKeys
+    d.be_i32(header.nbytes_name as i32); // fNbytesName
+    d.be_u64(begin); // fSeekDir
+    d.be_u64(0); // fSeekParent
+    d.be_u64(keylist_seek); // fSeekKeys
+    d.be_u16(1); // UUID version
+    d.bytes(&[0u8; 16]); // UUID
+    let d = d.into_vec();
+    out[dir_record..dir_record + d.len()].copy_from_slice(&d);
 
     Ok(out)
 }
@@ -861,11 +1023,12 @@ fn write_dirs_pass(
         w.u8(0);
     }
 
-    // --- Root directory name key + record (at fBEGIN = 100). ---
+    // --- Root directory name key + record (at fBEGIN = 100). Always reserved at
+    // the big (60-byte) size so the file can later be appended into 64-bit form. ---
     let first_klen = key_len_fmt(DIR_CLASS, file_name, "", big);
     let name_title_len = (1 + file_name.len()) + 1;
     let f_nbytes_name = (first_klen as usize + name_title_len) as u32;
-    let first_obj_len = name_title_len as u32 + dir_total;
+    let first_obj_len = name_title_len as u32 + dir_record_total(true);
     write_key_header_fmt(
         &mut w,
         DIR_CLASS,
@@ -880,7 +1043,7 @@ fn write_dirs_pass(
     );
     w.string(file_name);
     w.string("");
-    let (p_root_nbk, p_root_sk) = write_dir_record_fmt(&mut w, 100, 0, f_nbytes_name, big);
+    let (p_root_nbk, p_root_sk) = write_root_dir_record_fmt(&mut w, 100, 0, f_nbytes_name, big);
 
     // --- Root objects. ---
     let mut root_seeks = Vec::with_capacity(root_objects.len());

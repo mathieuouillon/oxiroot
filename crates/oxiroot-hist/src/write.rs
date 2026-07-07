@@ -11,7 +11,7 @@ use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
 use oxiroot_io_core::{
-    update_root_file, write_root_file_with_dirs_threshold,
+    update_root_file_threshold, write_root_file_with_dirs_threshold,
     write_root_file_with_streamers_threshold, Compression, ObjectRecord, Subdir, KSTART_BIG_FILE,
 };
 // The object framework (the `WriteRoot` trait + `record_of`) now lives in
@@ -1305,7 +1305,9 @@ impl RootFile {
                             .to_string(),
                     ));
                 }
-                update_root_file(&existing, &file_name, &self.root, setting, streamers)?
+                update_root_file_threshold(
+                    &existing, &file_name, &self.root, setting, streamers, threshold,
+                )?
             }
             None if self.dirs.is_empty() => write_root_file_with_streamers_threshold(
                 &file_name, &self.root, setting, streamers, threshold,

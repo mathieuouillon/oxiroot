@@ -73,3 +73,93 @@ fn big_container_with_subdirs_round_trips() {
         inner
     );
 }
+
+#[test]
+fn append_crossing_into_big_round_trips() {
+    // A small file, then an append whose result is forced past the (lowered)
+    // threshold: the appended file must switch to the 64-bit form in place —
+    // keeping the first object untouched — and read back both objects.
+    let out = PathBuf::from("/tmp/oxiroot_big_append.root");
+    let first = th1("h_first");
+    RootFile::create(&out)
+        .add(&first)
+        .write(oxiroot_io_core::Compression::None) // normal small file
+        .expect("write first");
+    // Sanity: the base file is small.
+    assert!(!RFile::open(&out).unwrap().header().is_big());
+
+    let second = th1("h_second");
+    RootFile::open(&out)
+        .expect("open")
+        .add(&second)
+        .write_threshold(oxiroot_io_core::Compression::None, 0) // force big output
+        .expect("append big");
+
+    let f = RFile::open(&out).expect("reopen");
+    assert!(
+        f.header().is_big(),
+        "the appended file must be the big form"
+    );
+    assert_eq!(f.header().units, 8);
+    // Both the pre-existing (untouched, small on-disk) key and the appended one
+    // read back through the big key list.
+    assert_eq!(TH1::read_root(&f, "h_first").expect("first"), first);
+    assert_eq!(TH1::read_root(&f, "h_second").expect("second"), second);
+}
+
+#[test]
+fn append_to_already_big_file_round_trips() {
+    // Appending to a file that is *already* the 64-bit form stays big and keeps
+    // every object.
+    let out = PathBuf::from("/tmp/oxiroot_big_append2.root");
+    let a = th1("a");
+    RootFile::create(&out)
+        .add(&a)
+        .write_threshold(oxiroot_io_core::Compression::None, 0) // big from the start
+        .expect("write big base");
+    assert!(RFile::open(&out).unwrap().header().is_big());
+
+    let b = th1("b");
+    RootFile::open(&out)
+        .expect("open")
+        .add(&b)
+        .write_threshold(oxiroot_io_core::Compression::None, 0)
+        .expect("append to big");
+
+    let f = RFile::open(&out).expect("reopen");
+    assert!(f.header().is_big());
+    assert_eq!(TH1::read_root(&f, "a").expect("a"), a);
+    assert_eq!(TH1::read_root(&f, "b").expect("b"), b);
+}
+
+#[test]
+fn append_crossing_into_big_preserves_existing_subdir() {
+    // The point of in-place append: an existing subdirectory (its keys hold
+    // absolute offsets) survives the switch to the 64-bit form untouched.
+    let out = PathBuf::from("/tmp/oxiroot_big_append_subdir.root");
+    let top = th1("top");
+    let inner = th1("inner");
+    RootFile::create(&out)
+        .add(&top)
+        .dir("region", |d| d.add(&inner))
+        .write(oxiroot_io_core::Compression::None) // small file with a subdir
+        .expect("write base");
+    assert!(!RFile::open(&out).unwrap().header().is_big());
+
+    let extra = th1("extra");
+    RootFile::open(&out)
+        .expect("open")
+        .add(&extra)
+        .write_threshold(oxiroot_io_core::Compression::None, 0) // force big
+        .expect("append big");
+
+    let f = RFile::open(&out).expect("reopen");
+    assert!(f.header().is_big());
+    assert_eq!(TH1::read_root(&f, "top").expect("top"), top);
+    assert_eq!(TH1::read_root(&f, "extra").expect("extra"), extra);
+    // The untouched subdirectory (at its original offsets) still resolves.
+    assert_eq!(
+        TH1::read_root_in(&f, "region", "inner").expect("inner"),
+        inner
+    );
+}

@@ -16,7 +16,7 @@ use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::{
     dir_record_total, key_len_fmt, seek_value, seek_zero, write_dir_record_fmt,
-    write_key_header_fmt, Compression, KSTART_BIG_FILE,
+    write_key_header_fmt, write_root_dir_record_fmt, Compression, KSTART_BIG_FILE,
 };
 
 use crate::column::ColumnType;
@@ -1990,8 +1990,9 @@ fn rntuples_one_shot_pass(
     let first_klen = key_len_fmt("TFile", file_name, "", big);
     let name_title_len = (1 + file_name.len()) + 1;
     let f_nbytes_name = first_klen as usize + name_title_len;
-    let dir_record_len = if big { 42 } else { 30 };
-    let first_obj_len = (name_title_len + dir_record_len + 18) as u32;
+    // The root record is always reserved at the big (60-byte) size so the file
+    // could later be appended into the 64-bit form in place (matching ROOT).
+    let first_obj_len = name_title_len as u32 + dir_record_total(true);
     write_key_header_fmt(
         &mut w,
         "TFile",
@@ -2006,7 +2007,8 @@ fn rntuples_one_shot_pass(
     );
     w.string(file_name);
     w.string("");
-    let (p_root_nbk, p_root_sk) = write_dir_record_fmt(&mut w, 100, 0, f_nbytes_name as u32, big);
+    let (p_root_nbk, p_root_sk) =
+        write_root_dir_record_fmt(&mut w, 100, 0, f_nbytes_name as u32, big);
 
     // --- Root RNTuples. ---
     let mut root_entries: Vec<(String, String, String, u32, u64)> = Vec::new();
@@ -2561,12 +2563,13 @@ impl<W: Write + Seek> RNTupleWriter<W> {
             w.u8(0);
         }
 
-        // Root directory name key + TDirectory record (at fBEGIN = 100).
+        // Root directory name key + TDirectory record (at fBEGIN = 100). The
+        // record is always reserved at the big (60-byte) size so the file could be
+        // appended into the 64-bit form in place (matching ROOT).
         let first_klen = key_len_fmt("TFile", file_name, "", big);
         let name_title_len = (1 + file_name.len()) + 1;
         let f_nbytes_name = (first_klen as usize + name_title_len) as u32;
-        let dir_record_len = if big { 42 } else { 30 };
-        let first_obj_len = (name_title_len + dir_record_len + 18) as u32;
+        let first_obj_len = name_title_len as u32 + dir_record_total(true);
         write_key_header_fmt(
             &mut w,
             "TFile",
@@ -2593,6 +2596,9 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         seek_zero(&mut w, big); // fSeekKeys
         w.be_u16(1);
         w.bytes(&[0u8; 16]);
+        if !big {
+            w.bytes(&[0u8; 12]); // reserve the extra 64-bit-seek width
+        }
 
         let prefix = w.into_vec();
         let pos = prefix.len() as u64;

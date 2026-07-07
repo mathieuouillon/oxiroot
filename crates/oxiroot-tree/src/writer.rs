@@ -16,8 +16,8 @@ use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
 use oxiroot_io_core::{
-    dir_record_total, guard_small_format, key_len_fmt, seek_zero, write_dir_record_fmt,
-    write_key_header_fmt, Compression, KSTART_BIG_FILE,
+    dir_record_total, guard_small_format, key_len_fmt, seek_zero, write_key_header_fmt,
+    write_root_dir_record_fmt, Compression, KSTART_BIG_FILE,
 };
 
 use crate::value::BranchValues;
@@ -1454,11 +1454,13 @@ fn write_file_prefix(
         w.u8(0);
     }
 
-    // --- Root directory name key + TDirectory record. ---
+    // --- Root directory name key + TDirectory record. The record is always
+    // reserved at the big (60-byte) size (matching ROOT), so the file could be
+    // appended into the 64-bit form in place. ---
     let first_klen = key_len_fmt("TFile", file_name, "", big);
     let name_title_len = (1 + file_name.len()) + 1;
     let f_nbytes_name = first_klen as usize + name_title_len;
-    let first_obj_len = name_title_len as u32 + dir_record_total(big);
+    let first_obj_len = name_title_len as u32 + dir_record_total(true);
     write_key_header_fmt(
         w,
         "TFile",
@@ -1474,7 +1476,7 @@ fn write_file_prefix(
     w.string(file_name);
     w.string("");
     let (p_dir_nbytes_keys, p_dir_seek_keys) =
-        write_dir_record_fmt(w, 100, 0, f_nbytes_name as u32, big);
+        write_root_dir_record_fmt(w, 100, 0, f_nbytes_name as u32, big);
 
     PrefixPatches {
         p_end,

@@ -778,7 +778,12 @@ integrity check, verified on read.
   ROOT's big (64-bit) container form once a file would cross 2 GiB; the streaming
   `TTreeWriter::create_large` / `RNTupleWriter::create_large` opt into it up front
   (the plain `create` stays 32-bit and errors past 2 GiB rather than truncating
-  its seek pointers). Big-format writes are verified against ROOT C++ and uproot.
+  its seek pointers). **Appending** (`RootFile::open(...).add(...).write()`) also
+  crosses into the 64-bit form: the existing bytes stay put — preserving
+  subdirectories and any RNTuple at their original offsets — while the header and
+  root directory record are widened in place (every oxiroot/ROOT file reserves the
+  64-bit directory width up front, as ROOT does). All big-format writes are
+  verified against ROOT C++ and uproot.
 - `Error` is `#[non_exhaustive]` and preserves the underlying `io::ErrorKind`.
 
 ## Examples
