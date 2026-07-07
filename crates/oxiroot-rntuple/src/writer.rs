@@ -12,9 +12,12 @@
 use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use oxiroot_io_core::buffer::{Patch, WBuffer};
+use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{key_len_fmt, write_key_header_fmt, Compression, KSTART_BIG_FILE};
+use oxiroot_io_core::{
+    dir_record_total, key_len_fmt, seek_value, seek_zero, write_dir_record_fmt,
+    write_key_header_fmt, Compression, KSTART_BIG_FILE,
+};
 
 use crate::column::ColumnType;
 
@@ -1678,24 +1681,6 @@ fn rntuple_file_bytes_threshold(
     )
 }
 
-/// Write a zeroed file-header seek field (8 bytes big, 4 small).
-fn seek_zero(w: &mut WBuffer, big: bool) {
-    if big {
-        w.be_u64(0);
-    } else {
-        w.be_u32(0);
-    }
-}
-
-/// Write a known seek value as 8 bytes (big) or 4 bytes (small).
-fn seek_value(w: &mut WBuffer, v: u64, big: bool) {
-    if big {
-        w.be_u64(v);
-    } else {
-        w.be_u32(v as u32);
-    }
-}
-
 /// One RNTuple's fully-lowered, page-encoded payload, ready to place into a file
 /// at any offset: the header envelope (and its checksum), each column's on-disk
 /// page bytes, the column plans, and the entry count. Independent of where in the
@@ -1932,38 +1917,6 @@ fn write_one_rntuple(
     );
     w.bytes(&anchor_obj);
     Ok((anchor_seek, anchor_len))
-}
-
-/// Write a format-aware `TDirectory` record (the body after a directory's name
-/// key). Returns the `(nbytesKeys, seekKeys)` patch handles to fill in once that
-/// directory's key list has been written.
-fn write_dir_record_fmt(
-    w: &mut WBuffer,
-    seek_dir: u64,
-    seek_parent: u64,
-    nbytes_name: u32,
-    big: bool,
-) -> (Patch, Patch) {
-    w.be_i16(if big { 1005 } else { 5 });
-    w.be_u32(DATIME);
-    w.be_u32(DATIME);
-    let p_nbytes_keys = w.reserve(4);
-    w.be_i32(nbytes_name as i32);
-    seek_value(w, seek_dir, big); // fSeekDir
-    seek_value(w, seek_parent, big); // fSeekParent
-    let p_seek_keys = w.reserve(if big { 8 } else { 4 });
-    w.be_u16(1);
-    w.bytes(&[0u8; 16]);
-    (p_nbytes_keys, p_seek_keys)
-}
-
-/// Total on-disk size of a `TDirectory` record (the `obj_len` of its key).
-fn dir_record_total(big: bool) -> u32 {
-    if big {
-        60
-    } else {
-        48
-    }
 }
 
 /// Write a directory's key list: a wrapping `TKey` whose payload is the entry

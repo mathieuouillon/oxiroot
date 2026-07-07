@@ -10,6 +10,7 @@
 use crate::buffer::WBuffer;
 use crate::error::{Error, Result};
 
+use super::header::BIG_FILE_VERSION;
 use super::key::TKey;
 use super::rfile::RFile;
 
@@ -65,6 +66,61 @@ pub fn guard_small_format(f_end: usize) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// Write a zeroed file/directory seek field: 8 bytes in the big (64-bit) form,
+/// 4 in the small form.
+pub fn seek_zero(w: &mut WBuffer, big: bool) {
+    if big {
+        w.be_u64(0);
+    } else {
+        w.be_u32(0);
+    }
+}
+
+/// Write a known seek value: 8 bytes in the big (64-bit) form, 4 in the small
+/// form (truncated to 32 bits — the caller guarantees it fits when `!big`).
+pub fn seek_value(w: &mut WBuffer, v: u64, big: bool) {
+    if big {
+        w.be_u64(v);
+    } else {
+        w.be_u32(v as u32);
+    }
+}
+
+/// On-disk size (`obj_len`) of a `TDirectory` record including its 18-byte UUID:
+/// 48 bytes in the small form, 60 in the big (64-bit seek) form. ROOT reserves
+/// the big size unconditionally; these writers size it to the chosen form.
+pub fn dir_record_total(big: bool) -> u32 {
+    if big {
+        60
+    } else {
+        48
+    }
+}
+
+/// Write a `TDirectory` record (the body following a directory's name key) in the
+/// small or big (64-bit seek) form. Returns the `(fNbytesKeys, fSeekKeys)` patch
+/// handles to fill in once that directory's key list has been written. `fSeekKeys`
+/// is reserved 8 bytes wide when `big`, so patch it with [`WBuffer::patch_be_u64`].
+pub fn write_dir_record_fmt(
+    w: &mut WBuffer,
+    seek_dir: u64,
+    seek_parent: u64,
+    nbytes_name: u32,
+    big: bool,
+) -> (crate::buffer::Patch, crate::buffer::Patch) {
+    w.be_i16(if big { 1005 } else { 5 }); // version (>1000 ⇒ 64-bit seeks)
+    w.be_u32(DATIME); // fDatimeC
+    w.be_u32(DATIME); // fDatimeM
+    let p_nbytes_keys = w.reserve(4);
+    w.be_i32(nbytes_name as i32); // fNbytesName
+    seek_value(w, seek_dir, big); // fSeekDir
+    seek_value(w, seek_parent, big); // fSeekParent
+    let p_seek_keys = w.reserve(if big { 8 } else { 4 });
+    w.be_u16(1); // UUID version
+    w.bytes(&[0u8; 16]); // UUID
+    (p_nbytes_keys, p_seek_keys)
 }
 
 /// Key version written for the small (32-bit seek) form; the big form adds 1000,
@@ -205,6 +261,27 @@ pub fn write_root_file_with_streamers(
     compression: u32,
     streamer_info: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
+    write_root_file_with_streamers_threshold(
+        file_name,
+        objects,
+        compression,
+        streamer_info,
+        KSTART_BIG_FILE,
+    )
+}
+
+/// Like [`write_root_file_with_streamers`] but with the big-file threshold
+/// injectable for tests. Builds the small (32-bit) container first; only if that
+/// already exceeds `threshold` does it rebuild in the big (64-bit) form, so the
+/// object payloads are re-copied only for genuinely large files.
+#[doc(hidden)]
+pub fn write_root_file_with_streamers_threshold(
+    file_name: &str,
+    objects: &[ObjectRecord],
+    compression: u32,
+    streamer_info: Option<&[u8]>,
+    threshold: u64,
+) -> Result<Vec<u8>> {
     let payloads: Vec<Vec<u8>> = objects
         .iter()
         .map(|o| on_disk_payload(&o.object, compression))
@@ -223,20 +300,65 @@ pub fn write_root_file_with_streamers(
         })
         .collect();
 
+    let small = write_streamers_pass(
+        file_name,
+        objects,
+        &payloads,
+        streamer_info,
+        streamer_payload.as_deref(),
+        &cycles,
+        compression,
+        false,
+    );
+    if small.len() as u64 <= threshold {
+        return Ok(small);
+    }
+    // The small container would overflow its 32-bit seek pointers; rebuild in the
+    // big (64-bit) form. Big keys/records are larger, so a file that overflowed
+    // the small form overflows it in the big form too — one rebuild converges.
+    Ok(write_streamers_pass(
+        file_name,
+        objects,
+        &payloads,
+        streamer_info,
+        streamer_payload.as_deref(),
+        &cycles,
+        compression,
+        true,
+    ))
+}
+
+/// One layout pass of [`write_root_file_with_streamers`] in the small (32-bit) or
+/// big (64-bit) container form.
+#[allow(clippy::too_many_arguments)]
+fn write_streamers_pass(
+    file_name: &str,
+    objects: &[ObjectRecord],
+    payloads: &[Vec<u8>],
+    streamer_info: Option<&[u8]>,
+    streamer_payload: Option<&[u8]>,
+    cycles: &[u16],
+    compression: u32,
+    big: bool,
+) -> Vec<u8> {
     let mut w = WBuffer::new();
 
     // --- File header (100 bytes; pointers patched at the end). ---
     w.bytes(b"root");
-    w.be_u32(FILE_VERSION);
+    w.be_u32(if big {
+        FILE_VERSION + BIG_FILE_VERSION
+    } else {
+        FILE_VERSION
+    });
     w.be_u32(100); // fBEGIN
-    let p_end = w.reserve(4);
-    let p_seek_free = w.reserve(4);
-    let p_nbytes_free = w.reserve(4);
-    let p_nfree = w.reserve(4);
+    let p_end = w.reserve(if big { 8 } else { 4 });
+    seek_zero(&mut w, big); // fSeekFree
+    w.be_u32(0); // fNbytesFree
+    w.be_u32(0); // nfree
     let p_nbytes_name = w.reserve(4);
-    w.u8(4); // fUnits
+    w.u8(if big { 8 } else { 4 }); // fUnits
     w.be_u32(compression); // fCompress
-    let p_seek_info = w.reserve(4);
+    let p_seek_info = w.reserve(if big { 8 } else { 4 });
     let p_nbytes_info = w.reserve(4);
     w.be_u16(1); // fUUID version
     w.bytes(&[0u8; 16]); // fUUID
@@ -245,13 +367,12 @@ pub fn write_root_file_with_streamers(
     }
 
     // --- Root directory name key + object (at fBEGIN = 100). ---
-    let first_klen = key_len(DIR_CLASS, file_name, "");
+    let first_klen = key_len_fmt(DIR_CLASS, file_name, "", big);
     let name_title_len = (1 + file_name.len()) + 1; // object name=file_name, title=""
     let f_nbytes_name = first_klen as usize + name_title_len; // dir record starts here
-    let dir_record_len = 30 + 18; // TDirectory fields (30) + UUID (18)
-    let first_obj_len = (name_title_len + dir_record_len) as u32;
+    let first_obj_len = name_title_len as u32 + dir_record_total(big);
 
-    write_key_header(
+    write_key_header_fmt(
         &mut w,
         DIR_CLASS,
         file_name,
@@ -260,26 +381,19 @@ pub fn write_root_file_with_streamers(
         first_obj_len,
         100,
         0,
+        1,
+        big,
     );
     w.string(file_name); // object: name
     w.string(""); // object: title
-                  // TDirectory record.
-    w.be_i16(5); // version
-    w.be_u32(DATIME); // fDatimeC
-    w.be_u32(DATIME); // fDatimeM
-    let p_dir_nbytes_keys = w.reserve(4);
-    w.be_i32(f_nbytes_name as i32); // fNbytesName
-    w.be_u32(100); // fSeekDir
-    w.be_u32(0); // fSeekParent
-    let p_dir_seek_keys = w.reserve(4);
-    w.be_u16(1); // UUID version
-    w.bytes(&[0u8; 16]); // UUID
+    let (p_dir_nbytes_keys, p_dir_seek_keys) =
+        write_dir_record_fmt(&mut w, 100, 0, f_nbytes_name as u32, big);
 
     // --- One key + object per stored object. ---
     let mut seeks = Vec::with_capacity(objects.len());
     for (i, obj) in objects.iter().enumerate() {
         let seek = w.len();
-        write_key_header_cycle(
+        write_key_header_fmt(
             &mut w,
             &obj.class_name,
             &obj.name,
@@ -289,6 +403,7 @@ pub fn write_root_file_with_streamers(
             seek as u64,
             100,
             cycles[i],
+            big,
         );
         w.bytes(&payloads[i]);
         seeks.push(seek);
@@ -296,10 +411,10 @@ pub fn write_root_file_with_streamers(
 
     // --- Streamer-info record (TList<TStreamerInfo>), referenced by fSeekInfo
     // only (not listed as a directory key). ---
-    let (seek_info, nbytes_info) = match (streamer_info, &streamer_payload) {
+    let (seek_info, nbytes_info) = match (streamer_info, streamer_payload) {
         (Some(object), Some(payload)) => {
             let seek = w.len();
-            write_key_header(
+            write_key_header_fmt(
                 &mut w,
                 TLIST_CLASS,
                 STREAMER_INFO_NAME,
@@ -308,10 +423,13 @@ pub fn write_root_file_with_streamers(
                 payload.len() as u32,
                 seek as u64,
                 100,
+                1,
+                big,
             );
             w.bytes(payload);
-            let klen = key_len(TLIST_CLASS, STREAMER_INFO_NAME, STREAMER_INFO_TITLE) as u32;
-            (seek as u32, klen + payload.len() as u32)
+            let klen =
+                key_len_fmt(TLIST_CLASS, STREAMER_INFO_NAME, STREAMER_INFO_TITLE, big) as u32;
+            (seek as u64, klen + payload.len() as u32)
         }
         _ => (0, 0),
     };
@@ -321,11 +439,11 @@ pub fn write_root_file_with_streamers(
     let keylist_obj_len = {
         let headers: usize = objects
             .iter()
-            .map(|o| key_len(&o.class_name, &o.name, &o.title) as usize)
+            .map(|o| key_len_fmt(&o.class_name, &o.name, &o.title, big) as usize)
             .sum();
         (4 + headers) as u32
     };
-    write_key_header(
+    write_key_header_fmt(
         &mut w,
         DIR_CLASS,
         file_name,
@@ -334,10 +452,12 @@ pub fn write_root_file_with_streamers(
         keylist_obj_len,
         keylist_seek as u64,
         100,
+        1,
+        big,
     );
     w.be_i32(objects.len() as i32); // nkeys
     for (i, obj) in objects.iter().enumerate() {
-        write_key_header_cycle(
+        write_key_header_fmt(
             &mut w,
             &obj.class_name,
             &obj.name,
@@ -347,24 +467,33 @@ pub fn write_root_file_with_streamers(
             seeks[i] as u64,
             100,
             cycles[i],
+            big,
         );
     }
-    let keylist_nbytes = key_len(DIR_CLASS, file_name, "") as u32 + keylist_obj_len;
+    let keylist_nbytes = key_len_fmt(DIR_CLASS, file_name, "", big) as u32 + keylist_obj_len;
     let f_end = w.len();
-    guard_small_format(f_end)?;
 
     // --- Back-patch header + directory pointers. ---
-    w.patch_be_u32(p_end, f_end as u32);
-    w.patch_be_u32(p_seek_free, 0);
-    w.patch_be_u32(p_nbytes_free, 0);
-    w.patch_be_u32(p_nfree, 0);
+    if big {
+        w.patch_be_u64(p_end, f_end as u64);
+    } else {
+        w.patch_be_u32(p_end, f_end as u32);
+    }
     w.patch_be_u32(p_nbytes_name, f_nbytes_name as u32);
-    w.patch_be_u32(p_seek_info, seek_info);
+    if big {
+        w.patch_be_u64(p_seek_info, seek_info);
+    } else {
+        w.patch_be_u32(p_seek_info, seek_info as u32);
+    }
     w.patch_be_u32(p_nbytes_info, nbytes_info);
     w.patch_be_u32(p_dir_nbytes_keys, keylist_nbytes);
-    w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
+    if big {
+        w.patch_be_u64(p_dir_seek_keys, keylist_seek as u64);
+    } else {
+        w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
+    }
 
-    Ok(w.into_vec())
+    w.into_vec()
 }
 
 /// Append `new_objects` to an existing ROOT file (`existing` bytes), returning a
@@ -586,58 +715,33 @@ pub struct Subdir {
     pub objects: Vec<ObjectRecord>,
 }
 
-/// Write the small-format `TDirectory` record an object-or-subdirectory uses.
-/// Returns the (reserved nbytesKeys, reserved seekKeys) patch handles to fill in
-/// once that directory's key list has been written. `seek_dir` is this
-/// directory's own offset; `nbytes_name` is the size of its name record (the
-/// root's name key + name/title, or a subdirectory key's `KeyLen`).
-fn write_dir_record(
-    w: &mut WBuffer,
-    seek_dir: u64,
-    seek_parent: u64,
-    nbytes_name: u32,
-) -> (crate::buffer::Patch, crate::buffer::Patch) {
-    w.be_i16(5); // version (small format)
-    w.be_u32(DATIME); // fDatimeC
-    w.be_u32(DATIME); // fDatimeM
-    let p_nbytes_keys = w.reserve(4);
-    w.be_i32(nbytes_name as i32);
-    w.be_u32(seek_dir as u32);
-    w.be_u32(seek_parent as u32);
-    let p_seek_keys = w.reserve(4);
-    w.be_u16(1); // UUID version
-    w.bytes(&[0u8; 16]); // UUID
-    (p_nbytes_keys, p_seek_keys)
-}
-
-/// Size of the `TDirectory` record written by [`write_dir_record`].
-const DIR_RECORD_LEN: u32 = 48;
-
 /// Write a directory's key list (a wrapping `TKey` whose payload is an `i32`
-/// count followed by a `TKey` header per entry). `entries` are `(class, name,
-/// title, obj_len, payload_len, seek_key)` tuples. Returns `(seek, nbytes)`.
-fn write_key_list(
+/// count followed by a `TKey` header per entry), in the small or big (64-bit
+/// seek) form. `entries` are `(class, name, title, obj_len, payload_len,
+/// seek_key)` tuples. Returns `(seek, nbytes)`.
+pub fn write_key_list_fmt(
     w: &mut WBuffer,
     dir_class: &str,
     dir_name: &str,
     dir_title: &str,
     seek_pdir: u64,
     entries: &[(&str, &str, &str, u32, u32, u64)],
+    big: bool,
 ) -> (u64, u32) {
     let seek = w.len() as u64;
     let headers: usize = entries
         .iter()
-        .map(|(c, n, t, _, _, _)| key_len(c, n, t) as usize)
+        .map(|(c, n, t, _, _, _)| key_len_fmt(c, n, t, big) as usize)
         .sum();
     let obj_len = (4 + headers) as u32;
-    write_key_header(
-        w, dir_class, dir_name, dir_title, obj_len, obj_len, seek, seek_pdir,
+    write_key_header_fmt(
+        w, dir_class, dir_name, dir_title, obj_len, obj_len, seek, seek_pdir, 1, big,
     );
     w.be_i32(entries.len() as i32);
     for (c, n, t, ol, pl, sk) in entries {
-        write_key_header(w, c, n, t, *ol, *pl, *sk, seek_pdir);
+        write_key_header_fmt(w, c, n, t, *ol, *pl, *sk, seek_pdir, 1, big);
     }
-    let nbytes = key_len(dir_class, dir_name, dir_title) as u32 + obj_len;
+    let nbytes = key_len_fmt(dir_class, dir_name, dir_title, big) as u32 + obj_len;
     (seek, nbytes)
 }
 
@@ -651,6 +755,29 @@ pub fn write_root_file_with_dirs(
     subdirs: &[Subdir],
     compression: u32,
     streamer_info: Option<&[u8]>,
+) -> Result<Vec<u8>> {
+    write_root_file_with_dirs_threshold(
+        file_name,
+        root_objects,
+        subdirs,
+        compression,
+        streamer_info,
+        KSTART_BIG_FILE,
+    )
+}
+
+/// Like [`write_root_file_with_dirs`] but with the big-file threshold injectable
+/// for tests. Builds the small (32-bit) container first; only if that already
+/// exceeds `threshold` does it rebuild in the big (64-bit) form.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn write_root_file_with_dirs_threshold(
+    file_name: &str,
+    root_objects: &[ObjectRecord],
+    subdirs: &[Subdir],
+    compression: u32,
+    streamer_info: Option<&[u8]>,
+    threshold: u64,
 ) -> Result<Vec<u8>> {
     let root_pl: Vec<Vec<u8>> = root_objects
         .iter()
@@ -667,20 +794,66 @@ pub fn write_root_file_with_dirs(
         .collect();
     let streamer_pl = streamer_info.map(|si| on_disk_payload(si, compression));
 
+    let small = write_dirs_pass(
+        file_name,
+        root_objects,
+        subdirs,
+        &root_pl,
+        &sub_pl,
+        streamer_info,
+        streamer_pl.as_deref(),
+        compression,
+        false,
+    );
+    if small.len() as u64 <= threshold {
+        return Ok(small);
+    }
+    Ok(write_dirs_pass(
+        file_name,
+        root_objects,
+        subdirs,
+        &root_pl,
+        &sub_pl,
+        streamer_info,
+        streamer_pl.as_deref(),
+        compression,
+        true,
+    ))
+}
+
+/// One layout pass of [`write_root_file_with_dirs`] in the small (32-bit) or big
+/// (64-bit) container form.
+#[allow(clippy::too_many_arguments)]
+fn write_dirs_pass(
+    file_name: &str,
+    root_objects: &[ObjectRecord],
+    subdirs: &[Subdir],
+    root_pl: &[Vec<u8>],
+    sub_pl: &[Vec<Vec<u8>>],
+    streamer_info: Option<&[u8]>,
+    streamer_pl: Option<&[u8]>,
+    compression: u32,
+    big: bool,
+) -> Vec<u8> {
+    let dir_total = dir_record_total(big);
     let mut w = WBuffer::new();
 
     // --- File header. ---
     w.bytes(b"root");
-    w.be_u32(FILE_VERSION);
+    w.be_u32(if big {
+        FILE_VERSION + BIG_FILE_VERSION
+    } else {
+        FILE_VERSION
+    });
     w.be_u32(100);
-    let p_end = w.reserve(4);
-    let p_seek_free = w.reserve(4);
-    let p_nbytes_free = w.reserve(4);
-    let p_nfree = w.reserve(4);
+    let p_end = w.reserve(if big { 8 } else { 4 });
+    seek_zero(&mut w, big); // fSeekFree
+    w.be_u32(0); // fNbytesFree
+    w.be_u32(0); // nfree
     let p_nbytes_name = w.reserve(4);
-    w.u8(4);
+    w.u8(if big { 8 } else { 4 });
     w.be_u32(compression);
-    let p_seek_info = w.reserve(4);
+    let p_seek_info = w.reserve(if big { 8 } else { 4 });
     let p_nbytes_info = w.reserve(4);
     w.be_u16(1);
     w.bytes(&[0u8; 16]);
@@ -689,11 +862,11 @@ pub fn write_root_file_with_dirs(
     }
 
     // --- Root directory name key + record (at fBEGIN = 100). ---
-    let first_klen = key_len(DIR_CLASS, file_name, "");
+    let first_klen = key_len_fmt(DIR_CLASS, file_name, "", big);
     let name_title_len = (1 + file_name.len()) + 1;
     let f_nbytes_name = (first_klen as usize + name_title_len) as u32;
-    let first_obj_len = name_title_len as u32 + DIR_RECORD_LEN;
-    write_key_header(
+    let first_obj_len = name_title_len as u32 + dir_total;
+    write_key_header_fmt(
         &mut w,
         DIR_CLASS,
         file_name,
@@ -702,16 +875,18 @@ pub fn write_root_file_with_dirs(
         first_obj_len,
         100,
         0,
+        1,
+        big,
     );
     w.string(file_name);
     w.string("");
-    let (p_root_nbk, p_root_sk) = write_dir_record(&mut w, 100, 0, f_nbytes_name);
+    let (p_root_nbk, p_root_sk) = write_dir_record_fmt(&mut w, 100, 0, f_nbytes_name, big);
 
     // --- Root objects. ---
     let mut root_seeks = Vec::with_capacity(root_objects.len());
     for (i, o) in root_objects.iter().enumerate() {
         let s = w.len() as u64;
-        write_key_header(
+        write_key_header_fmt(
             &mut w,
             &o.class_name,
             &o.name,
@@ -720,16 +895,18 @@ pub fn write_root_file_with_dirs(
             root_pl[i].len() as u32,
             s,
             100,
+            1,
+            big,
         );
         w.bytes(&root_pl[i]);
         root_seeks.push(s);
     }
 
     // --- Streamer-info record (referenced only by fSeekInfo). ---
-    let (seek_info, nbytes_info) = match (streamer_info, &streamer_pl) {
+    let (seek_info, nbytes_info) = match (streamer_info, streamer_pl) {
         (Some(object), Some(payload)) => {
             let s = w.len() as u64;
-            write_key_header(
+            write_key_header_fmt(
                 &mut w,
                 TLIST_CLASS,
                 STREAMER_INFO_NAME,
@@ -738,10 +915,13 @@ pub fn write_root_file_with_dirs(
                 payload.len() as u32,
                 s,
                 100,
+                1,
+                big,
             );
             w.bytes(payload);
-            let klen = key_len(TLIST_CLASS, STREAMER_INFO_NAME, STREAMER_INFO_TITLE) as u32;
-            (s as u32, klen + payload.len() as u32)
+            let klen =
+                key_len_fmt(TLIST_CLASS, STREAMER_INFO_NAME, STREAMER_INFO_TITLE, big) as u32;
+            (s, klen + payload.len() as u32)
         }
         _ => (0, 0),
     };
@@ -749,24 +929,26 @@ pub fn write_root_file_with_dirs(
     // --- Subdirectories: each = TDirectory key + record, its objects, its key list. ---
     let mut sub_seeks = Vec::with_capacity(subdirs.len());
     for (si, sub) in subdirs.iter().enumerate() {
-        let sub_klen = key_len("TDirectory", &sub.name, &sub.name);
+        let sub_klen = key_len_fmt("TDirectory", &sub.name, &sub.name, big);
         let s_sub = w.len() as u64;
-        write_key_header(
+        write_key_header_fmt(
             &mut w,
             "TDirectory",
             &sub.name,
             &sub.name,
-            DIR_RECORD_LEN,
-            DIR_RECORD_LEN,
+            dir_total,
+            dir_total,
             s_sub,
             100,
+            1,
+            big,
         );
-        let (p_sub_nbk, p_sub_sk) = write_dir_record(&mut w, s_sub, 100, sub_klen as u32);
+        let (p_sub_nbk, p_sub_sk) = write_dir_record_fmt(&mut w, s_sub, 100, sub_klen as u32, big);
 
         let mut obj_seeks = Vec::with_capacity(sub.objects.len());
         for (j, o) in sub.objects.iter().enumerate() {
             let s = w.len() as u64;
-            write_key_header(
+            write_key_header_fmt(
                 &mut w,
                 &o.class_name,
                 &o.name,
@@ -775,6 +957,8 @@ pub fn write_root_file_with_dirs(
                 sub_pl[si][j].len() as u32,
                 s,
                 s_sub,
+                1,
+                big,
             );
             w.bytes(&sub_pl[si][j]);
             obj_seeks.push(s);
@@ -795,10 +979,21 @@ pub fn write_root_file_with_dirs(
                 )
             })
             .collect();
-        let (sub_kl_seek, sub_kl_nbytes) =
-            write_key_list(&mut w, "TDirectory", &sub.name, &sub.name, s_sub, &entries);
+        let (sub_kl_seek, sub_kl_nbytes) = write_key_list_fmt(
+            &mut w,
+            "TDirectory",
+            &sub.name,
+            &sub.name,
+            s_sub,
+            &entries,
+            big,
+        );
         w.patch_be_u32(p_sub_nbk, sub_kl_nbytes);
-        w.patch_be_u32(p_sub_sk, sub_kl_seek as u32);
+        if big {
+            w.patch_be_u64(p_sub_sk, sub_kl_seek);
+        } else {
+            w.patch_be_u32(p_sub_sk, sub_kl_seek as u32);
+        }
         sub_seeks.push(s_sub);
     }
 
@@ -822,27 +1017,35 @@ pub fn write_root_file_with_dirs(
             "TDirectory",
             sub.name.as_str(),
             sub.name.as_str(),
-            DIR_RECORD_LEN,
-            DIR_RECORD_LEN,
+            dir_total,
+            dir_total,
             sub_seeks[si],
         ));
     }
     let (root_kl_seek, root_kl_nbytes) =
-        write_key_list(&mut w, DIR_CLASS, file_name, "", 100, &entries);
+        write_key_list_fmt(&mut w, DIR_CLASS, file_name, "", 100, &entries, big);
     w.patch_be_u32(p_root_nbk, root_kl_nbytes);
-    w.patch_be_u32(p_root_sk, root_kl_seek as u32);
+    if big {
+        w.patch_be_u64(p_root_sk, root_kl_seek);
+    } else {
+        w.patch_be_u32(p_root_sk, root_kl_seek as u32);
+    }
 
     let f_end = w.len();
-    guard_small_format(f_end)?;
-    w.patch_be_u32(p_end, f_end as u32);
-    w.patch_be_u32(p_seek_free, 0);
-    w.patch_be_u32(p_nbytes_free, 0);
-    w.patch_be_u32(p_nfree, 0);
+    if big {
+        w.patch_be_u64(p_end, f_end as u64);
+    } else {
+        w.patch_be_u32(p_end, f_end as u32);
+    }
     w.patch_be_u32(p_nbytes_name, f_nbytes_name);
-    w.patch_be_u32(p_seek_info, seek_info);
+    if big {
+        w.patch_be_u64(p_seek_info, seek_info);
+    } else {
+        w.patch_be_u32(p_seek_info, seek_info as u32);
+    }
     w.patch_be_u32(p_nbytes_info, nbytes_info);
 
-    Ok(w.into_vec())
+    w.into_vec()
 }
 
 #[cfg(test)]

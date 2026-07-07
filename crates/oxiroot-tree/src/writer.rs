@@ -15,7 +15,10 @@ use std::path::Path;
 use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
-use oxiroot_io_core::{guard_small_format, key_len, key_len_fmt, write_key_header, Compression};
+use oxiroot_io_core::{
+    dir_record_total, guard_small_format, key_len_fmt, seek_zero, write_dir_record_fmt,
+    write_key_header_fmt, Compression, KSTART_BIG_FILE,
+};
 
 use crate::value::BranchValues;
 
@@ -978,6 +981,10 @@ pub struct TTreeWriter<W: Write + Seek> {
     file_name: String,
     tree_name: String,
     compression: u32,
+    /// Whether the container uses the 64-bit ("big") on-disk form. Fixed at
+    /// construction (the header/directory widths are written immediately and
+    /// cannot be widened in place afterwards).
+    big: bool,
     // File-header regions to back-patch at finish (absolute offsets).
     p_end: u64,
     p_nbytes_name: u64,
@@ -996,11 +1003,33 @@ pub struct TTreeWriter<W: Write + Seek> {
 impl TTreeWriter<std::fs::File> {
     /// Create a streaming tree file at `path`. The tree is named `tree_name`;
     /// the file is the small (32-bit) container, so the total must stay under
-    /// 2 GiB ([`finish`](TTreeWriter::finish) errors otherwise).
+    /// 2 GiB ([`finish`](TTreeWriter::finish) errors otherwise). For a file that
+    /// may exceed 2 GiB, use [`create_large`](TTreeWriter::create_large).
     pub fn create(
         path: impl AsRef<Path>,
         tree_name: &str,
         compression: Compression,
+    ) -> Result<Self> {
+        Self::create_fmt(path, tree_name, compression, false)
+    }
+
+    /// Like [`create`](TTreeWriter::create), but writes the 64-bit ("big")
+    /// container form so the tree may exceed 2 GiB. Use this when the streamed
+    /// dataset is expected to be large; small files are still valid, just stored
+    /// in the wider form (as ROOT does past `kStartBigFile`).
+    pub fn create_large(
+        path: impl AsRef<Path>,
+        tree_name: &str,
+        compression: Compression,
+    ) -> Result<Self> {
+        Self::create_fmt(path, tree_name, compression, true)
+    }
+
+    fn create_fmt(
+        path: impl AsRef<Path>,
+        tree_name: &str,
+        compression: Compression,
+        big: bool,
     ) -> Result<Self> {
         let path = path.as_ref();
         let file_name = path
@@ -1009,23 +1038,46 @@ impl TTreeWriter<std::fs::File> {
             .unwrap_or("file.root")
             .to_string();
         let file = std::fs::File::create(path)?;
-        TTreeWriter::new(file, &file_name, tree_name, compression)
+        TTreeWriter::new_fmt(file, &file_name, tree_name, compression, big)
     }
 }
 
 impl<W: Write + Seek> TTreeWriter<W> {
-    /// Begin writing into an arbitrary seekable sink. The file header and root
-    /// directory record are written immediately (with pointers patched at the
-    /// end); `file_name` is the name stored in the directory record.
+    /// Begin writing into an arbitrary seekable sink (small 32-bit container).
+    /// The file header and root directory record are written immediately (with
+    /// pointers patched at the end); `file_name` is the name stored in the
+    /// directory record. See [`new_large`](TTreeWriter::new_large) for the
+    /// >2 GiB form.
     pub fn new(
         sink: W,
         file_name: &str,
         tree_name: &str,
         compression: Compression,
     ) -> Result<Self> {
+        Self::new_fmt(sink, file_name, tree_name, compression, false)
+    }
+
+    /// Like [`new`](TTreeWriter::new), but writes the 64-bit ("big") container
+    /// form so the streamed file may exceed 2 GiB.
+    pub fn new_large(
+        sink: W,
+        file_name: &str,
+        tree_name: &str,
+        compression: Compression,
+    ) -> Result<Self> {
+        Self::new_fmt(sink, file_name, tree_name, compression, true)
+    }
+
+    fn new_fmt(
+        sink: W,
+        file_name: &str,
+        tree_name: &str,
+        compression: Compression,
+        big: bool,
+    ) -> Result<Self> {
         let compression = compression.setting();
         let mut w = WBuffer::new();
-        let pp = write_file_prefix(&mut w, file_name, compression);
+        let pp = write_file_prefix(&mut w, file_name, compression, big);
         // The prefix is written at file offset 0, so a reserved region's buffer
         // offset is its absolute file offset.
         let p_end = w.patch_offset(pp.p_end) as u64;
@@ -1046,6 +1098,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
             file_name: file_name.to_string(),
             tree_name: tree_name.to_string(),
             compression,
+            big,
             p_end,
             p_nbytes_name,
             p_seek_info,
@@ -1074,6 +1127,20 @@ impl<W: Write + Seek> TTreeWriter<W> {
     fn patch_u32(&mut self, offset: u64, value: u32) -> io::Result<()> {
         self.sink.seek(SeekFrom::Start(offset))?;
         self.sink.write_all(&value.to_be_bytes())
+    }
+
+    fn patch_u64(&mut self, offset: u64, value: u64) -> io::Result<()> {
+        self.sink.seek(SeekFrom::Start(offset))?;
+        self.sink.write_all(&value.to_be_bytes())
+    }
+
+    /// Patch a file-header/directory seek field: 8 bytes when big, 4 when small.
+    fn patch_seek(&mut self, offset: u64, value: u64) -> io::Result<()> {
+        if self.big {
+            self.patch_u64(offset, value)
+        } else {
+            self.patch_u32(offset, value as u32)
+        }
     }
 
     /// Append one batch of entries (one basket per branch). The first batch fixes
@@ -1234,11 +1301,13 @@ impl<W: Write + Seek> TTreeWriter<W> {
             &groups,
             self.total_entries,
             tot_bytes,
+            self.big,
         );
+        let big = self.big;
         let tree_payload = on_disk(&tree_obj, self.compression);
         let tree_seek = self.pos;
         let mut kb = WBuffer::new();
-        write_key_header(
+        write_key_header_fmt(
             &mut kb,
             "TTree",
             &self.tree_name,
@@ -1247,6 +1316,8 @@ impl<W: Write + Seek> TTreeWriter<W> {
             tree_payload.len() as u32,
             tree_seek,
             100,
+            1,
+            big,
         );
         let kb = kb.into_vec();
         self.put(&kb)?;
@@ -1257,7 +1328,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
         let si_payload = on_disk(&streamer_info, self.compression);
         let seek_info = self.pos;
         let mut sib = WBuffer::new();
-        write_key_header(
+        write_key_header_fmt(
             &mut sib,
             "TList",
             "StreamerInfo",
@@ -1266,19 +1337,21 @@ impl<W: Write + Seek> TTreeWriter<W> {
             si_payload.len() as u32,
             seek_info,
             100,
+            1,
+            big,
         );
         let sib = sib.into_vec();
         self.put(&sib)?;
         self.put(&si_payload)?;
-        let nbytes_info =
-            key_len("TList", "StreamerInfo", "Doubly linked list") as u32 + si_payload.len() as u32;
+        let nbytes_info = key_len_fmt("TList", "StreamerInfo", "Doubly linked list", big) as u32
+            + si_payload.len() as u32;
 
         // --- Directory key list (one entry: the TTree). ---
         let keylist_seek = self.pos;
-        let tree_klen = key_len("TTree", &self.tree_name, "");
+        let tree_klen = key_len_fmt("TTree", &self.tree_name, "", big);
         let keylist_obj_len = 4 + tree_klen as u32;
         let mut klb = WBuffer::new();
-        write_key_header(
+        write_key_header_fmt(
             &mut klb,
             "TFile",
             &self.file_name,
@@ -1287,9 +1360,11 @@ impl<W: Write + Seek> TTreeWriter<W> {
             keylist_obj_len,
             keylist_seek,
             100,
+            1,
+            big,
         );
         klb.be_i32(1); // nkeys
-        write_key_header(
+        write_key_header_fmt(
             &mut klb,
             "TTree",
             &self.tree_name,
@@ -1298,20 +1373,27 @@ impl<W: Write + Seek> TTreeWriter<W> {
             tree_payload.len() as u32,
             tree_seek,
             100,
+            1,
+            big,
         );
         let klb = klb.into_vec();
         self.put(&klb)?;
-        let keylist_nbytes = key_len("TFile", &self.file_name, "") as u32 + keylist_obj_len;
+        let keylist_nbytes =
+            key_len_fmt("TFile", &self.file_name, "", big) as u32 + keylist_obj_len;
 
         let f_end = self.pos;
-        guard_small_format(f_end as usize)?;
+        // A small (32-bit) container cannot represent offsets past ~2 GiB; a big
+        // container can. Only guard the small form.
+        if !big {
+            guard_small_format(f_end as usize)?;
+        }
 
-        self.patch_u32(self.p_end, f_end as u32)?;
+        self.patch_seek(self.p_end, f_end)?;
         self.patch_u32(self.p_nbytes_name, self.f_nbytes_name)?;
-        self.patch_u32(self.p_seek_info, seek_info as u32)?;
+        self.patch_seek(self.p_seek_info, seek_info)?;
         self.patch_u32(self.p_nbytes_info, nbytes_info)?;
         self.patch_u32(self.p_dir_nbytes_keys, keylist_nbytes)?;
-        self.patch_u32(self.p_dir_seek_keys, keylist_seek as u32)?;
+        self.patch_seek(self.p_dir_seek_keys, keylist_seek)?;
         self.sink.flush()?;
         Ok(self.sink)
     }
@@ -1339,22 +1421,32 @@ struct PrefixPatches {
 }
 
 /// Write the 100-byte file header and the root `TDirectory` record into `w`
-/// (expected empty), returning the regions to patch at the end. Shared by the
-/// one-shot [`tree_bytes`] and the streaming [`TTreeWriter`] so both emit a
-/// byte-identical prefix.
-fn write_file_prefix(w: &mut WBuffer, file_name: &str, compression: u32) -> PrefixPatches {
+/// (expected empty), in the small (32-bit) or big (64-bit seek) container form,
+/// returning the regions to patch at the end. Shared by the one-shot
+/// [`tree_bytes`] and the streaming [`TTreeWriter`] so both emit an identical
+/// prefix for a given `big`.
+fn write_file_prefix(
+    w: &mut WBuffer,
+    file_name: &str,
+    compression: u32,
+    big: bool,
+) -> PrefixPatches {
     // --- File header (100 bytes; pointers patched at the end). ---
     w.bytes(b"root");
-    w.be_u32(FILE_VERSION);
+    w.be_u32(if big {
+        FILE_VERSION + 1_000_000
+    } else {
+        FILE_VERSION
+    });
     w.be_u32(100); // fBEGIN
-    let p_end = w.reserve(4);
-    w.be_u32(0); // fSeekFree
+    let p_end = w.reserve(if big { 8 } else { 4 });
+    seek_zero(w, big); // fSeekFree
     w.be_u32(0); // fNbytesFree
     w.be_u32(0); // nfree
     let p_nbytes_name = w.reserve(4);
-    w.u8(4); // fUnits
+    w.u8(if big { 8 } else { 4 }); // fUnits
     w.be_u32(compression); // fCompress
-    let p_seek_info = w.reserve(4);
+    let p_seek_info = w.reserve(if big { 8 } else { 4 });
     let p_nbytes_info = w.reserve(4);
     w.be_u16(1);
     w.bytes(&[0u8; 16]);
@@ -1363,11 +1455,11 @@ fn write_file_prefix(w: &mut WBuffer, file_name: &str, compression: u32) -> Pref
     }
 
     // --- Root directory name key + TDirectory record. ---
-    let first_klen = key_len("TFile", file_name, "");
+    let first_klen = key_len_fmt("TFile", file_name, "", big);
     let name_title_len = (1 + file_name.len()) + 1;
     let f_nbytes_name = first_klen as usize + name_title_len;
-    let first_obj_len = (name_title_len + 30 + 18) as u32;
-    write_key_header(
+    let first_obj_len = name_title_len as u32 + dir_record_total(big);
+    write_key_header_fmt(
         w,
         "TFile",
         file_name,
@@ -1376,19 +1468,13 @@ fn write_file_prefix(w: &mut WBuffer, file_name: &str, compression: u32) -> Pref
         first_obj_len,
         100,
         0,
+        1,
+        big,
     );
     w.string(file_name);
     w.string("");
-    w.be_i16(5);
-    w.be_u32(DATIME);
-    w.be_u32(DATIME);
-    let p_dir_nbytes_keys = w.reserve(4);
-    w.be_i32(f_nbytes_name as i32);
-    w.be_u32(100); // fSeekDir
-    w.be_u32(0); // fSeekParent
-    let p_dir_seek_keys = w.reserve(4);
-    w.be_u16(1);
-    w.bytes(&[0u8; 16]);
+    let (p_dir_nbytes_keys, p_dir_seek_keys) =
+        write_dir_record_fmt(w, 100, 0, f_nbytes_name as u32, big);
 
     PrefixPatches {
         p_end,
@@ -1402,13 +1488,46 @@ fn write_file_prefix(w: &mut WBuffer, file_name: &str, compression: u32) -> Pref
 }
 
 /// Shared body of [`tree_file_bytes`] / [`write_tree_file_baskets`]:
-/// `entries_per_basket` of `0` means one basket per branch.
+/// `entries_per_basket` of `0` means one basket per branch. Builds the small
+/// (32-bit) container first; only if that already exceeds 2 GiB does it rebuild
+/// in the big (64-bit) form, so the same tree byte-for-byte matches the streaming
+/// writer for small files and stays valid past 2 GiB.
 fn tree_bytes(
     file_name: &str,
     tree_name: &str,
     branches: &[Branch],
     compression: Compression,
     entries_per_basket: usize,
+) -> Result<Vec<u8>> {
+    let small = tree_bytes_fmt(
+        file_name,
+        tree_name,
+        branches,
+        compression,
+        entries_per_basket,
+        false,
+    )?;
+    if small.len() as u64 <= KSTART_BIG_FILE {
+        return Ok(small);
+    }
+    tree_bytes_fmt(
+        file_name,
+        tree_name,
+        branches,
+        compression,
+        entries_per_basket,
+        true,
+    )
+}
+
+/// One layout pass of [`tree_bytes`] in the small (32-bit) or big (64-bit) form.
+fn tree_bytes_fmt(
+    file_name: &str,
+    tree_name: &str,
+    branches: &[Branch],
+    compression: Compression,
+    entries_per_basket: usize,
+    big: bool,
 ) -> Result<Vec<u8>> {
     for b in branches {
         if !b.jagged() && !b.stl_vector() && b.is_jagged() {
@@ -1445,7 +1564,7 @@ fn tree_bytes(
         p_dir_nbytes_keys,
         p_dir_seek_keys,
         f_nbytes_name,
-    } = write_file_prefix(&mut w, file_name, compression);
+    } = write_file_prefix(&mut w, file_name, compression, big);
 
     // --- Baskets per branch (TBasket TKeys). A leaf branch has one; a split
     // branch has a count basket plus one per member sub-branch. ---
@@ -1460,10 +1579,17 @@ fn tree_bytes(
         .sum();
 
     // --- TTree object key + object. ---
-    let tree_obj = build_tree_object(tree_name, &eff, &basket_groups, n_entries as i64, tot_bytes);
+    let tree_obj = build_tree_object(
+        tree_name,
+        &eff,
+        &basket_groups,
+        n_entries as i64,
+        tot_bytes,
+        big,
+    );
     let tree_payload = on_disk(&tree_obj, compression);
     let tree_seek = w.len();
-    write_key_header(
+    write_key_header_fmt(
         &mut w,
         "TTree",
         tree_name,
@@ -1472,6 +1598,8 @@ fn tree_bytes(
         tree_payload.len() as u32,
         tree_seek as u64,
         100,
+        1,
+        big,
     );
     w.bytes(&tree_payload);
 
@@ -1487,8 +1615,8 @@ fn tree_bytes(
         }
     }
     let si_payload = on_disk(&streamer_info, compression);
-    let seek_info = w.len() as u32;
-    write_key_header(
+    let seek_info = w.len();
+    write_key_header_fmt(
         &mut w,
         "TList",
         "StreamerInfo",
@@ -1497,16 +1625,18 @@ fn tree_bytes(
         si_payload.len() as u32,
         seek_info as u64,
         100,
+        1,
+        big,
     );
     w.bytes(&si_payload);
-    let nbytes_info =
-        key_len("TList", "StreamerInfo", "Doubly linked list") as u32 + si_payload.len() as u32;
+    let nbytes_info = key_len_fmt("TList", "StreamerInfo", "Doubly linked list", big) as u32
+        + si_payload.len() as u32;
 
     // --- Directory key list (one entry: the TTree). ---
     let keylist_seek = w.len();
-    let tree_klen = key_len("TTree", tree_name, "");
+    let tree_klen = key_len_fmt("TTree", tree_name, "", big);
     let keylist_obj_len = 4 + tree_klen as u32;
-    write_key_header(
+    write_key_header_fmt(
         &mut w,
         "TFile",
         file_name,
@@ -1515,9 +1645,11 @@ fn tree_bytes(
         keylist_obj_len,
         keylist_seek as u64,
         100,
+        1,
+        big,
     );
     w.be_i32(1); // nkeys
-    write_key_header(
+    write_key_header_fmt(
         &mut w,
         "TTree",
         tree_name,
@@ -1526,20 +1658,35 @@ fn tree_bytes(
         tree_payload.len() as u32,
         tree_seek as u64,
         100,
+        1,
+        big,
     );
-    let keylist_nbytes = key_len("TFile", file_name, "") as u32 + keylist_obj_len;
-    // The TFile header / directory record use 32-bit seek pointers; reject a tree
-    // that would overflow them (the per-basket i32 fields are bounded by this too,
-    // since KSTART_BIG_FILE < i32::MAX). Without this the file corrupts silently.
+    let keylist_nbytes = key_len_fmt("TFile", file_name, "", big) as u32 + keylist_obj_len;
+    // The small (32-bit) container cannot represent offsets past ~2 GiB; the big
+    // form can. Only guard the small form (the caller rebuilds big if this trips).
     let f_end = w.len();
-    guard_small_format(f_end)?;
+    if !big {
+        guard_small_format(f_end)?;
+    }
 
-    w.patch_be_u32(p_end, f_end as u32);
+    if big {
+        w.patch_be_u64(p_end, f_end as u64);
+    } else {
+        w.patch_be_u32(p_end, f_end as u32);
+    }
     w.patch_be_u32(p_nbytes_name, f_nbytes_name as u32);
-    w.patch_be_u32(p_seek_info, seek_info);
+    if big {
+        w.patch_be_u64(p_seek_info, seek_info as u64);
+    } else {
+        w.patch_be_u32(p_seek_info, seek_info as u32);
+    }
     w.patch_be_u32(p_nbytes_info, nbytes_info);
     w.patch_be_u32(p_dir_nbytes_keys, keylist_nbytes);
-    w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
+    if big {
+        w.patch_be_u64(p_dir_seek_keys, keylist_seek as u64);
+    } else {
+        w.patch_be_u32(p_dir_seek_keys, keylist_seek as u32);
+    }
 
     Ok(w.into_vec())
 }
@@ -1796,11 +1943,13 @@ fn build_tree_object(
     baskets: &[Vec<BasketRec>],
     n_entries: i64,
     tot_bytes: i64,
+    big: bool,
 ) -> Vec<u8> {
     // ROOT resolves object references relative to `-keylen` of the TTree key; we
     // must use the same keylen so a jagged leaf's `fLeafCount` reference lands on
-    // the count leaf. (This is the keylen `write_key_header` writes for the key.)
-    let keylen = key_len("TTree", tree_name, "") as u32;
+    // the count leaf. The wrapping key is wider in the big (64-bit) container form,
+    // so the keylen — and thus every baked reference — depends on `big`.
+    let keylen = key_len_fmt("TTree", tree_name, "", big) as u32;
     let mut refs: LeafRefs = HashMap::new();
 
     let mut w = WBuffer::new();

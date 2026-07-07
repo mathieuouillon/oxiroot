@@ -11,8 +11,8 @@ use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
 use oxiroot_io_core::{
-    update_root_file, write_root_file_with_dirs, write_root_file_with_streamers, Compression,
-    ObjectRecord, Subdir,
+    update_root_file, write_root_file_with_dirs_threshold,
+    write_root_file_with_streamers_threshold, Compression, ObjectRecord, Subdir, KSTART_BIG_FILE,
 };
 // The object framework (the `WriteRoot` trait + `record_of`) now lives in
 // `oxiroot-io-core`; re-export the trait so `oxiroot_hist::WriteRoot` and the
@@ -1263,8 +1263,17 @@ impl RootFile {
 
     /// Build the file bytes and write them to the path. A fresh builder writes a
     /// new file; one from [`open`](RootFile::open) rewrites the file with its
-    /// existing contents plus the additions.
+    /// existing contents plus the additions. A file that grows past ~2 GiB is
+    /// written in ROOT's 64-bit ("big") container form automatically.
     pub fn write(self, compression: Compression) -> Result<()> {
+        self.write_threshold(compression, KSTART_BIG_FILE)
+    }
+
+    /// Like [`write`](RootFile::write) but with the big-file threshold injectable
+    /// for tests, so the 64-bit container path can be exercised without producing
+    /// a 2 GiB file.
+    #[doc(hidden)]
+    pub fn write_threshold(self, compression: Compression, threshold: u64) -> Result<()> {
         // Reject unnamed / clashing keys before writing — loudly, instead of
         // ROOT's silent shadow-on-read.
         check_names(&self.root, "the top directory")?;
@@ -1298,12 +1307,12 @@ impl RootFile {
                 }
                 update_root_file(&existing, &file_name, &self.root, setting, streamers)?
             }
-            None if self.dirs.is_empty() => {
-                write_root_file_with_streamers(&file_name, &self.root, setting, streamers)?
-            }
-            None => {
-                write_root_file_with_dirs(&file_name, &self.root, &self.dirs, setting, streamers)?
-            }
+            None if self.dirs.is_empty() => write_root_file_with_streamers_threshold(
+                &file_name, &self.root, setting, streamers, threshold,
+            )?,
+            None => write_root_file_with_dirs_threshold(
+                &file_name, &self.root, &self.dirs, setting, streamers, threshold,
+            )?,
         };
         std::fs::write(&self.path, bytes)?;
         Ok(())

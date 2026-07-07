@@ -89,8 +89,8 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   grids, ratio plots, LaTeX (`$…$`) math labels — all pure Rust, no matplotlib,
   no system fonts.
 - 🛡 **Robust by construction** — readers never panic on malformed input
-  (fuzz-tested), and writers refuse to silently corrupt a file past the 2 GiB
-  32-bit limit.
+  (fuzz-tested); writers cross the 2 GiB mark by switching to ROOT's 64-bit
+  container form (never silently truncating a 32-bit seek pointer).
 
 ## Quick start
 
@@ -637,7 +637,9 @@ ax2.save("heatmap.svg")?;
 - `TTreeWriter` streams a tree in batches (`write_batch` emits one basket per
   branch straight to disk, then `finish`), so only the current batch is held in
   memory — the way ROOT's `TTree::Fill` flushes baskets. ROOT-C++- and
-  uproot-verified across many baskets, compressed and not.
+  uproot-verified across many baskets, compressed and not. Use
+  `TTreeWriter::create_large` for a tree that will exceed 2 GiB — it writes the
+  64-bit container form (again ROOT-C++/uproot-verified).
 - `read_branch` reads a whole branch,
   `read_branch_range(start, stop)` only the baskets covering a window, and
   `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `TChain` spans many
@@ -771,9 +773,12 @@ integrity check, verified on read.
   crafted or truncated file yields an `Err`, never a panic. Byte-flip and
   truncation fuzz tests cover the container, RNTuple, `TTree`, and every
   histogram/graph reader.
-- 64-bit (`> 2 GiB`) files are supported on read; the RNTuple writer
-  auto-switches to the big format, and the `TFile`/`TTree` writers reject an
-  over-2 GiB write instead of silently truncating their 32-bit seek pointers.
+- 64-bit (`> 2 GiB`) files are supported on read **and write**. The one-shot
+  `TFile` object writers (`RootFile`) and the RNTuple writer auto-switch to
+  ROOT's big (64-bit) container form once a file would cross 2 GiB; the streaming
+  `TTreeWriter::create_large` / `RNTupleWriter::create_large` opt into it up front
+  (the plain `create` stays 32-bit and errors past 2 GiB rather than truncating
+  its seek pointers). Big-format writes are verified against ROOT C++ and uproot.
 - `Error` is `#[non_exhaustive]` and preserves the underlying `io::ErrorKind`.
 
 ## Examples
