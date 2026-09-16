@@ -13,9 +13,10 @@ use std::io::{Seek, Write};
 use std::path::Path;
 
 use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::streamer_gen::{basic, streamer_info_list, Cls};
 use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, KSTART_BIG_FILE};
 
-use crate::anchor::ANCHOR_CLASS;
+use crate::anchor::{anchor_streamer_class, ANCHOR_CLASS};
 use crate::column::ColumnType;
 
 const K_BYTE_COUNT_MASK: u32 = 0x4000_0000;
@@ -1250,26 +1251,92 @@ fn class_checksum(class_name: &str, members: &[(String, Column)]) -> u32 {
     id
 }
 
-/// The C++ type spelling ROOT uses for a member when computing a class checksum
-/// (the fundamental-type keyword, e.g. `int`/`double`), for each writable
-/// scalar [`Column`]. Panics on a column kind not valid as a flat class member.
-fn checksum_type_name(col: &Column) -> &'static str {
-    match col {
-        Column::Bool(_) => "bool",
-        Column::I8(_) => "char",
-        Column::U8(_) => "unsigned char",
-        Column::I16(_) => "short",
-        Column::U16(_) => "unsigned short",
-        Column::I32(_) => "int",
-        Column::U32(_) => "unsigned int",
-        Column::I64(_) => "long long",
-        Column::U64(_) => "unsigned long long",
+/// How ROOT describes a class member of a plain-number column kind: the C++
+/// spelling its class checksum folds in, and the `(fType, fSize, fTypeName)` of
+/// its streamer element. `None` for any other column kind.
+fn scalar_member(col: &Column) -> Option<(&'static str, i32, i32, &'static str)> {
+    Some(match col {
+        Column::Bool(_) => ("bool", 18, 1, "bool"),
+        Column::I8(_) => ("char", 1, 1, "char"),
+        Column::U8(_) => ("unsigned char", 11, 1, "unsigned char"),
+        Column::I16(_) => ("short", 2, 2, "short"),
+        Column::U16(_) => ("unsigned short", 12, 2, "unsigned short"),
+        Column::I32(_) => ("int", 3, 4, "int"),
+        Column::U32(_) => ("unsigned int", 13, 4, "unsigned int"),
+        Column::I64(_) => ("long long", 16, 8, "Long64_t"),
+        Column::U64(_) => ("unsigned long long", 17, 8, "ULong64_t"),
         Column::F32(_) | Column::HalfF32(_) | Column::TruncF32 { .. } | Column::QuantF32 { .. } => {
-            "float"
+            ("float", 5, 4, "float")
         }
-        Column::F64(_) => "double",
-        _ => "void", // non-scalar members are not part of the supported checksum
+        Column::F64(_) => ("double", 8, 8, "double"),
+        _ => return None,
+    })
+}
+
+/// The C++ type spelling ROOT uses for a member when computing a class checksum
+/// (the fundamental-type keyword, e.g. `int`/`double`); `void` for a member that
+/// is not a plain number, which the supported checksum does not cover.
+fn checksum_type_name(col: &Column) -> &'static str {
+    scalar_member(col).map_or("void", |(name, ..)| name)
+}
+
+/// Add the `TStreamerInfo` entries for the user classes inside `col` to
+/// `classes`, once per class name. A class is described when every member is a
+/// plain number, as ROOT writes it for a struct without `ClassDef` (version 1);
+/// its checksum is the one the field record carries.
+fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
+    match col {
+        Column::Object { type_name, members } => {
+            for (_, member) in members {
+                collect_classes(member, classes);
+            }
+            let elements: Option<Vec<_>> = members
+                .iter()
+                .map(|(name, member)| {
+                    scalar_member(member)
+                        .map(|(_, ty, size, type_name)| basic(name, ty, size, type_name))
+                })
+                .collect();
+            if let Some(elements) = elements {
+                if !classes.iter().any(|c| c.name == type_name) {
+                    classes.push(Cls {
+                        name: type_name,
+                        version: 1,
+                        checksum: class_checksum(type_name, members),
+                        elements,
+                    });
+                }
+            }
+        }
+        Column::Record(members) => {
+            for (_, member) in members {
+                collect_classes(member, classes);
+            }
+        }
+        Column::Variant { alternatives, .. } => {
+            for alt in alternatives {
+                collect_classes(alt, classes);
+            }
+        }
+        Column::Nested { items, .. }
+        | Column::Array { items, .. }
+        | Column::Assoc { items, .. } => {
+            collect_classes(items, classes);
+        }
+        Column::Optional { values, .. } => collect_classes(values, classes),
+        Column::Atomic(inner) => collect_classes(inner, classes),
+        _ => {}
     }
+}
+
+/// The file's `TList<TStreamerInfo>`: the anchor class, which ROOT describes in
+/// every RNTuple file, then the user classes of `fields`.
+fn ntuple_streamer_info<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<u8> {
+    let mut classes = vec![anchor_streamer_class()];
+    for field in fields {
+        collect_classes(&field.data, &mut classes);
+    }
+    streamer_info_list(&classes)
 }
 
 /// Assign field ids by a depth-first pre-order walk (parents before children,
@@ -1806,8 +1873,10 @@ fn extended_rntuple_file_bytes(
     compression: Compression,
 ) -> Result<Vec<u8>> {
     let prep = prep_ntuple_extended(ntuple_name, base_fields, late, compression.setting())?;
+    let streamer_info = ntuple_streamer_info(base_fields.iter().chain(late.iter().map(|(_, f)| f)));
     ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, |file| {
-        write_one_rntuple(file, DirId::TOP, &prep)
+        write_one_rntuple(file, DirId::TOP, &prep)?;
+        file.place_streamer_info(&streamer_info, &[])
     })
 }
 
@@ -1915,6 +1984,11 @@ fn rntuples_file_bytes_threshold(
             Ok((*name, preps))
         })
         .collect::<Result<_>>()?;
+    let all_fields = root
+        .iter()
+        .chain(dirs.iter().flat_map(|(_, ntuples)| ntuples))
+        .flat_map(|(_, fields)| fields.iter());
+    let streamer_info = ntuple_streamer_info(all_fields);
 
     ContainerWriter::build(file_name, compression, big_threshold, |file| {
         for p in &root_preps {
@@ -1927,7 +2001,7 @@ fn rntuples_file_bytes_threshold(
             }
             file.close_dir(dir)?;
         }
-        Ok(())
+        file.place_streamer_info(&streamer_info, &[])
     })
 }
 
@@ -2221,6 +2295,8 @@ struct HeaderState {
     checksum: u64,
     /// The lowered schema the first batch committed — must match every batch.
     signature: SchemaSig,
+    /// The file's streamer info, for the classes in the first batch's fields.
+    streamer_info: Vec<u8>,
 }
 
 /// A streaming RNTuple writer: each [`write_batch`](RNTupleWriter::write_batch)
@@ -2357,6 +2433,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
                     len: header_env.len(),
                     checksum,
                     signature,
+                    streamer_info: ntuple_streamer_info(fields),
                 });
             }
         }
@@ -2431,6 +2508,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
             "",
             &anchor,
         )?;
+        self.file.place_streamer_info(&header.streamer_info, &[])?;
         self.file.finish()?;
         Ok(())
     }
