@@ -231,9 +231,12 @@ pub fn read_column(
             let mut out = Vec::new();
             for p in pages {
                 let raw = read_page_bytes(file, p, bits)?;
-                for chunk in raw.chunks_exact(12).take(p.num_elements as usize) {
-                    let index = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
-                    let tag = u32::from_le_bytes(chunk[8..12].try_into().unwrap());
+                let (elements, _) = raw.as_chunks::<12>();
+                for &[i0, i1, i2, i3, i4, i5, i6, i7, t0, t1, t2, t3] in
+                    elements.iter().take(p.num_elements as usize)
+                {
+                    let index = u64::from_le_bytes([i0, i1, i2, i3, i4, i5, i6, i7]);
+                    let tag = u32::from_le_bytes([t0, t1, t2, t3]);
                     out.push((index, tag));
                 }
             }
