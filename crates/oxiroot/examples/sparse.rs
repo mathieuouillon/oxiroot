@@ -28,7 +28,7 @@ impl Rng {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let mut rng = Rng(0x5A17_C0FFEE_D15EA5);
 
     // --- A 4-D cut-optimization space: (pt, eta, isolation, mass). -------------

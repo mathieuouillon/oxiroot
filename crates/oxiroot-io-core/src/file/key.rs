@@ -108,6 +108,24 @@ impl TKey {
         })
     }
 
+    /// The length of a key header with these strings, in the small or big
+    /// (64-bit seek) form: 18 fixed bytes, two seek pointers (4 bytes each, or 8
+    /// in the big form), then the three ROOT-encoded strings. This is the
+    /// `fKeyLen` of a plain key; a `TBasket` adds its own fields after it.
+    #[must_use]
+    pub fn header_len(class: &str, name: &str, title: &str, big: bool) -> usize {
+        // A ROOT string takes a one-byte length, or 255 and a four-byte length.
+        let string_len = |s: &str| {
+            if s.len() < 255 {
+                1 + s.len()
+            } else {
+                5 + s.len()
+            }
+        };
+        let seeks = if big { 16 } else { 8 };
+        18 + seeks + string_len(class) + string_len(name) + string_len(title)
+    }
+
     /// Whether this key marks deleted space (negative byte count).
     pub fn is_deleted(&self) -> bool {
         self.nbytes < 0

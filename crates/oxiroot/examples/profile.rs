@@ -34,7 +34,7 @@ fn response(x: f64) -> f64 {
     8.0 * (1.0 - (-x / 4.0).exp())
 }
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
     let mut rng = Rng(0x0DD_F00D_CAFE_BEEF);
 

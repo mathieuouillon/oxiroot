@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{read_envelope, ColumnType, RNTuple, StructRole};
+use oxiroot_rntuple::{ColumnType, RNTuple, StructRole};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -32,16 +32,9 @@ fn parses_anchor_and_envelopes() {
     assert_eq!(a.len_footer, 160);
     assert_eq!(a.max_key_size, 0x4000_0000); // 1 GiB default
 
-    // Envelope types (checksums already verified inside open()).
-    assert_eq!(read_envelope(ntpl.header_envelope()).unwrap().type_id, 0x01);
-    assert_eq!(read_envelope(ntpl.footer_envelope()).unwrap().type_id, 0x02);
-
-    // Header envelope payload = full length minus the 8-byte word and 8-byte checksum.
+    // The header envelope is the whole on-disk blob (its type and checksum are
+    // checked by `open`, and parsed in the envelope module's unit tests).
     assert_eq!(ntpl.header_envelope().len(), 617);
-    assert_eq!(
-        read_envelope(ntpl.header_envelope()).unwrap().payload.len(),
-        617 - 16
-    );
 }
 
 #[test]

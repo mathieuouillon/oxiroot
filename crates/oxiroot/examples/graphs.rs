@@ -12,7 +12,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let path = std::env::temp_dir().join("oxiroot_ex_graphs.root");
 
     // --- 1. A measured cross-section vs beam energy, as a TGraphErrors. --------

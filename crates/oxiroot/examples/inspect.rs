@@ -87,7 +87,7 @@ fn walk(file: &RFile) -> (usize, u64) {
 
 /// Open one fixture (located relative to this crate, so the example runs from any
 /// working directory), print a header, and list its contents.
-fn inspect(name: &str, path: &str) -> Result<()> {
+fn inspect(name: &str, path: &str) -> oxiroot::Result<()> {
     // Opening only parses the file header and the root directory's key list;
     // object bodies are read lazily, on demand.
     let file = RFile::open(path)?;
@@ -103,7 +103,7 @@ fn inspect(name: &str, path: &str) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     // `analysis.root`: a flat file of seven histograms — a rich, ordinary
     // listing (the common case: no subdirectories).
     inspect(

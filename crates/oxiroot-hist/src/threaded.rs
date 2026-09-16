@@ -24,7 +24,7 @@ use std::thread::ThreadId;
 
 use oxiroot_io_core::error::Result;
 
-use crate::{TProfile, TH1, TH2, TH3};
+use crate::{TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3};
 
 /// Histograms that combine into one — the reduction behind multithreaded fills
 /// and `hadd`-style multi-file merges.
@@ -62,7 +62,7 @@ macro_rules! impl_merge {
         }
     )+};
 }
-impl_merge!(TH1, TH2, TH3, TProfile);
+impl_merge!(TH1, TH2, TH3, TProfile, TProfile2D, TProfile3D);
 
 /// A multithreaded fill accumulator — the pure-Rust analog of ROOT's
 /// `TThreadedObject<TH1>`.
@@ -219,6 +219,28 @@ impl ThreadedHist<TProfile> {
     /// Fill the calling thread's copy at `(x, y)` with weight `w`.
     pub fn fill_weight(&self, x: f64, y: f64, w: f64) {
         self.with_local(|h| h.fill_weight(x, y, w));
+    }
+}
+
+impl ThreadedHist<TProfile2D> {
+    /// Profile `z` at `(x, y)` in the calling thread's copy (weight 1).
+    pub fn fill(&self, x: f64, y: f64, z: f64) {
+        self.with_local(|h| h.fill(x, y, z));
+    }
+    /// Profile `z` at `(x, y)` in the calling thread's copy with weight `w`.
+    pub fn fill_weight(&self, x: f64, y: f64, z: f64, w: f64) {
+        self.with_local(|h| h.fill_weight(x, y, z, w));
+    }
+}
+
+impl ThreadedHist<TProfile3D> {
+    /// Profile `t` at `(x, y, z)` in the calling thread's copy (weight 1).
+    pub fn fill(&self, x: f64, y: f64, z: f64, t: f64) {
+        self.with_local(|h| h.fill(x, y, z, t));
+    }
+    /// Profile `t` at `(x, y, z)` in the calling thread's copy with weight `w`.
+    pub fn fill_weight(&self, x: f64, y: f64, z: f64, t: f64, w: f64) {
+        self.with_local(|h| h.fill_weight(x, y, z, t, w));
     }
 }
 

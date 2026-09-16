@@ -77,10 +77,7 @@ fn byte_exact_against_root() {
         ("bignum", &TParameter::i64("bignum", 9_000_000_000)),
     ];
     for (name, obj) in cases {
-        let key = f.key(name).unwrap();
-        let root_bytes =
-            oxiroot_compress::decompress(&f.key_payload(key).unwrap(), key.obj_len as usize)
-                .unwrap();
+        let (_, root_bytes) = oxiroot_io_core::object_bytes_any(&f, name).unwrap();
         assert_eq!(
             obj.to_root_bytes(),
             root_bytes,

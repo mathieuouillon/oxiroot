@@ -3,7 +3,7 @@
 //! Read and write [RNTuple](oxiroot_rntuple) (ROOT's columnar event-data
 //! format), classic [`TTree`](oxiroot_tree), the [histogram](oxiroot_hist)
 //! family (`TH1`/`TH2`/`TH3`, `TProfile`/`2D`/`3D`, `TEfficiency`, `THnSparse`,
-//! `TH2Poly`), and [graphs](oxiroot_hist::graph) (`TGraph`/`TGraphErrors`/
+//! `TH2Poly`), and [graphs](oxiroot_hist::TGraph) (`TGraph`/`TGraphErrors`/
 //! `TGraphAsymmErrors`, plus `TGraph2D` and `TGraphMultiErrors`) in the ROOT (`TFile`) container, with no C++/libROOT
 //! dependency. Files written here are read by official ROOT and uproot, and
 //! vice versa.
@@ -106,7 +106,12 @@ pub mod plot {
 /// [`Compression`]), the histogram types with their `read_*`/`write_*` helpers,
 /// and the RNTuple reader/writer.
 pub mod prelude {
-    pub use oxiroot_io_core::{Compression, Error, RFile, Result};
+    // `Error` and `Result` are deliberately not here: a glob import would shadow
+    // `std::result::Result`. Name them as `oxiroot::Error` / `oxiroot::Result`.
+    pub use oxiroot_io_core::{
+        Compression, Dir, FromMember, ListKind, ObjList, ParamValue, RFile, ReadRoot, RootFile,
+        TMap, TObjString, TParameter, WriteInto, WriteRoot,
+    };
 
     pub use crate::hadd::{merge_files, MergeKind, MergeReport, Merger};
 
@@ -117,17 +122,15 @@ pub mod prelude {
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     pub use oxiroot_hist::{
-        Chi2TestKind, Chi2TestResult, Dir, ErrorMode, FromMember, GraphErrors, GraphFunction, Hist,
-        Histogram, KsTestResult, ListKind, Merge, ObjList, ParamValue, PolyBin, Precision,
-        ReadRoot, Rng, RootFile, SparseBin, TAxis, TEfficiency, TGraph, TGraph2D,
-        TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMap, TMultiGraph, TObjString, TParameter,
-        TProfile, TProfile2D, TProfile3D, ThreadedHist, WriteRoot, TF1, TF2, TF3, TH1, TH2, TH3,
+        Chi2TestKind, Chi2TestResult, ErrorMode, GraphErrors, GraphFunction, Hist, Histogram,
+        KsTestResult, Merge, PolyBin, Precision, Rng, SparseBin, TAxis, TEfficiency, TGraph,
+        TGraph2D, TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMultiGraph, TProfile,
+        TProfile2D, TProfile3D, ThreadedHist, TF1, TF2, TF3, TH1, TH2, TH3,
     };
     pub use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
     pub use oxiroot_rntuple::{
-        write_rntuple_file, Column, Field, FieldValues, Ntuple, NtupleDir, NtupleFile, RNTuple,
-        RNTupleWriter,
+        write_rntuple_file, Column, Field, FieldValues, Ntuple, RNTuple, RNTupleWriter,
     };
 
     pub use oxiroot_tree::{

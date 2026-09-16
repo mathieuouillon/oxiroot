@@ -106,6 +106,16 @@ impl TProfile2D {
         self.yaxis.nbins.max(0) as usize
     }
 
+    /// Turn on per-bin `Σw²` tracking (ROOT's `TProfile::Sumw2`), seeding each
+    /// bin from its weight sum — exact for the unit-weight fills made so far.
+    /// A no-op once tracking is on. Call before the current fill touches
+    /// `bin_entries`.
+    pub(crate) fn track_bin_sumw2(&mut self) {
+        if self.bin_sumw2.is_empty() {
+            self.bin_sumw2 = self.bin_entries.clone();
+        }
+    }
+
     /// Profile a point `(x, y, z)` with unit weight.
     pub fn fill(&mut self, x: f64, y: f64, z: f64) {
         self.fill_weight(x, y, z, 1.0);
@@ -115,9 +125,16 @@ impl TProfile2D {
     /// accumulate the per-cell sums of `w·z` and `w·z²` and the per-cell weight,
     /// plus the moment sums (the latter only when both x and y are in range). A
     /// `z` range (`zmin != zmax`) rejects out-of-range points first.
+    ///
+    /// The first fill with `w != 1` turns on per-bin tracking of `Σw²`
+    /// (`fBinSumw2`), as ROOT's `Fill` does; without it the effective entry count,
+    /// and so every bin error, would assume unit weights.
     pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, w: f64) {
         if self.zmin != self.zmax && (z < self.zmin || z > self.zmax || z.is_nan()) {
             return;
+        }
+        if w != 1.0 {
+            self.track_bin_sumw2();
         }
         let stride = self.nx() + 2;
         let (bx, by) = (self.xaxis.find_bin(x), self.yaxis.find_bin(y));
@@ -130,6 +147,9 @@ impl TProfile2D {
         }
         if let Some(e) = self.bin_entries.get_mut(cell) {
             *e += w;
+        }
+        if let Some(s) = self.bin_sumw2.get_mut(cell) {
+            *s += w * w;
         }
         self.entries += 1.0;
 

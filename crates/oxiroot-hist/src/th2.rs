@@ -51,8 +51,9 @@ pub struct TH2 {
     pub tsumwxy: f64,
     /// Bin contents including flow (length `ncells`, x fastest).
     pub contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty unless enabled via
-    /// [`TH2::sumw2`].
+    /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
+    /// turned on by [`TH2::sumw2`], [`TH2::scale`], or a weighted fill (see
+    /// [`TH1::fill_weight`](crate::TH1::fill_weight)).
     pub sumw2: Vec<f64>,
 }
 
@@ -234,6 +235,10 @@ impl TH2 {
     /// incremented, but the statistical moment sums accumulate only when both
     /// coordinates land in range (`fgStatOverflows` defaults to off).
     pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) {
+        // Before the contents change; see `TH1::fill_weight`.
+        if w != 1.0 && self.sumw2.is_empty() {
+            self.sumw2();
+        }
         let (nx, ny) = (self.nx(), self.ny());
         let binx = self.xaxis.find_bin(x);
         let biny = self.yaxis.find_bin(y);

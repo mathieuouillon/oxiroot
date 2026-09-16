@@ -3,7 +3,9 @@ name = "oxiroot-particle"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+# The particle table and the PdgId decoder derive from scikit-hep `particle`
+# (BSD-3-Clause; see LICENSE-3rdparty), so the SPDX expression names both.
+license = "MIT AND BSD-3-Clause"
 repository.workspace = true
 description = "Pure-Rust PDG particle data — the Monte Carlo numbering-scheme decoder plus a bundled particle table (masses, widths, quantum numbers), modelled on scikit-hep/particle"
 

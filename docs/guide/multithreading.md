@@ -79,7 +79,8 @@ contended.
 | `merge()` | Consume the accumulator, returning the combined histogram (`Result<H>`). |
 
 The `fill` / `fill_weight` convenience methods are provided for every
-fillable type — `TH1`, `TH2`, `TH3`, and `TProfile` — with the matching arity:
+fillable type — `TH1`, `TH2`, `TH3` and the three profiles — with the matching
+arity:
 
 | Type | `fill` | `fill_weight` |
 | --- | --- | --- |
@@ -87,6 +88,8 @@ fillable type — `TH1`, `TH2`, `TH3`, and `TProfile` — with the matching arit
 | `ThreadedHist<TH2>` | `fill(x, y)` | `fill_weight(x, y, w)` |
 | `ThreadedHist<TH3>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
 | `ThreadedHist<TProfile>` | `fill(x, y)` | `fill_weight(x, y, w)` |
+| `ThreadedHist<TProfile2D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
+| `ThreadedHist<TProfile3D>` | `fill(x, y, z, t)` | `fill_weight(x, y, z, t, w)` |
 
 ### `with_local`
 
@@ -125,7 +128,7 @@ println!("filled across {} thread-local copies", hist.num_slots());
 ## The `Merge` trait
 
 `merge()` is built on the `Merge` trait, implemented for `TH1`, `TH2`, `TH3`,
-and `TProfile`. `Merge::merge(&mut self, other)` is the bin-by-bin combine of
+`TProfile`, `TProfile2D` and `TProfile3D`. `Merge::merge(&mut self, other)` is the bin-by-bin combine of
 `add(other, 1.0)`; it returns
 [`Error::BinningMismatch`](../api/oxiroot/index.html) (leaving `self` unchanged)
 when the binnings differ.
@@ -162,11 +165,11 @@ assert_eq!(hist.entries, data.len() as f64);
 The closure `|h, item|` applies one element, so it generalizes beyond 1-D — for
 example `|h, ev| h.fill_weight(ev.x, ev.w)` over a slice of event structs.
 
-`fill_par` comes from the **`rayon`** feature, which is on by default:
+`fill_par` comes from the **`rayon`** feature, which is opt-in:
 
 ```toml
 [dependencies]
-oxiroot = { version = "*" } # the `rayon` feature is on by default
+oxiroot = { version = "*", features = ["rayon"] }
 ```
 
 !!! warning "Summation order"
