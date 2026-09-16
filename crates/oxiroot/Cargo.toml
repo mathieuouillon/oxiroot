@@ -41,7 +41,7 @@ rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
 # `plot` feature is also on, this lights up `Axes::model` (fit-curve overlay).
 fit = ["oxiroot-hist/fit", "dep:oxiroot-fit", "oxiroot-plot?/fit"]
 # Also build the gradient-free Nelder–Mead (`argmin`) minimizer backend.
-argmin = ["fit", "oxiroot-hist/argmin", "oxiroot-fit/argmin"]
+argmin = ["fit", "oxiroot-fit/argmin"]
 # Enable plotting (`oxiroot::plot`): render TH1/TH2/TGraph/TProfile to SVG/PNG
 # with a matplotlib-like API and mplhep style. Pulls tiny-skia, ab_glyph, and
 # the ReX TeX engine (git dependency) for `$…$` math labels.
