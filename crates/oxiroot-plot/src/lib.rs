@@ -1,15 +1,17 @@
 //! Pure-Rust plotting for ROOT histograms and graphs.
 //!
-//! `oxiroot-plot` renders [`oxiroot_hist`] objects (`TH1`/`TH2`/`TGraph`/
-//! `TProfile`) to **SVG, PNG, and PDF** with a matplotlib-like API and an
-//! mplhep-style histogram look — no ROOT, no matplotlib, no system fonts.
+//! `oxiroot-plot` renders histograms and graphs to **SVG, PNG, and PDF** with a
+//! matplotlib-like API and an mplhep-style histogram look — no ROOT, no
+//! matplotlib, no system fonts. It draws the `oxiroot-hist` types
+//! (`TH1`/`TH2`/`TGraph`/`TProfile`, the `hist` feature) and any other data that
+//! implements [`Hist1dData`], [`Hist2dData`] or [`PointData`].
 //! Everything is drawn through one backend-independent draw IR that fans out
 //! to a tiny-skia raster (PNG), a hand-written SVG, and a hand-written PDF, so
 //! the three outputs share identical geometry. The default font is STIX Two (a
 //! LaTeX-like serif; see [`FontSet`]), and `$…$` math is typeset with the ReX
 //! TeX engine into the same IR.
 //!
-//! PNG output (the `png` feature) and TeX math (the `math` feature) are on by
+//! The `hist`, `png` (PNG output) and `math` (TeX math) features are on by
 //! default. Without them, SVG and PDF still render, math spans are laid out as
 //! plain text, and a PNG request returns [`Error::MissingFeature`].
 //!
@@ -90,6 +92,7 @@
 pub mod axes;
 pub mod cmap;
 pub mod color;
+pub mod data;
 pub mod error;
 pub mod figure;
 pub mod fonts;
@@ -116,6 +119,7 @@ pub use artists::{HistType, Marker, ParseHistTypeError, ParseMarkerError};
 pub use axes::{Axes, CurveOpts, ErrorbarOpts, Hist2dOpts, HistOpts};
 pub use cmap::{Colormap, ParseColormapError};
 pub use color::{Color, ParseColorError, TAB10};
+pub use data::{Hist1dData, Hist2dData, PointData};
 pub use error::{Error, Result};
 pub use figure::{
     ratio_subplots, ratio_subplots_with, subplots, subplots_grid, subplots_grid_with,
@@ -134,6 +138,7 @@ mod tests {
     // The render IR, text/math layout, and backends are private to the crate;
     // the tests reach them through `crate::` (still accessible in-crate).
     use crate::{draw, mathtext, render, text};
+    #[cfg(feature = "hist")]
     use oxiroot_hist::{Hist, TGraph, TH1};
 
     /// `groups` render to a PNG, or, without the `png` feature, to the error
@@ -151,6 +156,7 @@ mod tests {
         assert!(svg.starts_with("<svg") && svg.contains("</svg>"));
     }
 
+    #[cfg(feature = "hist")]
     fn gauss_hist() -> TH1 {
         let mut seed = 0x2545_F491_4F6C_DD1Du64;
         let mut next = move || {
@@ -209,6 +215,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "hist")]
     fn hist_step_and_errorbar() {
         let h = gauss_hist();
         let mut ax = Axes::new();
@@ -222,6 +229,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "hist")]
     fn graph_with_legend() {
         let x: Vec<f64> = (0..6).map(|i| 60.0 + 12.0 * i as f64).collect();
         let y: Vec<f64> = x
@@ -238,6 +246,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "hist")]
     fn hist2d_heatmap_with_colorbar() {
         let mut h2 = Hist::reg(20, -3.0, 3.0)
             .reg(20, -3.0, 3.0)
@@ -414,6 +423,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "hist")]
     fn visual_dump() {
         let Ok(dir) = std::env::var("PLOT_DUMP") else {
             return;

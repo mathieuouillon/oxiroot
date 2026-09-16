@@ -4,14 +4,19 @@
 //! artist / layout actually renders. No pixel comparison — only structural and
 //! invariant checks that won't flake.
 
+// These tests plot the oxiroot histogram types.
+#![cfg(feature = "hist")]
+
 #[cfg(feature = "png")]
 use oxiroot_hist::TProfile;
 use oxiroot_hist::{Hist, TGraph, TH1, TH2};
 #[cfg(feature = "png")]
 use oxiroot_plot::Norm;
+#[cfg(feature = "png")]
+use oxiroot_plot::SaveOpts;
 use oxiroot_plot::{
     ratio_subplots, subplots, subplots_grid, Axes, Color, CurveOpts, Error, ErrorbarOpts, FontSet,
-    Hist2dOpts, HistOpts, HistType, PdfPages, SaveOpts, Style,
+    Hist2dOpts, HistOpts, HistType, PdfPages, Style,
 };
 
 // --- deterministic fixtures (a tiny LCG → reproducible bytes, no rng dep) ---
@@ -779,18 +784,4 @@ fn symlog_norm_handles_data_straddling_zero() {
     );
     let png = ax.to_png_bytes(SaveOpts::new()).unwrap();
     assert!(png.starts_with(b"\x89PNG"));
-}
-
-#[test]
-#[cfg(not(feature = "png"))]
-fn png_output_without_the_png_feature_is_a_clear_error() {
-    let mut ax = Axes::new();
-    ax.plot(&[0.0, 1.0], &[0.0, 1.0]);
-    let err = ax.to_png_bytes(SaveOpts::new()).unwrap_err();
-    assert!(err.to_string().contains("`png` feature"), "{err}");
-    let dir = std::env::temp_dir();
-    assert!(ax.save(dir.join("oxiroot_plot_no_png.png")).is_err());
-    // SVG and PDF need no feature.
-    assert!(ax.to_svg_string().starts_with("<svg"));
-    assert!(ax.to_pdf_bytes().starts_with(b"%PDF"));
 }

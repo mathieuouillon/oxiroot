@@ -8,7 +8,8 @@ repository.workspace = true
 description = "Pure-Rust plotting for ROOT histograms and graphs — matplotlib-like API, mplhep style, SVG/PNG/PDF"
 
 [dependencies]
-oxiroot-hist = { workspace = true }
+# Draw the histogram and graph types directly (the `hist` feature).
+oxiroot-hist = { workspace = true, optional = true }
 # Optional: overlay a fitted `Model` curve with `Axes::model` (the `fit` feature).
 oxiroot-fit = { workspace = true, optional = true }
 # CPU anti-aliased 2D rasterizer (resvg's own renderer); re-exports the pure-Rust
@@ -31,7 +32,9 @@ ttf-parser = "0.25"
 # SVG and PDF output need no feature; PNG output and TeX math are on by default.
 # An SVG/PDF-only build (`default-features = false`) drops the rasterizer and
 # the TeX engine, and lays `$…$` labels out as plain text.
-default = ["png", "math"]
+default = ["hist", "png", "math"]
+# Implement the plot data traits for oxiroot's TH1/TH2/TProfile/TGraph.
+hist = ["dep:oxiroot-hist"]
 # PNG output, through the tiny-skia rasterizer.
 png = ["dep:tiny-skia"]
 # Typeset `$…$` label spans as TeX math, through the ReX engine.
@@ -39,6 +42,10 @@ math = ["dep:rex"]
 # Overlay a fitted `oxiroot_fit::Model` curve via `Axes::model`. (The general
 # `Axes::function` closure overlay is always available, with no extra deps.)
 fit = ["dep:oxiroot-fit"]
+
+[dev-dependencies]
+# The tests plot histograms and graphs.
+oxiroot-hist = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
