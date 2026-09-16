@@ -162,11 +162,11 @@ assert_eq!(hist.entries, data.len() as f64);
 The closure `|h, item|` applies one element, so it generalizes beyond 1-D — for
 example `|h, ev| h.fill_weight(ev.x, ev.w)` over a slice of event structs.
 
-`fill_par` comes from the **`rayon`** feature, which is on by default:
+`fill_par` comes from the **`rayon`** feature, which is opt-in:
 
 ```toml
 [dependencies]
-oxiroot = { version = "*" } # the `rayon` feature is on by default
+oxiroot = { version = "*", features = ["rayon"] }
 ```
 
 !!! warning "Summation order"
