@@ -16,9 +16,11 @@
 //!
 //! # What a fileset may contain
 //!
-//! One invocation writes **one** output file, and oxiroot does not yet assemble
-//! a single container that mixes histograms with a `TTree`/RNTuple (each of
-//! those owns auxiliary basket/page keys). So a fileset must be one of:
+//! One invocation writes **one** output file. The merger does not yet combine
+//! histograms with a `TTree` or RNTuple in one output (a
+//! [`RootFile`](oxiroot_io_core::RootFile) can hold all three, but the merger
+//! concatenates each tree or RNTuple on its own path). So a fileset must be one
+//! of:
 //!
 //! * **all histogram-family objects** — `TH1`/`TH2`/`TH3` and the 1-, 2- and
 //!   3-D profiles are summed; graphs, efficiencies, functions, strings,

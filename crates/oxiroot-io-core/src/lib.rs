@@ -36,7 +36,7 @@ pub use file::{
 pub use object::{ObjHeader, TagReader};
 pub use object_io::{
     object_bytes_any, object_bytes_any_keyed, record_of, ObjectRecord, ReadRoot, StreamerSet,
-    WriteRoot,
+    WriteInto, WriteRoot,
 };
 pub use objects::{FromMember, ListKind, ObjList, ParamValue, TMap, TObjString, TParameter};
 pub use read_object::read_object;

@@ -365,6 +365,15 @@ impl<W: Write + Seek> ContainerWriter<W> {
         self.pos
     }
 
+    /// The offset of directory `dir`'s own key (`fSeekDir`), which records placed
+    /// for that directory point back to.
+    pub fn dir_offset(&self, dir: DirId) -> Result<u64> {
+        self.dirs
+            .get(dir.0)
+            .map(|d| d.seek)
+            .ok_or_else(|| Error::Format(format!("{dir:?} does not belong to this file")))
+    }
+
     /// The compression setting (`algorithm*100 + level`) this file applies to
     /// [`place_key`](Self::place_key) payloads, for callers that compress their
     /// own blobs the same way.

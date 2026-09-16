@@ -701,9 +701,10 @@ ax2.save("heatmap.svg")?;
 - `Ntuple::new(name, fields).write_root(path, compression)` is the method form
   (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
   free `write_rntuple_file` remains.
-- `NtupleFile` writes **several RNTuples per file** and RNTuples **inside a
-  `TDirectory`** — `NtupleFile::new().add(events).add(runs).dir("cal", |d|
-  d.add(pedestals)).write_root(…)`. Read a nested one with
+- `RootFile::put` writes **several RNTuples per file**, RNTuples **inside a
+  `TDirectory`**, and RNTuples next to histograms and trees —
+  `RootFile::create(path).put(events).put(runs).dir("cal", |d|
+  d.put(pedestals)).write(…)`. Read a nested one with
   `RNTuple::open_in(file, "cal", "pedestals")`. ROOT and uproot navigate the
   result natively.
 - `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is

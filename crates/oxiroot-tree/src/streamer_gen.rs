@@ -35,7 +35,7 @@ fn leaf_subclass(
 
 /// The canonical class list, in dependency order (bases before the classes that
 /// use them, as ROOT writes). Checksums and versions are ROOT's own values.
-fn classes() -> Vec<Cls<'static>> {
+pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
     vec![
         Cls {
             name: "TObject".into(),
@@ -252,7 +252,7 @@ fn classes() -> Vec<Cls<'static>> {
 /// describing the whole `TTree` class hierarchy. Every written tree embeds it so
 /// the file is self-describing.
 pub(crate) fn tree_streamer_info() -> Vec<u8> {
-    streamer_info_list(&classes())
+    streamer_info_list(&tree_classes())
 }
 
 #[cfg(test)]

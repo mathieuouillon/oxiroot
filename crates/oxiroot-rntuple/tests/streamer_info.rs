@@ -4,8 +4,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{Compression, RFile, StreamerRegistry};
-use oxiroot_rntuple::{Column, Field, Ntuple, NtupleFile, RNTupleWriter};
+use oxiroot_io_core::{Compression, RFile, RootFile, StreamerRegistry};
+use oxiroot_rntuple::{Column, Field, Ntuple, RNTupleWriter};
 
 fn root_written() -> StreamerRegistry {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -81,12 +81,12 @@ fn classes_with_other_members_are_not_described() {
             ("label".into(), Column::Str(vec!["a".into()])),
         ],
     };
-    let bytes = NtupleFile::new()
-        .add(Ntuple::new("a", vec![Field::new("t", tagged)]))
+    let bytes = RootFile::create("t.root")
+        .put(Ntuple::new("a", vec![Field::new("t", tagged)]))
         .dir("d", |d| {
-            d.add(Ntuple::new("b", vec![Field::new("hit", hit(vec![3]))]))
+            d.put(Ntuple::new("b", vec![Field::new("hit", hit(vec![3]))]))
         })
-        .to_root_bytes("t.root", Compression::None)
+        .to_bytes(Compression::None)
         .unwrap();
     assert_eq!(registry(bytes).class_names(), ["ROOT::RNTuple", "Hit"]);
 }

@@ -12,6 +12,8 @@ use std::borrow::Cow;
 use std::fmt;
 use std::path::Path;
 
+use std::io::Cursor;
+
 use crate::error::{Error, Result};
 use crate::file::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use crate::streamer_gen::Cls;
@@ -100,6 +102,32 @@ pub trait WriteRoot {
     }
 }
 
+/// An object stored as several records rather than under a single key: data
+/// blocks placed anywhere in the file, then the key that locates them. A `TTree`
+/// (its baskets, then the tree) and an RNTuple (its envelopes and pages, then
+/// the anchor) are written this way. [`RootFile::put`](crate::RootFile::put)
+/// stores one in a file, next to any other objects.
+pub trait WriteInto {
+    /// The class of the key that locates the object (e.g. `"TTree"`).
+    fn root_class(&self) -> String;
+    /// The name of that key.
+    fn root_name(&self) -> &str;
+    /// Write the object's records at the end of `file`, with its key in `dir`.
+    /// This may run more than once for one file: the builder lays a file out
+    /// again when it has to switch to the 64-bit form.
+    fn write_into(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()>;
+    /// The `TStreamerInfo` entries the object's classes need; see
+    /// [`WriteRoot::streamer_classes`].
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        Vec::new()
+    }
+    /// A serialized `TList<TStreamerInfo>` the object needs; see
+    /// [`WriteRoot::streamer_blob`].
+    fn streamer_blob(&self) -> Cow<'static, [u8]> {
+        Cow::Borrowed(&[])
+    }
+}
+
 /// The streamer info a set of objects needs: the first serialized list any of
 /// them brings ([`WriteRoot::streamer_blob`]), and each generated class
 /// ([`WriteRoot::streamer_classes`]) once.
@@ -112,6 +140,12 @@ pub struct StreamerSet {
 impl StreamerSet {
     /// Add what `object` needs.
     pub fn add(&mut self, object: &dyn WriteRoot) {
+        self.add_list(object.streamer_blob());
+        self.add_classes(object.streamer_classes());
+    }
+
+    /// Add what a multi-record `object` needs.
+    pub fn add_records(&mut self, object: &dyn WriteInto) {
         self.add_list(object.streamer_blob());
         self.add_classes(object.streamer_classes());
     }

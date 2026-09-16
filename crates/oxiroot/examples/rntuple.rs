@@ -1,6 +1,6 @@
 //! The start-here RNTuple example: write a flat event dataset columnarly, reopen
 //! it, and read a few fields back per entry — then put two RNTuples in one file
-//! with the `NtupleFile` builder and read both. RNTuple is ROOT's modern columnar
+//! with the `RootFile` builder and read both. RNTuple is ROOT's modern columnar
 //! event-data format; the files here are readable by official ROOT and uproot.
 //! (For nested fields — `std::vector<std::vector<T>>`, records — see
 //! `rntuple_nested.rs`.)
@@ -91,27 +91,28 @@ fn main() -> Result<()> {
     let total_jets: usize = jets.iter().map(Vec::len).sum();
     println!("  ({total_jets} jets across {} events)", jets.len());
 
-    // --- Several RNTuples in one file, via the `NtupleFile` builder. -----------
-    // `Ntuple::write_root` writes exactly one; `NtupleFile` puts more than one in
-    // the same file (and can nest them in `TDirectory`s — see the docs). Here: the
-    // per-event `events` alongside a small per-run bookkeeping RNTuple.
+    // --- Several RNTuples in one file, via the `RootFile` builder. ------------
+    // `Ntuple::write_root` writes exactly one; `RootFile::put` puts more than one
+    // in the same file (next to histograms or trees, and in `TDirectory`s — see
+    // the docs). Here: the per-event `events` alongside a small per-run
+    // bookkeeping RNTuple.
     let multi_path = dir.join("oxiroot_ex_rntuple_multi.root");
-    NtupleFile::new()
-        .add(Ntuple::new(
+    RootFile::create(&multi_path)
+        .put(Ntuple::new(
             "events",
             vec![
                 Field::f64("mass", vec![91.19, 125.10]),
                 Field::i32("charge", vec![0, 0]),
             ],
         ))
-        .add(Ntuple::new(
+        .put(Ntuple::new(
             "runs",
             vec![
                 Field::i32("run", vec![101, 102, 103]),
                 Field::i64("n_events", vec![12_000, 8_400, 15_250]),
             ],
         ))
-        .write_root(&multi_path, Compression::Zstd(5))?;
+        .write(Compression::Zstd(5))?;
     println!("wrote 2 RNTuples -> {}", multi_path.display());
 
     // --- Read both RNTuples back out of the one file. --------------------------
