@@ -10,10 +10,8 @@ use std::path::Path;
 use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
-use oxiroot_io_core::{
-    update_root_file_threshold, write_root_file_with_dirs_threshold,
-    write_root_file_with_streamers_threshold, Compression, ObjectRecord, Subdir, KSTART_BIG_FILE,
-};
+use oxiroot_io_core::streamer_gen::{append_streamer_infos, Cls};
+use oxiroot_io_core::{Compression, ContainerWriter, DirId, ObjectRecord, KSTART_BIG_FILE};
 // The object framework (the `WriteRoot` trait + `record_of`) now lives in
 // `oxiroot-io-core`; re-export the trait so `oxiroot_hist::WriteRoot` and the
 // in-crate `crate::write::WriteRoot` path both keep resolving.
@@ -137,16 +135,11 @@ impl WriteRoot for TGraph {
 /// ROOT-written file with one of each type, kept uncompressed.
 const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
 
-/// The streamer info to embed for objects with class names `class_names`: the
-/// baked histogram blob, plus any persistable-object classes
-/// (`TObjString`/`TParameter<…>`) those objects use, so uproot can model them.
-/// Returns the baked blob borrowed when nothing extra is needed.
-fn streamer_info_for<'a>(
-    class_names: impl Iterator<Item = &'a str>,
-) -> Result<std::borrow::Cow<'static, [u8]>> {
-    use oxiroot_io_core::streamer_gen::append_streamer_infos;
-    use oxiroot_io_core::streamer_gen::Cls;
-    let mut extra: Vec<Cls> = Vec::new();
+/// The classes, beyond the baked histogram blob, that objects with class names
+/// `class_names` need described (`TObjString`/`TParameter<…>`, matrices, …), so
+/// uproot can model them. Each class appears once.
+fn extra_streamer_classes<'a>(class_names: impl Iterator<Item = &'a str>) -> Vec<Cls<'static>> {
+    let mut extra: Vec<Cls<'static>> = Vec::new();
     for class in class_names {
         // A class may need several infos (e.g. a matrix plus its base); dedup by
         // name so a shared base is embedded once.
@@ -156,10 +149,18 @@ fn streamer_info_for<'a>(
             }
         }
     }
+    extra
+}
+
+/// The streamer info to embed for objects with class names `class_names`: the
+/// baked histogram blob plus [`extra_streamer_classes`]. Returns the baked blob
+/// borrowed when nothing extra is needed.
+fn streamer_info_for<'a>(class_names: impl Iterator<Item = &'a str>) -> Result<Cow<'static, [u8]>> {
+    let extra = extra_streamer_classes(class_names);
     if extra.is_empty() {
-        Ok(std::borrow::Cow::Borrowed(HIST_STREAMER_INFO))
+        Ok(Cow::Borrowed(HIST_STREAMER_INFO))
     } else {
-        Ok(std::borrow::Cow::Owned(append_streamer_infos(
+        Ok(Cow::Owned(append_streamer_infos(
             HIST_STREAMER_INFO,
             &extra,
         )?))
@@ -1141,10 +1142,11 @@ impl WriteRoot for TGraphMultiErrors {
     }
 }
 
-/// Reject objects that cannot be addressed by key: an empty name (it could never
-/// be looked up) or two objects sharing a name in one directory (the second
-/// would silently shadow the first on read).
-fn check_names(records: &[ObjectRecord], location: &str) -> Result<()> {
+/// Reject keys that cannot be addressed: an empty name (it could never be looked
+/// up) or two keys sharing a name in one directory (the second would silently
+/// shadow the first on read). `subdirs` names the subdirectories created in the
+/// same directory, which share its namespace.
+fn check_names(records: &[ObjectRecord], subdirs: &[&str], location: &str) -> Result<()> {
     let mut seen = std::collections::HashSet::new();
     for r in records {
         if r.name.is_empty() {
@@ -1160,7 +1162,26 @@ fn check_names(records: &[ObjectRecord], location: &str) -> Result<()> {
             });
         }
     }
+    for &name in subdirs {
+        if name.is_empty() {
+            return Err(Error::Format(format!(
+                "cannot create a subdirectory with an empty name in {location}"
+            )));
+        }
+        if !seen.insert(name) {
+            return Err(Error::DuplicateName {
+                name: name.to_string(),
+                location: location.to_string(),
+            });
+        }
+    }
     Ok(())
+}
+
+/// The objects added inside one [`RootFile::dir`] call.
+struct SubdirRecords {
+    name: String,
+    objects: Vec<ObjectRecord>,
 }
 
 /// Builder for composing a ROOT file from several objects — optionally organised
@@ -1198,7 +1219,7 @@ pub struct RootFile {
     /// `Some` in append mode (the existing file bytes); `None` for a fresh file.
     existing: Option<Vec<u8>>,
     root: Vec<ObjectRecord>,
-    dirs: Vec<Subdir>,
+    dirs: Vec<SubdirRecords>,
     /// Classes contained inside added objects (collection members) whose streamer
     /// info must also be embedded.
     contained: Vec<String>,
@@ -1223,7 +1244,7 @@ impl RootFile {
     /// whose name matches an existing one lands at a higher cycle, as ROOT does.
     /// Files that contain subdirectories or an RNTuple are preserved — only
     /// *adding* new subdirectories in this mode is unsupported. See
-    /// [`update_root_file`].
+    /// [`ContainerWriter::append`].
     pub fn open(path: impl AsRef<Path>) -> Result<RootFile> {
         let path = path.as_ref().to_path_buf();
         let existing = std::fs::read(&path)?;
@@ -1254,7 +1275,7 @@ impl RootFile {
             contained: Vec::new(),
         });
         self.contained.extend(dir.contained);
-        self.dirs.push(Subdir {
+        self.dirs.push(SubdirRecords {
             name: name.into(),
             objects: dir.objects,
         });
@@ -1269,16 +1290,17 @@ impl RootFile {
         self.write_threshold(compression, KSTART_BIG_FILE)
     }
 
-    /// Like [`write`](RootFile::write) but with the big-file threshold injectable
-    /// for tests, so the 64-bit container path can be exercised without producing
-    /// a 2 GiB file.
-    #[doc(hidden)]
+    /// Like [`write`](RootFile::write), but switch to the 64-bit container form
+    /// once the file would exceed `threshold` bytes rather than ROOT's ~2 GiB
+    /// ([`KSTART_BIG_FILE`]). A threshold of 0 always writes the 64-bit form,
+    /// which is useful for testing readers against it.
     pub fn write_threshold(self, compression: Compression, threshold: u64) -> Result<()> {
         // Reject unnamed / clashing keys before writing — loudly, instead of
         // ROOT's silent shadow-on-read.
-        check_names(&self.root, "the top directory")?;
+        let subdir_names: Vec<&str> = self.dirs.iter().map(|d| d.name.as_str()).collect();
+        check_names(&self.root, &subdir_names, "the top directory")?;
         for dir in &self.dirs {
-            check_names(&dir.objects, &format!("subdirectory {:?}", dir.name))?;
+            check_names(&dir.objects, &[], &format!("subdirectory {:?}", dir.name))?;
         }
         let file_name = self
             .path
@@ -1286,16 +1308,31 @@ impl RootFile {
             .and_then(|s| s.to_str())
             .unwrap_or("file.root")
             .to_string();
-        let setting = compression.setting();
-        let streamers = streamer_info_for(
+        // The baked histogram list, plus the classes it lacks. When appending to a
+        // file that has streamer info, only those extra classes are added to it
+        // (readers know the histogram classes).
+        let extra = extra_streamer_classes(
             self.root
                 .iter()
                 .chain(self.dirs.iter().flat_map(|d| d.objects.iter()))
                 .map(|r| r.class_name.as_str())
                 .chain(self.contained.iter().map(String::as_str)),
-        )?;
-        let streamers = Some(streamers.as_ref());
-        let bytes = match self.existing {
+        );
+        let layout = |c: &mut ContainerWriter<_>| {
+            for r in &self.root {
+                c.place_key(DirId::TOP, &r.class_name, &r.name, &r.title, &r.object)?;
+            }
+            c.place_streamer_info(HIST_STREAMER_INFO, &extra)?;
+            for dir in &self.dirs {
+                let id = c.mkdir(DirId::TOP, &dir.name)?;
+                for r in &dir.objects {
+                    c.place_key(id, &r.class_name, &r.name, &r.title, &r.object)?;
+                }
+                c.close_dir(id)?;
+            }
+            Ok(())
+        };
+        let bytes = match &self.existing {
             Some(existing) => {
                 if !self.dirs.is_empty() {
                     return Err(Error::Format(
@@ -1305,16 +1342,9 @@ impl RootFile {
                             .to_string(),
                     ));
                 }
-                update_root_file_threshold(
-                    &existing, &file_name, &self.root, setting, streamers, threshold,
-                )?
+                ContainerWriter::build_append(existing, &file_name, compression, threshold, layout)?
             }
-            None if self.dirs.is_empty() => write_root_file_with_streamers_threshold(
-                &file_name, &self.root, setting, streamers, threshold,
-            )?,
-            None => write_root_file_with_dirs_threshold(
-                &file_name, &self.root, &self.dirs, setting, streamers, threshold,
-            )?,
+            None => ContainerWriter::build(&file_name, compression, threshold, layout)?,
         };
         std::fs::write(&self.path, bytes)?;
         Ok(())

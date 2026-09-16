@@ -20,7 +20,7 @@ fn leaf_subclass(
     min_ty: i32,
     min_size: i32,
     min_tn: &'static str,
-) -> Cls {
+) -> Cls<'static> {
     Cls {
         name,
         version: 1,
@@ -35,7 +35,7 @@ fn leaf_subclass(
 
 /// The canonical class list, in dependency order (bases before the classes that
 /// use them, as ROOT writes). Checksums and versions are ROOT's own values.
-fn classes() -> Vec<Cls> {
+fn classes() -> Vec<Cls<'static>> {
     vec![
         Cls {
             name: "TObject",

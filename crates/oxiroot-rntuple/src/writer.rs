@@ -9,34 +9,23 @@
 //! (and the page locators) point to; only the anchor is a `TKey`. Validated by
 //! reading the result back and by official ROOT / uproot.
 
-use std::io::{self, Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{
-    dir_record_total, key_len_fmt, seek_value, seek_zero, write_dir_record_fmt,
-    write_key_header_fmt, write_root_dir_record_fmt, Compression, KSTART_BIG_FILE,
-};
+use oxiroot_io_core::streamer_gen::{basic, streamer_info_list, Cls};
+use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, KSTART_BIG_FILE};
 
+use crate::anchor::{anchor_streamer_class, ANCHOR_CLASS};
 use crate::column::ColumnType;
 
 const K_BYTE_COUNT_MASK: u32 = 0x4000_0000;
-const DATIME: u32 = 0x7d7a_79ca;
-const FILE_VERSION: u32 = 62400;
 
-/// The on-disk bytes for one page: ROOT-compressed when `compression != 0` and
-/// the result is actually smaller, otherwise the raw column bytes. A reader
-/// tells the two apart by comparing the on-disk size to the uncompressed size
-/// (derived from the element count), exactly as ROOT does.
+/// The stored bytes of one page: compressed when that makes it smaller (a reader
+/// tells the two apart by comparing the stored size with the size the element
+/// count implies, as ROOT does).
 fn on_disk_page(page: &[u8], compression: u32) -> Vec<u8> {
-    if compression == 0 {
-        return page.to_vec();
-    }
-    match oxiroot_compress::compress(page, compression) {
-        Ok(compressed) if compressed.len() < page.len() => compressed,
-        _ => page.to_vec(),
-    }
+    compress_if_smaller(page, compression).into_owned()
 }
 
 const ROLE_LEAF: u16 = 0;
@@ -1262,26 +1251,92 @@ fn class_checksum(class_name: &str, members: &[(String, Column)]) -> u32 {
     id
 }
 
-/// The C++ type spelling ROOT uses for a member when computing a class checksum
-/// (the fundamental-type keyword, e.g. `int`/`double`), for each writable
-/// scalar [`Column`]. Panics on a column kind not valid as a flat class member.
-fn checksum_type_name(col: &Column) -> &'static str {
-    match col {
-        Column::Bool(_) => "bool",
-        Column::I8(_) => "char",
-        Column::U8(_) => "unsigned char",
-        Column::I16(_) => "short",
-        Column::U16(_) => "unsigned short",
-        Column::I32(_) => "int",
-        Column::U32(_) => "unsigned int",
-        Column::I64(_) => "long long",
-        Column::U64(_) => "unsigned long long",
+/// How ROOT describes a class member of a plain-number column kind: the C++
+/// spelling its class checksum folds in, and the `(fType, fSize, fTypeName)` of
+/// its streamer element. `None` for any other column kind.
+fn scalar_member(col: &Column) -> Option<(&'static str, i32, i32, &'static str)> {
+    Some(match col {
+        Column::Bool(_) => ("bool", 18, 1, "bool"),
+        Column::I8(_) => ("char", 1, 1, "char"),
+        Column::U8(_) => ("unsigned char", 11, 1, "unsigned char"),
+        Column::I16(_) => ("short", 2, 2, "short"),
+        Column::U16(_) => ("unsigned short", 12, 2, "unsigned short"),
+        Column::I32(_) => ("int", 3, 4, "int"),
+        Column::U32(_) => ("unsigned int", 13, 4, "unsigned int"),
+        Column::I64(_) => ("long long", 16, 8, "Long64_t"),
+        Column::U64(_) => ("unsigned long long", 17, 8, "ULong64_t"),
         Column::F32(_) | Column::HalfF32(_) | Column::TruncF32 { .. } | Column::QuantF32 { .. } => {
-            "float"
+            ("float", 5, 4, "float")
         }
-        Column::F64(_) => "double",
-        _ => "void", // non-scalar members are not part of the supported checksum
+        Column::F64(_) => ("double", 8, 8, "double"),
+        _ => return None,
+    })
+}
+
+/// The C++ type spelling ROOT uses for a member when computing a class checksum
+/// (the fundamental-type keyword, e.g. `int`/`double`); `void` for a member that
+/// is not a plain number, which the supported checksum does not cover.
+fn checksum_type_name(col: &Column) -> &'static str {
+    scalar_member(col).map_or("void", |(name, ..)| name)
+}
+
+/// Add the `TStreamerInfo` entries for the user classes inside `col` to
+/// `classes`, once per class name. A class is described when every member is a
+/// plain number, as ROOT writes it for a struct without `ClassDef` (version 1);
+/// its checksum is the one the field record carries.
+fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
+    match col {
+        Column::Object { type_name, members } => {
+            for (_, member) in members {
+                collect_classes(member, classes);
+            }
+            let elements: Option<Vec<_>> = members
+                .iter()
+                .map(|(name, member)| {
+                    scalar_member(member)
+                        .map(|(_, ty, size, type_name)| basic(name, ty, size, type_name))
+                })
+                .collect();
+            if let Some(elements) = elements {
+                if !classes.iter().any(|c| c.name == type_name) {
+                    classes.push(Cls {
+                        name: type_name,
+                        version: 1,
+                        checksum: class_checksum(type_name, members),
+                        elements,
+                    });
+                }
+            }
+        }
+        Column::Record(members) => {
+            for (_, member) in members {
+                collect_classes(member, classes);
+            }
+        }
+        Column::Variant { alternatives, .. } => {
+            for alt in alternatives {
+                collect_classes(alt, classes);
+            }
+        }
+        Column::Nested { items, .. }
+        | Column::Array { items, .. }
+        | Column::Assoc { items, .. } => {
+            collect_classes(items, classes);
+        }
+        Column::Optional { values, .. } => collect_classes(values, classes),
+        Column::Atomic(inner) => collect_classes(inner, classes),
+        _ => {}
     }
+}
+
+/// The file's `TList<TStreamerInfo>`: the anchor class, which ROOT describes in
+/// every RNTuple file, then the user classes of `fields`.
+fn ntuple_streamer_info<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<u8> {
+    let mut classes = vec![anchor_streamer_class()];
+    for field in fields {
+        collect_classes(&field.data, &mut classes);
+    }
+    streamer_info_list(&classes)
 }
 
 /// Assign field ids by a depth-first pre-order walk (parents before children,
@@ -1809,8 +1864,7 @@ fn prep_ntuple_extended(
 
 /// Build a complete ROOT file with one schema-extended RNTuple: `base_fields` in
 /// the header plus late `(first_entry, field)` fields in the footer's extension
-/// record (see [`prep_ntuple_extended`]). Small container form only — schema
-/// extension is an append-time operation, not a >2 GiB one.
+/// record (see [`prep_ntuple_extended`]).
 fn extended_rntuple_file_bytes(
     file_name: &str,
     ntuple_name: &str,
@@ -1818,41 +1872,33 @@ fn extended_rntuple_file_bytes(
     late: &[(u64, Field)],
     compression: Compression,
 ) -> Result<Vec<u8>> {
-    let compression = compression.setting();
-    let prep = prep_ntuple_extended(ntuple_name, base_fields, late, compression)?;
-    rntuples_one_shot_pass(
-        file_name,
-        std::slice::from_ref(&prep),
-        &[],
-        compression,
-        false,
-    )
+    let prep = prep_ntuple_extended(ntuple_name, base_fields, late, compression.setting())?;
+    let streamer_info = ntuple_streamer_info(base_fields.iter().chain(late.iter().map(|(_, f)| f)));
+    ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, |file| {
+        write_one_rntuple(file, DirId::TOP, &prep)?;
+        file.place_streamer_info(&streamer_info, &[])
+    })
 }
 
-/// Write one RNTuple's blobs (header, pages, page list, footer) into `w`, then
-/// its anchor `TKey` (parented to the directory at `seek_pdir`). Returns the
-/// anchor key's `(seek, length)` for that directory's key list.
-fn write_one_rntuple(
-    w: &mut WBuffer,
+/// Write one RNTuple's blobs (header, pages, page list, footer) at the end of
+/// `file`, then its anchor key in directory `dir`.
+fn write_one_rntuple<W: Write + Seek>(
+    file: &mut ContainerWriter<W>,
+    dir: DirId,
     p: &NtuplePrep,
-    seek_pdir: u64,
-    compression: u32,
-    big: bool,
-) -> Result<(u64, u32)> {
-    let seek_header = w.len();
-    w.bytes(&p.header_env);
+) -> Result<()> {
+    let compression = file.compression_setting();
+    let seek_header = file.place_blob(&p.header_env)?;
     let mut page_offsets = Vec::with_capacity(p.cols.len());
     for dp in &p.disk_pages {
-        page_offsets.push(w.len());
-        w.bytes(dp);
+        page_offsets.push(offset(file.place_blob(dp)?)?);
     }
-    let page_list_offset = w.len();
-    let (page_list_env, footer_env);
-    if let Some(ext) = &p.ext {
+    let page_list_offset = offset(file.position())?;
+    let footer_env = if let Some(ext) = &p.ext {
         // Schema-extended: the late columns' pages start at their first element
         // index (the page list records the offset), and the late field/column
         // descriptors go in the footer's schema-extension record.
-        page_list_env = build_page_list_offsets(
+        let page_list_env = build_page_list_offsets(
             p.n_entries,
             &page_offsets,
             &p.disk_sizes,
@@ -1861,9 +1907,8 @@ fn write_one_rntuple(
             compression,
             p.header_checksum,
         )?;
-        w.bytes(&page_list_env);
-        let seek = w.len();
-        footer_env = build_footer_ext(
+        file.place_blob(&page_list_env)?;
+        build_footer_ext(
             p.n_entries,
             1,
             page_list_offset,
@@ -1872,10 +1917,9 @@ fn write_one_rntuple(
             &ext.ext_fields,
             &p.cols[ext.base_col_count..],
             &ext.first_entries,
-        );
-        debug_assert_eq!(seek, w.len());
+        )
     } else {
-        page_list_env = build_page_list(
+        let page_list_env = build_page_list(
             p.n_entries,
             &page_offsets,
             &p.disk_sizes,
@@ -1883,219 +1927,31 @@ fn write_one_rntuple(
             compression,
             p.header_checksum,
         )?;
-        w.bytes(&page_list_env);
-        footer_env = build_footer(
+        file.place_blob(&page_list_env)?;
+        build_footer(
             p.n_entries,
             1,
             page_list_offset,
             page_list_env.len(),
             p.header_checksum,
-        );
-    }
-    let seek_footer = w.len();
-    w.bytes(&footer_env);
+        )
+    };
+    let seek_footer = file.place_blob(&footer_env)?;
 
-    let anchor_obj = build_anchor(
-        seek_header,
+    let anchor = build_anchor(
+        offset(seek_header)?,
         p.header_env.len(),
-        seek_footer,
+        offset(seek_footer)?,
         footer_env.len(),
     );
-    let anchor_seek = w.len() as u64;
-    let anchor_len = anchor_obj.len() as u32;
-    write_key_header_fmt(
-        w,
-        "ROOT::RNTuple",
-        &p.name,
-        "",
-        anchor_len,
-        anchor_len,
-        anchor_seek,
-        seek_pdir,
-        1,
-        big,
-    );
-    w.bytes(&anchor_obj);
-    Ok((anchor_seek, anchor_len))
+    file.place_key_uncompressed(dir, ANCHOR_CLASS, &p.name, "", &anchor)?;
+    Ok(())
 }
 
-/// Write a directory's key list: a wrapping `TKey` whose payload is the entry
-/// count then a `TKey` header per entry. `entries` are `(class, name, title,
-/// obj_len, seek)`. Each entry's `title` must match the referenced key's title,
-/// since its `KeyLen` (and so a reader's `seek_key + key_len` payload offset)
-/// depends on it — a subdirectory entry carries the directory name as its title.
-/// Returns `(seek, nbytes)`.
-fn write_key_list_fmt(
-    w: &mut WBuffer,
-    dir_class: &str,
-    dir_name: &str,
-    dir_title: &str,
-    seek_pdir: u64,
-    entries: &[(String, String, String, u32, u64)],
-    big: bool,
-) -> (u64, u32) {
-    let seek = w.len() as u64;
-    let headers: usize = entries
-        .iter()
-        .map(|(class, name, title, _, _)| key_len_fmt(class, name, title, big) as usize)
-        .sum();
-    let obj_len = (4 + headers) as u32;
-    write_key_header_fmt(
-        w, dir_class, dir_name, dir_title, obj_len, obj_len, seek, seek_pdir, 1, big,
-    );
-    w.be_i32(entries.len() as i32);
-    for (class, name, title, len, sk) in entries {
-        write_key_header_fmt(w, class, name, title, *len, *len, *sk, seek_pdir, 1, big);
-    }
-    let nbytes = key_len_fmt(dir_class, dir_name, dir_title, big) as u32 + obj_len;
-    (seek, nbytes)
-}
-
-/// Write a complete ROOT file holding several RNTuples in the root directory plus
-/// one level of subdirectories, each holding its own RNTuples, in the small
-/// (32-bit) or big (64-bit) container form.
-fn rntuples_one_shot_pass(
-    file_name: &str,
-    root: &[NtuplePrep],
-    dirs: &[(String, Vec<NtuplePrep>)],
-    compression: u32,
-    big: bool,
-) -> Result<Vec<u8>> {
-    let mut w = WBuffer::new();
-
-    // --- File header (100 bytes). ---
-    w.bytes(b"root");
-    w.be_u32(if big {
-        FILE_VERSION + 1_000_000
-    } else {
-        FILE_VERSION
-    });
-    w.be_u32(100);
-    let p_end = w.reserve(if big { 8 } else { 4 });
-    seek_zero(&mut w, big); // fSeekFree
-    w.be_u32(0); // fNbytesFree
-    w.be_u32(0); // nfree
-    let p_nbytes_name = w.reserve(4);
-    w.u8(if big { 8 } else { 4 });
-    w.be_u32(compression);
-    seek_zero(&mut w, big); // fSeekInfo
-    w.be_u32(0); // fNbytesInfo
-    w.be_u16(1);
-    w.bytes(&[0u8; 16]);
-    while w.len() < 100 {
-        w.u8(0);
-    }
-
-    // --- Root directory name key + record (at fBEGIN = 100). ---
-    let first_klen = key_len_fmt("TFile", file_name, "", big);
-    let name_title_len = (1 + file_name.len()) + 1;
-    let f_nbytes_name = first_klen as usize + name_title_len;
-    // The root record is always reserved at the big (60-byte) size so the file
-    // could later be appended into the 64-bit form in place (matching ROOT).
-    let first_obj_len = name_title_len as u32 + dir_record_total(true);
-    write_key_header_fmt(
-        &mut w,
-        "TFile",
-        file_name,
-        "",
-        first_obj_len,
-        first_obj_len,
-        100,
-        0,
-        1,
-        big,
-    );
-    w.string(file_name);
-    w.string("");
-    let (p_root_nbk, p_root_sk) =
-        write_root_dir_record_fmt(&mut w, 100, 0, f_nbytes_name as u32, big);
-
-    // --- Root RNTuples. ---
-    let mut root_entries: Vec<(String, String, String, u32, u64)> = Vec::new();
-    for p in root {
-        let (seek, len) = write_one_rntuple(&mut w, p, 100, compression, big)?;
-        root_entries.push((
-            "ROOT::RNTuple".to_string(),
-            p.name.clone(),
-            String::new(),
-            len,
-            seek,
-        ));
-    }
-
-    // --- Subdirectories: each = TDirectory key + record, its RNTuples, key list. ---
-    let dir_total = dir_record_total(big);
-    let mut sub_seeks = Vec::with_capacity(dirs.len());
-    for (name, ntuples) in dirs {
-        let sub_klen = key_len_fmt("TDirectory", name, name, big);
-        let s_sub = w.len() as u64;
-        write_key_header_fmt(
-            &mut w,
-            "TDirectory",
-            name,
-            name,
-            dir_total,
-            dir_total,
-            s_sub,
-            100,
-            1,
-            big,
-        );
-        let (p_sub_nbk, p_sub_sk) = write_dir_record_fmt(&mut w, s_sub, 100, sub_klen as u32, big);
-
-        let mut entries: Vec<(String, String, String, u32, u64)> = Vec::new();
-        for p in ntuples {
-            let (seek, len) = write_one_rntuple(&mut w, p, s_sub, compression, big)?;
-            entries.push((
-                "ROOT::RNTuple".to_string(),
-                p.name.clone(),
-                String::new(),
-                len,
-                seek,
-            ));
-        }
-        let (sub_kl_seek, sub_kl_nbytes) =
-            write_key_list_fmt(&mut w, "TDirectory", name, name, s_sub, &entries, big);
-        w.patch_be_u32(p_sub_nbk, sub_kl_nbytes);
-        if big {
-            w.patch_be_u64(p_sub_sk, sub_kl_seek);
-        } else {
-            w.patch_be_u32(p_sub_sk, sub_kl_seek as u32);
-        }
-        sub_seeks.push(s_sub);
-    }
-
-    // --- Root key list: root RNTuples + a TDirectory entry per subdirectory. ---
-    // A subdirectory's `TDirectory` key carries the directory name as its title,
-    // so its key-list entry must too (its KeyLen sets a reader's payload offset).
-    let mut entries = root_entries;
-    for ((name, _), &seek) in dirs.iter().zip(&sub_seeks) {
-        entries.push((
-            "TDirectory".to_string(),
-            name.clone(),
-            name.clone(),
-            dir_total,
-            seek,
-        ));
-    }
-    let (root_kl_seek, root_kl_nbytes) =
-        write_key_list_fmt(&mut w, "TFile", file_name, "", 100, &entries, big);
-    w.patch_be_u32(p_root_nbk, root_kl_nbytes);
-    if big {
-        w.patch_be_u64(p_root_sk, root_kl_seek);
-    } else {
-        w.patch_be_u32(p_root_sk, root_kl_seek as u32);
-    }
-
-    let f_end = w.len() as u64;
-    if big {
-        w.patch_be_u64(p_end, f_end);
-    } else {
-        w.patch_be_u32(p_end, f_end as u32);
-    }
-    w.patch_be_u32(p_nbytes_name, f_nbytes_name as u32);
-
-    Ok(w.into_vec())
+/// A file offset as the `usize` the envelope builders take.
+fn offset(seek: u64) -> Result<usize> {
+    usize::try_from(seek)
+        .map_err(|_| Error::Format(format!("file offset {seek} does not fit this platform")))
 }
 
 /// One RNTuple to write: its key name and its fields.
@@ -2104,37 +1960,49 @@ type NtupleSpec<'a> = (&'a str, &'a [Field]);
 type DirSpec<'a> = (&'a str, Vec<NtupleSpec<'a>>);
 
 /// Build a ROOT file holding several RNTuples (`root`, in the top directory) plus
-/// one level of subdirectories (`dirs`, each `(name, ntuples)`). Writes the small
-/// (32-bit) container first and only re-emits the big (64-bit) form if it would
-/// exceed 2 GiB.
+/// one level of subdirectories (`dirs`, each `(name, ntuples)`), switching to the
+/// 64-bit container form once the file would exceed `big_threshold` bytes.
 fn rntuples_file_bytes_threshold(
     file_name: &str,
     root: &[NtupleSpec],
     dirs: &[DirSpec],
     compression: Compression,
-    threshold: u64,
+    big_threshold: u64,
 ) -> Result<Vec<u8>> {
-    let compression = compression.setting();
+    let setting = compression.setting();
     let root_preps: Vec<NtuplePrep> = root
         .iter()
-        .map(|(n, f)| prep_ntuple(n, f, compression))
+        .map(|(n, f)| prep_ntuple(n, f, setting))
         .collect::<Result<_>>()?;
-    let dir_preps: Vec<(String, Vec<NtuplePrep>)> = dirs
+    let dir_preps: Vec<(&str, Vec<NtuplePrep>)> = dirs
         .iter()
         .map(|(name, ntuples)| {
             let preps = ntuples
                 .iter()
-                .map(|(n, f)| prep_ntuple(n, f, compression))
+                .map(|(n, f)| prep_ntuple(n, f, setting))
                 .collect::<Result<Vec<_>>>()?;
-            Ok(((*name).to_string(), preps))
+            Ok((*name, preps))
         })
         .collect::<Result<_>>()?;
+    let all_fields = root
+        .iter()
+        .chain(dirs.iter().flat_map(|(_, ntuples)| ntuples))
+        .flat_map(|(_, fields)| fields.iter());
+    let streamer_info = ntuple_streamer_info(all_fields);
 
-    let small = rntuples_one_shot_pass(file_name, &root_preps, &dir_preps, compression, false)?;
-    if small.len() as u64 <= threshold {
-        return Ok(small);
-    }
-    rntuples_one_shot_pass(file_name, &root_preps, &dir_preps, compression, true)
+    ContainerWriter::build(file_name, compression, big_threshold, |file| {
+        for p in &root_preps {
+            write_one_rntuple(file, DirId::TOP, p)?;
+        }
+        for (name, preps) in &dir_preps {
+            let dir = file.mkdir(DirId::TOP, name)?;
+            for p in preps {
+                write_one_rntuple(file, dir, p)?;
+            }
+            file.close_dir(dir)?;
+        }
+        file.place_streamer_info(&streamer_info, &[])
+    })
 }
 
 /// Write a one-RNTuple ROOT file to `path`, optionally compressing pages
@@ -2427,6 +2295,8 @@ struct HeaderState {
     checksum: u64,
     /// The lowered schema the first batch committed — must match every batch.
     signature: SchemaSig,
+    /// The file's streamer info, for the classes in the first batch's fields.
+    streamer_info: Vec<u8>,
 }
 
 /// A streaming RNTuple writer: each [`write_batch`](RNTupleWriter::write_batch)
@@ -2438,21 +2308,8 @@ struct HeaderState {
 /// `std::string`, and `std::vector<T>` — writing each batch's collection/string
 /// index offsets relative to its own cluster, as the format requires.
 pub struct RNTupleWriter<W: Write + Seek> {
-    sink: W,
-    pos: u64,
-    file_name: String,
+    file: ContainerWriter<W>,
     ntuple_name: String,
-    compression: u32,
-    /// Whether the container uses the 64-bit ("big") on-disk form. Fixed at
-    /// construction (the header/directory widths are written immediately and
-    /// cannot be widened in place afterwards).
-    big: bool,
-    // TFile pointers to patch once the layout is known.
-    p_end: u64,
-    p_nbytes_name: u64,
-    p_dir_nbytes_keys: u64,
-    p_dir_seek_keys: u64,
-    f_nbytes_name: u32,
     // Set when the first batch defines the schema and writes the header.
     header: Option<HeaderState>,
     element_base: Vec<u64>,
@@ -2528,122 +2385,21 @@ impl<W: Write + Seek> RNTupleWriter<W> {
     }
 
     fn new_fmt(
-        mut sink: W,
+        sink: W,
         file_name: &str,
         ntuple_name: &str,
         compression: Compression,
         big: bool,
     ) -> Result<Self> {
-        let compression = compression.setting();
-        let mut w = WBuffer::new();
-
-        // TFile header (100 bytes; fBEGIN is always 100). Record the offsets to
-        // patch later — their widths follow `big`.
-        w.bytes(b"root");
-        w.be_u32(if big {
-            FILE_VERSION + 1_000_000
-        } else {
-            FILE_VERSION
-        });
-        w.be_u32(100); // fBEGIN
-        let p_end = w.len() as u64;
-        seek_zero(&mut w, big); // fEND
-        seek_zero(&mut w, big); // fSeekFree
-        w.be_u32(0); // fNbytesFree
-        w.be_u32(0); // nfree
-        let p_nbytes_name = w.len() as u64;
-        w.be_u32(0); // fNbytesName
-        w.u8(if big { 8 } else { 4 }); // fUnits
-        w.be_u32(compression); // fCompress
-        seek_zero(&mut w, big); // fSeekInfo
-        w.be_u32(0); // fNbytesInfo
-        w.be_u16(1);
-        w.bytes(&[0u8; 16]);
-        while w.len() < 100 {
-            w.u8(0);
-        }
-
-        // Root directory name key + TDirectory record (at fBEGIN = 100). The
-        // record is always reserved at the big (60-byte) size so the file could be
-        // appended into the 64-bit form in place (matching ROOT).
-        let first_klen = key_len_fmt("TFile", file_name, "", big);
-        let name_title_len = (1 + file_name.len()) + 1;
-        let f_nbytes_name = (first_klen as usize + name_title_len) as u32;
-        let first_obj_len = name_title_len as u32 + dir_record_total(true);
-        write_key_header_fmt(
-            &mut w,
-            "TFile",
-            file_name,
-            "",
-            first_obj_len,
-            first_obj_len,
-            100,
-            0,
-            1,
-            big,
-        );
-        w.string(file_name);
-        w.string("");
-        w.be_i16(if big { 1005 } else { 5 });
-        w.be_u32(DATIME);
-        w.be_u32(DATIME);
-        let p_dir_nbytes_keys = w.len() as u64;
-        w.be_u32(0); // fNbytesKeys
-        w.be_i32(f_nbytes_name as i32);
-        seek_value(&mut w, 100, big); // fSeekDir
-        seek_value(&mut w, 0, big); // fSeekParent
-        let p_dir_seek_keys = w.len() as u64;
-        seek_zero(&mut w, big); // fSeekKeys
-        w.be_u16(1);
-        w.bytes(&[0u8; 16]);
-        if !big {
-            w.bytes(&[0u8; 12]); // reserve the extra 64-bit-seek width
-        }
-
-        let prefix = w.into_vec();
-        let pos = prefix.len() as u64;
-        sink.write_all(&prefix)?;
-
         Ok(RNTupleWriter {
-            sink,
-            pos,
-            file_name: file_name.to_string(),
+            file: ContainerWriter::new(sink, file_name, compression, big)?,
             ntuple_name: ntuple_name.to_string(),
-            compression,
-            big,
-            p_end,
-            p_nbytes_name,
-            p_dir_nbytes_keys,
-            p_dir_seek_keys,
-            f_nbytes_name,
             header: None,
             element_base: Vec::new(),
             total_entries: 0,
             summaries: Vec::new(),
             cluster_pages: Vec::new(),
         })
-    }
-
-    fn put(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.sink.write_all(bytes)?;
-        self.pos += bytes.len() as u64;
-        Ok(())
-    }
-
-    fn patch(&mut self, offset: u64, value: u32) -> io::Result<()> {
-        self.sink.seek(SeekFrom::Start(offset))?;
-        self.sink.write_all(&value.to_be_bytes())
-    }
-
-    /// Patch a seek pointer in the on-disk container width: 8 bytes when `big`,
-    /// 4 otherwise.
-    fn patch_seek(&mut self, offset: u64, value: u64) -> io::Result<()> {
-        self.sink.seek(SeekFrom::Start(offset))?;
-        if self.big {
-            self.sink.write_all(&value.to_be_bytes())
-        } else {
-            self.sink.write_all(&(value as u32).to_be_bytes())
-        }
     }
 
     /// Append one cluster holding the entries in `fields`. All batches must share
@@ -2670,14 +2426,14 @@ impl<W: Write + Seek> RNTupleWriter<W> {
                 let header_env = build_header(&self.ntuple_name, &field_plans, &cols);
                 let checksum =
                     u64::from_le_bytes(header_env[header_env.len() - 8..].try_into().unwrap());
-                let seek = self.pos;
-                self.put(&header_env)?;
+                let seek = self.file.place_blob(&header_env)?;
                 self.element_base = vec![0u64; cols.len()];
                 self.header = Some(HeaderState {
                     seek,
                     len: header_env.len(),
                     checksum,
                     signature,
+                    streamer_info: ntuple_streamer_info(fields),
                 });
             }
         }
@@ -2685,10 +2441,9 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         let first_entry = self.total_entries;
         let mut recs = Vec::with_capacity(cols.len());
         for (i, c) in cols.iter().enumerate() {
-            let disk = on_disk_page(&c.page, self.compression);
-            let offset = self.pos;
+            let disk = compress_if_smaller(&c.page, self.file.compression_setting());
             let element_offset = self.element_base[i] as i64;
-            self.put(&disk)?;
+            let offset = self.file.place_blob(&disk)?;
             recs.push(PageRec {
                 offset,
                 disk_size: disk.len(),
@@ -2711,100 +2466,50 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         })?;
         let num_clusters = self.summaries.len() as u32;
 
-        let page_list_offset = self.pos;
+        let compression = self.file.compression_setting();
         let page_list_env = build_page_list_multi(
             &self.summaries,
             &self.cluster_pages,
-            self.compression,
+            compression,
             header.checksum,
         )?;
-        self.put(&page_list_env)?;
+        let page_list_offset = self.file.place_blob(&page_list_env)?;
 
-        let seek_footer = self.pos;
         let footer_env = build_footer(
             self.total_entries as u32,
             num_clusters,
-            page_list_offset as usize,
+            offset(page_list_offset)?,
             page_list_env.len(),
             header.checksum,
         );
-        self.put(&footer_env)?;
+        let seek_footer = self.file.place_blob(&footer_env)?;
 
         // A small (32-bit) container cannot address past 2 GiB. Fail loudly
         // rather than truncating the anchor / key-list seek pointers into a
         // corrupt file; the caller can re-run with `create_large`/`new_large`.
-        if !self.big && self.pos > KSTART_BIG_FILE {
+        let pos = self.file.position();
+        if !self.file.is_big() && pos > KSTART_BIG_FILE {
             return Err(Error::Format(format!(
-                "streamed RNTuple reached {} bytes, over the 2 GiB limit of the 32-bit \
-                 container — construct the writer with create_large / new_large for 64-bit",
-                self.pos
+                "streamed RNTuple reached {pos} bytes, over the 2 GiB limit of the 32-bit \
+                 container — construct the writer with create_large / new_large for 64-bit"
             )));
         }
 
-        let anchor_obj = build_anchor(
-            header.seek as usize,
+        let anchor = build_anchor(
+            offset(header.seek)?,
             header.len,
-            seek_footer as usize,
+            offset(seek_footer)?,
             footer_env.len(),
         );
-        let anchor_seek = self.pos;
-        let anchor_len = anchor_obj.len() as u32;
-        let mut kb = WBuffer::new();
-        write_key_header_fmt(
-            &mut kb,
-            "ROOT::RNTuple",
+        self.file.place_key_uncompressed(
+            DirId::TOP,
+            ANCHOR_CLASS,
             &self.ntuple_name,
             "",
-            anchor_len,
-            anchor_len,
-            anchor_seek,
-            100,
-            1,
-            self.big,
-        );
-        let kb = kb.into_vec();
-        self.put(&kb)?;
-        self.put(&anchor_obj)?;
-
-        let keylist_seek = self.pos;
-        let keylist_obj_len =
-            4 + key_len_fmt("ROOT::RNTuple", &self.ntuple_name, "", self.big) as u32;
-        let mut klb = WBuffer::new();
-        write_key_header_fmt(
-            &mut klb,
-            "TFile",
-            &self.file_name,
-            "",
-            keylist_obj_len,
-            keylist_obj_len,
-            keylist_seek,
-            100,
-            1,
-            self.big,
-        );
-        klb.be_i32(1);
-        write_key_header_fmt(
-            &mut klb,
-            "ROOT::RNTuple",
-            &self.ntuple_name,
-            "",
-            anchor_len,
-            anchor_len,
-            anchor_seek,
-            100,
-            1,
-            self.big,
-        );
-        let klb = klb.into_vec();
-        self.put(&klb)?;
-        let keylist_nbytes =
-            key_len_fmt("TFile", &self.file_name, "", self.big) as u32 + keylist_obj_len;
-
-        self.patch_seek(self.p_end, self.pos)?;
-        self.patch(self.p_nbytes_name, self.f_nbytes_name)?;
-        self.patch(self.p_dir_nbytes_keys, keylist_nbytes)?;
-        self.patch_seek(self.p_dir_seek_keys, keylist_seek)?;
-        self.sink.flush()?;
+            &anchor,
+        )?;
+        self.file.place_streamer_info(&header.streamer_info, &[])?;
+        self.file.finish()?;
         Ok(())
     }
 }

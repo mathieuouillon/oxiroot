@@ -135,3 +135,50 @@ fn writes_split_vector_general_struct() {
         BranchValues::VecI64(id)
     );
 }
+
+/// Regression: a split branch takes its per-entry count from `members[0]`, so an
+/// empty member list used to panic with an index-out-of-bounds deep inside the
+/// basket writer. It is now rejected at the write boundary like every other
+/// malformed branch.
+#[test]
+fn empty_split_member_list_errors_instead_of_panicking() {
+    let branch = Branch::split_vector("hits", "Hit", Vec::new());
+    let err = oxiroot_tree::tree_file_bytes("f.root", "T", &[branch], Compression::None)
+        .expect_err("an empty member list must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("hits") && msg.contains("at least one member"),
+        "unhelpful error: {msg}"
+    );
+}
+
+/// The sibling malformation: members that disagree on the number of entries or
+/// on an entry's element count used to be written silently, giving a tree that
+/// claims entries some members do not hold.
+#[test]
+fn inconsistent_split_members_are_rejected() {
+    let write = |members: Vec<SplitMember>| {
+        let branch = Branch::split_vector("hits", "Hit", members);
+        oxiroot_tree::tree_file_bytes("f.root", "T", &[branch], Compression::None)
+    };
+    let x = || SplitMember::f32("x", vec![vec![1.0], vec![2.0, 3.0]]);
+
+    // Different entry counts.
+    let err = write(vec![x(), SplitMember::f32("y", vec![vec![9.0]])]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("\"y\" has 1 entries") && msg.contains("\"x\" has 2"),
+        "{msg}"
+    );
+
+    // Same entry count, different element count in entry 1.
+    let err = write(vec![x(), SplitMember::i32("id", vec![vec![1], vec![2]])]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("in entry 1") && msg.contains("\"id\" has 1 elements"),
+        "{msg}"
+    );
+
+    // A consistent pair still writes.
+    assert!(write(vec![x(), SplitMember::i32("id", vec![vec![1], vec![2, 3]])]).is_ok());
+}

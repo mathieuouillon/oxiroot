@@ -131,3 +131,118 @@ fn tprofile_merge_and_bin_error_match_root() {
     let mut wrong = Hist::reg(3, 0.0, 3.0).profile().named("p");
     assert!(wrong.add(&a, 1.0).is_err(), "different binning rejected");
 }
+
+/// Regression: `TProfile::add` scaled Σw·y² by `c²` while every other weighted
+/// sum — and `TH2::add`'s identical `tsumwy2` line — scales by `c`. Σw·y² is
+/// linear in the weight, so `c` is correct. Invisible at `c == 1` (the merge
+/// path), which is why no existing test caught it.
+#[test]
+fn profile_add_scales_weighted_sums_linearly() {
+    use oxiroot_hist::Hist;
+
+    let build = || {
+        let mut p = Hist::reg(4, 0.0, 4.0).profile();
+        p.fill(0.5, 2.0);
+        p.fill(1.5, 3.0);
+        p
+    };
+    let (mut dst, src) = (build(), build());
+
+    let (w0, w20, wx0, wx20, wy0, wy20) = (
+        dst.tsumw,
+        dst.tsumw2,
+        dst.tsumwx,
+        dst.tsumwx2,
+        dst.tsumwy,
+        dst.tsumwy2,
+    );
+    let c = 3.0;
+    dst.add(&src, c).unwrap();
+
+    // Σw² is quadratic in the scale factor; every Σw·(…) sum is linear.
+    assert!((dst.tsumw - (w0 + c * src.tsumw)).abs() < 1e-12);
+    assert!((dst.tsumw2 - (w20 + c * c * src.tsumw2)).abs() < 1e-12);
+    assert!((dst.tsumwx - (wx0 + c * src.tsumwx)).abs() < 1e-12);
+    assert!((dst.tsumwx2 - (wx20 + c * src.tsumwx2)).abs() < 1e-12);
+    assert!((dst.tsumwy - (wy0 + c * src.tsumwy)).abs() < 1e-12);
+    assert!(
+        (dst.tsumwy2 - (wy20 + c * src.tsumwy2)).abs() < 1e-12,
+        "tsumwy2 scaled by c^2 instead of c: got {}, want {}",
+        dst.tsumwy2,
+        wy20 + c * src.tsumwy2
+    );
+}
+
+/// Regression: scaling one unweighted profile into another must track Σw²
+/// separately from Σw, because Σ(c·w)² = c²·Σw² ≠ Σ(c·w). `add` used to leave
+/// `bin_sumw2` empty for two unweighted inputs, so `effective_entries` fell back
+/// to Σw and every bin error was wrong for `c != 1`.
+#[test]
+fn profile_add_tracks_squared_weights_when_scaled() {
+    use oxiroot_hist::Hist;
+
+    // Bin 1 ([0, 1)): two unweighted entries in `dst`, one in `src`.
+    let mut dst = Hist::reg(4, 0.0, 4.0).profile();
+    dst.fill(0.5, 1.0);
+    dst.fill(0.5, 3.0);
+    let mut src = Hist::reg(4, 0.0, 4.0).profile();
+    src.fill(0.5, 2.0);
+
+    let c = 3.0;
+    dst.add(&src, c).unwrap();
+
+    // Σw = 2 + 3·1 = 5; Σw² = 2 + 3²·1 = 11; neff = (Σw)² / Σw² = 25 / 11.
+    let bin = 1;
+    assert!((dst.bin_entries[bin] - 5.0).abs() < 1e-12);
+    assert!(
+        (dst.bin_sumw2[bin] - 11.0).abs() < 1e-12,
+        "Σw² should be 2 + c²·1 = 11, got {:?}",
+        dst.bin_sumw2.get(bin)
+    );
+    let neff = dst.effective_entries(bin);
+    assert!(
+        (neff - 25.0 / 11.0).abs() < 1e-12,
+        "effective entries should be 25/11, got {neff} (5.0 means Σw² was taken as Σw)"
+    );
+}
+
+/// The same law when both sides already carry `fBinSumw2` — the shape of a
+/// weighted profile read back from a ROOT file.
+#[test]
+fn profile_add_scales_tracked_squared_weights_quadratically() {
+    use oxiroot_hist::Hist;
+
+    let mut dst = Hist::reg(4, 0.0, 4.0).profile();
+    dst.fill(0.5, 1.0);
+    let mut src = Hist::reg(4, 0.0, 4.0).profile();
+    src.fill(0.5, 2.0);
+    // As if both were filled with weights and read from disk.
+    dst.bin_sumw2 = vec![0.0, 4.0, 0.0, 0.0, 0.0, 0.0];
+    src.bin_sumw2 = vec![0.0, 9.0, 0.0, 0.0, 0.0, 0.0];
+
+    let c = 2.0;
+    dst.add(&src, c).unwrap();
+
+    // 4 + c²·9 = 40, not 4 + c·9 = 22.
+    assert!(
+        (dst.bin_sumw2[1] - 40.0).abs() < 1e-12,
+        "got {}",
+        dst.bin_sumw2[1]
+    );
+}
+
+/// `c == 1` is the merge path: nothing about the Σw² handling may change there,
+/// and two unweighted profiles must still merge without allocating `bin_sumw2`.
+#[test]
+fn profile_add_at_unit_scale_is_unchanged() {
+    use oxiroot_hist::Hist;
+
+    let mut dst = Hist::reg(4, 0.0, 4.0).profile();
+    dst.fill(0.5, 1.0);
+    let mut src = Hist::reg(4, 0.0, 4.0).profile();
+    src.fill(0.5, 2.0);
+
+    dst.add(&src, 1.0).unwrap();
+    assert!(dst.bin_sumw2.is_empty());
+    assert!((dst.effective_entries(1) - 2.0).abs() < 1e-12);
+}
