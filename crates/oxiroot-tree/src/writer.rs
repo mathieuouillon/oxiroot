@@ -288,6 +288,42 @@ fn vec_row_lengths(values: &BranchValues) -> Vec<i32> {
     }
 }
 
+/// A split `std::vector<Struct>` branch stores one element per struct in every
+/// member, and the writer takes the per-entry element counts from the first
+/// member. So there must be at least one member, and every member must have the
+/// same number of entries and the same element count in each entry; otherwise
+/// the file would claim entries some members do not hold.
+fn check_split_members(branch: &str, spec: &SplitSpec) -> Result<()> {
+    let Some(first) = spec.members.first() else {
+        return Err(Error::Format(format!(
+            "branch {branch:?}: a split {:?} branch needs at least one member; \
+             add them with Branch::split_vector(.., vec![SplitMember::..])",
+            spec.class_name
+        )));
+    };
+    let counts = vec_row_lengths(&first.values);
+    for m in &spec.members[1..] {
+        let other = vec_row_lengths(&m.values);
+        if other.len() != counts.len() {
+            return Err(Error::Format(format!(
+                "branch {branch:?}: split member {:?} has {} entries but member {:?} has {}",
+                m.name,
+                other.len(),
+                first.name,
+                counts.len()
+            )));
+        }
+        if let Some(entry) = other.iter().zip(&counts).position(|(a, b)| a != b) {
+            return Err(Error::Format(format!(
+                "branch {branch:?}: in entry {entry}, split member {:?} has {} elements but \
+                 member {:?} has {}; every member of a struct vector needs one value per struct",
+                m.name, other[entry], first.name, counts[entry]
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// ROOT's class checksum: `id = id*3 + ch` over the class name, then each
 /// member's name and type-name characters. Matches `TClass::GetCheckSum` for a
 /// struct of plain members. (ROOT's split reader ignores it, but we match it.)
@@ -1538,6 +1574,9 @@ fn tree_bytes_fmt(
                  variable-length arrays (Branch::vec_* requires every row to have the same length)",
                 b.name
             )));
+        }
+        if let Some(spec) = b.split() {
+            check_split_members(&b.name, spec)?;
         }
     }
     let compression = compression.setting();

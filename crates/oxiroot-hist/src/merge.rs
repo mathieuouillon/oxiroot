@@ -1,12 +1,12 @@
 //! Merging histogram files — the histogram half of a `hadd`-style file merge.
 //!
 //! [`merge_histogram_files`] combines several ROOT files whose keys are all
-//! histogram-family objects: the summable ones (`TH1`/`TH2`/`TH3`/`TProfile`)
-//! are added bin-by-bin the way ROOT's `hadd` does, and every other supported
-//! object (graphs, profiles-2D/3D, efficiencies, functions, strings, matrices,
-//! …) is copied from the first file that holds it. Objects of a class oxiroot
-//! cannot read *and* write are skipped and listed in the returned report rather
-//! than silently dropped.
+//! histogram-family objects: the summable ones (`TH1`/`TH2`/`TH3` and the
+//! `TProfile`/`TProfile2D`/`TProfile3D` profiles) are added bin-by-bin the way
+//! ROOT's `hadd` does, and every other supported object (graphs, efficiencies,
+//! functions, strings, matrices, …) is copied from the first file that holds it.
+//! Objects of a class oxiroot cannot read *and* write are skipped and listed in
+//! the returned report rather than silently dropped.
 //!
 //! The output is written through the same typed [`RootFile`] builder as any
 //! other oxiroot write, so its `TStreamerInfo` matches the bytes exactly (no
@@ -17,7 +17,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use oxiroot_io_core::error::Result;
+use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::{Compression, RFile};
 
 use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
@@ -33,7 +33,8 @@ use crate::{
 /// pairs skipped because oxiroot cannot merge or reproduce that class.
 #[derive(Debug, Clone, Default)]
 pub struct HistMergeOutcome {
-    /// Keys summed across all inputs (`TH1`/`TH2`/`TH3`/`TProfile`).
+    /// Keys summed across all inputs (`TH1`/`TH2`/`TH3` and the 1-, 2- and 3-D
+    /// profiles).
     pub summed: Vec<String>,
     /// Keys copied from the first file that holds them (not summed).
     pub copied: Vec<String>,
@@ -68,9 +69,11 @@ fn summable_hist_dim(class: &str) -> Option<u8> {
 /// # Errors
 ///
 /// Returns an error if two histograms with the same key have incompatible
-/// binning (as ROOT's `hadd` also refuses), or if writing the output fails.
-/// Classes oxiroot cannot merge are recorded in the returned
-/// [`HistMergeOutcome::skipped`] rather than erroring.
+/// binning (as ROOT's `hadd` also refuses; the error names the key), or if
+/// writing the output fails. Classes oxiroot cannot merge, and objects it cannot
+/// read from any input, are recorded in the returned
+/// [`HistMergeOutcome::skipped`] rather than erroring; a key is never written as
+/// a partial sum.
 pub fn merge_histogram_files(
     output: &Path,
     inputs: &[RFile],
@@ -137,15 +140,36 @@ enum Built {
 /// accumulator), or copy a supported non-summable type from the first
 /// contributor. Unknown classes become [`Built::Skipped`].
 fn build_object(class: &str, name: &str, contributors: &[&RFile]) -> Result<Built> {
-    // Add `contributors[1..]` onto `contributors[0]`, read as `$T`.
+    // Add every contributor, read as `$T`, onto the first. If any of them cannot
+    // be read, the whole key is skipped with the reason, as `copied!` does, so
+    // one unreadable object neither aborts the merge nor leaves a partial sum.
     macro_rules! summed {
         ($T:ty) => {{
-            let mut acc = <$T>::read_root(contributors[0], name)?;
-            for f in &contributors[1..] {
-                let other = <$T>::read_root(f, name)?;
-                acc.add(&other, 1.0)?;
+            let mut acc: Option<$T> = None;
+            let mut unreadable = None;
+            for (i, f) in contributors.iter().enumerate() {
+                let h = match <$T>::read_root(f, name) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        unreadable = Some(format!(
+                            "cannot read {} from input {} of {}: {e}",
+                            stringify!($T),
+                            i + 1,
+                            contributors.len()
+                        ));
+                        break;
+                    }
+                };
+                match acc.as_mut() {
+                    None => acc = Some(h),
+                    Some(a) => a.add(&h, 1.0).map_err(|e| with_key(name, e))?,
+                }
             }
-            Built::Summed(Box::new(acc))
+            match (unreadable, acc) {
+                (Some(reason), _) => Built::Skipped(reason),
+                (None, Some(a)) => Built::Summed(Box::new(a)),
+                (None, None) => Built::Skipped("no input holds it".into()),
+            }
         }};
     }
     // Copy `$T` from the first contributor; a read failure becomes a skip so one
@@ -169,8 +193,8 @@ fn build_object(class: &str, name: &str, contributors: &[&RFile]) -> Result<Buil
 
     let built = match class {
         "TProfile" => summed!(TProfile),
-        "TProfile2D" => copied!(TProfile2D),
-        "TProfile3D" => copied!(TProfile3D),
+        "TProfile2D" => summed!(TProfile2D),
+        "TProfile3D" => summed!(TProfile3D),
         "TEfficiency" => copied!(TEfficiency),
         "TH2Poly" => copied!(TH2Poly),
         "TF1" => copied!(TF1),
@@ -191,4 +215,15 @@ fn build_object(class: &str, name: &str, contributors: &[&RFile]) -> Result<Buil
         other => Built::Skipped(format!("class {other:?} is not mergeable by oxiroot")),
     };
     Ok(built)
+}
+
+/// Name the key a binning mismatch came from, so a failed merge says which
+/// object was incompatible.
+fn with_key(name: &str, e: Error) -> Error {
+    match e {
+        Error::BinningMismatch { detail } => Error::BinningMismatch {
+            detail: format!("{name:?}: {detail}"),
+        },
+        other => other,
+    }
 }

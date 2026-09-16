@@ -99,10 +99,10 @@ fn distributions_match_scipy() {
 
 #[test]
 fn correlation_and_tests_match_scipy() {
-    let (r, p) = pearsonr(&X, &Y);
+    let (r, p) = pearsonr(&X, &Y).unwrap();
     approx!(r, 0.939393939393939);
     approx!(p, 5.484052998513792e-05, 1e-7);
-    let (r, p) = spearmanr(&X, &Y);
+    let (r, p) = spearmanr(&X, &Y).unwrap();
     approx!(r, 0.9393939393939393);
     approx!(p, 5.48405299851367e-05, 1e-7);
 
@@ -192,7 +192,7 @@ fn describe_and_goodness_of_fit_match_scipy() {
     approx!(d.kurtosis, -0.21875, 1e-12);
 
     // scipy.stats.chisquare([10,12,8,15,11], [11.2; 5]).
-    let (chi2, p) = chisquare(&[10.0, 12.0, 8.0, 15.0, 11.0], &[11.2; 5]);
+    let (chi2, p) = chisquare(&[10.0, 12.0, 8.0, 15.0, 11.0], &[11.2; 5]).unwrap();
     approx!(chi2, 2.392857142857143);
     approx!(p, 0.6639184808868118);
 
@@ -217,10 +217,10 @@ fn physics_helpers_match_reference() {
 
     // Weighted mean and inverse-variance combination.
     approx!(
-        weighted_mean(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0]),
+        weighted_mean(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0]).unwrap(),
         2.3333333333333335
     );
-    let (m, e) = combine_measurements(&[10.0, 12.0], &[1.0, 2.0]);
+    let (m, e) = combine_measurements(&[10.0, 12.0], &[1.0, 2.0]).unwrap();
     approx!(m, 10.4, 1e-12);
     approx!(e, 0.8944271909999159);
 
@@ -245,7 +245,7 @@ fn nonparametric_tests_match_scipy() {
 
     const XW: [f64; 10] = [1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9, 11.0];
     const YW: [f64; 10] = [1.0, 2.5, 3.0, 5.0, 5.0, 7.0, 7.2, 9.0, 9.5, 10.0];
-    let (w, p) = wilcoxon(&XW, &YW);
+    let (w, p) = wilcoxon(&XW, &YW).unwrap();
     approx!(w, 20.0, 1e-12);
     approx!(p, 0.4436974958333839, 1e-3);
 }

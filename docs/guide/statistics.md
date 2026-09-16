@@ -144,8 +144,9 @@ assert_eq!(rankdata(&data), vec![1.0, 3.0, 3.0, 3.0, 5.5, 5.5, 7.0, 8.0]);
 
 ## Correlation
 
-Both correlations return the coefficient **and** its two-sided p-value, as a
-tuple `(r, p)` — matching `scipy.stats.pearsonr` / `spearmanr`.
+Both correlations return the coefficient **and** its two-sided p-value as
+`Ok((r, p))` — matching `scipy.stats.pearsonr` / `spearmanr` — or an error for
+input they cannot use (below).
 
 ```rust
 use oxiroot::stat::*;
@@ -153,13 +154,63 @@ use oxiroot::stat::*;
 let x = [1., 2., 3., 4., 5., 6., 7., 8., 9., 10.];
 let y = [2., 1., 4., 3., 6., 5., 8., 7., 10., 9.];
 
-let (r, p) = pearsonr(&x, &y);   // (0.93939…, 5.48e-05)
-let (rho, _) = spearmanr(&x, &y); // 0.93939… (rank correlation)
+let (r, p) = pearsonr(&x, &y)?;   // (0.93939…, 5.48e-05)
+let (rho, _) = spearmanr(&x, &y)?; // 0.93939… (rank correlation)
+# Ok::<(), StatError>(())
+```
+
+## Paired samples and errors
+
+Functions that pair two samples element by element — `pearsonr`, `spearmanr`,
+`chisquare`, `wilcoxon`, `kl_divergence`, `weighted_mean`, `weighted_std` and
+`combine_measurements` — return `Result<_, StatError>`. They fail with
+`StatError::LengthMismatch` when the two samples differ in length, rather than
+silently pairing up to the shorter one. Some also fail with
+`StatError::TooFewObservations` when there is nothing to compute from: the
+correlations below two pairs, `chisquare` below two categories, and `wilcoxon`
+on empty samples.
+
+This is sometimes stricter than `scipy`, which raises for mismatched lengths and
+for `pearsonr` below two pairs, but returns `NaN` for `spearmanr` below two
+pairs, for a one-category `chisquare` and for an empty `wilcoxon`, and
+broadcasts a length-1 second array in `chisquare` and `entropy`. Each function's
+documentation spells out its case.
+
+```rust
+use oxiroot::stat::*;
+
+let err = pearsonr(&[1., 2., 3., 4., 5.], &[1., 2., 3.]).unwrap_err();
+assert_eq!(err, StatError::LengthMismatch { left: 5, right: 3 });
+```
+
+A `NaN` *value* in the data is not an error: it propagates to a `NaN` result,
+as with `scipy`'s default `nan_policy`. The incomplete-gamma functions,
+`erf`/`erfc` and the probabilities built on them, and the Kolmogorov–Smirnov,
+Mann–Whitney and Wilcoxon tests all return `NaN` for `NaN` input; other functions
+do not yet treat `NaN` consistently.
+
+`StatError` implements `std::error::Error`, so it combines with file IO through a
+boxed error. The prelude's `Result` alias takes an optional error type, so this
+works after `use oxiroot::prelude::*`:
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::stat;
+
+fn correlate(path: &str) -> Result<f64, Box<dyn std::error::Error>> {
+    let file = RFile::open(path)?;          // oxiroot::Error
+    let h = TH1::read_root(&file, "h")?;
+    let x: Vec<f64> = (1..=h.xaxis.nbins as usize).map(|i| h.bin_center(i)).collect();
+    let y = &h.contents[1..=x.len()];
+    let (r, _) = stat::pearsonr(&x, y)?;    // StatError
+    Ok(r)
+}
 ```
 
 ## Hypothesis tests
 
-Every test returns `(statistic, p_value)`.
+Every test returns `(statistic, p_value)`; the paired `chisquare` and
+`wilcoxon` wrap it in a `Result`, as above.
 
 | Function | Test |
 | --- | --- |
@@ -213,8 +264,9 @@ let z = significance_from_pvalue(p);        // back to 5.0, accurate in the tail
 ```rust
 use oxiroot::stat::*;
 
-let (mean, err) = combine_measurements(&[10.0, 12.0], &[1.0, 2.0]);
+let (mean, err) = combine_measurements(&[10.0, 12.0], &[1.0, 2.0])?;
 // mean = 10.4, err = 0.8944…  (weights 1/σ²; err = 1/√Σw)
+# Ok::<(), StatError>(())
 ```
 
 **Interval estimators.** For an efficiency `k/n` (or a Poisson count) at

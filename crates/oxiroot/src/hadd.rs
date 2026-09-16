@@ -20,9 +20,10 @@
 //! a single container that mixes histograms with a `TTree`/RNTuple (each of
 //! those owns auxiliary basket/page keys). So a fileset must be one of:
 //!
-//! * **all histogram-family objects** — `TH1`/`TH2`/`TH3`/`TProfile` are summed;
-//!   graphs, 2D/3D profiles, efficiencies, functions, strings, matrices, … are
-//!   copied from the first file; unknown classes are skipped and reported;
+//! * **all histogram-family objects** — `TH1`/`TH2`/`TH3` and the 1-, 2- and
+//!   3-D profiles are summed; graphs, efficiencies, functions, strings,
+//!   matrices, … are copied from the first file; unknown classes are skipped and
+//!   reported;
 //! * **a single `TTree`** (and nothing else) — entries concatenated;
 //! * **a single RNTuple** (and nothing else) — entries concatenated.
 //!

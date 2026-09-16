@@ -3,7 +3,11 @@
 use std::fmt;
 
 /// Convenience alias for results produced by this crate.
-pub type Result<T> = std::result::Result<T, Error>;
+///
+/// The error type defaults to [`Error`] but can be overridden, so
+/// `Result<T, E>` still names the standard two-parameter type where this alias
+/// has been glob-imported (as `oxiroot::prelude::*` does).
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Errors raised while reading or writing ROOT container structures.
 ///
