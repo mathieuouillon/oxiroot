@@ -156,7 +156,7 @@ fn threshold_picks_the_form_from_the_finished_size() {
 /// A one-member class, for streamer-info lists.
 fn class(name: &str) -> Cls<'_> {
     Cls {
-        name,
+        name: name.into(),
         version: 1,
         checksum: 7,
         elements: vec![basic("x", 3, 4, "int")],

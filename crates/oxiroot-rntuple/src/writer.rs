@@ -1298,9 +1298,9 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
                 })
                 .collect();
             if let Some(elements) = elements {
-                if !classes.iter().any(|c| c.name == type_name) {
+                if !classes.iter().any(|c| c.name == type_name.as_str()) {
                     classes.push(Cls {
-                        name: type_name,
+                        name: type_name.into(),
                         version: 1,
                         checksum: class_checksum(type_name, members),
                         elements,

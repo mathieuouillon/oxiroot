@@ -25,7 +25,7 @@ pub(crate) fn anchor_streamer_class() -> Cls<'static> {
     let short = |name| basic(name, 12, 2, "unsigned short");
     let long = |name| basic(name, 17, 8, "ULong64_t");
     Cls {
-        name: ANCHOR_CLASS,
+        name: ANCHOR_CLASS.into(),
         version: i32::from(ANCHOR_CLASS_VERSION),
         checksum: 0x4ba2_1bf5,
         elements: vec![

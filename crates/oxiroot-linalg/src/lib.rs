@@ -415,7 +415,7 @@ pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMat
 pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
     // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
     let matrix_base = || Cls {
-        name: "TMatrixTBase<double>",
+        name: "TMatrixTBase<double>".into(),
         version: 5,
         checksum: 2_333_786_657,
         elements: vec![
@@ -431,7 +431,7 @@ pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
     };
     match class {
         "TVectorT<double>" => vec![Cls {
-            name: "TVectorT<double>",
+            name: "TVectorT<double>".into(),
             version: 4,
             checksum: 1_779_256_495,
             elements: vec![
@@ -444,7 +444,7 @@ pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
         "TMatrixT<double>" => vec![
             matrix_base(),
             Cls {
-                name: "TMatrixT<double>",
+                name: "TMatrixT<double>".into(),
                 version: 4,
                 checksum: 135_074_716,
                 elements: vec![

@@ -272,8 +272,8 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
 /// vector for anything else (e.g. a histogram, already described).
 /// Checksums/versions are ROOT's own values (see the `scripts/gen_*.cpp`).
 pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
-    let param = |name, checksum, ty, size, type_name| Cls {
-        name,
+    let param = |name: &'static str, checksum, ty, size, type_name| Cls {
+        name: name.into(),
         version: 2,
         checksum,
         elements: vec![
@@ -286,7 +286,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
     // as ROOT writes them). A standalone `TF1`/`TF2`/`TF3` embeds these so uproot
     // builds a model; ROOT C++ uses its own compiled streamers.
     let tformula = || Cls {
-        name: "TFormula",
+        name: "TFormula".into(),
         version: 14,
         checksum: 3_342_972_029,
         elements: vec![
@@ -302,7 +302,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
         ],
     };
     let tf1 = || Cls {
-        name: "TF1",
+        name: "TF1".into(),
         version: 12,
         checksum: 1_914_961_880,
         elements: vec![
@@ -333,7 +333,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
         ],
     };
     let tf2 = || Cls {
-        name: "TF2",
+        name: "TF2".into(),
         version: 4,
         checksum: 3_115_609_752,
         elements: vec![
@@ -345,7 +345,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
         ],
     };
     let tf3 = || Cls {
-        name: "TF3",
+        name: "TF3".into(),
         version: 3,
         checksum: 3_522_165_386,
         elements: vec![
@@ -357,7 +357,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
     };
     match class {
         "TObjString" => vec![Cls {
-            name: "TObjString",
+            name: "TObjString".into(),
             version: 1,
             checksum: 2_626_570_240,
             elements: vec![base("TObject", 1), strf("fString")],
@@ -373,7 +373,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
             "long long",
         )],
         "THStack" => vec![Cls {
-            name: "THStack",
+            name: "THStack".into(),
             version: 2,
             checksum: 1_918_797_077,
             elements: vec![
@@ -385,7 +385,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
             ],
         }],
         "TMultiGraph" => vec![Cls {
-            name: "TMultiGraph",
+            name: "TMultiGraph".into(),
             version: 2,
             checksum: 3_767_090_389,
             elements: vec![

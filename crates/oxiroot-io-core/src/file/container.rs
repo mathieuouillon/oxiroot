@@ -431,7 +431,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
             }) => {
                 let missing: Vec<Cls<'_>> = extra
                     .iter()
-                    .filter(|c| !classes.iter().any(|name| name == c.name))
+                    .filter(|c| !classes.iter().any(|name| *name == c.name))
                     .cloned()
                     .collect();
                 if missing.is_empty() {

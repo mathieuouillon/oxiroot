@@ -342,7 +342,7 @@ fn class_checksum(class_name: &str, members: &[SplitMember]) -> u32 {
 /// member per struct member, as ROOT writes it for a class without `ClassDef`.
 fn split_class(spec: &SplitSpec) -> Cls<'_> {
     Cls {
-        name: &spec.class_name,
+        name: spec.class_name.as_str().into(),
         version: 1,
         checksum: class_checksum(&spec.class_name, &spec.members),
         elements: spec
