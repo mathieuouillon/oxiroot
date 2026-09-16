@@ -54,6 +54,95 @@ jobs:
           cargo run -q -p oxiroot --example rntuple_nested
           cargo run -q -p oxiroot --example plot --features plot,fit
 
+  features:
+    name: feature combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Each crate with no features, and with each feature alone
+        # Catches a feature that only compiles alongside another one. Features
+        # must add API, never change it, so every combination has to build.
+        run: cargo hack check --workspace --each-feature --no-dev-deps
+
+      - name: Clippy with all features
+        # The only job that compiles the `http` and `xrootd` remote-read paths.
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test with all features
+        run: cargo test --workspace --all-features
+
+      - name: Test the facade with no default features
+        run: cargo test -p oxiroot --no-default-features
+
+  msrv:
+    name: minimum Rust version (1.95)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the workspace's declared rust-version
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo check --workspace --all-targets --all-features
+
+  docs:
+    name: API docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build the docs, denying broken links
+        run: cargo doc --no-deps --all-features --workspace
+
+  package:
+    name: package (dry run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Package and verify every publishable crate
+        # Builds each crate from its packaged sources, resolving the others
+        # through a temporary local registry, so a missing file or a
+        # dependency without a version fails here instead of at release.
+        # oxiroot-plot depends on the unpublished ReX by git, which crates.io
+        # does not accept, and the facade and CLI depend on oxiroot-plot; they
+        # are excluded until that dependency is resolved.
+        run: >-
+          cargo package --workspace
+          --exclude oxiroot-plot --exclude oxiroot --exclude oxiroot-cli
+
   fuzz-build:
     name: fuzz targets build
     runs-on: ubuntu-latest
