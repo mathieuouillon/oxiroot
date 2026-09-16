@@ -371,3 +371,41 @@ fn le_f32(c: &[u8]) -> f32 {
 fn le_f64(c: &[u8]) -> f64 {
     f64::from_le_bytes(c.try_into().unwrap())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::envelope::Locator;
+    use crate::pagelist::PageInfo;
+    use oxiroot_io_core::BytesSource;
+
+    #[test]
+    fn read_column_rejects_bits_type_mismatch() {
+        // A bare in-memory byte source (not a full ROOT file): the column decoder
+        // only needs `read_at`, so it can be unit-tested directly.
+        let src = BytesSource::new(vec![0u8; 16]);
+        let pages = vec![PageInfo {
+            num_elements: 4,
+            has_checksum: false,
+            locator: Locator {
+                size: 16,
+                offset: 0,
+            },
+        }];
+
+        // Int32 declared with 64 bits would slice 8-byte chunks into a 4-byte type
+        // (try_into().unwrap() panic) — the guard rejects it first.
+        assert!(read_column(&src, ColumnType::Int32, 64, &pages, None).is_err());
+
+        // Bit declared with 0 bits would size the page to 0 and index out of range.
+        let bit_pages = vec![PageInfo {
+            num_elements: 8,
+            has_checksum: false,
+            locator: Locator { size: 1, offset: 0 },
+        }];
+        assert!(read_column(&src, ColumnType::Bit, 0, &bit_pages, None).is_err());
+
+        // The matching width still decodes.
+        assert!(read_column(&src, ColumnType::Int32, 32, &pages, None).is_ok());
+    }
+}

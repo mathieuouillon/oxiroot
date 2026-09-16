@@ -11,7 +11,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     // Keep the temp file out of the repo and clean it up before returning.
     let path = std::env::temp_dir().join("oxiroot_ex_linalg.root");
 

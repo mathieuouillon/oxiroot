@@ -28,7 +28,7 @@ impl Rng {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
 
     // --- Build ONE sizeable dataset, as an event loop would. -------------------

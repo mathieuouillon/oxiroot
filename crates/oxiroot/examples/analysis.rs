@@ -9,7 +9,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
 
     // --- Fill histograms, as in an event loop. ---------------------------------
