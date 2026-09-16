@@ -6,9 +6,13 @@ use oxiroot_io_core::RFile;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(f) = RFile::from_bytes(data.to_vec()) {
+        let size = usize::try_from(f.size()).unwrap_or(usize::MAX);
         for k in f.keys() {
-            let _ = k.payload(f.data());
-            let _ = k.payload_start(f.data().len());
+            let _ = f.key_payload(k);
+            let _ = k.payload_start(size);
+            // The generic, streamer-info-driven object reader walks attacker
+            // controlled TStreamerInfo and object bytes.
+            let _ = f.get_value(&k.name);
         }
 
         // Directory navigation: subdir() / object_in() resolve a record body
