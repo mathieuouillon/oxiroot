@@ -10,10 +10,10 @@
 
 use oxiroot::stat::{
     clopper_pearson, combine_measurements, feldman_cousins, poisson_conf_interval, poisson_sf,
-    significance_from_pvalue, weighted_mean, wilson_interval,
+    significance_from_pvalue, weighted_mean, wilson_interval, StatError,
 };
 
-fn main() {
+fn main() -> Result<(), StatError> {
     // Everything below is deterministic: fixed observed counts, no RNG needed.
     // The 68.27% confidence level (`1σ`) recurs, so name it once.
     const CL_1SIGMA: f64 = 0.6827;
@@ -94,9 +94,9 @@ fn main() {
     // `weighted_mean` with weights = 1/σ² reproduces the central value directly.
     let masses = [125.10_f64, 125.38_f64];
     let errors = [0.14_f64, 0.11_f64];
-    let (m_comb, e_comb) = combine_measurements(&masses, &errors);
+    let (m_comb, e_comb) = combine_measurements(&masses, &errors)?;
     let weights: Vec<f64> = errors.iter().map(|&s| 1.0 / (s * s)).collect();
-    let m_wmean = weighted_mean(&masses, &weights);
+    let m_wmean = weighted_mean(&masses, &weights)?;
     println!("\n--- 5. Combining two mass measurements --------------------------");
     println!(
         "  A: {:.2} ± {:.2} GeV     B: {:.2} ± {:.2} GeV",
@@ -112,4 +112,5 @@ fn main() {
         e_comb,
         errors.iter().cloned().fold(f64::INFINITY, f64::min),
     );
+    Ok(())
 }

@@ -27,10 +27,25 @@
 //! - [`resample`] — a seeded percentile `bootstrap_ci`.
 //!
 //! The commonly-used items are also re-exported at the crate root.
+//!
+//! # Invalid input
+//!
+//! Functions that pair two samples element by element return
+//! `Result<_, `[`StatError`]`>`. They fail if the samples differ in length,
+//! rather than silently pairing up to the shorter one, and some also fail when
+//! there are too few observations for the statistic to exist. A `NaN` value in
+//! the data is not an error; it propagates to a `NaN` result.
+//!
+//! Everything else returns plain floats. The incomplete-gamma functions,
+//! `erf`/`erfc` and the probabilities built on them, and the
+//! Kolmogorov–Smirnov, Mann–Whitney and Wilcoxon tests return `NaN` for `NaN`
+//! input rather than looping forever or reporting a spurious p-value. Other
+//! functions do not yet treat `NaN` consistently.
 
 pub mod correlation;
 pub mod descriptive;
 pub mod distributions;
+mod error;
 pub mod hypothesis;
 pub mod lineshapes;
 pub mod physics;
@@ -45,6 +60,7 @@ pub use descriptive::{
 pub use distributions::{
     binom_cdf, binom_sf, poisson_cdf, poisson_sf, ChiSquared, FisherF, Normal, StudentT,
 };
+pub use error::StatError;
 pub use hypothesis::{
     chisquare, ks_1samp, ks_2samp, mannwhitneyu, normaltest, ttest_1samp, ttest_ind, wilcoxon,
 };
@@ -65,7 +81,8 @@ pub use special::{
 /// Chi-square survival function `P(X > chi2)` for `X ~ χ²(ndf)` — ROOT's
 /// `TMath::Prob`, i.e. the complemented regularized incomplete gamma
 /// `Q(ndf/2, chi2/2)`. The goodness-of-fit p-value (a good fit is near 1, a poor
-/// one near 0). `ndf == 0` yields 0; `chi2 <= 0` yields 1.
+/// one near 0). `ndf == 0` yields 0; `chi2 <= 0` yields 1; a `NaN` `chi2` yields
+/// `NaN` and an infinite one yields 0.
 #[must_use]
 pub fn chi_square_prob(chi2: f64, ndf: usize) -> f64 {
     if ndf == 0 {
@@ -115,6 +132,30 @@ mod tests {
         assert_eq!(chi_square_prob(0.0, 5), 1.0);
         let p = chi_square_prob(1.0, 1);
         assert!((p - 0.3173).abs() < 1e-3, "got {p}");
+    }
+
+    #[test]
+    fn non_finite_input_terminates_and_propagates() {
+        // Regression: both incomplete-gamma kernels exit on a `<= MACHEP` test,
+        // which is false for NaN, so a non-finite argument used to spin forever
+        // here and in every caller — including `TH1::chi2_test`.
+        assert!(chi_square_prob(f64::NAN, 3).is_nan());
+        assert_eq!(chi_square_prob(f64::INFINITY, 3), 0.0);
+
+        assert!(special::gammainc(f64::NAN, 1.0).is_nan());
+        assert!(special::gammainc(1.0, f64::NAN).is_nan());
+        assert!(special::gammaincc(f64::NAN, 1.0).is_nan());
+        assert!(special::gammaincc(1.0, f64::NAN).is_nan());
+
+        // P(a, +inf) = 1 and Q(a, +inf) = 0, as scipy gives.
+        assert_eq!(special::gammainc(2.0, f64::INFINITY), 1.0);
+        assert_eq!(special::gammaincc(2.0, f64::INFINITY), 0.0);
+
+        // Reached through erf/erfc, which square their argument.
+        assert!(special::erf(f64::NAN).is_nan());
+        assert!(special::erfc(f64::NAN).is_nan());
+        assert_eq!(special::erf(f64::INFINITY), 1.0);
+        assert_eq!(special::erfc(f64::INFINITY), 0.0);
     }
 
     #[test]

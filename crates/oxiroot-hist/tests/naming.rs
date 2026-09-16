@@ -78,3 +78,56 @@ fn duplicate_within_a_subdirectory_is_rejected() {
         "expected DuplicateName, got {err:?}"
     );
 }
+
+#[test]
+fn a_subdirectory_named_like_an_object_is_rejected() {
+    // A key and a subdirectory share their parent's namespace.
+    let path = std::env::temp_dir().join("oxiroot_naming_dir_clash.root");
+    let err = RootFile::create(&path)
+        .add(&filled("region"))
+        .dir("region", |d| d.add(&filled("h")))
+        .write(Compression::None);
+    match err {
+        Err(Error::DuplicateName { name, .. }) => assert_eq!(name, "region"),
+        other => panic!("expected DuplicateName, got {other:?}"),
+    }
+}
+
+#[test]
+fn two_subdirectories_with_one_name_are_rejected() {
+    let path = std::env::temp_dir().join("oxiroot_naming_dir_twice.root");
+    let err = RootFile::create(&path)
+        .dir("sub", |d| d.add(&filled("a")))
+        .dir("sub", |d| d.add(&filled("b")))
+        .write(Compression::None);
+    assert!(
+        matches!(err, Err(Error::DuplicateName { .. })),
+        "expected DuplicateName, got {err:?}"
+    );
+}
+
+#[test]
+fn an_unnamed_subdirectory_is_rejected() {
+    let path = std::env::temp_dir().join("oxiroot_naming_dir_empty.root");
+    let err = RootFile::create(&path)
+        .dir("", |d| d.add(&filled("a")))
+        .write(Compression::None);
+    assert!(matches!(err, Err(Error::Format(_))), "got {err:?}");
+}
+
+#[test]
+fn names_longer_than_255_bytes_round_trip() {
+    // ROOT encodes such strings with a five-byte length; the key header length
+    // has to count it.
+    let name = "h".repeat(300);
+    let dir = "d".repeat(256);
+    let path = std::env::temp_dir().join("oxiroot_naming_long.root");
+    RootFile::create(&path)
+        .add(&filled(&name))
+        .dir(dir.as_str(), |d| d.add(&filled(&name)))
+        .write(Compression::Zstd(3))
+        .expect("write");
+    let f = RFile::open(&path).expect("open");
+    assert_eq!(TH1::read_root(&f, &name).unwrap(), filled(&name));
+    assert_eq!(TH1::read_root_in(&f, &dir, &name).unwrap(), filled(&name));
+}

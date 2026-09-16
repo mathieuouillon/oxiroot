@@ -221,8 +221,8 @@ pub(crate) fn read_th1_object(
     Ok((core, contents))
 }
 
-/// Locate a key, verify its class, and return its decompressed object bytes.
-pub(crate) fn object_bytes(file: &RFile, name: &str, class: &str) -> Result<Vec<u8>> {
+/// Check that key `name` exists and holds a `class`, before its payload is read.
+fn check_key_class(file: &RFile, name: &str, class: &str) -> Result<()> {
     let key = file
         .key(name)
         .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
@@ -232,9 +232,13 @@ pub(crate) fn object_bytes(file: &RFile, name: &str, class: &str) -> Result<Vec<
             key.class_name
         )));
     }
-    let payload = file.key_payload(key)?;
-    oxiroot_compress::decompress(&payload, key.obj_len as usize)
-        .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))
+    Ok(())
+}
+
+/// Locate a key, verify its class, and return its decompressed object bytes.
+pub(crate) fn object_bytes(file: &RFile, name: &str, class: &str) -> Result<Vec<u8>> {
+    check_key_class(file, name, class)?;
+    Ok(object_bytes_any(file, name)?.1)
 }
 
 /// Like [`object_bytes`], but also return the key's header length (`fKeyLen`).
@@ -247,20 +251,9 @@ pub(crate) fn object_bytes_keyed(
     name: &str,
     class: &str,
 ) -> Result<(Vec<u8>, usize)> {
-    let key = file
-        .key(name)
-        .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
-    if key.class_name != class {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {}, not {class}",
-            key.class_name
-        )));
-    }
-    let keylen = key.key_len as usize;
-    let payload = file.key_payload(key)?;
-    let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
-        .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
-    Ok((object, keylen))
+    check_key_class(file, name, class)?;
+    let (_, object, key_len) = object_bytes_any_keyed(file, name)?;
+    Ok((object, key_len))
 }
 
 /// Fetch a histogram object, requiring a 4-character class with the given

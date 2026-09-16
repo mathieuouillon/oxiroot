@@ -22,13 +22,16 @@ key:
 
 | Class | Action |
 |---|---|
-| `TH1`/`TH2`/`TH3`, `TProfile` | **summed** across every input that holds it (bin contents, `Sumw2`, entries, and all moment sums — the same exact `add` used by the [multithreaded fill](multithreading.md)) |
-| `TGraph*`, `TProfile2D`/`3D`, `TEfficiency`, `TH2Poly`, `THnSparse`, `TF1`/`2`/`3`, `TObjString`, `TParameter`, `TVectorD`, `TMatrixD`/`Sym`, `THStack`, `TMultiGraph`, `TMap` | **copied** from the first file that holds it (ROOT's `hadd` keeps the first for non-addable objects too) |
+| `TH1`/`TH2`/`TH3`, `TProfile`/`TProfile2D`/`TProfile3D` | **summed** across every input that holds it (bin contents, `Sumw2`, entries, and all moment sums — the same exact `add` used by the [multithreaded fill](multithreading.md)) |
+| `TGraph*`, `TEfficiency`, `TH2Poly`, `THnSparse`, `TF1`/`2`/`3`, `TObjString`, `TParameter`, `TVectorD`, `TMatrixD`/`Sym`, `THStack`, `TMultiGraph`, `TMap` | **copied** from the first file that holds it (ROOT's `hadd` keeps the first for non-addable objects too) |
 | anything else | **skipped**, and listed in the report — never silently dropped |
 
+An object that cannot be read from one of the inputs is also skipped and listed,
+with the input it failed in; a key is never written as a partial sum.
+
 The summed histogram keeps the first file's name, title, and binning; summing
-histograms with incompatible binnings is an error, exactly as ROOT's `hadd`
-refuses it.
+histograms with incompatible binnings is an error that names the key, exactly as
+ROOT's `hadd` refuses it.
 
 ## `TTree` and RNTuple
 
@@ -90,7 +93,7 @@ So a fileset must be one of:
 Anything else — a tree or RNTuple alongside histograms, or more than one of them
 — is refused with an error that names the offending keys, rather than writing a
 partial file. To merge such a fileset, merge the pieces separately with
-`oxiroot_hist::merge_histogram_files`, `oxiroot_tree::concat_trees`, and
+`oxiroot::hadd::merge_histogram_files`, `oxiroot_tree::concat_trees`, and
 `oxiroot_rntuple::concat_ntuples`.
 
 ## Verification

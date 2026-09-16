@@ -9,12 +9,14 @@ description = "Classic ROOT histograms (TH1/TH2/TH3/TProfile) read/write"
 
 [dependencies]
 oxiroot-io-core = { workspace = true }
-oxiroot-compress = { workspace = true }
-oxiroot-linalg = { workspace = true }
 oxiroot-stat = { workspace = true }
 oxiroot-formula = { workspace = true }
 rayon = { version = "1", optional = true }
 oxiroot-fit = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Collections and files in the tests hold matrices next to histograms.
+oxiroot-linalg = { workspace = true }
 
 [features]
 # Opt-in data-parallel fill helper (`fill_par`). Off by default so the default
@@ -25,8 +27,6 @@ rayon = ["dep:rayon"]
 # works) and re-exports the `oxiroot-fit` crate, which carries the Minuit2
 # minimizer. Off by default to keep the core dependency-light.
 fit = ["dep:oxiroot-fit"]
-# Add the gradient-free Nelder–Mead (`argmin`) backend to the fitter.
-argmin = ["fit", "oxiroot-fit/argmin"]
 
 [package.metadata.docs.rs]
 all-features = true

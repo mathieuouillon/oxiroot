@@ -7,6 +7,7 @@
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::streamer_gen::{basic, Cls};
 
 /// The ROOT class name under which the anchor is stored.
 pub const ANCHOR_CLASS: &str = "ROOT::RNTuple";
@@ -17,6 +18,31 @@ const ANCHOR_FIELDS_LEN: usize = 64;
 /// The `ROOT::RNTuple` streamer class version the format spec fixes (and that
 /// our writer, ROOT, and uproot all emit).
 const ANCHOR_CLASS_VERSION: u16 = 2;
+
+/// The `TStreamerInfo` entry ROOT writes for the anchor class in every file that
+/// holds an RNTuple.
+pub(crate) fn anchor_streamer_class() -> Cls<'static> {
+    let short = |name| basic(name, 12, 2, "unsigned short");
+    let long = |name| basic(name, 17, 8, "ULong64_t");
+    Cls {
+        name: ANCHOR_CLASS.into(),
+        version: i32::from(ANCHOR_CLASS_VERSION),
+        checksum: 0x4ba2_1bf5,
+        elements: vec![
+            short("fVersionEpoch"),
+            short("fVersionMajor"),
+            short("fVersionMinor"),
+            short("fVersionPatch"),
+            long("fSeekHeader"),
+            long("fNBytesHeader"),
+            long("fLenHeader"),
+            long("fSeekFooter"),
+            long("fNBytesFooter"),
+            long("fLenFooter"),
+            long("fMaxKeySize"),
+        ],
+    }
+}
 
 /// A parsed RNTuple anchor.
 #[derive(Debug, Clone, PartialEq, Eq)]

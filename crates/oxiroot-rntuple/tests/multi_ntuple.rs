@@ -1,27 +1,27 @@
 //! Several RNTuples in one file, and an RNTuple inside a `TDirectory`
-//! (`NtupleFile` / `NtupleDir`). Round-tripped through oxiroot here; the same
-//! files are read by ROOT C++ (`RNTupleReader`) and uproot.
+//! (`RootFile::put`). Round-tripped through oxiroot here; the same files are
+//! read by ROOT C++ (`RNTupleReader`) and uproot.
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleFile, RNTuple};
+use oxiroot_io_core::{Compression, RFile, RootFile};
+use oxiroot_rntuple::{Field, FieldValues, Ntuple, RNTuple};
 
 fn write(path: &str, compression: Compression) {
-    NtupleFile::new()
-        .add(Ntuple::new(
+    RootFile::create(path)
+        .put(Ntuple::new(
             "events",
             vec![
                 Field::i32("x", vec![1, 2, 3]),
                 Field::f64("y", vec![0.5, 1.5, 2.5]),
             ],
         ))
-        .add(Ntuple::new("runs", vec![Field::i32("run", vec![7, 8])]))
+        .put(Ntuple::new("runs", vec![Field::i32("run", vec![7, 8])]))
         .dir("cal", |d| {
-            d.add(Ntuple::new(
+            d.put(Ntuple::new(
                 "pedestals",
                 vec![Field::f64("p", vec![9.5, 8.5])],
             ))
         })
-        .write_root(path, compression)
+        .write(compression)
         .unwrap();
 }
 
@@ -84,16 +84,16 @@ fn compressed_multi_file_round_trips() {
 
 #[test]
 fn duplicate_names_are_rejected() {
-    let dup = NtupleFile::new()
-        .add(Ntuple::new("a", vec![Field::i32("x", vec![1])]))
-        .add(Ntuple::new("a", vec![Field::i32("x", vec![2])]));
-    assert!(dup.to_root_bytes("f.root", Compression::None).is_err());
+    let dup = RootFile::create("f.root")
+        .put(Ntuple::new("a", vec![Field::i32("x", vec![1])]))
+        .put(Ntuple::new("a", vec![Field::i32("x", vec![2])]));
+    assert!(dup.to_bytes(Compression::None).is_err());
 
     // A subdirectory name colliding with a top-level RNTuple is also rejected.
-    let clash = NtupleFile::new()
-        .add(Ntuple::new("cal", vec![Field::i32("x", vec![1])]))
+    let clash = RootFile::create("f.root")
+        .put(Ntuple::new("cal", vec![Field::i32("x", vec![1])]))
         .dir("cal", |d| {
-            d.add(Ntuple::new("p", vec![Field::i32("y", vec![1])]))
+            d.put(Ntuple::new("p", vec![Field::i32("y", vec![1])]))
         });
-    assert!(clash.to_root_bytes("f.root", Compression::None).is_err());
+    assert!(clash.to_bytes(Compression::None).is_err());
 }
