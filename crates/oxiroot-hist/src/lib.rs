@@ -25,7 +25,6 @@ pub mod fit;
 pub mod graph;
 pub mod graph2d;
 pub mod graphmultierrors;
-mod merge;
 pub mod sample;
 mod stats;
 pub mod tefficiency;
@@ -52,7 +51,6 @@ pub use fit::{FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Mode
 pub use graph::{GraphErrors, GraphFunction, TGraph};
 pub use graph2d::TGraph2D;
 pub use graphmultierrors::TGraphMultiErrors;
-pub use merge::{merge_histogram_files, HistMergeOutcome};
 // The generic objects live in `oxiroot-io-core`; re-exported so these paths keep
 // resolving.
 pub use ops::Histogram;

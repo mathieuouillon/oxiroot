@@ -1,4 +1,4 @@
-//! Merging histogram files — the histogram half of a `hadd`-style file merge.
+//! Merging histogram files — the histogram half of [`merge_files`](super::merge_files).
 //!
 //! [`merge_histogram_files`] combines several ROOT files whose keys are all
 //! histogram-family objects: the summable ones (`TH1`/`TH2`/`TH3` and the
@@ -10,9 +10,8 @@
 //!
 //! The output is written through the same typed [`RootFile`] builder as any
 //! other oxiroot write, so its `TStreamerInfo` matches the bytes exactly (no
-//! reliance on the inputs' streamer versions). It is the building block the
-//! `oxiroot` facade's file merger uses when a fileset contains no `TTree` or
-//! RNTuple.
+//! reliance on the inputs' streamer versions). [`merge_files`](super::merge_files)
+//! uses it when a fileset contains no `TTree` or RNTuple.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -22,7 +21,7 @@ use oxiroot_io_core::{Compression, RFile};
 
 use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
-use crate::{
+use oxiroot_hist::{
     ReadRoot, RootFile, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
     THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D,
     WriteRoot, TF1, TF2, TF3, TH1, TH2, TH3,

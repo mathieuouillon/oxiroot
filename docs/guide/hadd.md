@@ -93,7 +93,7 @@ So a fileset must be one of:
 Anything else — a tree or RNTuple alongside histograms, or more than one of them
 — is refused with an error that names the offending keys, rather than writing a
 partial file. To merge such a fileset, merge the pieces separately with
-`oxiroot_hist::merge_histogram_files`, `oxiroot_tree::concat_trees`, and
+`oxiroot::hadd::merge_histogram_files`, `oxiroot_tree::concat_trees`, and
 `oxiroot_rntuple::concat_ntuples`.
 
 ## Verification

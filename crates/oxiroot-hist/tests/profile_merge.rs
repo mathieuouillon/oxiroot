@@ -1,4 +1,5 @@
-//! Adding and merging the 2-D and 3-D profiles.
+//! Adding and merging the 2-D and 3-D profiles (summing them across files is
+//! tested with the file merger, in the `oxiroot` crate).
 //!
 //! `add` and `Merge` used to exist only for `TH1`/`TH2`/`TH3`/`TProfile`, so a
 //! file merge copied `TProfile2D`/`TProfile3D` from the first input where ROOT's
@@ -7,11 +8,8 @@
 //! filling one with all of their data. Every value below is a small dyadic
 //! rational, so that equality is exact whatever order the sums happen in.
 
-use oxiroot_hist::{
-    merge_histogram_files, Hist, Merge, ReadRoot, RootFile, TProfile, TProfile2D, TProfile3D,
-    ThreadedHist, WriteRoot,
-};
-use oxiroot_io_core::{Compression, Error, RFile};
+use oxiroot_hist::{Hist, Merge, TProfile, TProfile2D, TProfile3D, ThreadedHist};
+use oxiroot_io_core::Error;
 
 // --------------------------------------------------------------------- data
 
@@ -266,51 +264,6 @@ fn threaded_unit_fill_shortcuts_exist_for_2d_and_3d() {
     assert_eq!(acc3.merge().unwrap().entries, 1.0);
 }
 
-// ------------------------------------------------------------- file merging
-
-#[test]
-fn file_merge_sums_2d_and_3d_profiles() {
-    let dir = std::env::temp_dir();
-    let tag = std::process::id();
-    let in1 = dir.join(format!("oxiroot_pmerge_in1_{tag}.root"));
-    let in2 = dir.join(format!("oxiroot_pmerge_in2_{tag}.root"));
-    let out = dir.join(format!("oxiroot_pmerge_out_{tag}.root"));
-
-    let (a2, a3) = (profile_2d(&[&SET_A_2D]), profile_3d(&[&SET_A_3D]));
-    let (b2, b3) = (profile_2d(&[&SET_B_2D]), profile_3d(&[&SET_B_3D]));
-    RootFile::create(&in1)
-        .add(&a2)
-        .add(&a3)
-        .write(Compression::None)
-        .unwrap();
-    RootFile::create(&in2)
-        .add(&b2)
-        .add(&b3)
-        .write(Compression::None)
-        .unwrap();
-
-    let inputs = [RFile::open(&in1).unwrap(), RFile::open(&in2).unwrap()];
-    let outcome = merge_histogram_files(&out, &inputs, Compression::None).unwrap();
-
-    let result = (|| {
-        let f = RFile::open(&out)?;
-        Ok::<_, Error>((
-            TProfile2D::read_root(&f, "p2")?,
-            TProfile3D::read_root(&f, "p3")?,
-        ))
-    })();
-    for p in [&in1, &in2, &out] {
-        let _ = std::fs::remove_file(p);
-    }
-    let (got2, got3) = result.unwrap();
-
-    assert_eq!(outcome.summed, ["p2", "p3"], "{outcome:?}");
-    assert!(outcome.copied.is_empty(), "{outcome:?}");
-    assert!(outcome.skipped.is_empty(), "{outcome:?}");
-    assert_eq!(got2, profile_2d(&[&SET_A_2D, &SET_B_2D]));
-    assert_eq!(got3, profile_3d(&[&SET_A_3D, &SET_B_3D]));
-}
-
 // ------------------------------------------------------- negative scale factor
 //
 // ROOT's `TProfileHelper::Add` scales the weights by |c| and only the weighted
@@ -384,87 +337,4 @@ fn negative_scale_of_weighted_profiles_squares_the_weights() {
     );
     assert_eq!(dst.tsumwz, before.tsumwz + 2.0 * src.tsumwz);
     assert_eq!(dst.tsumw2, before.tsumw2 + 4.0 * src.tsumw2);
-}
-
-// -------------------------------------------------------- merge failure policy
-
-#[test]
-fn an_unreadable_profile_is_skipped_not_fatal() {
-    let dir = std::env::temp_dir();
-    let tag = std::process::id();
-    let good = dir.join(format!("oxiroot_pskip_good_{tag}.root"));
-    let bad = dir.join(format!("oxiroot_pskip_bad_{tag}.root"));
-    let out_a = dir.join(format!("oxiroot_pskip_out_a_{tag}.root"));
-    let out_b = dir.join(format!("oxiroot_pskip_out_b_{tag}.root"));
-
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
-    h.fill(0.5);
-    let p2 = profile_2d(&[&SET_A_2D]);
-    let mut broken = p2.clone();
-    broken.bin_sumw2 = vec![1.0; 3]; // not one per cell: the reader rejects it
-    RootFile::create(&good)
-        .add(&h)
-        .add(&p2)
-        .write(Compression::None)
-        .unwrap();
-    RootFile::create(&bad)
-        .add(&h)
-        .add(&broken)
-        .write(Compression::None)
-        .unwrap();
-
-    let run = |inputs: [&std::path::Path; 2], out: &std::path::Path| {
-        let files = inputs.map(|p| RFile::open(p).unwrap());
-        let outcome = merge_histogram_files(out, &files, Compression::None).unwrap();
-        let summed_h = oxiroot_hist::TH1::read_root(&RFile::open(out).unwrap(), "h").unwrap();
-        (outcome, summed_h)
-    };
-    // The bad object last, then first: either way the key is skipped whole.
-    let (late, h_late) = run([good.as_path(), bad.as_path()], &out_a);
-    let (early, h_early) = run([bad.as_path(), good.as_path()], &out_b);
-    for p in [&good, &bad, &out_a, &out_b] {
-        let _ = std::fs::remove_file(p);
-    }
-
-    for (outcome, merged_h, bad_index) in [(late, h_late, 2), (early, h_early, 1)] {
-        assert_eq!(outcome.summed, ["h"], "{outcome:?}");
-        assert_eq!(outcome.skipped.len(), 1, "{outcome:?}");
-        let (name, reason) = &outcome.skipped[0];
-        assert_eq!(name, "p2");
-        assert!(
-            reason.contains(&format!("input {bad_index} of 2")),
-            "{reason}"
-        );
-        assert_eq!(merged_h.contents[1], 2.0, "the other key still sums");
-    }
-}
-
-#[test]
-fn a_binning_mismatch_names_the_key() {
-    let dir = std::env::temp_dir();
-    let tag = std::process::id();
-    let f1 = dir.join(format!("oxiroot_pmis_1_{tag}.root"));
-    let f2 = dir.join(format!("oxiroot_pmis_2_{tag}.root"));
-    let out = dir.join(format!("oxiroot_pmis_out_{tag}.root"));
-    Hist::reg(4, 0.0, 4.0)
-        .double()
-        .named("pt")
-        .write_root(&f1, Compression::None)
-        .unwrap();
-    Hist::reg(5, 0.0, 4.0)
-        .double()
-        .named("pt")
-        .write_root(&f2, Compression::None)
-        .unwrap();
-    let files = [RFile::open(&f1).unwrap(), RFile::open(&f2).unwrap()];
-    let result = merge_histogram_files(&out, &files, Compression::None);
-    for p in [&f1, &f2, &out] {
-        let _ = std::fs::remove_file(p);
-    }
-    match result {
-        Err(Error::BinningMismatch { detail }) => {
-            assert!(detail.contains("\"pt\""), "{detail}")
-        }
-        other => panic!("expected a binning mismatch, got {other:?}"),
-    }
 }

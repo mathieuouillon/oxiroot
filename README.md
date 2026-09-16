@@ -721,7 +721,7 @@ ax2.save("heatmap.svg")?;
   classes are **skipped and listed in the report**, never silently dropped.
 - Each concatenated branch keeps its original kind (scalar, `x[N]`, jagged `x[n]`,
   `std::vector<T>`, string). The standalone `oxiroot_tree::concat_trees`,
-  `oxiroot_rntuple::concat_ntuples`, and `oxiroot_hist::merge_histogram_files`
+  `oxiroot_rntuple::concat_ntuples`, and `oxiroot::hadd::merge_histogram_files`
   do the per-format work and can be called directly.
 - `Merger::new().inputs(paths).compression(c).merge("all.root")?` is the
   composable builder; `merge_files` returns a `MergeReport` (what was summed /

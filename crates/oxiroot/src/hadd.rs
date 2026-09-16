@@ -30,7 +30,7 @@
 //! Anything else — a `TTree` or RNTuple alongside histograms, or more than one
 //! of them — is refused with an error that names the keys, rather than writing a
 //! partial file. For finer control, merge the pieces yourself with
-//! [`oxiroot_hist::merge_histogram_files`], [`oxiroot_tree::concat_trees`], or
+//! [`merge_histogram_files`], [`oxiroot_tree::concat_trees`], or
 //! [`oxiroot_rntuple::concat_ntuples`].
 
 use std::fmt;
@@ -39,7 +39,8 @@ use std::path::{Path, PathBuf};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::{Compression, RFile};
 
-use oxiroot_hist::merge_histogram_files;
+mod histograms;
+pub use histograms::{merge_histogram_files, HistMergeOutcome};
 use oxiroot_rntuple::{concat_ntuples, RNTuple, ANCHOR_CLASS};
 use oxiroot_tree::{concat_trees, TTree};
 
