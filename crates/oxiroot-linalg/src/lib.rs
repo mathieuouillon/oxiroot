@@ -10,12 +10,10 @@
 //! several objects in a file via the builder in `oxiroot-hist` / the `oxiroot`
 //! facade).
 
-use std::borrow::Cow;
-
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tobject, write_tobject};
-use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, streamer_info_list, Cls};
+use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, Cls};
 use oxiroot_io_core::{object_bytes_any, RFile, ReadRoot, WriteRoot};
 
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default
@@ -119,8 +117,8 @@ impl WriteRoot for TVectorD {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        Cow::Owned(streamer_info_list(&streamer_classes("TVectorT<double>")))
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        streamer_classes("TVectorT<double>")
     }
 }
 
@@ -240,8 +238,8 @@ impl WriteRoot for TMatrixD {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        Cow::Owned(streamer_info_list(&streamer_classes("TMatrixT<double>")))
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        streamer_classes("TMatrixT<double>")
     }
 }
 
@@ -362,8 +360,8 @@ impl WriteRoot for TMatrixDSym {
         }
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        Cow::Owned(streamer_info_list(&streamer_classes("TMatrixTSym<double>")))
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        streamer_classes("TMatrixTSym<double>")
     }
 }
 

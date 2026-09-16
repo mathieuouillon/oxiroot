@@ -369,7 +369,10 @@ impl WriteRoot for TF1 {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
+    }
+    fn streamer_classes(&self) -> Vec<oxiroot_io_core::streamer_gen::Cls<'static>> {
+        crate::objects::tf_classes(1)
     }
 }
 
@@ -394,7 +397,10 @@ impl WriteRoot for TF2 {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
+    }
+    fn streamer_classes(&self) -> Vec<oxiroot_io_core::streamer_gen::Cls<'static>> {
+        crate::objects::tf_classes(2)
     }
 }
 
@@ -421,7 +427,10 @@ impl WriteRoot for TF3 {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
+    }
+    fn streamer_classes(&self) -> Vec<oxiroot_io_core::streamer_gen::Cls<'static>> {
+        crate::objects::tf_classes(3)
     }
 }
 

@@ -15,6 +15,7 @@ use oxiroot_io_core::buffer::{RBuffer, WBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tobject, write_tnamed, write_tobject};
+use oxiroot_io_core::streamer_gen::Cls;
 use oxiroot_io_core::RFile;
 
 use crate::base::object_bytes_any_keyed;
@@ -204,7 +205,10 @@ impl WriteRoot for THStack {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
+    }
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        vec![crate::objects::thstack_class()]
     }
 }
 
@@ -319,7 +323,10 @@ impl WriteRoot for TMultiGraph {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
+    }
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        vec![crate::objects::tmultigraph_class()]
     }
 }
 

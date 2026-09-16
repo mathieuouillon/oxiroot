@@ -9,10 +9,12 @@
 //! without depending on `oxiroot-hist`.
 
 use std::borrow::Cow;
+use std::fmt;
 use std::path::Path;
 
 use crate::error::{Error, Result};
 use crate::file::{ContainerWriter, DirId, KSTART_BIG_FILE};
+use crate::streamer_gen::Cls;
 use crate::{Compression, RFile};
 
 /// Read a ROOT object of this type from an open file by key name, auto-detecting
@@ -35,11 +37,11 @@ pub trait ReadRoot: Sized {
 /// name, key name/title, and streamed payload; the trait supplies the
 /// single-object [`write_root`](WriteRoot::write_root) shorthand.
 ///
-/// The result reads in ROOT, uproot, and this crate. Types that need to describe
-/// their class to uproot (so it can model an unknown object) override
-/// [`streamer_blob`](WriteRoot::streamer_blob); collections override
-/// [`contained_classes`](WriteRoot::contained_classes) so their members'
-/// streamer info is embedded too.
+/// The result reads in ROOT, uproot, and this crate. A type whose class a reader
+/// may not know describes it with
+/// [`streamer_classes`](WriteRoot::streamer_classes) (and, for the histogram
+/// family, [`streamer_blob`](WriteRoot::streamer_blob)); every file that stores
+/// the object embeds that description, so uproot can model it.
 pub trait WriteRoot {
     /// The ROOT class name written for this object (e.g. `"TH1D"`, `"TProfile"`).
     fn root_class(&self) -> String;
@@ -52,19 +54,19 @@ pub trait WriteRoot {
     #[must_use]
     fn to_root_bytes(&self) -> Vec<u8>;
 
-    /// The class names of any objects this one *contains* (a collection's
-    /// members), so their `TStreamerInfo` is embedded too. Empty for the leaf
-    /// types; overridden by collections such as `ObjList`.
-    fn contained_classes(&self) -> Vec<String> {
+    /// The `TStreamerInfo` entries describing this object's class, and the
+    /// classes of any objects it contains, for readers that do not know them.
+    /// The default is none. Files that store the object embed these, once per
+    /// class name.
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
         Vec::new()
     }
 
-    /// The `TList<TStreamerInfo>` blob to embed when this object is written on
-    /// its own via [`write_root`](WriteRoot::write_root), describing its class to
-    /// uproot/ROOT. The default is empty (no streamer info); types that need to
-    /// be self-describing override it (histograms return a baked blob, matrices
-    /// bake their class from a `Cls` list via
-    /// [`streamer_info_list`](crate::streamer_gen::streamer_info_list)).
+    /// A serialized `TList<TStreamerInfo>` this object's class needs, for
+    /// descriptions captured from ROOT rather than generated (the histogram
+    /// family's). The default is empty. A file embeds the first non-empty list
+    /// among its objects, followed by their
+    /// [`streamer_classes`](Self::streamer_classes).
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
         Cow::Borrowed(&[])
     }
@@ -80,7 +82,8 @@ pub trait WriteRoot {
                 self.root_class()
             )));
         }
-        let streamers = self.streamer_blob();
+        let mut streamers = StreamerSet::default();
+        streamers.add(self);
         let record = record_of(self);
         write_named(path, |file_name| {
             ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, |c| {
@@ -91,12 +94,79 @@ pub trait WriteRoot {
                     &record.title,
                     &record.object,
                 )?;
-                if !streamers.is_empty() {
-                    c.place_streamer_info(&streamers, &[])?;
-                }
-                Ok(())
+                c.place_streamer_info(streamers.list(), streamers.classes())
             })
         })
+    }
+}
+
+/// The streamer info a set of objects needs: the first serialized list any of
+/// them brings ([`WriteRoot::streamer_blob`]), and each generated class
+/// ([`WriteRoot::streamer_classes`]) once.
+#[derive(Clone, Default)]
+pub struct StreamerSet {
+    list: Cow<'static, [u8]>,
+    classes: Vec<Cls<'static>>,
+}
+
+impl StreamerSet {
+    /// Add what `object` needs.
+    pub fn add(&mut self, object: &dyn WriteRoot) {
+        self.add_list(object.streamer_blob());
+        self.add_classes(object.streamer_classes());
+    }
+
+    /// Use `list` as the serialized list, unless one is already set.
+    pub fn add_list(&mut self, list: Cow<'static, [u8]>) {
+        if self.list.is_empty() {
+            self.list = list;
+        }
+    }
+
+    /// Add each class not already present.
+    pub fn add_classes(&mut self, classes: impl IntoIterator<Item = Cls<'static>>) {
+        for class in classes {
+            if !self.classes.iter().any(|c| c.name == class.name) {
+                self.classes.push(class);
+            }
+        }
+    }
+
+    /// Add everything `other` holds.
+    pub fn extend(&mut self, other: &StreamerSet) {
+        self.add_list(other.list.clone());
+        self.add_classes(other.classes.iter().cloned());
+    }
+
+    /// The serialized list (empty if no object brought one).
+    #[must_use]
+    pub fn list(&self) -> &[u8] {
+        &self.list
+    }
+
+    /// The serialized list as a [`WriteRoot::streamer_blob`] value, for a
+    /// collection passing on what its members brought.
+    #[must_use]
+    pub fn blob(&self) -> Cow<'static, [u8]> {
+        self.list.clone()
+    }
+
+    /// The generated classes, in the order they were first added.
+    #[must_use]
+    pub fn classes(&self) -> &[Cls<'static>] {
+        &self.classes
+    }
+}
+
+impl fmt::Debug for StreamerSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamerSet")
+            .field("list_bytes", &self.list.len())
+            .field(
+                "classes",
+                &self.classes.iter().map(|c| &*c.name).collect::<Vec<_>>(),
+            )
+            .finish()
     }
 }
 

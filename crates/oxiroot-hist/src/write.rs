@@ -10,8 +10,9 @@ use std::path::Path;
 use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
-use oxiroot_io_core::streamer_gen::{append_streamer_infos, Cls};
-use oxiroot_io_core::{Compression, ContainerWriter, DirId, ObjectRecord, KSTART_BIG_FILE};
+use oxiroot_io_core::{
+    Compression, ContainerWriter, DirId, ObjectRecord, StreamerSet, KSTART_BIG_FILE,
+};
 // The object framework (the `WriteRoot` trait + `record_of`) now lives in
 // `oxiroot-io-core`; re-export the trait so `oxiroot_hist::WriteRoot` and the
 // in-crate `crate::write::WriteRoot` path both keep resolving.
@@ -33,15 +34,10 @@ use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
-/// The `TList<TStreamerInfo>` blob a histogram-family object embeds when written
-/// on its own — the baked histogram blob plus any extra classes it (or its
-/// collection members) use. This is the [`WriteRoot::streamer_blob`]
-/// implementation shared by every writable type in this crate.
-pub(crate) fn hist_streamer_blob(obj: &dyn WriteRoot) -> Cow<'static, [u8]> {
-    let class = obj.root_class();
-    let contained = obj.contained_classes();
-    streamer_info_for(std::iter::once(class.as_str()).chain(contained.iter().map(String::as_str)))
-        .unwrap_or(Cow::Borrowed(HIST_STREAMER_INFO))
+/// The captured `TList<TStreamerInfo>` describing the histogram family: the
+/// [`WriteRoot::streamer_blob`] of every histogram-family type in this crate.
+pub(crate) fn hist_streamer_list() -> Cow<'static, [u8]> {
+    Cow::Borrowed(HIST_STREAMER_INFO)
 }
 
 /// `TH1`/`TH2`/`TH3` serialize at the precision carried by their `class_name`;
@@ -71,7 +67,7 @@ macro_rules! impl_write_root_hist {
                 w.into_vec()
             }
             fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_blob(self)
+                crate::write::hist_streamer_list()
             }
         }
     };
@@ -98,7 +94,7 @@ macro_rules! impl_write_root_fixed {
                 $bytes(self)
             }
             fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_blob(self)
+                crate::write::hist_streamer_list()
             }
         }
     };
@@ -124,7 +120,7 @@ impl WriteRoot for TGraph {
         tgraph_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
     }
 }
 
@@ -134,38 +130,6 @@ impl WriteRoot for TGraph {
 /// Embedded in every written file so it is self-describing. Sourced from a
 /// ROOT-written file with one of each type, kept uncompressed.
 const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
-
-/// The classes, beyond the baked histogram blob, that objects with class names
-/// `class_names` need described (`TObjString`/`TParameter<…>`, matrices, …), so
-/// uproot can model them. Each class appears once.
-fn extra_streamer_classes<'a>(class_names: impl Iterator<Item = &'a str>) -> Vec<Cls<'static>> {
-    let mut extra: Vec<Cls<'static>> = Vec::new();
-    for class in class_names {
-        // A class may need several infos (e.g. a matrix plus its base); dedup by
-        // name so a shared base is embedded once.
-        for cls in crate::objects::streamer_classes(class) {
-            if !extra.iter().any(|c| c.name == cls.name) {
-                extra.push(cls);
-            }
-        }
-    }
-    extra
-}
-
-/// The streamer info to embed for objects with class names `class_names`: the
-/// baked histogram blob plus [`extra_streamer_classes`]. Returns the baked blob
-/// borrowed when nothing extra is needed.
-fn streamer_info_for<'a>(class_names: impl Iterator<Item = &'a str>) -> Result<Cow<'static, [u8]>> {
-    let extra = extra_streamer_classes(class_names);
-    if extra.is_empty() {
-        Ok(Cow::Borrowed(HIST_STREAMER_INFO))
-    } else {
-        Ok(Cow::Owned(append_streamer_infos(
-            HIST_STREAMER_INFO,
-            &extra,
-        )?))
-    }
-}
 
 // `fBits` values ROOT writes for the embedded TObjects in a fresh histogram.
 const HIST_BITS: u32 = 0x0300_0008;
@@ -1061,7 +1025,7 @@ impl WriteRoot for TGraph2D {
         tgraph2d_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
     }
 }
 
@@ -1138,7 +1102,7 @@ impl WriteRoot for TGraphMultiErrors {
         tgraphmultierrors_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
     }
 }
 
@@ -1220,9 +1184,8 @@ pub struct RootFile {
     existing: Option<Vec<u8>>,
     root: Vec<ObjectRecord>,
     dirs: Vec<SubdirRecords>,
-    /// Classes contained inside added objects (collection members) whose streamer
-    /// info must also be embedded.
-    contained: Vec<String>,
+    /// The streamer info the added objects need.
+    streamers: StreamerSet,
 }
 
 impl RootFile {
@@ -1234,7 +1197,7 @@ impl RootFile {
             existing: None,
             root: Vec::new(),
             dirs: Vec::new(),
-            contained: Vec::new(),
+            streamers: StreamerSet::default(),
         }
     }
 
@@ -1253,7 +1216,7 @@ impl RootFile {
             existing: Some(existing),
             root: Vec::new(),
             dirs: Vec::new(),
-            contained: Vec::new(),
+            streamers: StreamerSet::default(),
         })
     }
 
@@ -1261,7 +1224,7 @@ impl RootFile {
     // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
     #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, object: &dyn WriteRoot) -> RootFile {
-        self.contained.extend(object.contained_classes());
+        self.streamers.add(object);
         self.root.push(record_of(object));
         self
     }
@@ -1272,9 +1235,9 @@ impl RootFile {
     pub fn dir(mut self, name: impl Into<String>, build: impl FnOnce(Dir) -> Dir) -> RootFile {
         let dir = build(Dir {
             objects: Vec::new(),
-            contained: Vec::new(),
+            streamers: StreamerSet::default(),
         });
-        self.contained.extend(dir.contained);
+        self.streamers.extend(&dir.streamers);
         self.dirs.push(SubdirRecords {
             name: name.into(),
             objects: dir.objects,
@@ -1308,21 +1271,13 @@ impl RootFile {
             .and_then(|s| s.to_str())
             .unwrap_or("file.root")
             .to_string();
-        // The baked histogram list, plus the classes it lacks. When appending to a
-        // file that has streamer info, only those extra classes are added to it
-        // (readers know the histogram classes).
-        let extra = extra_streamer_classes(
-            self.root
-                .iter()
-                .chain(self.dirs.iter().flat_map(|d| d.objects.iter()))
-                .map(|r| r.class_name.as_str())
-                .chain(self.contained.iter().map(String::as_str)),
-        );
         let layout = |c: &mut ContainerWriter<_>| {
             for r in &self.root {
                 c.place_key(DirId::TOP, &r.class_name, &r.name, &r.title, &r.object)?;
             }
-            c.place_streamer_info(HIST_STREAMER_INFO, &extra)?;
+            // When appending to a file that has streamer info, only the generated
+            // classes it lacks are added (readers know the histogram family).
+            c.place_streamer_info(self.streamers.list(), self.streamers.classes())?;
             for dir in &self.dirs {
                 let id = c.mkdir(DirId::TOP, &dir.name)?;
                 for r in &dir.objects {
@@ -1355,14 +1310,14 @@ impl RootFile {
 #[must_use]
 pub struct Dir {
     objects: Vec<ObjectRecord>,
-    contained: Vec<String>,
+    streamers: StreamerSet,
 }
 
 impl Dir {
     /// Add an object to this subdirectory.
     #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, object: &dyn WriteRoot) -> Dir {
-        self.contained.extend(object.contained_classes());
+        self.streamers.add(object);
         self.objects.push(record_of(object));
         self
     }

@@ -33,7 +33,8 @@ pub use file::{
 };
 pub use object::{ObjHeader, TagReader};
 pub use object_io::{
-    object_bytes_any, object_bytes_any_keyed, record_of, ObjectRecord, ReadRoot, WriteRoot,
+    object_bytes_any, object_bytes_any_keyed, record_of, ObjectRecord, ReadRoot, StreamerSet,
+    WriteRoot,
 };
 pub use read_object::read_object;
 pub use streamer::{

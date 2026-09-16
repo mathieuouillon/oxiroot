@@ -15,7 +15,8 @@ use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tobject, write_tobject};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::streamer_gen::Cls;
+use oxiroot_io_core::{RFile, StreamerSet};
 
 use crate::base::object_bytes_any_keyed;
 use crate::collections::write_object;
@@ -44,30 +45,41 @@ pub enum ListKind {
 /// and [`add`](ObjList::add) any writable objects; read one back with
 /// [`ObjList::read_root`](crate::ReadRoot::read_root) and extract members by type with
 /// [`items`](ObjList::items).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ObjList {
     kind: ListKind,
     name: String,
     /// Each member as `(class_name, streamed object body)`.
     members: Vec<(String, Vec<u8>)>,
+    /// The streamer info the members added with [`add`](ObjList::add) need.
+    streamers: StreamerSet,
+}
+
+/// Two lists are equal when they hold the same members; where the members'
+/// streamer info came from does not matter.
+impl PartialEq for ObjList {
+    fn eq(&self, other: &Self) -> bool {
+        (self.kind, &self.name, &self.members) == (other.kind, &other.name, &other.members)
+    }
 }
 
 impl ObjList {
     /// An empty `TList`.
     pub fn list() -> ObjList {
-        ObjList {
-            kind: ListKind::List,
-            name: String::new(),
-            members: Vec::new(),
-        }
+        ObjList::empty(ListKind::List)
     }
 
     /// An empty `TObjArray`.
     pub fn array() -> ObjList {
+        ObjList::empty(ListKind::Array)
+    }
+
+    fn empty(kind: ListKind) -> ObjList {
         ObjList {
-            kind: ListKind::Array,
+            kind,
             name: String::new(),
             members: Vec::new(),
+            streamers: StreamerSet::default(),
         }
     }
 
@@ -83,6 +95,7 @@ impl ObjList {
     #[allow(clippy::should_implement_trait)]
     #[must_use]
     pub fn add(mut self, object: &dyn WriteRoot) -> ObjList {
+        self.streamers.add(object);
         self.members
             .push((object.root_class(), object.to_root_bytes()));
         self
@@ -132,9 +145,6 @@ impl WriteRoot for ObjList {
     fn root_title(&self) -> &str {
         ""
     }
-    fn contained_classes(&self) -> Vec<String> {
-        self.members.iter().map(|(c, _)| c.clone()).collect()
-    }
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
         match self.kind {
@@ -164,8 +174,25 @@ impl WriteRoot for ObjList {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        self.streamers.blob()
     }
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        member_streamer_classes(&self.streamers, self.members.iter().map(|(c, _)| c))
+    }
+}
+
+/// What a collection's members need described: the classes gathered when they
+/// were added, plus those known by name (a collection read from a file keeps
+/// only its members' class names).
+fn member_streamer_classes<'a>(
+    added: &StreamerSet,
+    member_classes: impl Iterator<Item = &'a String>,
+) -> Vec<Cls<'static>> {
+    let mut set = added.clone();
+    for class in member_classes {
+        set.add_classes(crate::objects::member_classes(class));
+    }
+    set.classes().to_vec()
 }
 
 /// A member's class name and the byte range of its streamed body within the
@@ -227,6 +254,7 @@ fn decode_objlist(class: &str, object: &[u8], keylen: usize) -> Result<ObjList> 
         kind,
         name,
         members,
+        streamers: StreamerSet::default(),
     })
 }
 
@@ -317,10 +345,19 @@ type MapEntry = (String, Vec<u8>);
 /// Note: uproot has no `TMap` model, so a `TMap` is unreadable there (ROOT's own
 /// `TMap`s share this). ROOT C++ reads what oxiroot writes, and oxiroot reads
 /// ROOT's `TMap`s.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct TMap {
     name: String,
     pairs: Vec<(MapEntry, MapEntry)>,
+    /// The streamer info the entries added with [`add`](TMap::add) need.
+    streamers: StreamerSet,
+}
+
+/// Two maps are equal when they hold the same entries.
+impl PartialEq for TMap {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.name, &self.pairs) == (&other.name, &other.pairs)
+    }
 }
 
 impl TMap {
@@ -347,6 +384,8 @@ impl TMap {
     /// Insert a `value` under an arbitrary object `key`.
     #[must_use]
     pub fn add(mut self, key: &dyn WriteRoot, value: &dyn WriteRoot) -> TMap {
+        self.streamers.add(key);
+        self.streamers.add(value);
         self.pairs.push((
             (key.root_class(), key.to_root_bytes()),
             (value.root_class(), value.to_root_bytes()),
@@ -418,12 +457,6 @@ impl WriteRoot for TMap {
     fn root_title(&self) -> &str {
         ""
     }
-    fn contained_classes(&self) -> Vec<String> {
-        self.pairs
-            .iter()
-            .flat_map(|((kc, _), (vc, _))| [kc.clone(), vc.clone()])
-            .collect()
-    }
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
         let obj = w.begin_object(3); // TMap version 3
@@ -438,7 +471,13 @@ impl WriteRoot for TMap {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        self.streamers.blob()
+    }
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        member_streamer_classes(
+            &self.streamers,
+            self.pairs.iter().flat_map(|((kc, _), (vc, _))| [kc, vc]),
+        )
     }
 }
 
@@ -478,7 +517,11 @@ fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
         let value = read_entry(&mut r, &mut tags, object)?;
         pairs.push((key, value));
     }
-    Ok(TMap { name, pairs })
+    Ok(TMap {
+        name,
+        pairs,
+        streamers: StreamerSet::default(),
+    })
 }
 
 pub(crate) fn read_tmap(file: &RFile, name: &str) -> Result<TMap> {

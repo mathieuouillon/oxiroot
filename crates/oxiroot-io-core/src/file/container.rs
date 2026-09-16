@@ -17,7 +17,7 @@ use std::io::{Cursor, Seek, SeekFrom, Write};
 
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
-use crate::streamer_gen::{append_streamer_infos, Cls};
+use crate::streamer_gen::{append_streamer_infos, streamer_info_list, Cls};
 use crate::streamer_info::parse_streamer_info;
 use crate::Compression;
 
@@ -414,9 +414,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
     }
 
     /// Store the file's streamer info, referenced from the header rather than
-    /// listed in a directory: `list` is a streamed `TList<TStreamerInfo>`, and
-    /// `extra` are further classes added after its entries. A later call
-    /// replaces the reference.
+    /// listed in a directory: `list` is a streamed `TList<TStreamerInfo>` (or
+    /// empty), and `extra` are further classes added after its entries, skipping
+    /// any it already describes. Nothing is written when both are empty. A later
+    /// call replaces the reference.
     ///
     /// When continuing a file that already has streamer info, `list` is not
     /// used: the file's own entries are kept, and only the `extra` classes they
@@ -447,10 +448,21 @@ impl<W: Write + Seek> ContainerWriter<W> {
             }
             Some(ExistingInfo::Opaque) => Ok(()),
             None => {
-                let list = if extra.is_empty() {
-                    Cow::Borrowed(list)
+                let listed = if list.is_empty() {
+                    Vec::new()
                 } else {
-                    Cow::Owned(append_streamer_infos(list, extra)?)
+                    described_classes(list, STREAMER_INFO_KEY_LEN)
+                };
+                let extra: Vec<Cls<'_>> = extra
+                    .iter()
+                    .filter(|c| !listed.iter().any(|name| *name == c.name))
+                    .cloned()
+                    .collect();
+                let list = match (list.is_empty(), extra.is_empty()) {
+                    (true, true) => return Ok(()),
+                    (_, true) => Cow::Borrowed(list),
+                    (true, false) => Cow::Owned(streamer_info_list(&extra)),
+                    (false, false) => Cow::Owned(append_streamer_infos(list, &extra)?),
                 };
                 let title = streamer_info_title(STREAMER_INFO_KEY_LEN, self.big)
                     .expect("a 64-byte key fits both forms");
@@ -851,6 +863,19 @@ impl ContainerWriter<Cursor<Vec<u8>>> {
         // The size decides the form here, so a small result is never an error.
         Ok(writer.finish_checked(false)?.into_inner())
     }
+}
+
+/// The classes a serialized list describes, or none if it does not parse.
+fn described_classes(list: &[u8], key_len: u16) -> Vec<String> {
+    parse_streamer_info(list, usize::from(key_len))
+        .map(|registry| {
+            registry
+                .class_names()
+                .into_iter()
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Read a continued file's streamer-info record.

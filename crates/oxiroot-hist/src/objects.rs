@@ -4,8 +4,6 @@
 //! as ROOT serializes them, so ROOT and uproot read what oxiroot writes and vice
 //! versa.
 
-use std::borrow::Cow;
-
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::read_tobject;
@@ -86,8 +84,8 @@ impl WriteRoot for TObjString {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        vec![tobjstring_class()]
     }
 }
 
@@ -229,8 +227,8 @@ impl WriteRoot for TParameter {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        vec![tparameter_class(self.value)]
     }
 }
 
@@ -260,20 +258,36 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
     })
 }
 
-/// The `TStreamerInfo`s ROOT writes for `class` (the class plus any of its base
-/// classes not already in the histogram streamer info), if it is one of the
-/// persistable-object, collection, or linear-algebra classes oxiroot serializes
-/// outside the histogram family. The written file embeds these (merged into the
-/// histogram streamer info) so uproot can model the class — ROOT C++ has them
-/// compiled in and does not need them, but uproot reads a templated
-/// `TParameter<…>`/`TVectorT<…>`/`TMatrixT<…>` (or a `THStack`/`TMultiGraph`)
-/// only from its streamer. The common bases (`TObject`, `TString`, `TNamed`,
-/// `TList`) and the histogram/graph members are already covered. Returns an empty
-/// vector for anything else (e.g. a histogram, already described).
-/// Checksums/versions are ROOT's own values (see the `scripts/gen_*.cpp`).
-pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
-    let param = |name: &'static str, checksum, ty, size, type_name| Cls {
-        name: name.into(),
+// --- streamer info -----------------------------------------------------------
+//
+// ROOT C++ has these classes compiled in, but uproot models a templated
+// `TParameter<…>`/`TVectorT<…>`/`TMatrixT<…>` (or a `THStack`/`TMultiGraph`)
+// only from its streamer, so files that store them embed these entries. The
+// common bases (`TObject`, `TString`, `TNamed`, `TList`) and the histogram and
+// graph classes are in the captured histogram list. Checksums and versions are
+// ROOT's own (see the `scripts/gen_*.cpp`).
+
+/// The `TStreamerInfo` of `TObjString`.
+fn tobjstring_class() -> Cls<'static> {
+    Cls {
+        name: "TObjString".into(),
+        version: 1,
+        checksum: 2_626_570_240,
+        elements: vec![base("TObject", 1), strf("fString")],
+    }
+}
+
+/// The `TStreamerInfo` of the `TParameter<…>` holding `value`'s type.
+fn tparameter_class(value: ParamValue) -> Cls<'static> {
+    let (checksum, ty, size) = match value {
+        ParamValue::Double(_) => (1_968_899_544, 8, 8),
+        ParamValue::Float(_) => (1_396_280_242, 5, 4),
+        ParamValue::Int(_) => (4_270_151_672, 3, 4),
+        ParamValue::Long64(_) => (3_647_805_264, 16, 8),
+    };
+    let type_name = value.type_name();
+    Cls {
+        name: format!("TParameter<{type_name}>").into(),
         version: 2,
         checksum,
         elements: vec![
@@ -281,11 +295,46 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
             strf("fName"),
             basic("fVal", ty, size, type_name),
         ],
-    };
-    // ROOT's `TFormula`/`TF1`/`TF2`/`TF3` streamer infos (versions and checksums
-    // as ROOT writes them). A standalone `TF1`/`TF2`/`TF3` embeds these so uproot
-    // builds a model; ROOT C++ uses its own compiled streamers.
-    let tformula = || Cls {
+    }
+}
+
+/// The `TStreamerInfo` of `THStack`.
+pub(crate) fn thstack_class() -> Cls<'static> {
+    Cls {
+        name: "THStack".into(),
+        version: 2,
+        checksum: 1_918_797_077,
+        elements: vec![
+            base("TNamed", 1),
+            objptr("fHists", "TList*"),
+            objptr("fHistogram", "TH1*"),
+            basic("fMaximum", 8, 8, "double"),
+            basic("fMinimum", 8, 8, "double"),
+        ],
+    }
+}
+
+/// The `TStreamerInfo` of `TMultiGraph`.
+pub(crate) fn tmultigraph_class() -> Cls<'static> {
+    Cls {
+        name: "TMultiGraph".into(),
+        version: 2,
+        checksum: 3_767_090_389,
+        elements: vec![
+            base("TNamed", 1),
+            objptr("fGraphs", "TList*"),
+            objptr("fFunctions", "TList*"),
+            objptr("fHistogram", "TH1F*"),
+            basic("fMaximum", 8, 8, "double"),
+            basic("fMinimum", 8, 8, "double"),
+        ],
+    }
+}
+
+/// The `TStreamerInfo`s a `TF1` (`dim` 1), `TF2` or `TF3` needs: its formula,
+/// then its base classes deepest first, then itself.
+pub(crate) fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
+    let tformula = Cls {
         name: "TFormula".into(),
         version: 14,
         checksum: 3_342_972_029,
@@ -301,7 +350,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
             basic("fVectorized", 18, 1, "bool"),
         ],
     };
-    let tf1 = || Cls {
+    let tf1 = Cls {
         name: "TF1".into(),
         version: 12,
         checksum: 1_914_961_880,
@@ -332,7 +381,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
             objptr("fComposition", "TF1AbsComposition*"),
         ],
     };
-    let tf2 = || Cls {
+    let tf2 = Cls {
         name: "TF2".into(),
         version: 4,
         checksum: 3_115_609_752,
@@ -344,7 +393,7 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
             any("fContour", 24, "TArrayD"),
         ],
     };
-    let tf3 = || Cls {
+    let tf3 = Cls {
         name: "TF3".into(),
         version: 3,
         checksum: 3_522_165_386,
@@ -355,54 +404,26 @@ pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
             basic("fNpz", 3, 4, "int"),
         ],
     };
+    let mut classes = vec![tformula, tf1, tf2, tf3];
+    classes.truncate(dim + 1);
+    classes
+}
+
+/// The `TStreamerInfo`s for a collection member known only by its class name (a
+/// collection read from a file keeps just its members' bytes).
+pub(crate) fn member_classes(class: &str) -> Vec<Cls<'static>> {
+    let param = |value| vec![tparameter_class(value)];
     match class {
-        "TObjString" => vec![Cls {
-            name: "TObjString".into(),
-            version: 1,
-            checksum: 2_626_570_240,
-            elements: vec![base("TObject", 1), strf("fString")],
-        }],
-        "TParameter<double>" => vec![param("TParameter<double>", 1_968_899_544, 8, 8, "double")],
-        "TParameter<float>" => vec![param("TParameter<float>", 1_396_280_242, 5, 4, "float")],
-        "TParameter<int>" => vec![param("TParameter<int>", 4_270_151_672, 3, 4, "int")],
-        "TParameter<long long>" => vec![param(
-            "TParameter<long long>",
-            3_647_805_264,
-            16,
-            8,
-            "long long",
-        )],
-        "THStack" => vec![Cls {
-            name: "THStack".into(),
-            version: 2,
-            checksum: 1_918_797_077,
-            elements: vec![
-                base("TNamed", 1),
-                objptr("fHists", "TList*"),
-                objptr("fHistogram", "TH1*"),
-                basic("fMaximum", 8, 8, "double"),
-                basic("fMinimum", 8, 8, "double"),
-            ],
-        }],
-        "TMultiGraph" => vec![Cls {
-            name: "TMultiGraph".into(),
-            version: 2,
-            checksum: 3_767_090_389,
-            elements: vec![
-                base("TNamed", 1),
-                objptr("fGraphs", "TList*"),
-                objptr("fFunctions", "TList*"),
-                objptr("fHistogram", "TH1F*"),
-                basic("fMaximum", 8, 8, "double"),
-                basic("fMinimum", 8, 8, "double"),
-            ],
-        }],
-        // A function embeds its formula and its base classes, deepest first.
-        "TF1" => vec![tformula(), tf1()],
-        "TF2" => vec![tformula(), tf1(), tf2()],
-        "TF3" => vec![tformula(), tf1(), tf2(), tf3()],
-        // The linear-algebra classes (`TVectorT`/`TMatrixT`/`TMatrixTSym`/
-        // `TMatrixTBase`) now live in `oxiroot-linalg`; delegate to it.
+        "TObjString" => vec![tobjstring_class()],
+        "TParameter<double>" => param(ParamValue::Double(0.0)),
+        "TParameter<float>" => param(ParamValue::Float(0.0)),
+        "TParameter<int>" => param(ParamValue::Int(0)),
+        "TParameter<long long>" => param(ParamValue::Long64(0)),
+        "THStack" => vec![thstack_class()],
+        "TMultiGraph" => vec![tmultigraph_class()],
+        "TF1" => tf_classes(1),
+        "TF2" => tf_classes(2),
+        "TF3" => tf_classes(3),
         _ => oxiroot_linalg::streamer_classes(class),
     }
 }
