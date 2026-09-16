@@ -32,7 +32,7 @@ pub use envelope::Locator;
 pub use field::FieldValues;
 pub use footer::{ClusterGroup, Footer};
 pub use header::{ColumnDescriptor, FieldDescriptor, Header, StructRole};
-pub use merge::concat_ntuples;
+pub use merge::{append_ntuples, concat_ntuples};
 pub use page::ColumnValues;
 pub use reader::RNTuple;
 pub use writer::{rntuple_file_bytes, write_rntuple_file, Column, Field, Ntuple, RNTupleWriter};

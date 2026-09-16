@@ -2342,10 +2342,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         // corrupt file; the caller can re-run with `create_large`/`new_large`.
         let pos = self.file.position();
         if !self.file.is_big() && pos > KSTART_BIG_FILE {
-            return Err(Error::Format(format!(
-                "streamed RNTuple reached {pos} bytes, over the 2 GiB limit of the 32-bit \
-                 container — construct the writer with create_large / new_large for 64-bit"
-            )));
+            return Err(Error::FileTooLarge { size: pos });
         }
 
         let anchor = build_anchor(

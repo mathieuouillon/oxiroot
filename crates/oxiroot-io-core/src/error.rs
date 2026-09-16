@@ -66,6 +66,13 @@ pub enum Error {
         /// Human-readable description of the schema change.
         detail: String,
     },
+    /// A file written in the 32-bit ("small") container form grew past the
+    /// ~2 GiB it can address. Write it in the 64-bit form instead (e.g.
+    /// `TTreeWriter::create_large`); nothing it wrote is usable.
+    FileTooLarge {
+        /// The size the file reached, in bytes.
+        size: u64,
+    },
     /// An underlying I/O error. The [`std::io::ErrorKind`] is preserved so
     /// callers can branch on it; the message is rendered to a string so `Error`
     /// stays `Clone`.
@@ -112,6 +119,11 @@ impl fmt::Display for Error {
             }
             Error::BinningMismatch { detail } => write!(f, "binning mismatch: {detail}"),
             Error::SchemaChanged { detail } => write!(f, "schema changed: {detail}"),
+            Error::FileTooLarge { size } => write!(
+                f,
+                "the file reached {size} bytes, more than the 32-bit container form can \
+                 address (2 GiB); write it in the 64-bit form"
+            ),
             Error::Io { message, .. } => write!(f, "I/O error: {message}"),
         }
     }

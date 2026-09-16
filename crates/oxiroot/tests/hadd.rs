@@ -105,3 +105,139 @@ fn refuses_a_fileset_mixing_a_tree_with_histograms() {
     };
     assert!(err.to_string().contains("cannot combine"), "{err}");
 }
+
+#[test]
+fn a_tree_merge_streams_one_batch_per_input() {
+    let inputs: Vec<_> = (0..3)
+        .map(|k| {
+            let path = tmp(&format!("stream_tree_{k}"));
+            let n = k + 1;
+            Tree::new(
+                "Events",
+                vec![
+                    Branch::i32("i", (0..n).map(|x| k * 10 + x).collect()),
+                    Branch::jagged_f32(
+                        "hits",
+                        (0..n).map(|x| vec![x as f32; x as usize]).collect(),
+                    ),
+                    Branch::strings("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
+                    Branch::vector_f64("vec", (0..n).map(|x| vec![f64::from(x); 2]).collect()),
+                ],
+            )
+            .write_root(&path, Compression::Zstd(3))
+            .unwrap();
+            path
+        })
+        .collect();
+
+    let out = tmp("stream_tree_out");
+    let report = merge_files(&out, &inputs, Compression::Zstd(3)).unwrap();
+    assert_eq!(report.entries, Some(6));
+
+    let fo = RFile::open(&out).unwrap();
+    let t = TTree::open(&fo, "Events").unwrap();
+    assert_eq!(
+        t.read_branch(&fo, "i").unwrap(),
+        BranchValues::I32(vec![0, 10, 11, 20, 21, 22])
+    );
+    assert_eq!(
+        t.read_branch(&fo, "hits").unwrap(),
+        BranchValues::VecF32(vec![
+            vec![],
+            vec![],
+            vec![1.0],
+            vec![],
+            vec![1.0],
+            vec![2.0, 2.0],
+        ])
+    );
+    assert_eq!(
+        t.read_branch(&fo, "tag").unwrap(),
+        BranchValues::Str(
+            ["t00", "t10", "t11", "t20", "t21", "t22"]
+                .map(String::from)
+                .to_vec()
+        )
+    );
+    assert_eq!(
+        t.read_branch(&fo, "vec").unwrap(),
+        BranchValues::VecF64(vec![
+            vec![0.0; 2],
+            vec![0.0; 2],
+            vec![1.0; 2],
+            vec![0.0; 2],
+            vec![1.0; 2],
+            vec![2.0; 2],
+        ])
+    );
+}
+
+#[test]
+fn an_rntuple_merge_streams_one_cluster_per_input() {
+    let inputs: Vec<_> = (0..3)
+        .map(|k| {
+            let path = tmp(&format!("stream_rn_{k}"));
+            Ntuple::new(
+                "ntpl",
+                vec![
+                    Field::i64("id", vec![k, k + 100]),
+                    Field::strings("s", vec![format!("a{k}"), format!("b{k}")]),
+                ],
+            )
+            .write_root(&path, Compression::None)
+            .unwrap();
+            path
+        })
+        .collect();
+
+    let out = tmp("stream_rn_out");
+    merge_files(&out, &inputs, Compression::Zstd(1)).unwrap();
+
+    let fo = RFile::open(&out).unwrap();
+    let nt = RNTuple::open(&fo, "ntpl").unwrap();
+    assert_eq!(nt.footer().cluster_groups[0].num_clusters, 3);
+    assert_eq!(
+        nt.read_field(&fo, "id").unwrap(),
+        FieldValues::I64(vec![0, 100, 1, 101, 2, 102])
+    );
+    assert_eq!(
+        nt.read_field(&fo, "s").unwrap(),
+        FieldValues::Str(
+            ["a0", "b0", "a1", "b1", "a2", "b2"]
+                .map(String::from)
+                .to_vec()
+        )
+    );
+}
+
+#[test]
+fn empty_inputs_merge_to_an_empty_tree() {
+    for k in 0..2 {
+        Tree::new("T", vec![Branch::f64("x", vec![])])
+            .write_root(tmp(&format!("empty_tree_{k}")), Compression::None)
+            .unwrap();
+    }
+    let out = tmp("empty_tree_out");
+    let report = merge_files(
+        &out,
+        &[tmp("empty_tree_0"), tmp("empty_tree_1")],
+        Compression::None,
+    )
+    .unwrap();
+    assert_eq!(report.entries, Some(0));
+    let fo = RFile::open(&out).unwrap();
+    assert_eq!(TTree::open(&fo, "T").unwrap().num_entries(), 0);
+}
+
+#[test]
+fn the_output_cannot_be_an_input() {
+    let path = tmp("self_merge");
+    Tree::new("T", vec![Branch::i32("x", vec![1])])
+        .write_root(&path, Compression::None)
+        .unwrap();
+    let err = merge_files(&path, &[&path], Compression::None).unwrap_err();
+    assert!(err.to_string().contains("also an input"), "{err}");
+    // The input is untouched.
+    let f = RFile::open(&path).unwrap();
+    assert_eq!(TTree::open(&f, "T").unwrap().num_entries(), 1);
+}

@@ -81,10 +81,10 @@ without appearing in `skipped`.**
 
 ## What a fileset may contain
 
-One call writes **one** output file, and oxiroot does not yet assemble a single
-container that *mixes* histograms with a `TTree`/RNTuple (each of those owns
-auxiliary basket/page keys that a self-contained object writer does not model).
-So a fileset must be one of:
+One call writes **one** output file, and the merger does not yet combine
+histograms with a `TTree`/RNTuple in that output (a `RootFile` can hold all three,
+but the merger concatenates each tree or RNTuple on its own path). So a fileset
+must be one of:
 
 - **all histogram-family objects** — summed / copied as above;
 - **a single `TTree`** (and nothing else);
@@ -93,8 +93,18 @@ So a fileset must be one of:
 Anything else — a tree or RNTuple alongside histograms, or more than one of them
 — is refused with an error that names the offending keys, rather than writing a
 partial file. To merge such a fileset, merge the pieces separately with
-`oxiroot::hadd::merge_histogram_files`, `oxiroot_tree::concat_trees`, and
-`oxiroot_rntuple::concat_ntuples`.
+`oxiroot::hadd::merge_histogram_files`, `oxiroot_tree::append_trees` (or
+`concat_trees`), and `oxiroot_rntuple::append_ntuples` (or `concat_ntuples`).
+
+## Memory
+
+Inputs are opened with positioned reads, so only the objects and data a merge
+touches are read. A tree or RNTuple is streamed to the output one input at a
+time: each input becomes one batch of baskets (or one RNTuple cluster), so memory
+holds a single input's entries rather than the whole merged dataset. When the
+inputs add up to more than 1 GB, or the output turns out not to fit the 32-bit
+container form, the output is written in ROOT's 64-bit form. The output path must
+not be one of the inputs.
 
 ## Verification
 
