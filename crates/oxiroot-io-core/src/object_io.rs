@@ -12,7 +12,7 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::file::{write_root_file_with_streamers, ObjectRecord};
+use crate::file::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use crate::{Compression, RFile};
 
 /// Read a ROOT object of this type from an open file by key name, auto-detecting
@@ -81,16 +81,36 @@ pub trait WriteRoot {
             )));
         }
         let streamers = self.streamer_blob();
-        let streamers = (!streamers.is_empty()).then(|| streamers.as_ref());
+        let record = record_of(self);
         write_named(path, |file_name| {
-            write_root_file_with_streamers(
-                file_name,
-                &[record_of(self)],
-                compression.setting(),
-                streamers,
-            )
+            ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, |c| {
+                c.place_key(
+                    DirId::TOP,
+                    &record.class_name,
+                    &record.name,
+                    &record.title,
+                    &record.object,
+                )?;
+                if !streamers.is_empty() {
+                    c.place_streamer_info(&streamers)?;
+                }
+                Ok(())
+            })
         })
     }
+}
+
+/// One object to store in a file: its class, name, title, and streamed bytes
+/// (including the object's own byte count and version).
+pub struct ObjectRecord {
+    /// ROOT class name (e.g. `"TH1D"`).
+    pub class_name: String,
+    /// Object name (the key name).
+    pub name: String,
+    /// Object title.
+    pub title: String,
+    /// Streamed object bytes.
+    pub object: Vec<u8>,
 }
 
 /// The on-disk record for any writable object — its class, name, title, and

@@ -108,6 +108,29 @@ fn append_crossing_into_big_round_trips() {
 }
 
 #[test]
+fn append_crossing_into_big_works_for_a_renamed_root_file() {
+    // The top directory's reserved record size is measured from the name stored
+    // in the file, so a ROOT-written file copied under a longer name can still
+    // be widened in place.
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+    let out = std::env::temp_dir().join("oxiroot_big_append_a_much_longer_file_name.root");
+    std::fs::copy(fixture.join("th1d_uncompressed.root"), &out).expect("copy fixture");
+    let original = TH1::read_root(&RFile::open(&out).unwrap(), "h1").expect("fixture h1");
+
+    let extra = th1("extra");
+    RootFile::open(&out)
+        .expect("open")
+        .add(&extra)
+        .write_threshold(oxiroot_io_core::Compression::None, 0) // force big
+        .expect("append big");
+
+    let f = RFile::open(&out).expect("reopen");
+    assert!(f.header().is_big());
+    assert_eq!(TH1::read_root(&f, "h1").expect("h1"), original);
+    assert_eq!(TH1::read_root(&f, "extra").expect("extra"), extra);
+}
+
+#[test]
 fn append_to_already_big_file_round_trips() {
     // Appending to a file that is *already* the 64-bit form stays big and keeps
     // every object.
