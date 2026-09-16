@@ -271,7 +271,7 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
 /// `TList`) and the histogram/graph members are already covered. Returns an empty
 /// vector for anything else (e.g. a histogram, already described).
 /// Checksums/versions are ROOT's own values (see the `scripts/gen_*.cpp`).
-pub(crate) fn streamer_classes(class: &str) -> Vec<Cls> {
+pub(crate) fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
     let param = |name, checksum, ty, size, type_name| Cls {
         name,
         version: 2,

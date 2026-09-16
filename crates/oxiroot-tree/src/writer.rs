@@ -15,6 +15,7 @@ use std::path::Path;
 use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
+use oxiroot_io_core::streamer_gen::{basic, Cls};
 use oxiroot_io_core::{
     compress_if_smaller, Compression, ContainerWriter, DirId, TKey, DATIME, KSTART_BIG_FILE,
 };
@@ -337,73 +338,22 @@ fn class_checksum(class_name: &str, members: &[SplitMember]) -> u32 {
     id
 }
 
-/// Serialize a `TStreamerInfo` for a struct of primitive members (every object
-/// written with `kNewClassTag`). Layout confirmed against ROOT: `TStreamerInfo`
-/// v10 → `TObjArray` v3 of `TStreamerBasicType` v2 (a `TStreamerElement` v4 each).
-fn write_class_streamer_info(class_name: &str, members: &[SplitMember]) -> Vec<u8> {
-    let checksum = class_checksum(class_name, members);
-    let mut w = WBuffer::new();
-    let bc = begin_object_any(&mut w, "TStreamerInfo");
-    let si = w.begin_object(10); // TStreamerInfo v10
-    write_tnamed(&mut w, 0x0001_0000, class_name, "");
-    w.be_u32(checksum);
-    w.be_i32(1); // fClassVersion
-    let oa_bc = begin_object_any(&mut w, "TObjArray");
-    let oa = w.begin_object(3); // TObjArray v3
-    write_tobject(&mut w, 0);
-    w.string(""); // fName
-    w.be_i32(members.len() as i32);
-    w.be_i32(0); // fLowerBound
-    for m in members {
-        let (f_type, type_name, size) = member_type_info(&m.values);
-        let e_bc = begin_object_any(&mut w, "TStreamerBasicType");
-        let bt = w.begin_object(2); // TStreamerBasicType v2
-        let se = w.begin_object(4); // TStreamerElement v4 (base)
-        write_tnamed(&mut w, 0, &m.name, "");
-        w.be_i32(f_type);
-        w.be_i32(size);
-        w.be_i32(0); // fArrayLength
-        w.be_i32(0); // fArrayDim
-        for _ in 0..5 {
-            w.be_i32(0); // fMaxIndex[5]
-        }
-        w.string(type_name); // fTypeName
-        w.end_object(se);
-        w.end_object(bt);
-        end_object_any(&mut w, e_bc);
+/// The `TStreamerInfo` entry for a split branch's struct: version 1, one basic
+/// member per struct member, as ROOT writes it for a class without `ClassDef`.
+fn split_class(spec: &SplitSpec) -> Cls<'_> {
+    Cls {
+        name: &spec.class_name,
+        version: 1,
+        checksum: class_checksum(&spec.class_name, &spec.members),
+        elements: spec
+            .members
+            .iter()
+            .map(|m| {
+                let (ty, type_name, size) = member_type_info(&m.values);
+                basic(&m.name, ty, size, type_name)
+            })
+            .collect(),
     }
-    w.end_object(oa);
-    end_object_any(&mut w, oa_bc);
-    w.end_object(si);
-    end_object_any(&mut w, bc);
-    w.into_vec()
-}
-
-/// Append a `TStreamerInfo` object to a baked `TList<TStreamerInfo>` blob (body
-/// `{bcnt}{ver}{TObject}{fName}{nobjects}{(obj + option-TString)*}`, no trailer):
-/// bump the outer byte count and `nobjects`, then append the object + empty option.
-fn append_streamer_info(blob: &[u8], info: &[u8]) -> Vec<u8> {
-    let mut out = blob.to_vec();
-    let added = info.len() + 1; // object + empty option TString (0x00)
-
-    let bcnt = u32::from_be_bytes([out[0], out[1], out[2], out[3]]);
-    let new_bcnt = ((bcnt & !K_BYTE_COUNT_MASK) + added as u32) | K_BYTE_COUNT_MASK;
-    out[0..4].copy_from_slice(&new_bcnt.to_be_bytes());
-
-    // bcnt(4) ver(2) TObject{ver(2) uid(4) bits(4)} fName(TString) -> nobjects(i32)
-    let mut p = 4 + 2 + 2 + 4 + 4;
-    let n = out[p] as usize;
-    p += 1 + if n == 255 {
-        4 + u32::from_be_bytes([out[p + 1], out[p + 2], out[p + 3], out[p + 4]]) as usize
-    } else {
-        n
-    };
-    let nobjects = i32::from_be_bytes([out[p], out[p + 1], out[p + 2], out[p + 3]]);
-    out[p..p + 4].copy_from_slice(&(nobjects + 1).to_be_bytes());
-
-    out.extend_from_slice(info);
-    out.push(0); // empty option TString
-    out
 }
 
 /// Whether a branch is a scalar, a fixed-size array, a variable-length (jagged)
@@ -1275,7 +1225,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
         self.file
             .place_key(DirId::TOP, "TTree", &self.tree_name, "", &tree_obj)?;
         self.file
-            .place_streamer_info(&crate::streamer_gen::tree_streamer_info())?;
+            .place_streamer_info(&crate::streamer_gen::tree_streamer_info(), &[])?;
         self.file.finish()
     }
 }
@@ -1330,13 +1280,12 @@ fn tree_bytes(
     // The canonical TTree-hierarchy TStreamerInfo describes every class a tree
     // uses (including the TBranchElement/TLeafElement std::vector streamers); a
     // split branch additionally needs its struct's generated TStreamerInfo.
-    let mut streamer_info = crate::streamer_gen::tree_streamer_info();
-    for b in branches {
-        if let Some(spec) = b.split() {
-            let info = write_class_streamer_info(&spec.class_name, &spec.members);
-            streamer_info = append_streamer_info(&streamer_info, &info);
-        }
-    }
+    let split_classes: Vec<Cls> = branches
+        .iter()
+        .filter_map(Branch::split)
+        .map(split_class)
+        .collect();
+    let streamer_info = crate::streamer_gen::tree_streamer_info();
 
     ContainerWriter::build(file_name, compression, big_threshold, |file| {
         // Baskets first (a leaf branch has one per chunk; a split branch has a
@@ -1360,7 +1309,7 @@ fn tree_bytes(
             file.is_big(),
         );
         file.place_key(DirId::TOP, "TTree", tree_name, "", &tree_obj)?;
-        file.place_streamer_info(&streamer_info)?;
+        file.place_streamer_info(&streamer_info, &split_classes)?;
         Ok(())
     })
 }

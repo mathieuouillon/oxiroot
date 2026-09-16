@@ -37,20 +37,22 @@ pub const K_STL: i32 = 500;
 /// One member (or base class) to serialize into a `TStreamerInfo`. Opaque —
 /// build with [`base`], [`basic`], [`strf`], [`object`], [`any`], [`objptr`], or
 /// [`basicptr`].
-pub struct El {
-    name: &'static str,
+#[derive(Clone)]
+pub struct El<'a> {
+    name: &'a str,
     /// ROOT `fType` code.
     ty: i32,
     /// In-memory size (`fSize`).
     size: i32,
     /// C++ type name (`fTypeName`); `"BASE"` for a base class.
-    type_name: &'static str,
-    kind: Ek,
+    type_name: &'a str,
+    kind: Ek<'a>,
 }
 
 /// Which `TStreamerElement` subclass an [`El`] is, plus its subclass-specific
 /// tail (a base class's referenced version; a `//[fCount]` pointer's counter).
-enum Ek {
+#[derive(Clone, Copy)]
+enum Ek<'a> {
     Base(i32),
     Basic,
     Str,
@@ -66,24 +68,26 @@ enum Ek {
     /// `(count_class, count_version)` when the counter lives in a different class
     /// than the one declaring this element (e.g. a base class) — `None` uses the
     /// declaring class.
-    BasicPtr(&'static str, Option<(&'static str, i32)>),
+    BasicPtr(&'a str, Option<(&'a str, i32)>),
 }
 
 /// One class's `TStreamerInfo`: name, on-disk version, ROOT checksum, members
-/// (in declared order, bases first).
-pub struct Cls {
+/// (in declared order, bases first). The strings are usually `'static`; a class
+/// defined at run time (a user struct) borrows them instead.
+#[derive(Clone)]
+pub struct Cls<'a> {
     /// Class name (`fName`), e.g. `"TParameter<double>"`.
-    pub name: &'static str,
+    pub name: &'a str,
     /// On-disk class version.
     pub version: i32,
     /// ROOT's `fCheckSum` for the class (a hash of its member layout).
     pub checksum: u32,
     /// Members and base classes, in the order ROOT streams them.
-    pub elements: Vec<El>,
+    pub elements: Vec<El<'a>>,
 }
 
 /// A base-class slot referencing `name` at `base_version`.
-pub fn base(name: &'static str, base_version: i32) -> El {
+pub fn base<'a>(name: &'a str, base_version: i32) -> El<'a> {
     let ty = match name {
         "TObject" => K_TOBJECT,
         "TNamed" => K_TNAMED,
@@ -98,7 +102,7 @@ pub fn base(name: &'static str, base_version: i32) -> El {
     }
 }
 /// A basic-type member (`fType`/`fSize`/`fTypeName` as ROOT records them).
-pub fn basic(name: &'static str, ty: i32, size: i32, type_name: &'static str) -> El {
+pub fn basic<'a>(name: &'a str, ty: i32, size: i32, type_name: &'a str) -> El<'a> {
     El {
         name,
         ty,
@@ -108,7 +112,7 @@ pub fn basic(name: &'static str, ty: i32, size: i32, type_name: &'static str) ->
     }
 }
 /// A `TString` member.
-pub fn strf(name: &'static str) -> El {
+pub fn strf<'a>(name: &'a str) -> El<'a> {
     El {
         name,
         ty: K_TSTRING,
@@ -118,7 +122,7 @@ pub fn strf(name: &'static str) -> El {
     }
 }
 /// An inline `TObject`-derived object member (e.g. `TObjArray fBranches`).
-pub fn object(name: &'static str, type_name: &'static str) -> El {
+pub fn object<'a>(name: &'a str, type_name: &'a str) -> El<'a> {
     El {
         name,
         ty: K_OBJECT,
@@ -128,7 +132,7 @@ pub fn object(name: &'static str, type_name: &'static str) -> El {
     }
 }
 /// An inline non-`TObject` member (e.g. `ROOT::TIOFeatures fIOFeatures`).
-pub fn any(name: &'static str, size: i32, type_name: &'static str) -> El {
+pub fn any<'a>(name: &'a str, size: i32, type_name: &'a str) -> El<'a> {
     El {
         name,
         ty: K_ANY,
@@ -138,7 +142,7 @@ pub fn any(name: &'static str, size: i32, type_name: &'static str) -> El {
     }
 }
 /// An object-pointer member (e.g. `TList* fFriends`).
-pub fn objptr(name: &'static str, type_name: &'static str) -> El {
+pub fn objptr<'a>(name: &'a str, type_name: &'a str) -> El<'a> {
     El {
         name,
         ty: K_OBJECT_PTR,
@@ -148,7 +152,7 @@ pub fn objptr(name: &'static str, type_name: &'static str) -> El {
     }
 }
 /// A pointer to a non-`TObject` class (e.g. `TF1Parameters* fParams`).
-pub fn objanyptr(name: &'static str, type_name: &'static str) -> El {
+pub fn objanyptr<'a>(name: &'a str, type_name: &'a str) -> El<'a> {
     El {
         name,
         ty: K_ANY_PTR,
@@ -160,7 +164,7 @@ pub fn objanyptr(name: &'static str, type_name: &'static str) -> El {
 /// An STL container member (`TStreamerSTL`), e.g. a `vector<double>`. `stl_type`
 /// is the container kind (`vector` = 1, `map` = 4) and `ctype` the contained
 /// element-type code (`double` = 8, `TObject*` = 63, an object = 61).
-pub fn stl(name: &'static str, type_name: &'static str, stl_type: i32, ctype: i32) -> El {
+pub fn stl<'a>(name: &'a str, type_name: &'a str, stl_type: i32, ctype: i32) -> El<'a> {
     El {
         name,
         ty: K_STL,
@@ -171,13 +175,13 @@ pub fn stl(name: &'static str, type_name: &'static str, stl_type: i32, ctype: i3
 }
 /// A `//[fCount]`-counted basic-type pointer member; `count` names the counter,
 /// which is assumed to live in the same class that declares this element.
-pub fn basicptr(
-    name: &'static str,
+pub fn basicptr<'a>(
+    name: &'a str,
     ty: i32,
     size: i32,
-    type_name: &'static str,
-    count: &'static str,
-) -> El {
+    type_name: &'a str,
+    count: &'a str,
+) -> El<'a> {
     El {
         name,
         ty,
@@ -190,15 +194,15 @@ pub fn basicptr(
 /// Like [`basicptr`], but the counter lives in `count_class` (version
 /// `count_version`) rather than the declaring class — as for a matrix's
 /// `fElements`, counted by `fNelems` in its `TMatrixTBase` base.
-pub fn basicptr_in(
-    name: &'static str,
+pub fn basicptr_in<'a>(
+    name: &'a str,
     ty: i32,
     size: i32,
-    type_name: &'static str,
-    count: &'static str,
-    count_class: &'static str,
+    type_name: &'a str,
+    count: &'a str,
+    count_class: &'a str,
     count_version: i32,
-) -> El {
+) -> El<'a> {
     El {
         name,
         ty,
@@ -226,7 +230,7 @@ fn end_object_any(w: &mut WBuffer, bc: Patch) {
 }
 
 /// Write the `TStreamerElement` v4 base common to every element subclass.
-fn write_element_base(w: &mut WBuffer, el: &El) {
+fn write_element_base(w: &mut WBuffer, el: &El<'_>) {
     let se = w.begin_object(4); // TStreamerElement v4
     write_tnamed(w, 0, el.name, "");
     w.be_i32(el.ty); // fType
@@ -244,7 +248,7 @@ fn write_element_base(w: &mut WBuffer, el: &El) {
 /// `TStreamerBasicType`, …), wrapping the common base with the subclass tail.
 /// `owner`/`owner_version` name the class that declares the element (used for a
 /// `//[fCount]` pointer's `fCountClass`/`fCountVersion`).
-fn write_element(w: &mut WBuffer, el: &El, owner: &str, owner_version: i32) {
+fn write_element(w: &mut WBuffer, el: &El<'_>, owner: &str, owner_version: i32) {
     let (class, version) = match el.kind {
         Ek::Base(_) => ("TStreamerBase", 3),
         Ek::Basic => ("TStreamerBasicType", 2),
@@ -279,7 +283,7 @@ fn write_element(w: &mut WBuffer, el: &El, owner: &str, owner_version: i32) {
 
 /// Write one `TStreamerInfo` (with `kNewClassTag` framing) followed by its empty
 /// `TList` option string — i.e. one entry of the list body.
-fn write_info(w: &mut WBuffer, cls: &Cls) {
+fn write_info(w: &mut WBuffer, cls: &Cls<'_>) {
     let info_bc = begin_object_any(w, "TStreamerInfo");
     let si = w.begin_object(10); // TStreamerInfo v10
     write_tnamed(w, SI_BITS, cls.name, "");
@@ -306,7 +310,7 @@ fn write_info(w: &mut WBuffer, cls: &Cls) {
 /// Serialize a `TList<TStreamerInfo>` object body (no key header) describing
 /// `classes`, in the given order (bases before the classes that use them, as
 /// ROOT writes).
-pub fn streamer_info_list(classes: &[Cls]) -> Vec<u8> {
+pub fn streamer_info_list(classes: &[Cls<'_>]) -> Vec<u8> {
     let mut w = WBuffer::new();
 
     let list = w.begin_object(5); // TList v5
@@ -328,7 +332,7 @@ pub fn streamer_info_list(classes: &[Cls]) -> Vec<u8> {
 /// preserved because they keep the same absolute byte offsets — and the extra
 /// entries (which use only `kNewClassTag`) are appended after them. The list's
 /// object count and outer byte count are updated.
-pub fn append_streamer_infos(base_list: &[u8], extra: &[Cls]) -> Result<Vec<u8>> {
+pub fn append_streamer_infos(base_list: &[u8], extra: &[Cls<'_>]) -> Result<Vec<u8>> {
     // Parse the TList header to find the object-count field.
     let mut r = RBuffer::new(base_list);
     r.read_version()?; // [byte count][version]

@@ -17,6 +17,8 @@ use std::io::{Cursor, Seek, SeekFrom, Write};
 
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
+use crate::streamer_gen::{append_streamer_infos, Cls};
+use crate::streamer_info::parse_streamer_info;
 use crate::Compression;
 
 use super::header::{TUuid, BIG_FILE_VERSION, MAGIC};
@@ -39,13 +41,17 @@ pub const KSTART_BIG_FILE: u64 = 2_000_000_000;
 /// `fBEGIN` of a new file: the top directory's key follows the 100-byte header.
 const BEGIN: u64 = 100;
 
-/// Class, name and title of the streamer-info key. These fixed strings give the
-/// key a 64-byte `KeyLen` in the small form, which the baked `TList` blobs'
-/// internal class-tag references depend on (ROOT resolves them relative to
-/// `-KeyLen`).
+/// Class, name and title of the streamer-info key, as ROOT writes them.
 const STREAMER_INFO_CLASS: &str = "TList";
 const STREAMER_INFO_NAME: &str = "StreamerInfo";
 const STREAMER_INFO_TITLE: &str = "Doubly linked list";
+
+/// `KeyLen` of the streamer-info key in a new file. A streamed list refers back
+/// to classes it already named by their offset inside the key, header included,
+/// so a list captured from a ROOT file (like the baked histogram list) only reads
+/// back under a key of the length it was captured with: 64 bytes, ROOT's
+/// small-form length. The big form keeps that length with a shorter title.
+const STREAMER_INFO_KEY_LEN: u16 = 64;
 
 /// Class written on the top directory's own keys, and on subdirectory keys.
 const TOP_DIR_CLASS: &str = "TFile";
@@ -151,8 +157,21 @@ pub struct ContainerWriter<W: Write + Seek> {
     dirs: Vec<DirState>,
     seek_info: u64,
     nbytes_info: u32,
-    /// The file already has a streamer-info record (append mode), which is kept.
-    has_streamer_info: bool,
+    /// The streamer-info record of the file being continued, when there is one.
+    existing_info: Option<ExistingInfo>,
+}
+
+/// A continued file's streamer-info record.
+enum ExistingInfo {
+    /// Its list, the `KeyLen` the list was written under, and the classes it
+    /// describes.
+    Readable {
+        list: Vec<u8>,
+        key_len: u16,
+        classes: Vec<String>,
+    },
+    /// A record this crate cannot parse; it is kept as it is.
+    Opaque,
 }
 
 impl<W: Write + Seek> ContainerWriter<W> {
@@ -233,7 +252,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
             }],
             seek_info: 0,
             nbytes_info: 0,
-            has_streamer_info: false,
+            existing_info: None,
         })
     }
 
@@ -244,7 +263,9 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// Only the header and the top directory record are updated in place.
     ///
     /// The top directory's live keys are listed again, with their cycles, and the
-    /// file's streamer info is kept. `file_name` names the new key list.
+    /// file's streamer info is kept (see
+    /// [`place_streamer_info`](Self::place_streamer_info)). `file_name` names the
+    /// new key list.
     ///
     /// With `big`, the output is written in the 64-bit form, and the header and
     /// top directory record are rewritten at that width. That requires the
@@ -327,7 +348,8 @@ impl<W: Write + Seek> ContainerWriter<W> {
             }],
             seek_info: header.seek_info,
             nbytes_info: header.nbytes_info,
-            has_streamer_info: header.seek_info != 0,
+            existing_info: (header.seek_info != 0)
+                .then(|| read_existing_info(file).unwrap_or(ExistingInfo::Opaque)),
         })
     }
 
@@ -391,25 +413,62 @@ impl<W: Write + Seek> ContainerWriter<W> {
         self.write_key(dir, class, name, title, object.len(), object)
     }
 
-    /// Store the file's streamer info: `list` is a streamed
-    /// `TList<TStreamerInfo>`, referenced from the header rather than listed in
-    /// a directory. A later call replaces the reference. When continuing a file
-    /// that already has streamer info, the existing record is kept and this does
-    /// nothing.
-    pub fn place_streamer_info(&mut self, list: &[u8]) -> Result<()> {
-        if self.has_streamer_info {
-            return Ok(());
+    /// Store the file's streamer info, referenced from the header rather than
+    /// listed in a directory: `list` is a streamed `TList<TStreamerInfo>`, and
+    /// `extra` are further classes added after its entries. A later call
+    /// replaces the reference.
+    ///
+    /// When continuing a file that already has streamer info, `list` is not
+    /// used: the file's own entries are kept, and only the `extra` classes they
+    /// lack are added after them. Nothing is written when none are missing, or
+    /// when the existing record cannot be read.
+    pub fn place_streamer_info(&mut self, list: &[u8], extra: &[Cls<'_>]) -> Result<()> {
+        match &self.existing_info {
+            Some(ExistingInfo::Readable {
+                list: existing,
+                key_len,
+                classes,
+            }) => {
+                let missing: Vec<Cls<'_>> = extra
+                    .iter()
+                    .filter(|c| !classes.iter().any(|name| name == c.name))
+                    .cloned()
+                    .collect();
+                if missing.is_empty() {
+                    return Ok(());
+                }
+                let Some(title) = streamer_info_title(*key_len, self.big) else {
+                    // No title gives the old key length, so the old entries could
+                    // not be kept valid; leave the record alone.
+                    return Ok(());
+                };
+                let merged = append_streamer_infos(existing, &missing)?;
+                self.write_streamer_info(&merged, &title)
+            }
+            Some(ExistingInfo::Opaque) => Ok(()),
+            None => {
+                let list = if extra.is_empty() {
+                    Cow::Borrowed(list)
+                } else {
+                    Cow::Owned(append_streamer_infos(list, extra)?)
+                };
+                let title = streamer_info_title(STREAMER_INFO_KEY_LEN, self.big)
+                    .expect("a 64-byte key fits both forms");
+                self.write_streamer_info(&list, &title)
+            }
         }
+    }
+
+    fn write_streamer_info(&mut self, list: &[u8], title: &str) -> Result<()> {
         let payload = compress_if_smaller(list, self.compression);
         let seek = self.pos;
-        let obj_len = checked_len(list.len(), STREAMER_INFO_NAME)?;
         let mut w = WBuffer::new();
         write_key_header_fmt(
             &mut w,
             STREAMER_INFO_CLASS,
             STREAMER_INFO_NAME,
-            STREAMER_INFO_TITLE,
-            obj_len,
+            title,
+            checked_len(list.len(), STREAMER_INFO_NAME)?,
             checked_len(payload.len(), STREAMER_INFO_NAME)?,
             seek,
             self.begin,
@@ -419,7 +478,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         self.put(w.as_slice())?;
         self.put(&payload)?;
         self.seek_info = seek;
-        self.nbytes_info = (w.len() + payload.len()) as u32;
+        self.nbytes_info = checked_len(w.len() + payload.len(), STREAMER_INFO_NAME)?;
         Ok(())
     }
 
@@ -792,6 +851,43 @@ impl ContainerWriter<Cursor<Vec<u8>>> {
         // The size decides the form here, so a small result is never an error.
         Ok(writer.finish_checked(false)?.into_inner())
     }
+}
+
+/// Read a continued file's streamer-info record.
+fn read_existing_info(file: &RFile) -> Result<ExistingInfo> {
+    let header = file.header();
+    let record = file.read_at(header.seek_info, header.nbytes_info as usize)?;
+    let key_len = TKey::read(&mut RBuffer::new(&record))?.key_len;
+    let list = file
+        .streamer_info_object()?
+        .ok_or_else(|| Error::Format("no streamer-info record".to_string()))?;
+    let classes = parse_streamer_info(&list, usize::from(key_len))?
+        .class_names()
+        .into_iter()
+        .map(String::from)
+        .collect();
+    Ok(ExistingInfo::Readable {
+        list,
+        key_len,
+        classes,
+    })
+}
+
+/// A title that gives the streamer-info key a `KeyLen` of `key_len` in the
+/// small or big form: ROOT's own title when that fits, otherwise the same text
+/// cut or space-padded to length. `None` when no title can.
+fn streamer_info_title(key_len: u16, big: bool) -> Option<String> {
+    let without_title = TKey::header_len(STREAMER_INFO_CLASS, STREAMER_INFO_NAME, "", big);
+    // The empty title above already counts its one-byte length prefix.
+    let len = usize::from(key_len).checked_sub(without_title)?;
+    if len >= 255 {
+        return None;
+    }
+    let mut title: String = STREAMER_INFO_TITLE.chars().take(len).collect();
+    while title.len() < len {
+        title.push(' ');
+    }
+    Some(title)
 }
 
 /// A key header records its own length in 16 bits, which bounds the combined

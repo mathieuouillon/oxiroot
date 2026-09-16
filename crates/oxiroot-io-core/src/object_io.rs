@@ -92,7 +92,7 @@ pub trait WriteRoot {
                     &record.object,
                 )?;
                 if !streamers.is_empty() {
-                    c.place_streamer_info(&streamers)?;
+                    c.place_streamer_info(&streamers, &[])?;
                 }
                 Ok(())
             })

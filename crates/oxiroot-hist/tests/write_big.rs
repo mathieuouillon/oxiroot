@@ -75,6 +75,23 @@ fn big_container_with_subdirs_round_trips() {
 }
 
 #[test]
+fn big_container_streamer_info_parses() {
+    // The baked histogram list refers back into itself by offset within its key,
+    // so it must read back in the 64-bit form too.
+    let out = std::env::temp_dir().join("oxiroot_big_streamers.root");
+    RootFile::create(&out)
+        .add(&th1("h"))
+        .write_threshold(oxiroot_io_core::Compression::Zstd(1), 0)
+        .expect("write big");
+    let f = RFile::open(&out).expect("reopen");
+    assert!(f.header().is_big());
+    let registry = f.streamer_registry().expect("streamer info parses");
+    for class in ["TH1D", "TH1", "TAxis", "TNamed"] {
+        assert!(registry.get(class).is_some(), "{class} is described");
+    }
+}
+
+#[test]
 fn append_crossing_into_big_round_trips() {
     // A small file, then an append whose result is forced past the (lowered)
     // threshold: the appended file must switch to the 64-bit form in place —

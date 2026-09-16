@@ -3,7 +3,8 @@
 
 use std::io::Cursor;
 
-use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, RFile};
+use oxiroot_io_core::streamer_gen::{basic, streamer_info_list, Cls};
+use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, RFile, TKey};
 
 /// Build a file in the small form (`big = false`) or the big form.
 fn build(
@@ -152,18 +153,60 @@ fn threshold_picks_the_form_from_the_finished_size() {
     assert!(RFile::from_bytes(over).unwrap().header().is_big());
 }
 
+/// A one-member class, for streamer-info lists.
+fn class(name: &str) -> Cls<'_> {
+    Cls {
+        name,
+        version: 1,
+        checksum: 7,
+        elements: vec![basic("x", 3, 4, "int")],
+    }
+}
+
+/// The class names in a file's streamer info.
+fn described(f: &RFile) -> Vec<String> {
+    let registry = f.streamer_registry().unwrap();
+    registry
+        .class_names()
+        .into_iter()
+        .map(String::from)
+        .collect()
+}
+
+/// The `KeyLen` of a file's streamer-info record.
+fn streamer_key_len(f: &RFile) -> u16 {
+    let h = f.header();
+    let record = f.read_at(h.seek_info, h.nbytes_info as usize).unwrap();
+    TKey::read(&mut oxiroot_io_core::buffer::RBuffer::new(&record))
+        .unwrap()
+        .key_len
+}
+
 #[test]
 fn streamer_info_is_referenced_from_the_header() {
+    for big in [false, true] {
+        let f = build(big, |c| {
+            c.place_key(DirId::TOP, "TObjString", "k", "", b"x")?;
+            c.place_streamer_info(&streamer_info_list(&[class("A")]), &[class("B")])
+        });
+        assert_eq!(described(&f), ["A", "B"], "extra classes follow the list");
+        assert_eq!(f.keys().len(), 1, "streamer info is not a directory entry");
+        // Lists captured from ROOT refer back into themselves by offset within
+        // the key, so the key keeps ROOT's small-form length in both forms.
+        assert_eq!(streamer_key_len(&f), 64, "big={big}");
+    }
+}
+
+#[test]
+fn streamer_info_is_compressed_with_the_file() {
     let bytes = ContainerWriter::build("t.root", Compression::Zstd(5), u64::MAX, |c| {
-        c.place_key(DirId::TOP, "TObjString", "k", "", b"x")?;
-        c.place_streamer_info(&[0u8; 400])
+        c.place_streamer_info(&[0u8; 400], &[])
     })
     .unwrap();
     let f = RFile::from_bytes(bytes).unwrap();
-    assert_ne!(f.header().seek_info, 0);
     assert_eq!(f.header().compress, 505);
+    assert!(f.header().nbytes_info < 400);
     assert_eq!(f.streamer_info_object().unwrap().unwrap(), vec![0u8; 400]);
-    assert_eq!(f.keys().len(), 1, "streamer info is not a directory entry");
 }
 
 #[test]
@@ -224,13 +267,17 @@ fn misuse_is_an_error() {
 
 /// A small file with two objects and a subdirectory, to append to.
 fn existing_file() -> Vec<u8> {
+    existing_file_with(&streamer_info_list(&[class("A")]))
+}
+
+fn existing_file_with(streamer_info: &[u8]) -> Vec<u8> {
     ContainerWriter::build("orig.root", Compression::None, u64::MAX, |c| {
         c.place_key(DirId::TOP, "TObjString", "a", "", b"alpha")?;
         c.place_key(DirId::TOP, "TObjString", "b", "", b"beta")?;
         let d = c.mkdir(DirId::TOP, "sub")?;
         c.place_key(d, "TObjString", "inner", "", b"gamma")?;
         c.close_dir(d)?;
-        c.place_streamer_info(b"original streamer info")
+        c.place_streamer_info(streamer_info, &[])
     })
     .unwrap()
 }
@@ -250,7 +297,11 @@ fn append_keeps_existing_bytes_and_adds_keys() {
             |c| {
                 c.place_key(DirId::TOP, "TObjString", "a", "", b"alpha v2")?;
                 c.place_key(DirId::TOP, "TObjString", "c", "", b"new")?;
-                c.place_streamer_info(b"ignored: the file has streamer info")
+                // The file's own list is kept; only the class it lacks is added.
+                c.place_streamer_info(
+                    &streamer_info_list(&[class("Z")]),
+                    &[class("A"), class("B")],
+                )
             },
         )
         .unwrap();
@@ -275,11 +326,38 @@ fn append_keeps_existing_bytes_and_adds_keys() {
         assert_eq!(payload(&f, "", "a"), b"alpha v2");
         assert_eq!(payload(&f, "", "b"), b"beta");
         assert_eq!(payload(&f, "sub", "inner"), b"gamma");
-        assert_eq!(
-            f.streamer_info_object().unwrap().unwrap(),
-            b"original streamer info"
-        );
+        assert_eq!(described(&f), ["A", "B"]);
+        assert_eq!(streamer_key_len(&f), 64);
     }
+}
+
+#[test]
+fn append_keeps_complete_or_unreadable_streamer_info_as_is() {
+    // Nothing missing: the original record stays in place.
+    let existing = existing_file();
+    let before = RFile::from_bytes(existing.clone())
+        .unwrap()
+        .header()
+        .seek_info;
+    let bytes =
+        ContainerWriter::build_append(&existing, "orig.root", Compression::None, u64::MAX, |c| {
+            c.place_streamer_info(&[], &[class("A")])
+        })
+        .unwrap();
+    assert_eq!(RFile::from_bytes(bytes).unwrap().header().seek_info, before);
+
+    // A record that does not parse is kept rather than extended.
+    let existing = existing_file_with(b"not a streamer info list");
+    let bytes =
+        ContainerWriter::build_append(&existing, "orig.root", Compression::None, u64::MAX, |c| {
+            c.place_streamer_info(&[], &[class("B")])
+        })
+        .unwrap();
+    let f = RFile::from_bytes(bytes).unwrap();
+    assert_eq!(
+        f.streamer_info_object().unwrap().unwrap(),
+        b"not a streamer info list"
+    );
 }
 
 #[test]

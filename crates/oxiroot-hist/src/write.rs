@@ -10,6 +10,7 @@ use std::path::Path;
 use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
+use oxiroot_io_core::streamer_gen::{append_streamer_infos, Cls};
 use oxiroot_io_core::{Compression, ContainerWriter, DirId, ObjectRecord, KSTART_BIG_FILE};
 // The object framework (the `WriteRoot` trait + `record_of`) now lives in
 // `oxiroot-io-core`; re-export the trait so `oxiroot_hist::WriteRoot` and the
@@ -134,16 +135,11 @@ impl WriteRoot for TGraph {
 /// ROOT-written file with one of each type, kept uncompressed.
 const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
 
-/// The streamer info to embed for objects with class names `class_names`: the
-/// baked histogram blob, plus any persistable-object classes
-/// (`TObjString`/`TParameter<…>`) those objects use, so uproot can model them.
-/// Returns the baked blob borrowed when nothing extra is needed.
-fn streamer_info_for<'a>(
-    class_names: impl Iterator<Item = &'a str>,
-) -> Result<std::borrow::Cow<'static, [u8]>> {
-    use oxiroot_io_core::streamer_gen::append_streamer_infos;
-    use oxiroot_io_core::streamer_gen::Cls;
-    let mut extra: Vec<Cls> = Vec::new();
+/// The classes, beyond the baked histogram blob, that objects with class names
+/// `class_names` need described (`TObjString`/`TParameter<…>`, matrices, …), so
+/// uproot can model them. Each class appears once.
+fn extra_streamer_classes<'a>(class_names: impl Iterator<Item = &'a str>) -> Vec<Cls<'static>> {
+    let mut extra: Vec<Cls<'static>> = Vec::new();
     for class in class_names {
         // A class may need several infos (e.g. a matrix plus its base); dedup by
         // name so a shared base is embedded once.
@@ -153,10 +149,18 @@ fn streamer_info_for<'a>(
             }
         }
     }
+    extra
+}
+
+/// The streamer info to embed for objects with class names `class_names`: the
+/// baked histogram blob plus [`extra_streamer_classes`]. Returns the baked blob
+/// borrowed when nothing extra is needed.
+fn streamer_info_for<'a>(class_names: impl Iterator<Item = &'a str>) -> Result<Cow<'static, [u8]>> {
+    let extra = extra_streamer_classes(class_names);
     if extra.is_empty() {
-        Ok(std::borrow::Cow::Borrowed(HIST_STREAMER_INFO))
+        Ok(Cow::Borrowed(HIST_STREAMER_INFO))
     } else {
-        Ok(std::borrow::Cow::Owned(append_streamer_infos(
+        Ok(Cow::Owned(append_streamer_infos(
             HIST_STREAMER_INFO,
             &extra,
         )?))
@@ -1304,18 +1308,21 @@ impl RootFile {
             .and_then(|s| s.to_str())
             .unwrap_or("file.root")
             .to_string();
-        let streamers = streamer_info_for(
+        // The baked histogram list, plus the classes it lacks. When appending to a
+        // file that has streamer info, only those extra classes are added to it
+        // (readers know the histogram classes).
+        let extra = extra_streamer_classes(
             self.root
                 .iter()
                 .chain(self.dirs.iter().flat_map(|d| d.objects.iter()))
                 .map(|r| r.class_name.as_str())
                 .chain(self.contained.iter().map(String::as_str)),
-        )?;
+        );
         let layout = |c: &mut ContainerWriter<_>| {
             for r in &self.root {
                 c.place_key(DirId::TOP, &r.class_name, &r.name, &r.title, &r.object)?;
             }
-            c.place_streamer_info(&streamers)?;
+            c.place_streamer_info(HIST_STREAMER_INFO, &extra)?;
             for dir in &self.dirs {
                 let id = c.mkdir(DirId::TOP, &dir.name)?;
                 for r in &dir.objects {
