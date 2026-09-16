@@ -10,7 +10,7 @@
 //! ```
 
 use oxiroot::prelude::*;
-use oxiroot::stat;
+use oxiroot::stat::{self, StatError};
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run.
@@ -29,7 +29,7 @@ impl Rng {
     }
 }
 
-fn main() {
+fn main() -> Result<(), StatError> {
     let mut rng = Rng(0x51A7_7E57_C0DE_1234);
 
     // A tidy printer for a test: name, statistic, p-value, and the 0.05 verdict.
@@ -76,9 +76,9 @@ fn main() {
         .map(|&xi| a_true + b_true * xi + rng.gauss(0.0, 1.5))
         .collect();
     println!("(2) Correlation of y = {a_true} + {b_true}*x + noise  (H0: no correlation):");
-    let (r, rp) = stat::pearsonr(&x, &y);
+    let (r, rp) = stat::pearsonr(&x, &y)?;
     report("pearsonr", r, rp);
-    let (rho, sp) = stat::spearmanr(&x, &y);
+    let (rho, sp) = stat::spearmanr(&x, &y)?;
     report("spearmanr", rho, sp);
 
     // --- (3) Goodness of fit: observed histogram counts vs an expected shape. --
@@ -118,7 +118,7 @@ fn main() {
             .collect::<Vec<_>>()
             .join(", ")
     );
-    let (chi2, cp) = stat::chisquare(&f_obs, &f_exp);
+    let (chi2, cp) = stat::chisquare(&f_obs, &f_exp)?;
     report("chisquare", chi2, cp);
 
     // --- (4) Normality: normaltest() should PASS the Gaussian, FLAG the skew. --
@@ -138,4 +138,5 @@ fn main() {
          line, the histogram is consistent with N(0,1), and normaltest flags only the\n\
          skewed sample — all p-values match scipy.stats."
     );
+    Ok(())
 }

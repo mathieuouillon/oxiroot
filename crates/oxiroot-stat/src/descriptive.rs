@@ -2,6 +2,8 @@
 //! conventions (population moments unless noted; `iqr`/`median` use linear
 //! interpolation like NumPy). Empty input yields `NaN`.
 
+use crate::error::{check_paired, StatError};
+
 /// Arithmetic mean, or `NaN` for an empty slice.
 pub(crate) fn mean(data: &[f64]) -> f64 {
     if data.is_empty() {
@@ -167,16 +169,29 @@ pub fn entropy(pk: &[f64]) -> f64 {
 
 /// Kullback–Leibler divergence `Σ pᵢ ln(pᵢ/qᵢ)` (natural log) — `scipy.stats.entropy`
 /// with a second argument; both are normalized first.
-#[must_use]
-pub fn kl_divergence(pk: &[f64], qk: &[f64]) -> f64 {
+///
+/// A `NaN` in either input gives `Ok(NaN)`.
+///
+/// # Errors
+///
+/// [`StatError::LengthMismatch`] if `pk` and `qk` differ in length. (`scipy`
+/// broadcasts a length-1 `qk` instead; this crate requires equal lengths.)
+pub fn kl_divergence(pk: &[f64], qk: &[f64]) -> Result<f64, StatError> {
+    check_paired(pk.len(), qk.len())?;
+    // Normalising by a NaN total makes every term NaN, which the `p > 0` filter
+    // below would then drop, reporting 0 instead.
+    if pk.iter().chain(qk).any(|v| v.is_nan()) {
+        return Ok(f64::NAN);
+    }
     let ptot: f64 = pk.iter().sum();
     let qtot: f64 = qk.iter().sum();
-    pk.iter()
+    Ok(pk
+        .iter()
         .zip(qk.iter())
         .map(|(&p, &q)| (p / ptot, q / qtot))
         .filter(|&(p, _)| p > 0.0)
         .map(|(p, q)| p * (p / q).ln())
-        .sum()
+        .sum())
 }
 
 /// Per-element z-scores `(x − mean) / std` (population std, `ddof = 0`) —
