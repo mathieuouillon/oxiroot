@@ -20,6 +20,7 @@ use std::borrow::Cow;
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
+use oxiroot_io_core::streamer_gen::{any, base, basic, objanyptr, objptr, stl, strf, Cls};
 use oxiroot_io_core::RFile;
 
 use crate::base::object_bytes_any;
@@ -371,8 +372,8 @@ impl WriteRoot for TF1 {
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
         crate::write::hist_streamer_list()
     }
-    fn streamer_classes(&self) -> Vec<oxiroot_io_core::streamer_gen::Cls<'static>> {
-        crate::objects::tf_classes(1)
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        tf_classes(1)
     }
 }
 
@@ -399,8 +400,8 @@ impl WriteRoot for TF2 {
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
         crate::write::hist_streamer_list()
     }
-    fn streamer_classes(&self) -> Vec<oxiroot_io_core::streamer_gen::Cls<'static>> {
-        crate::objects::tf_classes(2)
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        tf_classes(2)
     }
 }
 
@@ -429,9 +430,91 @@ impl WriteRoot for TF3 {
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
         crate::write::hist_streamer_list()
     }
-    fn streamer_classes(&self) -> Vec<oxiroot_io_core::streamer_gen::Cls<'static>> {
-        crate::objects::tf_classes(3)
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        tf_classes(3)
     }
+}
+
+// ROOT C++ has these classes compiled in; uproot builds a function model from
+// its streamer, so a file storing a TF1/TF2/TF3 embeds them (versions and
+// checksums as ROOT writes them).
+
+/// The `TStreamerInfo`s a `TF1` (`dim` 1), `TF2` or `TF3` needs: its formula,
+/// then its base classes deepest first, then itself.
+fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
+    let tformula = Cls {
+        name: "TFormula".into(),
+        version: 14,
+        checksum: 3_342_972_029,
+        elements: vec![
+            base("TNamed", 1),
+            stl("fClingParameters", "vector<double>", 1, 8),
+            basic("fAllParametersSetted", 18, 1, "bool"),
+            stl("fParams", "map<TString,int,TFormulaParamOrder>", 4, 61),
+            strf("fFormula"),
+            basic("fNdim", 3, 4, "int"),
+            basic("fNumber", 3, 4, "int"),
+            stl("fLinearParts", "vector<TObject*>", 1, 63),
+            basic("fVectorized", 18, 1, "bool"),
+        ],
+    };
+    let tf1 = Cls {
+        name: "TF1".into(),
+        version: 12,
+        checksum: 1_914_961_880,
+        elements: vec![
+            base("TNamed", 1),
+            base("TAttLine", 2),
+            base("TAttFill", 2),
+            base("TAttMarker", 3),
+            basic("fXmin", 8, 8, "double"),
+            basic("fXmax", 8, 8, "double"),
+            basic("fNpar", 3, 4, "int"),
+            basic("fNdim", 3, 4, "int"),
+            basic("fNpx", 3, 4, "int"),
+            basic("fType", 3, 4, "TF1::EFType"),
+            basic("fNpfits", 3, 4, "int"),
+            basic("fNDF", 3, 4, "int"),
+            basic("fChisquare", 8, 8, "double"),
+            basic("fMinimum", 8, 8, "double"),
+            basic("fMaximum", 8, 8, "double"),
+            stl("fParErrors", "vector<double>", 1, 8),
+            stl("fParMin", "vector<double>", 1, 8),
+            stl("fParMax", "vector<double>", 1, 8),
+            stl("fSave", "vector<double>", 1, 8),
+            basic("fNormalized", 18, 1, "bool"),
+            basic("fNormIntegral", 8, 8, "double"),
+            objptr("fFormula", "TFormula*"),
+            objanyptr("fParams", "TF1Parameters*"),
+            objptr("fComposition", "TF1AbsComposition*"),
+        ],
+    };
+    let tf2 = Cls {
+        name: "TF2".into(),
+        version: 4,
+        checksum: 3_115_609_752,
+        elements: vec![
+            base("TF1", 12),
+            basic("fYmin", 8, 8, "double"),
+            basic("fYmax", 8, 8, "double"),
+            basic("fNpy", 3, 4, "int"),
+            any("fContour", 24, "TArrayD"),
+        ],
+    };
+    let tf3 = Cls {
+        name: "TF3".into(),
+        version: 3,
+        checksum: 3_522_165_386,
+        elements: vec![
+            base("TF2", 4),
+            basic("fZmin", 8, 8, "double"),
+            basic("fZmax", 8, 8, "double"),
+            basic("fNpz", 3, 4, "int"),
+        ],
+    };
+    let mut classes = vec![tformula, tf1, tf2, tf3];
+    classes.truncate(dim + 1);
+    classes
 }
 
 // --- read -------------------------------------------------------------------

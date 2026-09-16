@@ -12,9 +12,8 @@
 mod base;
 mod collections;
 mod compare;
+mod from_member;
 mod naming;
-mod objects;
-mod objlist;
 mod ops;
 pub mod quick;
 mod read;
@@ -54,9 +53,12 @@ pub use graph::{GraphErrors, GraphFunction, TGraph};
 pub use graph2d::TGraph2D;
 pub use graphmultierrors::TGraphMultiErrors;
 pub use merge::{merge_histogram_files, HistMergeOutcome};
-pub use objects::{ParamValue, TObjString, TParameter};
-pub use objlist::{FromMember, ListKind, ObjList, TMap};
+// The generic objects live in `oxiroot-io-core`; re-exported so these paths keep
+// resolving.
 pub use ops::Histogram;
+pub use oxiroot_io_core::{
+    FromMember, ListKind, ObjList, ParamValue, TMap, TObjString, TParameter,
+};
 pub use quick::Hist;
 pub use read::ReadRoot;
 pub use sample::Rng;

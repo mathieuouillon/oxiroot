@@ -86,6 +86,19 @@ pub fn write_tobject(w: &mut WBuffer, bits: u32) {
     w.be_u32(bits); // fBits
 }
 
+/// Write an embedded object the way ROOT's `WriteObjectAny` does: a byte count,
+/// `kNewClassTag`, the NUL-terminated class name, then `body` (the object's own
+/// streamed bytes, as produced by [`WriteRoot`](crate::WriteRoot)).
+pub fn write_object_any(w: &mut WBuffer, class: &str, body: &[u8]) {
+    let bc = w.reserve(4);
+    w.be_u32(0xFFFF_FFFF); // kNewClassTag
+    w.bytes(class.as_bytes());
+    w.u8(0);
+    w.bytes(body);
+    let inner = (w.len() - w.patch_offset(bc) - 4) as u32;
+    w.patch_be_u32(bc, inner | crate::buffer::K_BYTE_COUNT_MASK);
+}
+
 /// Write a `TNamed` base (a byte-counted `TObject` + `fName` + `fTitle`).
 pub fn write_tnamed(w: &mut WBuffer, bits: u32, name: &str, title: &str) {
     let tok = w.begin_object(1); // TNamed version 1

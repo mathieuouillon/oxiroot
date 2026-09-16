@@ -19,6 +19,7 @@ pub mod error;
 pub mod file;
 pub mod object;
 pub mod object_io;
+pub mod objects;
 pub mod read_object;
 pub mod streamer;
 pub mod streamer_gen;
@@ -36,9 +37,11 @@ pub use object_io::{
     object_bytes_any, object_bytes_any_keyed, record_of, ObjectRecord, ReadRoot, StreamerSet,
     WriteRoot,
 };
+pub use objects::{FromMember, ListKind, ObjList, ParamValue, TMap, TObjString, TParameter};
 pub use read_object::read_object;
 pub use streamer::{
-    read_tnamed, read_tobject, skip_versioned, write_tnamed, write_tobject, TNamed, TObjectHeader,
+    read_tnamed, read_tobject, skip_versioned, write_object_any, write_tnamed, write_tobject,
+    TNamed, TObjectHeader,
 };
 pub use streamer_info::{parse_streamer_info, StreamerElement, StreamerInfo, StreamerRegistry};
 pub use value::Value;

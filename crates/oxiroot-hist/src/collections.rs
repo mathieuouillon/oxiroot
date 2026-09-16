@@ -14,8 +14,8 @@ use std::ops::Range;
 use oxiroot_io_core::buffer::{RBuffer, WBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::object::TagReader;
-use oxiroot_io_core::streamer::{read_tobject, write_tnamed, write_tobject};
-use oxiroot_io_core::streamer_gen::Cls;
+use oxiroot_io_core::streamer::{read_tobject, write_object_any, write_tnamed, write_tobject};
+use oxiroot_io_core::streamer_gen::{base, basic, objptr, Cls};
 use oxiroot_io_core::RFile;
 
 use crate::base::object_bytes_any_keyed;
@@ -28,22 +28,48 @@ const K_CLASS_MASK: u32 = 0x8000_0000;
 /// THStack/TMultiGraph leave `fMaximum`/`fMinimum` at this sentinel until drawn.
 const UNSET_LIMIT: f64 = -1111.0;
 
-// --- shared object-protocol helpers -----------------------------------------
+// --- streamer info -----------------------------------------------------------
+//
+// uproot models a THStack or TMultiGraph only from its streamer, so files that
+// store one embed these entries (versions and checksums as ROOT writes them).
 
-/// Write one embedded object: `[byte count][kNewClassTag][class\0][body]`, where
-/// `body` is the object's own streamed bytes (as produced by [`WriteRoot`]).
-pub(crate) fn write_object(w: &mut WBuffer, class: &str, body: &[u8]) {
-    let bc = w.reserve(4);
-    w.be_u32(K_NEW_CLASS_TAG);
-    w.bytes(class.as_bytes());
-    w.u8(0);
-    w.bytes(body);
-    let inner = (w.len() - w.patch_offset(bc) - 4) as u32;
-    w.patch_be_u32(bc, inner | K_BYTE_COUNT_MASK);
+/// The `TStreamerInfo` of `THStack`.
+fn thstack_class() -> Cls<'static> {
+    Cls {
+        name: "THStack".into(),
+        version: 2,
+        checksum: 1_918_797_077,
+        elements: vec![
+            base("TNamed", 1),
+            objptr("fHists", "TList*"),
+            objptr("fHistogram", "TH1*"),
+            basic("fMaximum", 8, 8, "double"),
+            basic("fMinimum", 8, 8, "double"),
+        ],
+    }
 }
 
+/// The `TStreamerInfo` of `TMultiGraph`.
+fn tmultigraph_class() -> Cls<'static> {
+    Cls {
+        name: "TMultiGraph".into(),
+        version: 2,
+        checksum: 3_767_090_389,
+        elements: vec![
+            base("TNamed", 1),
+            objptr("fGraphs", "TList*"),
+            objptr("fFunctions", "TList*"),
+            objptr("fHistogram", "TH1F*"),
+            basic("fMaximum", 8, 8, "double"),
+            basic("fMinimum", 8, 8, "double"),
+        ],
+    }
+}
+
+// --- shared object-protocol helpers -----------------------------------------
+
 /// Write a `TList*` member named `list_name` holding `members` (each a
-/// `(class, body)` pair), wrapped as a `TList` object via [`write_object`].
+/// `(class, body)` pair), wrapped as a `TList` object via [`write_object_any`].
 fn write_object_list(w: &mut WBuffer, list_name: &str, members: &[(String, Vec<u8>)]) {
     let mut body = WBuffer::new();
     let list = body.begin_object(5); // TList version 5
@@ -51,11 +77,11 @@ fn write_object_list(w: &mut WBuffer, list_name: &str, members: &[(String, Vec<u
     body.string(list_name); // fName
     body.be_i32(members.len() as i32); // nobjects
     for (class, member) in members {
-        write_object(&mut body, class, member);
+        write_object_any(&mut body, class, member);
         body.string(""); // the per-object option string
     }
     body.end_object(list);
-    write_object(w, "TList", &body.into_vec());
+    write_object_any(w, "TList", &body.into_vec());
 }
 
 /// Read a `TNamed` base (version header, `TObject`, `fName`, `fTitle`).
@@ -208,7 +234,7 @@ impl WriteRoot for THStack {
         crate::write::hist_streamer_list()
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        vec![crate::objects::thstack_class()]
+        vec![thstack_class()]
     }
 }
 
@@ -326,7 +352,7 @@ impl WriteRoot for TMultiGraph {
         crate::write::hist_streamer_list()
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        vec![crate::objects::tmultigraph_class()]
+        vec![tmultigraph_class()]
     }
 }
 
