@@ -1134,9 +1134,9 @@ impl<W: Write + Seek> TTreeWriter<W> {
         let sig: Vec<ColSig> = branches.iter().map(col_sig).collect();
         match &self.schema {
             Some(prev) if *prev != sig => {
-                return Err(Error::Format(
-                    "this batch's branch schema differs from the first batch's".into(),
-                ))
+                return Err(Error::SchemaChanged {
+                    detail: "this batch's branch schema differs from the first batch's".into(),
+                })
             }
             Some(_) => {}
             None => {

@@ -27,7 +27,7 @@ pub mod streamer_info;
 pub mod value;
 
 pub use compression::Compression;
-pub use error::{Error, Result};
+pub use error::{decompress_payload, Error, Result};
 pub use file::{
     compress_if_smaller, ByteSource, BytesSource, ContainerWriter, Dir, DirId, Directory,
     FileHeader, FileSource, FreeSegment, RFile, RootFile, TDatime, TKey, TUuid, DATIME,

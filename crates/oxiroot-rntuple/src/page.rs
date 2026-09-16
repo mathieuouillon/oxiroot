@@ -5,7 +5,7 @@
 //! byte-transposed back ("unsplit"), then signed-integer columns are
 //! zigzag-decoded and index columns are delta-decoded (cumulative sum).
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::error::{decompress_payload, Error, Result};
 use oxiroot_io_core::ByteSource;
 
 use crate::column::ColumnType;
@@ -72,8 +72,7 @@ fn read_page_bytes(file: &dyn ByteSource, page: &PageInfo, bits: u16) -> Result<
     }
 
     let n = page.num_elements as usize;
-    oxiroot_compress::decompress(compressed, uncompressed_size(bits, n))
-        .map_err(|e| Error::Format(format!("decompressing RNTuple page: {e}")))
+    decompress_payload(compressed, uncompressed_size(bits, n), "RNTuple page")
 }
 
 /// Invert RNTuple "split" (byte-transposed) storage: byte `j` of element `i`

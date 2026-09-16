@@ -9,7 +9,6 @@ description = "RNTuple reader/writer (ROOT columnar event-data format)"
 
 [dependencies]
 oxiroot-io-core = { workspace = true }
-oxiroot-compress = { workspace = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
 [dev-dependencies]

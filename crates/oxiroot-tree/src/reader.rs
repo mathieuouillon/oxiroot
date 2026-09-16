@@ -13,7 +13,7 @@
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
 use oxiroot_io_core::buffer::{RBuffer, K_BYTE_COUNT_MASK};
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::error::{decompress_payload, Error, Result};
 use oxiroot_io_core::file::TKey;
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
@@ -213,8 +213,7 @@ impl TTree {
         let registry = file.streamer_registry()?;
 
         let payload = file.key_payload(key)?;
-        let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
-            .map_err(|e| Error::Format(format!("decompressing TTree: {e}")))?;
+        let object = decompress_payload(&payload, key.obj_len as usize, "TTree")?;
         let mut tree = read_tree(&object, key.key_len as usize, &registry, &key.class_name)?;
         tree.streamer_classes = registry
             .infos()

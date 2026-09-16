@@ -9,7 +9,6 @@ description = "Reading and writing ROOT TTree (classic columnar storage)"
 
 [dependencies]
 oxiroot-io-core = { workspace = true }
-oxiroot-compress = { workspace = true }
 rayon = { version = "1", optional = true }
 
 [features]
