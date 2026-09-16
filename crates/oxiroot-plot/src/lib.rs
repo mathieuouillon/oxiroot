@@ -9,6 +9,10 @@
 //! LaTeX-like serif; see [`FontSet`]), and `$…$` math is typeset with the ReX
 //! TeX engine into the same IR.
 //!
+//! PNG output (the `png` feature) and TeX math (the `math` feature) are on by
+//! default. Without them, SVG and PDF still render, math spans are laid out as
+//! plain text, and a PNG request returns [`Error::MissingFeature`].
+//!
 //! # What it can draw
 //!
 //! - **Histograms** — [`Axes::hist`]/[`Axes::hist_with`] draw a `TH1` as an mplhep
@@ -132,8 +136,19 @@ mod tests {
     use crate::{draw, mathtext, render, text};
     use oxiroot_hist::{Hist, TGraph, TH1};
 
-    fn is_png(bytes: &[u8]) -> bool {
-        bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+    /// `groups` render to a PNG, or, without the `png` feature, to the error
+    /// that names it; they render to an SVG either way.
+    fn assert_renders(groups: &[draw::DrawGroup], w: u32, h: u32) {
+        let png = render::raster::render_png(groups, w, h, Color::WHITE);
+        #[cfg(feature = "png")]
+        assert!(png.unwrap().starts_with(b"\x89PNG\r\n\x1a\n"));
+        #[cfg(not(feature = "png"))]
+        assert!(matches!(
+            png,
+            Err(Error::MissingFeature { feature: "png", .. })
+        ));
+        let svg = render::svg::render(groups, w, h, Color::WHITE);
+        assert!(svg.starts_with("<svg") && svg.contains("</svg>"));
     }
 
     fn gauss_hist() -> TH1 {
@@ -177,9 +192,7 @@ mod tests {
             0.0,
         ));
         let groups = [g];
-        assert!(is_png(
-            &render::raster::render_png(&groups, w, h, Color::WHITE).unwrap()
-        ));
+        assert_renders(&groups, w, h);
         let svg = render::svg::render(&groups, w, h, Color::WHITE);
         assert!(svg.starts_with("<svg") && svg.contains("</svg>") && svg.contains("<path"));
     }
@@ -192,9 +205,7 @@ mod tests {
         ax.plot(&xs, &ys);
         ax.xlabel("$x$ [rad]");
         let (w, h) = ax.style.figsize_px();
-        assert!(is_png(
-            &render::raster::render_png(&ax.render(w, h), w, h, Color::WHITE).unwrap()
-        ));
+        assert_renders(&ax.render(w, h), w, h);
     }
 
     #[test]
@@ -204,9 +215,7 @@ mod tests {
         ax.hist_with(&h, HistOpts::new().yerr());
         let (w, hh) = ax.style.figsize_px();
         let groups = ax.render(w, hh);
-        assert!(is_png(
-            &render::raster::render_png(&groups, w, hh, Color::WHITE).unwrap()
-        ));
+        assert_renders(&groups, w, hh);
         // mplhep step + yerr emits many primitives (staircase + error bars).
         let cmds: usize = groups.iter().map(|g| g.cmds.len()).sum();
         assert!(cmds > 40, "expected a rich staircase, got {cmds} commands");
@@ -225,9 +234,7 @@ mod tests {
         ax.errorbar_with(&g, ErrorbarOpts::new().color(Color::BLACK).label("data"));
         ax.legend();
         let (w, h) = ax.style.figsize_px();
-        assert!(is_png(
-            &render::raster::render_png(&ax.render(w, h), w, h, Color::WHITE).unwrap()
-        ));
+        assert_renders(&ax.render(w, h), w, h);
     }
 
     #[test]
@@ -246,9 +253,7 @@ mod tests {
         let mut ax = Axes::new();
         ax.hist2d_with(&h2, Hist2dOpts::new().label("entries"));
         let (w, h) = ax.style.figsize_px();
-        assert!(is_png(
-            &render::raster::render_png(&ax.render(w, h), w, h, Color::WHITE).unwrap()
-        ));
+        assert_renders(&ax.render(w, h), w, h);
     }
 
     #[test]
@@ -293,6 +298,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn math_label_emits_glyph_paths() {
         use draw::{DrawCommand, DrawGroup};
         let fonts = FontSet::stix();
@@ -322,6 +328,31 @@ mod tests {
             .count();
         assert!(paths > 5, "expected glyph paths, got {paths}");
         assert!(rules >= 1, "expected a fraction/radical rule, got {rules}");
+    }
+
+    #[test]
+    #[cfg(not(feature = "math"))]
+    fn math_label_without_the_math_feature_is_plain_text() {
+        use draw::{DrawCommand, DrawGroup};
+        let mut g = DrawGroup::new(None);
+        mathtext::layout_label(
+            &mut g,
+            &FontSet::stix(),
+            "$\\mathrm{p}_{T}$ [GeV]",
+            10.0,
+            40.0,
+            28.0,
+            Color::BLACK,
+            text::HAlign::Left,
+            text::VAlign::Baseline,
+            0.0,
+        );
+        // Glyph outlines for the stripped source text, and no TeX rules.
+        assert!(g.cmds.iter().any(|c| matches!(c, DrawCommand::Path { .. })));
+        assert!(!g
+            .cmds
+            .iter()
+            .any(|c| matches!(c, DrawCommand::Polygon { .. })));
     }
 
     #[test]
