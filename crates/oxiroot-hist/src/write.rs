@@ -1223,7 +1223,7 @@ impl RootFile {
     /// whose name matches an existing one lands at a higher cycle, as ROOT does.
     /// Files that contain subdirectories or an RNTuple are preserved — only
     /// *adding* new subdirectories in this mode is unsupported. See
-    /// [`update_root_file`].
+    /// [`update_root_file`](oxiroot_io_core::update_root_file).
     pub fn open(path: impl AsRef<Path>) -> Result<RootFile> {
         let path = path.as_ref().to_path_buf();
         let existing = std::fs::read(&path)?;

@@ -25,7 +25,7 @@ use crate::value::Value;
 const HEADER_PROBE: u64 = 512;
 
 /// An open ROOT file, read through a [`ByteSource`]. The default
-/// [`open`](Self::open) reads the whole file into memory; [`open_ranged`] and
+/// [`open`](Self::open) reads the whole file into memory; [`open_ranged`](Self::open_ranged) and
 /// (with the `http` feature) [`open_url`](Self::open_url) read only the byte
 /// ranges each object touches, never downloading the file whole.
 ///
