@@ -46,8 +46,10 @@ pub struct TH1 {
     pub tsumwx2: f64,
     /// Bin contents including under/overflow (length `ncells`).
     pub contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty unless error tracking is
-    /// enabled via [`TH1::sumw2`]. When present, `bin_error = sqrt(sumw2[bin])`.
+    /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
+    /// turned on, by [`TH1::sumw2`], [`TH1::scale`], or the first
+    /// [`fill_weight`](TH1::fill_weight) with a weight other than 1. When
+    /// present, `bin_error = sqrt(sumw2[bin])`.
     pub sumw2: Vec<f64>,
 }
 
@@ -100,8 +102,9 @@ impl TH1 {
 
     /// Enable per-bin error tracking (ROOT's `Sumw2`): allocate the `fSumw2`
     /// array and seed it from the current contents, after which every fill also
-    /// accumulates `weight^2`. Call before filling for correct weighted errors.
-    /// Returns `&mut self` so it can chain (`h.sumw2().fill(x)`).
+    /// accumulates `weight^2`. Weighted fills and [`scale`](TH1::scale) turn it
+    /// on by themselves, so this is only needed to track a unit-weight
+    /// histogram. Returns `&mut self` so it can chain (`h.sumw2().fill(x)`).
     pub fn sumw2(&mut self) -> &mut Self {
         if self.sumw2.len() != self.contents.len() {
             self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
@@ -161,7 +164,16 @@ impl TH1 {
     /// entry count, and the running statistics (ROOT `Fill` semantics: every
     /// fill increments `fEntries`; the moment sums accumulate for in-range
     /// fills only).
+    ///
+    /// The first fill with `w != 1` turns on per-bin error tracking, as ROOT's
+    /// `Fill` does, so weighted errors are right without an explicit
+    /// [`sumw2`](Self::sumw2) call.
     pub fn fill_weight(&mut self, x: f64, w: f64) {
+        // Before the contents change: `sumw2` seeds from them, and every earlier
+        // fill had unit weight (otherwise tracking would already be on).
+        if w != 1.0 && self.sumw2.is_empty() {
+            self.sumw2();
+        }
         let nbins = self.xaxis.nbins.max(0) as usize;
         let bin = self.xaxis.find_bin(x);
         if let Some(c) = self.contents.get_mut(bin) {
