@@ -1,4 +1,4 @@
-use unicode_math::TexSymbolType;
+use crate::unicode_math::TexSymbolType;
 
 use crate::{dimensions::{units::Em, AnyUnit, Unit}, font::{Family, Weight}, layout::{constants, Style as LayoutStyle}, parser::{nodes::{BarThickness, MathStyle}, symbols::Symbol}, RGBA};
 

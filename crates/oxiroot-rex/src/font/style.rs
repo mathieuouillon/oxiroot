@@ -91,8 +91,8 @@ fn style_lookup(lut: &[u32], codepoint: u32, style: Style) -> u32 {
     let y = style.family as usize;
     let x = style.weight as usize;
     let result = codepoint + lut[4 * y + x];
-    match unicode_math::MATH_ALPHANUMERIC_TABLE_RESERVED_REPLACEMENTS.binary_search_by_key(&result, |x| x.0) {
-        Ok(i)  => unicode_math::MATH_ALPHANUMERIC_TABLE_RESERVED_REPLACEMENTS[i].1,
+    match crate::unicode_math::MATH_ALPHANUMERIC_TABLE_RESERVED_REPLACEMENTS.binary_search_by_key(&result, |x| x.0) {
+        Ok(i)  => crate::unicode_math::MATH_ALPHANUMERIC_TABLE_RESERVED_REPLACEMENTS[i].1,
         Err(_) => result,
     }
 }

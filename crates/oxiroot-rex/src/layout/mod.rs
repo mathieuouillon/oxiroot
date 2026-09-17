@@ -604,7 +604,6 @@ pub fn is_symbol<'a, 'b: 'a, F>(contents: &'a [LayoutNode<'b, F>]) -> Option<Lay
 /// Display styles which are used in scaling glyphs.  The associated
 /// methods are taken from pg.441 from the TeXBook
 #[allow(dead_code)]
-#[derive(Serialize, Deserialize)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Style {
     /// sub-script of sub-script with no spacing

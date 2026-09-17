@@ -1,6 +1,6 @@
 //! Mathematical symbols from TeX commands.
 
-use unicode_math::{SYMBOLS, TexSymbolType};
+use crate::unicode_math::{SYMBOLS, TexSymbolType};
 
 /// A LateX symbol is simply a Unicode symbol and a certain category
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -93,7 +93,6 @@ mod tests {
     // const ERROR_TOLERANCE : f64 = 10.;
     const ERROR_TOLERANCE : f64 = 1e-3;
 
-    #[cfg(feature="ttfparser-fontparser")]
     #[test]
     fn test_symbol_bbox() {
         use crate::{font::MathFont, Cursor};
@@ -139,7 +138,6 @@ mod tests {
 
     }
 
-    #[cfg(feature="ttfparser-fontparser")]
     #[test]
     fn test_complex_formula_bbox() {
         use crate::{layout::engine::DEFAULT_FONT_SIZE, render};

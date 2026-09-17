@@ -1,11 +1,13 @@
+//! The `unicode-math` crate from ReX's `deps/`, with its build-script output
+//! committed as `symbols.rs` and `reserved_replacements.rs`.
+
 mod common;
 
 pub use common::{Symbol, TexSymbolType::{self, *}};
-pub use common::OPERATOR_LIMITS;
 
 /// List of symbols  
 /// (GUARANTEE: the command's names are listed 'alphabetically', i.e. by byte order, to allow binary search)
-pub const SYMBOLS: &'static [Symbol] = &include!(concat!(env!("OUT_DIR"), "/symbols.rs"));
+pub const SYMBOLS: &'static [Symbol] = &include!("symbols.rs");
 
 #[cfg(test)]
 mod tests {
@@ -23,7 +25,7 @@ mod tests {
 }
 
 
-pub const MATH_ALPHANUMERIC_TABLE_RESERVED_REPLACEMENTS: &[(u32, u32)] = &include!(concat!(env!("OUT_DIR"), "/math_alphanumeric_table_reserved_replacements.rs"));
+pub const MATH_ALPHANUMERIC_TABLE_RESERVED_REPLACEMENTS: &[(u32, u32)] = &include!("reserved_replacements.rs");
 
 pub fn is_italic(codepoint : char) -> bool {
     let mut codepoint = u32::from(codepoint);

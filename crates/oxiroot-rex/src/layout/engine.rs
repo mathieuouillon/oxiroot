@@ -15,7 +15,6 @@ use crate::font::{
     VariantGlyph,
     TexSymbolType
 };
-use crate::layout::builders::VBox;
 use crate::layout::constants::{BASELINE_SKIP, COLUMN_SEP, DOUBLE_RULE_SEP, JOT, LINE_SKIP_ARRAY, LINE_SKIP_LIMIT_ARRAY, RULE_WIDTH, STRUT_DEPTH, STRUT_HEIGHT};
 use super::convert::ToPx;
 use super::spacing::{atom_space, Spacing};
@@ -24,7 +23,7 @@ use crate::parser::symbols::Symbol;
 use crate::dimensions::Unit;
 use crate::dimensions::units::{Em, FontSize, Px, Ratio, FUnit};
 use crate::layout;
-use crate::error::{FontError, LayoutError, LayoutResult};
+use crate::error::{FontError, LayoutResult};
 
 
 
@@ -224,7 +223,7 @@ impl<'f, F : MathFont> LayoutEngine<'f, F> {
                 ParseNode::Symbol(symbol) => {
                     let node = self.symbol(symbol, context)?;
                     italic_correction = node.is_symbol().map(|s| s.italics);
-                    if !unicode_math::is_italic(symbol.codepoint) {
+                    if !crate::unicode_math::is_italic(symbol.codepoint) {
                         italic_correction = None;
                     }
 
@@ -323,7 +322,7 @@ impl LayoutContext {
 
 fn must_apply_italic_correction_before(node: &ParseNode) -> bool {
     if let Some(symbol) = node.is_symbol() {
-        if unicode_math::is_italic(symbol.codepoint) {
+        if crate::unicode_math::is_italic(symbol.codepoint) {
             return false;
         }
     }

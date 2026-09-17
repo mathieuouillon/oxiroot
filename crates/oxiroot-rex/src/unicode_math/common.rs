@@ -2,7 +2,6 @@
 /// A symbol's category determines its spacing relative to each other, e.g `1+23` ought to be typeset with some space between + and 2, but very little between 2 and 3.
 /// The category also determines whether something can be `\left` or `\right` delimiter
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum TexSymbolType {
     Punctuation,
     Ordinary,
@@ -29,21 +28,6 @@ pub enum TexSymbolType {
     Transparent,
 }
 
-
-pub const OPERATOR_LIMITS: &[&str] = &[
-    "coprod",
-    "bigvee",
-    "bigwedge",
-    "biguplus",
-    "bigcap",
-    "bigcup",
-    "prod",
-    "sum",
-    "bigotimes",
-    "bigoplus",
-    "bigodot",
-    "bigsqcup",
-];
 
 impl TexSymbolType {
     pub fn from_str(name: &str) -> Option<TexSymbolType> {

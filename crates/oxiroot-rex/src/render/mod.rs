@@ -261,14 +261,4 @@ impl Renderer {
     }
 }
 
-#[cfg(feature="pathfinder-renderer")]
-pub mod pathfinder;
-#[cfg(feature="femtovg-renderer")]
-pub mod femtovg;
-#[cfg(feature="cairo-renderer")]
-pub mod cairo;
-#[cfg(feature="raqote-renderer")]
-pub mod raqote;
-#[cfg(feature="tinyskia-renderer")]
-pub mod tinyskia;
 pub mod bbox;

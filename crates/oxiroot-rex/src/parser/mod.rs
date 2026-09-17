@@ -11,7 +11,7 @@ pub mod nodes;
 pub mod symbols;
 mod textoken;
 
-use unicode_math::TexSymbolType;
+use crate::unicode_math::TexSymbolType;
 
 use crate::dimensions::AnyUnit;
 use crate::error::ParseResult;
@@ -133,7 +133,7 @@ impl<'a, I : Iterator<Item = TexToken<'a>>> Parser<'a, I> {
                 => {
                     let last_node = results.pop();
                     let mut script = match last_node {
-                        Some(ParseNode::Scripts(mut scripts)) => scripts,
+                        Some(ParseNode::Scripts(scripts)) => scripts,
                         Some(node) => 
                             Scripts { 
                                 base: Some(Box::new(node)), 

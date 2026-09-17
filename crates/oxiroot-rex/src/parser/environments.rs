@@ -2,7 +2,7 @@
  * Module for parsing LaTeX array environments
  * 
  */
-use unicode_math::TexSymbolType;
+use crate::unicode_math::TexSymbolType;
 
 use crate::layout;
 use crate::parser::error::ParseError;

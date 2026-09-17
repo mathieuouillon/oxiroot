@@ -13,7 +13,6 @@ use self::units::{Em, Inch, Pt, Px, Ratio};
 pub mod units;
 
 /// A f64 value with its unit represented in the type
-#[derive(Serialize, Deserialize)]
 pub struct Unit<U> {
     value : f64,
     _phantom : std::marker::PhantomData<U>,
@@ -169,8 +168,8 @@ impl<U, V> Unit<Ratio<U, V>> {
     /// This can be used to multiply two ratios together, for instance:
     ///
     /// ```
-    /// # use rex::dimensions::units::{Ratio, Pt, Em, Inch};
-    /// # use rex::dimensions::Unit;
+    /// # use oxiroot_rex::dimensions::units::{Ratio, Pt, Em, Inch};
+    /// # use oxiroot_rex::dimensions::Unit;
     /// let x : Unit<Ratio<Pt, Em>>   = Unit::new(4. / 3.);
     /// let y : Unit<Ratio<Inch, Pt>> = Unit::new(5. / 4.);
     ///
