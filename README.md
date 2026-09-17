@@ -109,9 +109,10 @@ oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 # oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
 
 # …or depend on just one crate from the same repo:
-oxiroot-hist    = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
-oxiroot-tree    = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
-oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
+oxiroot-hist      = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
+oxiroot-hist-func = { git = "https://github.com/mathieuouillon/oxiroot" }  # TF1/TF2/TF3
+oxiroot-tree      = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
+oxiroot-rntuple   = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
 ```
 
 ```rust
@@ -838,6 +839,8 @@ on, so nothing extra is needed.
 | `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
 | `oxiroot-hist` | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
+| `oxiroot-hist-func` | `TF1`/`TF2`/`TF3` parametric functions, with ROOT read/write |
+| `oxiroot-formula` | Dependency-free `TFormula` expression engine behind the functions and formula fits |
 | `oxiroot-linalg` | ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym` |
 | `oxiroot-tree` | Classic `TTree` read/write |
 | `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |

@@ -86,6 +86,20 @@ jobs:
       - name: Test the facade with no default features
         run: cargo test -p oxiroot --no-default-features
 
+      - name: Histogram-only builds do not compile the formula engine
+        # TF1/TF2/TF3 live in oxiroot-hist-func so that oxiroot-hist (and
+        # oxiroot-plot without `fit`) stay free of oxiroot-formula.
+        run: |
+          set -euo pipefail
+          hist=$(cargo tree -p oxiroot-hist -e normal)
+          plot=$(cargo tree -p oxiroot-plot -e normal)
+          if grep -E 'oxiroot-(formula|hist-func)' <<<"$hist"; then
+            echo "oxiroot-hist must not depend on the formula engine"; exit 1
+          fi
+          if grep oxiroot-formula <<<"$plot"; then
+            echo "oxiroot-plot (default features) must not depend on the formula engine"; exit 1
+          fi
+
   msrv:
     name: minimum Rust version (1.95)
     runs-on: ubuntu-latest

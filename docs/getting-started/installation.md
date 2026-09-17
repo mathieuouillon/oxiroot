@@ -17,9 +17,10 @@ histogram-only project never compiles the others.
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 
 # …or depend on just one crate from the same repo:
-oxiroot-hist    = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
-oxiroot-tree    = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
-oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
+oxiroot-hist      = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
+oxiroot-hist-func = { git = "https://github.com/mathieuouillon/oxiroot" }  # TF1/TF2/TF3
+oxiroot-tree      = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
+oxiroot-rntuple   = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
 ```
 
 Then bring the common types into scope with the prelude:

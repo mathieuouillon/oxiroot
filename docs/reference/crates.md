@@ -11,34 +11,41 @@ surface, or pull in a single leaf crate to compile only what you use.
 | [`oxiroot-compress`](../api/oxiroot_compress/index.html) | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | [`oxiroot-rntuple`](../api/oxiroot_rntuple/index.html) | RNTuple reader/writer (spec v1.0.0.0) |
 | [`oxiroot-hist`](../api/oxiroot_hist/index.html) | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
+| [`oxiroot-hist-func`](../api/oxiroot_hist_func/index.html) | `TF1`/`TF2`/`TF3` parametric functions on `oxiroot-formula`, with ROOT read/write |
+| [`oxiroot-formula`](../api/oxiroot_formula/index.html) | Dependency-free `TFormula` expression engine: parse, evaluate, integrate, differentiate |
 | [`oxiroot-linalg`](../api/oxiroot_linalg/index.html) | ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym`, with byte-exact ROOT read/write |
 | [`oxiroot-tree`](../api/oxiroot_tree/index.html) | Classic `TTree` read/write |
 | [`oxiroot-fit`](../api/oxiroot_fit/index.html) | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | [`oxiroot-stat`](../api/oxiroot_stat/index.html) | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
+| [`oxiroot-particle`](../api/oxiroot_particle/index.html) | PDG particle data: the numbering-scheme decoder and a bundled particle table |
 | [`oxiroot-plot`](../api/oxiroot_plot/index.html) | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
 
 ## Dependency graph
 
 The leaf crates layer cleanly: `io-core` and `compress` underpin the format
-crates (`rntuple`, `hist`, `tree`); the `WriteRoot`/`ReadRoot` object framework
-lives in `io-core`, so `linalg` (the `TVectorD`/`TMatrixD`/`TMatrixDSym` objects)
-is a leaf on `io-core` alone, and `hist` builds on it for the matrix classes.
-`stat` is a dependency-free leaf shared by `hist` (compatibility tests) and `fit`
-(goodness-of-fit); `fit` is optional and only pulled in by the `fit` feature.
+crates (`rntuple`, `hist`, `tree`, `linalg`); the `WriteRoot`/`ReadRoot` object
+framework lives in `io-core`, so each format crate registers its own objects.
+`stat` and `formula` are dependency-free leaves: `stat` is shared by `hist`
+(compatibility tests) and `fit` (goodness-of-fit), and `formula` by `hist-func`
+(the `TF1`/`TF2`/`TF3` functions) and `fit` (formula models). Keeping the
+functions in `hist-func` means a histogram-only build never compiles the formula
+engine. `fit` is optional and only pulled in by the `fit` feature.
 
 ```text
-                       oxiroot  (facade + prelude)
-                          │
-   ┌──────────────┬───────┼────────┬──────────────┐
- hist            tree   rntuple   fit*           (re-exports)
-   │  │           │        │        │
-   │  └── stat ───┼────────┼────────┘
-   │              │        │
-   └── io-core ── ┴── compress
-                          ▲
-                  (io-core also uses compress)
+oxiroot    -> io-core, compress, rntuple, hist, hist-func, linalg, tree,
+              stat, particle, [fit], [plot]
+hist-func  -> hist, io-core, formula, [fit]
+hist       -> io-core, stat, [fit]
+fit        -> formula, stat
+plot       -> [hist], [fit]
+tree       -> io-core
+rntuple    -> io-core
+linalg     -> io-core
+io-core    -> compress
+formula, stat, particle, compress: no oxiroot dependencies
+oxiroot-cli (oxroot) -> oxiroot
 
-   * fit is gated behind the `fit` feature; argmin adds a second backend.
+[x] = optional, behind a feature. Only oxiroot crates are listed.
 ```
 
 ## Third-party dependencies
