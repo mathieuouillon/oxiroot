@@ -3,14 +3,14 @@
 //! `TF1::GetRandom`) and smooth a histogram (`TH1::Smooth`).
 //!
 //! Sampling needs a uniform random source. oxiroot has no global RNG (no
-//! `gRandom`), so a small dependency-free [`Rng`] is provided; seed it for
+//! `gRandom`), so a small dependency-free [`Random`] is provided; seed it for
 //! reproducible draws.
 //!
 //! ```
-//! use oxiroot_hist::{Hist, Rng};
+//! use oxiroot_hist::{Hist, Random};
 //! let mut src = Hist::reg(100, -5.0, 5.0).double();
 //! for x in [-1.0, 0.0, 0.0, 1.0, 2.0] { src.fill(x); }
-//! let mut rng = Rng::seed(1);
+//! let mut rng = Random::seed(1);
 //! let mut drawn = Hist::reg(100, -5.0, 5.0).double();
 //! drawn.fill_random(&src, 10_000, &mut rng); // draw 10k from src's shape
 //! assert!((drawn.mean() - src.mean()).abs() < 0.1);
@@ -20,17 +20,24 @@ use crate::tf::TF1;
 use crate::th1::TH1;
 
 /// A small seedable pseudo-random generator (SplitMix64), yielding `f64` in
-/// `[0, 1)`. Dependency-free and reproducible — seed it and the draws repeat.
+/// `[0, 1)` — oxiroot's `TRandom`. Dependency-free and reproducible — seed it
+/// and the draws repeat.
+#[doc(
+    alias = "TRandom",
+    alias = "gRandom",
+    alias = "Rng",
+    alias = "SplitMix64"
+)]
 #[derive(Debug, Clone)]
-pub struct Rng {
+pub struct Random {
     state: u64,
 }
 
-impl Rng {
+impl Random {
     /// A generator seeded with `seed` (any value, including 0).
     #[must_use]
-    pub fn seed(seed: u64) -> Rng {
-        Rng { state: seed }
+    pub fn seed(seed: u64) -> Random {
+        Random { state: seed }
     }
 
     /// The next uniform `f64` in `[0, 1)`.
@@ -46,9 +53,9 @@ impl Rng {
     }
 }
 
-impl Default for Rng {
-    fn default() -> Rng {
-        Rng::seed(0)
+impl Default for Random {
+    fn default() -> Random {
+        Random::seed(0)
     }
 }
 
@@ -107,7 +114,7 @@ impl TH1 {
     /// For many draws, prefer [`fill_random`](TH1::fill_random) (it builds the
     /// cumulative once).
     #[must_use]
-    pub fn get_random(&self, rng: &mut Rng) -> f64 {
+    pub fn get_random(&self, rng: &mut Random) -> f64 {
         let edges = self.xaxis.edges();
         match build_cdf(self.values()) {
             Some(cdf) => sample_cdf(&cdf, &edges, rng.uniform()),
@@ -117,7 +124,7 @@ impl TH1 {
 
     /// Fill this histogram with `n` values drawn from `source`'s distribution
     /// (ROOT's `FillRandom(TH1*, n)`). Efficient: the cumulative is built once.
-    pub fn fill_random(&mut self, source: &TH1, n: usize, rng: &mut Rng) {
+    pub fn fill_random(&mut self, source: &TH1, n: usize, rng: &mut Random) {
         let edges = source.xaxis.edges();
         if let Some(cdf) = build_cdf(source.values()) {
             for _ in 0..n {
@@ -129,7 +136,7 @@ impl TH1 {
     /// Fill this histogram with `n` values drawn from a function `f` over this
     /// histogram's range (ROOT's `FillRandom(TF1*, n)`): `f` is sampled at the
     /// bin centres to form the density.
-    pub fn fill_random_fn<F: Fn(f64) -> f64>(&mut self, f: F, n: usize, rng: &mut Rng) {
+    pub fn fill_random_fn<F: Fn(f64) -> f64>(&mut self, f: F, n: usize, rng: &mut Random) {
         let nbins = self.xaxis.nbins.max(0) as usize;
         let weights: Vec<f64> = (1..=nbins)
             .map(|b| f(self.xaxis.bin_center(b)).max(0.0))
@@ -162,7 +169,7 @@ impl TF1 {
     /// `TF1::GetRandom`): the function is sampled on a fine grid to build a
     /// cumulative, then inverse-transform sampled. Assumes `f ≥ 0` on the range.
     #[must_use]
-    pub fn get_random(&self, rng: &mut Rng) -> f64 {
+    pub fn get_random(&self, rng: &mut Random) -> f64 {
         const NPX: usize = 200;
         let (xmin, xmax) = self.range();
         let dx = (xmax - xmin) / NPX as f64;
@@ -313,13 +320,13 @@ mod tests {
         src.fill_random_fn(
             |x| (-0.5 * (x - 5.0).powi(2)).exp(),
             400_000,
-            &mut Rng::seed(7),
+            &mut Random::seed(7),
         );
         assert!((src.mean() - 5.0).abs() < 0.02, "mean {}", src.mean());
         assert!((src.std_dev() - 1.0).abs() < 0.02, "std {}", src.std_dev());
 
         let mut drawn = Hist::reg(100, 0.0, 10.0).double();
-        drawn.fill_random(&src, 400_000, &mut Rng::seed(11));
+        drawn.fill_random(&src, 400_000, &mut Random::seed(11));
         assert!((drawn.mean() - src.mean()).abs() < 0.03);
         assert!((drawn.std_dev() - src.std_dev()).abs() < 0.03);
     }
@@ -330,7 +337,7 @@ mod tests {
         let f = TF1::new("g", "gaus", 0.0, 10.0)
             .unwrap()
             .with_params(vec![1.0, 3.0, 0.8]);
-        let mut rng = Rng::seed(3);
+        let mut rng = Random::seed(3);
         let (mut s, mut s2) = (0.0, 0.0);
         let n = 300_000;
         for _ in 0..n {
@@ -346,8 +353,8 @@ mod tests {
 
     #[test]
     fn rng_is_uniform_and_reproducible() {
-        let mut a = Rng::seed(42);
-        let mut b = Rng::seed(42);
+        let mut a = Random::seed(42);
+        let mut b = Random::seed(42);
         let mut sum = 0.0;
         for _ in 0..100_000 {
             let x = a.uniform();

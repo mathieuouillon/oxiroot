@@ -138,8 +138,8 @@ fn sampling_a_histogram_reproduces_its_shape() {
         src.fill(4.0);
     }
 
-    // Draw from it into a new histogram — reproducibly, with the seedable Rng.
-    let mut rng = Rng::seed(7);
+    // Draw from it into a new histogram — reproducibly, with the seedable Random.
+    let mut rng = Random::seed(7);
     let mut drawn = Hist::reg(50, 0.0, 10.0).double().named("drawn");
     drawn.fill_random(&src, 20_000, &mut rng);
 

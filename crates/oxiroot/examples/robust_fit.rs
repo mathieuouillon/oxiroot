@@ -19,10 +19,10 @@ fn main() {
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run.
 #[cfg(feature = "fit")]
-struct Rng(u64);
+struct XorShift64(u64);
 
 #[cfg(feature = "fit")]
-impl Rng {
+impl XorShift64 {
     fn uniform(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -39,7 +39,7 @@ impl Rng {
 fn main() {
     use oxiroot::prelude::*;
 
-    let mut rng = Rng(0x0DD_F00D_CAFE_BEEF);
+    let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
     // The truth every fit should recover: y = a + b·x with a = 1, b = 2.
     let (true_a, true_b) = (1.0, 2.0);
 

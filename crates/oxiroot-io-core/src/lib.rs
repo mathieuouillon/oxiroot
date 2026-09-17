@@ -29,8 +29,8 @@ pub mod value;
 pub use compression::Compression;
 pub use error::{decompress_payload, Error, Result};
 pub use file::{
-    compress_if_smaller, ByteSource, BytesSource, ContainerWriter, Dir, DirId, Directory,
-    FileHeader, FileSource, FreeSegment, RFile, RootFile, TDatime, TKey, TUuid, DATIME,
+    compress_if_smaller, ByteSource, BytesSource, ContainerWriter, DirId, Directory, FileHeader,
+    FileSource, FreeSegment, RFile, RootFile, SubdirBuilder, TDatime, TKey, TUuid, DATIME,
     FILE_VERSION, KSTART_BIG_FILE,
 };
 pub use object::{ObjHeader, TagReader};

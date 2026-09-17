@@ -13,11 +13,10 @@ use oxiroot::prelude::*;
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run. Copied verbatim from the
-/// `fit` example. (Shadows the `Rng` glob-imported from the prelude — a local
-/// definition wins, and we only need `uniform` here.)
-struct Rng(u64);
+/// `fit` example.
+struct XorShift64(u64);
 
-impl Rng {
+impl XorShift64 {
     fn uniform(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -27,7 +26,7 @@ impl Rng {
 }
 
 fn main() -> oxiroot::Result<()> {
-    let mut rng = Rng(0x0DD_F00D_CAFE_BEEF);
+    let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
 
     // The true turn-on: 50% efficiency at x50 GeV, rising over a width w.
     let (x50, w) = (30.0_f64, 5.0_f64);

@@ -14,44 +14,46 @@ pub(crate) use oxiroot_io_core::{object_bytes_any, object_bytes_any_keyed};
 
 use crate::axis::TAxis;
 
-/// On-disk bin-content precision, named by a histogram class suffix
+/// The on-disk type of a histogram's bin contents, named by the class suffix
 /// (`TH1**D**`, `TH2**F**`, …). Contents are always held in memory as `f64`;
 /// this only selects the `TArray*` element type written to (and read from) the
-/// file. The default is [`Precision::Double`] (ROOT's `TH1D`/`TH2D`/`TH3D`).
+/// file. The default is [`BinContentType::F64`] (ROOT's `TH1D`/`TH2D`/`TH3D`).
+#[doc(alias = "Precision")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
-pub enum Precision {
-    /// `TArrayD` (`f64`) — the `D` classes.
+pub enum BinContentType {
+    /// `TArrayD` (`f64`), the `D` classes (`TH1D`/`TH2D`/`TH3D`).
     #[default]
-    Double,
-    /// `TArrayF` (`f32`) — the `F` classes.
-    Float,
-    /// `TArrayI` (`i32`) — the `I` classes.
-    Int,
-    /// `TArrayS` (`i16`) — the `S` classes.
-    Short,
-    /// `TArrayC` (`i8`) — the `C` classes.
-    Char,
-    /// `TArrayL64` (`i64`) — the `L` classes.
-    Long,
+    F64,
+    /// `TArrayF` (`f32`), the `F` classes (`TH1F`/`TH2F`/`TH3F`).
+    F32,
+    /// `TArrayI` (`i32`), the `I` classes (`TH1I`/`TH2I`/`TH3I`).
+    I32,
+    /// `TArrayS` (`i16`), the `S` classes (`TH1S`/`TH2S`/`TH3S`).
+    I16,
+    /// `TArrayC` (`i8`), the `C` classes (`TH1C`/`TH2C`/`TH3C`).
+    I8,
+    /// `TArrayL64` (`i64`), the `L` classes (`TH1L`/`TH2L`/`TH3L`).
+    I64,
 }
 
-impl Precision {
-    /// The class-name suffix character for this precision (`'D'`, `'F'`, …).
+impl BinContentType {
+    /// The class-name suffix character for this type (`'D'`, `'F'`, …).
     #[must_use]
     pub fn code(self) -> char {
         match self {
-            Precision::Double => 'D',
-            Precision::Float => 'F',
-            Precision::Int => 'I',
-            Precision::Short => 'S',
-            Precision::Char => 'C',
-            Precision::Long => 'L',
+            BinContentType::F64 => 'D',
+            BinContentType::F32 => 'F',
+            BinContentType::I32 => 'I',
+            BinContentType::I16 => 'S',
+            BinContentType::I8 => 'C',
+            BinContentType::I64 => 'L',
         }
     }
 
     /// The full ROOT class name for a histogram of dimension `dim` (`"TH1"`,
-    /// `"TH2"`, `"TH3"`) at this precision, e.g. `Precision::Float.class_name("TH1") == "TH1F"`.
+    /// `"TH2"`, `"TH3"`) with this bin content type, e.g.
+    /// `BinContentType::F32.class_name("TH1") == "TH1F"`.
     #[must_use]
     pub fn class_name(self, dim: &str) -> String {
         let mut s = String::with_capacity(dim.len() + 1);
@@ -64,14 +66,14 @@ impl Precision {
 /// Determine the bin-content type from a histogram class name's suffix
 /// (`TH1D`/`TH2F`/`TH1I`/…). `TProfile` and similar are handled by their own
 /// readers.
-pub(crate) fn precision_of(class: &str) -> Result<Precision> {
+pub(crate) fn bin_content_type_of(class: &str) -> Result<BinContentType> {
     match class.chars().last() {
-        Some('D') => Ok(Precision::Double),
-        Some('F') => Ok(Precision::Float),
-        Some('I') => Ok(Precision::Int),
-        Some('S') => Ok(Precision::Short),
-        Some('C') => Ok(Precision::Char),
-        Some('L') => Ok(Precision::Long),
+        Some('D') => Ok(BinContentType::F64),
+        Some('F') => Ok(BinContentType::F32),
+        Some('I') => Ok(BinContentType::I32),
+        Some('S') => Ok(BinContentType::I16),
+        Some('C') => Ok(BinContentType::I8),
+        Some('L') => Ok(BinContentType::I64),
         _ => Err(Error::Format(format!(
             "unsupported histogram type: {class}"
         ))),
@@ -132,8 +134,8 @@ pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<TH1Core> {
     let _maximum = r.be_f64()?;
     let _minimum = r.be_f64()?;
     let _norm_factor = r.be_f64()?;
-    let _contour = read_tarray(r, Precision::Double)?; // fContour
-    let sumw2 = read_tarray(r, Precision::Double)?; // fSumw2
+    let _contour = read_tarray(r, BinContentType::F64)?; // fContour
+    let sumw2 = read_tarray(r, BinContentType::F64)?; // fSumw2
 
     let end = th1
         .end
@@ -184,21 +186,21 @@ pub(crate) fn check_cells(name: &str, len: usize, cells: usize, optional: bool) 
     }
 }
 
-/// Read an inline `TArray` of `n` values at the given precision (a count
+/// Read an inline `TArray` of `n` values of the given element type (a count
 /// followed by that many values, widened to `f64`).
-pub(crate) fn read_tarray(r: &mut RBuffer, precision: Precision) -> Result<Vec<f64>> {
+pub(crate) fn read_tarray(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Vec<f64>> {
     let n = r.be_i32()?.max(0) as usize;
     // Cap the up-front reservation at what the buffer could possibly hold, so a
     // forged count can't drive a huge allocation before the read fails.
     let mut v = Vec::with_capacity(n.min(r.remaining()));
     for _ in 0..n {
-        let value = match precision {
-            Precision::Double => r.be_f64()?,
-            Precision::Float => r.be_f32()? as f64,
-            Precision::Int => r.be_i32()? as f64,
-            Precision::Short => r.be_i16()? as f64,
-            Precision::Char => r.i8()? as f64,
-            Precision::Long => r.be_i64()? as f64,
+        let value = match bin_content_type {
+            BinContentType::F64 => r.be_f64()?,
+            BinContentType::F32 => r.be_f32()? as f64,
+            BinContentType::I32 => r.be_i32()? as f64,
+            BinContentType::I16 => r.be_i16()? as f64,
+            BinContentType::I8 => r.i8()? as f64,
+            BinContentType::I64 => r.be_i64()? as f64,
         };
         v.push(value);
     }
@@ -210,11 +212,11 @@ pub(crate) fn read_tarray(r: &mut RBuffer, precision: Precision) -> Result<Vec<f
 /// `TH1D`/`TH1F` and for the `TH1D` base inside a `TProfile`.
 pub(crate) fn read_th1_object(
     r: &mut RBuffer,
-    precision: Precision,
+    bin_content_type: BinContentType,
 ) -> Result<(TH1Core, Vec<f64>)> {
     let wrapper = r.read_version()?;
     let core = read_th1_base(r)?;
-    let contents = read_tarray(r, precision)?;
+    let contents = read_tarray(r, bin_content_type)?;
     if let Some(end) = wrapper.end {
         r.seek(end)?;
     }

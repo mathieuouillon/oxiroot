@@ -9,17 +9,17 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, histogram_object, histogram_object_in, precision_of, read_th1_object,
-    Precision,
+    bin_content_type_of, cell_count, check_cells, histogram_object, histogram_object_in,
+    read_th1_object, BinContentType,
 };
 
 /// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TH1 {
-    /// On-disk [`Precision`] (the class suffix). Read the class name via
-    /// [`class_name`](TH1::class_name); `pub(crate)` so the precision stays a
+    /// On-disk [`BinContentType`] (the class suffix). Read the class name via
+    /// [`class_name`](TH1::class_name); `pub(crate)` so the type stays a
     /// typed value rather than a free-form string.
-    pub(crate) precision: Precision,
+    pub(crate) bin_content_type: BinContentType,
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
@@ -60,7 +60,7 @@ impl TH1 {
     pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> TH1 {
         let cells = (nbins.max(0) as usize) + 2;
         TH1 {
-            precision: Precision::Double,
+            bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
             xaxis: TAxis::new("xaxis", nbins, xmin, xmax),
@@ -83,7 +83,7 @@ impl TH1 {
     pub(crate) fn new_variable(edges: &[f64]) -> TH1 {
         let cells = edges.len() + 1; // (edges.len() - 1) bins + 2 flow
         TH1 {
-            precision: Precision::Double,
+            bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
             xaxis: TAxis::variable("xaxis", edges),
@@ -130,28 +130,28 @@ impl TH1 {
     }
 
     /// The exact ROOT class name (`"TH1D"`/`"TH1F"`/…), derived from the stored
-    /// [`precision`](TH1::precision).
+    /// [`bin_content_type`](TH1::bin_content_type).
     #[must_use]
     pub fn class_name(&self) -> String {
-        self.precision.class_name("TH1")
+        self.bin_content_type.class_name("TH1")
     }
 
-    /// This histogram's on-disk [`Precision`] — the class suffix
-    /// (`TH1`**`D`**/`F`/`I`/`S`/`C`/`L`). [`Precision::Double`] by default.
+    /// This histogram's on-disk [`BinContentType`] — the class suffix
+    /// (`TH1`**`D`**/`F`/`I`/`S`/`C`/`L`). [`BinContentType::F64`] by default.
     #[must_use]
-    pub fn precision(&self) -> Precision {
-        self.precision
+    pub fn bin_content_type(&self) -> BinContentType {
+        self.bin_content_type
     }
 
-    /// Change the on-disk precision of an existing histogram — the
+    /// Change the on-disk bin content type of an existing histogram — the
     /// post-construction counterpart of the builder's storage finalizers. Build
-    /// at a precision with [`Hist::reg(...).float()`](crate::Hist) (→ `TH1F`),
-    /// `.int32()` (→ `TH1I`), …; use this to re-precision a histogram you already
+    /// with a given type via [`Hist::reg(...).float()`](crate::Hist) (→ `TH1F`),
+    /// `.int32()` (→ `TH1I`), …; use this to retype a histogram you already
     /// filled or read back. Bin contents stay `f64` in memory and are narrowed
     /// only at write time.
     #[must_use]
-    pub fn with_precision(mut self, precision: Precision) -> Self {
-        self.precision = precision;
+    pub fn with_bin_content_type(mut self, bin_content_type: BinContentType) -> Self {
+        self.bin_content_type = bin_content_type;
         self
     }
 
@@ -217,13 +217,13 @@ impl TH1 {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer, precision: Precision) -> Result<TH1> {
-        let (c, contents) = read_th1_object(r, precision)?;
+    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<TH1> {
+        let (c, contents) = read_th1_object(r, bin_content_type)?;
         let cells = cell_count(&[c.xaxis.nbins])?;
         check_cells("TH1 contents", contents.len(), cells, false)?;
         check_cells("TH1 fSumw2", c.sumw2.len(), cells, true)?;
         Ok(TH1 {
-            precision,
+            bin_content_type,
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -385,8 +385,8 @@ impl TH1 {
     }
 }
 
-/// Read any 1-D histogram (`TH1D/F/I/S/C/L`), detecting the precision from the
-/// stored class.
+/// Read any 1-D histogram (`TH1D/F/I/S/C/L`), detecting the bin content type
+/// from the stored class.
 pub(crate) fn read_th1(file: &RFile, name: &str) -> Result<TH1> {
     decode_th1(histogram_object(file, name, "TH1")?)
 }
@@ -397,5 +397,5 @@ pub(crate) fn read_th1_in(file: &RFile, subdir: &str, name: &str) -> Result<TH1>
 }
 
 pub(crate) fn decode_th1((class, object): (String, Vec<u8>)) -> Result<TH1> {
-    TH1::read(&mut RBuffer::new(&object), precision_of(&class)?)
+    TH1::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
 }

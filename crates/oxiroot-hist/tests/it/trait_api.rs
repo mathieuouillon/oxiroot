@@ -1,9 +1,9 @@
-//! The idiomatic trait API (`WriteRoot`/`ReadRoot`/`Precision`) must select the
-//! correct ROOT class for each precision (so ROOT compatibility is preserved)
+//! The idiomatic trait API (`WriteRoot`/`ReadRoot`/`BinContentType`) must select the
+//! correct ROOT class for each bin content type (so ROOT compatibility is preserved)
 //! and round-trip through a real file.
 
 use oxiroot_hist::{
-    Compression, Hist, Precision, ReadRoot, RootFile, TProfile, WriteRoot, TH1, TH2,
+    BinContentType, Compression, Hist, ReadRoot, RootFile, TProfile, WriteRoot, TH1, TH2,
 };
 use oxiroot_io_core::RFile;
 
@@ -17,17 +17,17 @@ fn sample() -> TH1 {
 }
 
 #[test]
-fn trait_selects_correct_class_per_precision() {
+fn trait_selects_correct_class_per_bin_content_type() {
     // `WriteRoot` is the sole byte producer; verify it tags each object with the
-    // ROOT class its precision implies (round-trip byte correctness is covered by
+    // ROOT class its bin content type implies (round-trip byte correctness is covered by
     // the `*_round_trips*` tests below and the uproot/ROOT-C++ interop matrix).
     let h = sample();
     assert_eq!(h.root_class(), "TH1D");
-    assert_eq!(h.precision(), Precision::Double);
+    assert_eq!(h.bin_content_type(), BinContentType::F64);
 
-    let hf = sample().with_precision(Precision::Float);
+    let hf = sample().with_bin_content_type(BinContentType::F32);
     assert_eq!(hf.root_class(), "TH1F");
-    assert_eq!(hf.precision(), Precision::Float);
+    assert_eq!(hf.bin_content_type(), BinContentType::F32);
 }
 
 #[test]
@@ -46,12 +46,12 @@ fn write_root_then_read_root_round_trips() {
 
 #[test]
 fn float_precision_round_trips_as_th1f() {
-    let h = sample().with_precision(Precision::Float);
+    let h = sample().with_bin_content_type(BinContentType::F32);
     let path = std::env::temp_dir().join("oxiroot_traitapi_hf.root");
     h.write_root(&path, Compression::None).expect("write");
     let f = RFile::open(&path).expect("open");
     let back = TH1::read_root(&f, "h").expect("read");
-    assert_eq!(back.class_name(), "TH1F"); // precision preserved on round-trip
+    assert_eq!(back.class_name(), "TH1F"); // bin content type preserved on round-trip
 }
 
 #[test]

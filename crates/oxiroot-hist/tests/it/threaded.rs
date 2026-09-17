@@ -1,8 +1,8 @@
-//! Multithreaded fill (`ThreadedHist`, `Merge::merge_all`, `fill_par`): a
+//! Multithreaded fill (`ThreadedHist`, `Mergeable::merge_all`, `fill_par`): a
 //! parallel fill must equal the serial fill (bin contents and entries exactly;
 //! moment sums to rounding, since summation order differs).
 
-use oxiroot_hist::{Hist, Merge, ThreadedHist, TH1};
+use oxiroot_hist::{Hist, Mergeable, ThreadedHist, TH1};
 
 fn data() -> Vec<f64> {
     // Deterministic, varied, all in-range over [0, 100).

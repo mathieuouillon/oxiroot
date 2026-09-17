@@ -6,8 +6,8 @@
 //! out of scope.)
 //!
 //! Supported for reading: `TH1D`/`TH1F`, `TH2D`/`TH2F`, `TH3D`/`TH3F`, and
-//! `TProfile`. Bin contents are widened to `f64` regardless of on-disk
-//! precision; the exact class is preserved in `class_name`.
+//! `TProfile`. Bin contents are widened to `f64` regardless of their on-disk
+//! type; the exact class is preserved in `class_name`.
 
 mod base;
 mod collections;
@@ -43,7 +43,7 @@ mod write;
 pub use oxiroot_io_core::Compression;
 
 pub use axis::TAxis;
-pub use base::Precision;
+pub use base::BinContentType;
 pub use collections::{THStack, TMultiGraph};
 pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 #[cfg(feature = "fit")]
@@ -59,7 +59,7 @@ pub use oxiroot_io_core::{
 };
 pub use quick::{Hist, H1, H2, H3};
 pub use read::ReadRoot;
-pub use sample::Rng;
+pub use sample::Random;
 pub use tefficiency::TEfficiency;
 pub use tf::{TF1, TF2, TF3};
 pub use th1::TH1;
@@ -69,8 +69,8 @@ pub use th3::TH3;
 pub use thnsparse::{SparseBin, THnSparse};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;
-pub use threaded::{Merge, ThreadedHist};
+pub use threaded::{Mergeable, ThreadedHist};
 pub use tprofile::{ErrorMode, TProfile};
 pub use tprofile2d::TProfile2D;
 pub use tprofile3d::TProfile3D;
-pub use write::{Dir, RootFile, WriteRoot};
+pub use write::{RootFile, SubdirBuilder, WriteRoot};

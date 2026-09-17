@@ -11,7 +11,8 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_object, Precision,
+    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_object,
+    BinContentType,
 };
 
 /// How a profile's per-bin error bar is computed (ROOT's `fErrorMode`). Shared
@@ -102,15 +103,15 @@ impl TProfile {
         let tprofile = r.read_version()?; // TProfile wrapper
 
         // The TH1D base: its own wrapper, the TH1 base, and the TArrayD sums.
-        let (core, sums) = read_th1_object(r, Precision::Double)?;
+        let (core, sums) = read_th1_object(r, BinContentType::F64)?;
 
-        let bin_entries = read_tarray(r, Precision::Double)?;
+        let bin_entries = read_tarray(r, BinContentType::F64)?;
         let error_mode = ErrorMode::from_code(r.be_i32()?);
         let ymin = r.be_f64()?;
         let ymax = r.be_f64()?;
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;
-        let bin_sumw2 = read_tarray(r, Precision::Double)?;
+        let bin_sumw2 = read_tarray(r, BinContentType::F64)?;
 
         if let Some(end) = tprofile.end {
             r.seek(end)?;

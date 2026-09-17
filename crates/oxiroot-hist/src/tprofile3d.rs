@@ -11,7 +11,8 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_base, Precision,
+    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_base,
+    BinContentType,
 };
 use crate::tprofile::ErrorMode;
 
@@ -257,14 +258,14 @@ impl TProfile3D {
             .ok_or_else(|| Error::Format("TH3 record has no byte count".into()))?;
         r.seek(end)?;
 
-        let sums = read_tarray(r, Precision::Double)?; // TH3D TArrayD = Σ(w·t)
-        let bin_entries = read_tarray(r, Precision::Double)?;
+        let sums = read_tarray(r, BinContentType::F64)?; // TH3D TArrayD = Σ(w·t)
+        let bin_entries = read_tarray(r, BinContentType::F64)?;
         let error_mode = ErrorMode::from_code(r.be_i32()?);
         let tmin = r.be_f64()?;
         let tmax = r.be_f64()?;
         let tsumwt = r.be_f64()?;
         let tsumwt2 = r.be_f64()?;
-        let bin_sumw2 = read_tarray(r, Precision::Double)?;
+        let bin_sumw2 = read_tarray(r, BinContentType::F64)?;
 
         if let Some(end) = tp.end {
             r.seek(end)?;

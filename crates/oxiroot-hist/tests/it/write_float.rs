@@ -2,7 +2,7 @@
 //! through our own reader. The files in /tmp are also checked by uproot/ROOT C++
 //! in the interop job.
 
-use oxiroot_hist::{Hist, Precision, ReadRoot, WriteRoot, TH1, TH2, TH3};
+use oxiroot_hist::{BinContentType, Hist, ReadRoot, WriteRoot, TH1, TH2, TH3};
 use oxiroot_io_core::{Compression, RFile};
 
 #[test]
@@ -15,7 +15,7 @@ fn th1f_write_read_round_trips() {
     }
     let out = std::path::PathBuf::from("/tmp/oxiroot_th1f.root");
     h.clone()
-        .with_precision(Precision::Float)
+        .with_bin_content_type(BinContentType::F32)
         .write_root(&out, Compression::None)
         .expect("write");
 
@@ -37,7 +37,7 @@ fn th2f_write_read_round_trips() {
     h.fill(1.5, 1.5);
     let out = std::path::PathBuf::from("/tmp/oxiroot_th2f.root");
     h.clone()
-        .with_precision(Precision::Float)
+        .with_bin_content_type(BinContentType::F32)
         .write_root(&out, Compression::None)
         .expect("write");
 
@@ -59,7 +59,7 @@ fn th3f_write_read_round_trips() {
     h.fill(1.5, 1.5, 1.5);
     let out = std::path::PathBuf::from("/tmp/oxiroot_th3f.root");
     h.clone()
-        .with_precision(Precision::Float)
+        .with_bin_content_type(BinContentType::F32)
         .write_root(&out, Compression::None)
         .expect("write");
 

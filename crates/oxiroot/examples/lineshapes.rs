@@ -15,10 +15,10 @@ use oxiroot::stat;
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run.
 #[cfg(feature = "fit")]
-struct Rng(u64);
+struct XorShift64(u64);
 
 #[cfg(feature = "fit")]
-impl Rng {
+impl XorShift64 {
     fn uniform(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -128,7 +128,7 @@ fn main() {
 /// fitting an `oxiroot::fit` Crystal Ball [`Model`] to the filled histogram.
 #[cfg(feature = "fit")]
 fn fit_crystal_ball() {
-    let mut rng = Rng(0x0DD_F00D_CAFE_BEEF);
+    let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
     let (true_mean, true_sigma) = (91.2, 2.5); // a Z-like mass peak [GeV]
 
     let mut peak = Hist::reg(80, 75.0, 100.0)

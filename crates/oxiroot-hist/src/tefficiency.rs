@@ -9,7 +9,7 @@ use oxiroot_io_core::error::Result;
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::RFile;
 
-use crate::base::{object_bytes, object_bytes_in, Precision};
+use crate::base::{object_bytes, object_bytes_in, BinContentType};
 use crate::th1::TH1;
 
 /// An efficiency plot (ROOT `TEfficiency`).
@@ -129,7 +129,7 @@ fn read_embedded_th1d(r: &mut RBuffer) -> Result<TH1> {
         while r.u8()? != 0 {}
     }
     // Otherwise `tag` was a class back-reference (already consumed).
-    TH1::read(r, Precision::Double)
+    TH1::read(r, BinContentType::F64)
 }
 
 /// Read a `TEfficiency` named `name` from `file`.
