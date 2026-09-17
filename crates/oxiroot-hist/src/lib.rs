@@ -29,6 +29,7 @@ mod sample;
 mod stats;
 mod tefficiency;
 mod tf;
+mod tf1_record;
 mod th1;
 mod th2;
 mod th2poly;

@@ -19,12 +19,14 @@ use std::borrow::Cow;
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::streamer_gen::{any, base, basic, objanyptr, objptr, stl, strf, Cls};
 use oxiroot_io_core::RFile;
 
+use oxiroot_io_core::buffer::WBuffer;
+
 use crate::base::object_bytes_any;
-use crate::write::{write_tf1_body, write_tf2_body, write_tf3_body, Tf1Fields, WriteRoot};
+use crate::graph::GraphFunction;
+use crate::write::WriteRoot;
 
 /// The data shared by [`TF1`]/[`TF2`]/[`TF3`]: a name and title, the parsed
 /// formula, the parameter values, and the fit-result metadata ROOT stores
@@ -61,22 +63,38 @@ impl FuncCore {
         })
     }
 
-    fn fields<'a>(&'a self, xmin: f64, xmax: f64, ndim: i32, npx: i32) -> Tf1Fields<'a> {
-        Tf1Fields {
-            name: &self.name,
-            title: &self.title,
-            formula: self.formula.root_formula(),
-            params: &self.params,
-            par_errors: &self.par_errors,
-            par_min: &self.par_min,
-            par_max: &self.par_max,
+    /// The `TF1` record ROOT stores for this function over `[xmin, xmax]`.
+    fn record(&self, xmin: f64, xmax: f64) -> GraphFunction {
+        GraphFunction {
+            name: self.name.clone(),
+            title: self.title.clone(),
+            formula: self.formula.root_formula().to_owned(),
+            params: self.params.clone(),
+            par_errors: self.par_errors.clone(),
+            par_min: self.par_min.clone(),
+            par_max: self.par_max.clone(),
             xmin,
             xmax,
             chi2: self.chi2,
             ndf: self.ndf,
-            ndim,
-            npx,
         }
+    }
+
+    /// Parse a `TF1` record's formula back into a function core.
+    fn from_record(f: GraphFunction) -> Result<FuncCore> {
+        let formula = Formula::parse(&f.formula)
+            .map_err(|e| Error::Format(format!("bad formula {:?}: {e}", f.formula)))?;
+        Ok(FuncCore {
+            name: f.name,
+            title: f.title,
+            formula,
+            params: f.params,
+            par_errors: f.par_errors,
+            par_min: f.par_min,
+            par_max: f.par_max,
+            chi2: f.chi2,
+            ndf: f.ndf,
+        })
     }
 }
 
@@ -365,8 +383,10 @@ impl WriteRoot for TF1 {
         &self.core.title
     }
     fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = oxiroot_io_core::buffer::WBuffer::new();
-        write_tf1_body(&mut w, &self.core.fields(self.xmin, self.xmax, 1, 100));
+        let mut w = WBuffer::new();
+        self.core
+            .record(self.xmin, self.xmax)
+            .write_tf1_body(&mut w, 1, 100);
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
@@ -388,13 +408,9 @@ impl WriteRoot for TF2 {
         &self.core.title
     }
     fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = oxiroot_io_core::buffer::WBuffer::new();
-        write_tf2_body(
-            &mut w,
-            &self.core.fields(self.xmin, self.xmax, 2, 30),
-            self.ymin,
-            self.ymax,
-        );
+        let mut w = WBuffer::new();
+        let record = self.core.record(self.xmin, self.xmax);
+        write_tf2_body(&mut w, &record, 2, self.ymin, self.ymax);
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
@@ -416,15 +432,9 @@ impl WriteRoot for TF3 {
         &self.core.title
     }
     fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = oxiroot_io_core::buffer::WBuffer::new();
-        write_tf3_body(
-            &mut w,
-            &self.core.fields(self.xmin, self.xmax, 3, 30),
-            self.ymin,
-            self.ymax,
-            self.zmin,
-            self.zmax,
-        );
+        let mut w = WBuffer::new();
+        let record = self.core.record(self.xmin, self.xmax);
+        write_tf3_body(&mut w, &record, self.ymin, self.ymax, self.zmin, self.zmax);
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
@@ -433,6 +443,30 @@ impl WriteRoot for TF3 {
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         tf_classes(3)
     }
+}
+
+/// Write a `TF2` object body (version 4): the `TF1` base (`fNdim` = `ndim`,
+/// `fNpx` = 30), then `fYmin`/`fYmax`, `fNpy`, and an empty `fContour`
+/// (`TArrayD`).
+fn write_tf2_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32, ymin: f64, ymax: f64) {
+    let obj = w.begin_object(4); // TF2 version 4
+    f.write_tf1_body(w, ndim, 30); // TF1 base
+    w.be_f64(ymin); // fYmin
+    w.be_f64(ymax); // fYmax
+    w.be_i32(30); // fNpy (ROOT keeps npx == npy by default)
+    w.be_i32(0); // fContour: empty TArrayD (fN = 0)
+    w.end_object(obj);
+}
+
+/// Write a `TF3` object body (version 3): the `TF2` base (`fNdim` = 3), then
+/// `fZmin`/`fZmax` and `fNpz`.
+fn write_tf3_body(w: &mut WBuffer, f: &GraphFunction, ymin: f64, ymax: f64, zmin: f64, zmax: f64) {
+    let obj = w.begin_object(3); // TF3 version 3
+    write_tf2_body(w, f, 3, ymin, ymax); // TF2 base
+    w.be_f64(zmin); // fZmin
+    w.be_f64(zmax); // fZmax
+    w.be_i32(30); // fNpz
+    w.end_object(obj);
 }
 
 // ROOT C++ has these classes compiled in; uproot builds a function model from
@@ -519,69 +553,10 @@ fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
 
 // --- read -------------------------------------------------------------------
 
-/// The raw `TF1`-body fields read from disk.
-pub(crate) struct Tf1Read {
-    pub(crate) name: String,
-    pub(crate) title: String,
-    pub(crate) formula: String,
-    pub(crate) params: Vec<f64>,
-    pub(crate) par_errors: Vec<f64>,
-    pub(crate) par_min: Vec<f64>,
-    pub(crate) par_max: Vec<f64>,
-    pub(crate) xmin: f64,
-    pub(crate) xmax: f64,
-    pub(crate) chi2: f64,
-    pub(crate) ndf: i32,
-}
-
-/// Read a `TF1` object body (version 12) — shared by a standalone `TF1` key and
-/// a graph's `fFunctions` entry.
-pub(crate) fn read_tf1_body(r: &mut RBuffer) -> Result<Tf1Read> {
-    let tf1 = r.read_version()?; // TF1 v12
-    let named = read_tnamed(r)?;
-    skip_versioned(r)?; // TAttLine
-    skip_versioned(r)?; // TAttFill
-    skip_versioned(r)?; // TAttMarker
-    let xmin = r.be_f64()?;
-    let xmax = r.be_f64()?;
-    let _npar = r.be_i32()?;
-    let _ndim = r.be_i32()?;
-    let _npx = r.be_i32()?;
-    let _ftype = r.be_i32()?;
-    let _npfits = r.be_i32()?;
-    let ndf = r.be_i32()?;
-    let chi2 = r.be_f64()?;
-    let _min = r.be_f64()?;
-    let _max = r.be_f64()?;
-    let par_errors = read_vector_f64(r)?;
-    let par_min = read_vector_f64(r)?;
-    let par_max = read_vector_f64(r)?;
-    let _save = read_vector_f64(r)?;
-    let _normalized = r.u8()?;
-    let _norm_integral = r.be_f64()?;
-    let (formula, params) = read_tformula_ptr(r)?;
-    if let Some(end) = tf1.end {
-        r.seek(end)?; // skip fParams + fComposition
-    }
-    Ok(Tf1Read {
-        name: named.name,
-        title: named.title,
-        formula,
-        params,
-        par_errors,
-        par_min,
-        par_max,
-        xmin,
-        xmax,
-        chi2,
-        ndf,
-    })
-}
-
 /// Read a `TF2` object body (version 4): the `TF1` base then `fYmin`/`fYmax`.
-fn read_tf2_body(r: &mut RBuffer) -> Result<(Tf1Read, f64, f64)> {
+fn read_tf2_body(r: &mut RBuffer) -> Result<(GraphFunction, f64, f64)> {
     let tf2 = r.read_version()?; // TF2 v4
-    let base = read_tf1_body(r)?;
+    let base = GraphFunction::read_tf1_body(r)?;
     let ymin = r.be_f64()?;
     let ymax = r.be_f64()?;
     let _npy = r.be_i32()?;
@@ -595,22 +570,6 @@ fn read_tf2_body(r: &mut RBuffer) -> Result<(Tf1Read, f64, f64)> {
     Ok((base, ymin, ymax))
 }
 
-fn core_from_read(d: Tf1Read) -> Result<FuncCore> {
-    let formula = Formula::parse(&d.formula)
-        .map_err(|e| Error::Format(format!("bad formula {:?}: {e}", d.formula)))?;
-    Ok(FuncCore {
-        name: d.name,
-        title: d.title,
-        formula,
-        params: d.params,
-        par_errors: d.par_errors,
-        par_min: d.par_min,
-        par_max: d.par_max,
-        chi2: d.chi2,
-        ndf: d.ndf,
-    })
-}
-
 pub(crate) fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> {
     if class != "TF1" {
         return Err(Error::Format(format!(
@@ -618,10 +577,10 @@ pub(crate) fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> 
         )));
     }
     let mut r = RBuffer::new(object);
-    let d = read_tf1_body(&mut r)?;
+    let d = GraphFunction::read_tf1_body(&mut r)?;
     let (xmin, xmax) = (d.xmin, d.xmax);
     Ok(TF1 {
-        core: core_from_read(d)?,
+        core: FuncCore::from_record(d)?,
         xmin,
         xmax,
     })
@@ -637,7 +596,7 @@ pub(crate) fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> 
     let (d, ymin, ymax) = read_tf2_body(&mut r)?;
     let (xmin, xmax) = (d.xmin, d.xmax);
     Ok(TF2 {
-        core: core_from_read(d)?,
+        core: FuncCore::from_record(d)?,
         xmin,
         xmax,
         ymin,
@@ -659,7 +618,7 @@ pub(crate) fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> 
     let _npz = r.be_i32()?;
     let (xmin, xmax) = (d.xmin, d.xmax);
     Ok(TF3 {
-        core: core_from_read(d)?,
+        core: FuncCore::from_record(d)?,
         xmin,
         xmax,
         ymin,
@@ -692,47 +651,4 @@ pub(crate) fn read_tf3(file: &RFile, name: &str) -> Result<TF3> {
 pub(crate) fn read_tf3_in(file: &RFile, dir: &str, name: &str) -> Result<TF3> {
     let (class, object) = file.object_in(dir, name)?;
     decode_tf3(name, &class, &object)
-}
-
-/// Read an objectwise `vector<double>` (`[bc][ver][count][count×f64]`).
-pub(crate) fn read_vector_f64(r: &mut RBuffer) -> Result<Vec<f64>> {
-    let _bc = r.be_i32()?;
-    let _ver = r.be_i16()?;
-    let count = r.be_i32()?.max(0) as usize;
-    (0..count).map(|_| r.be_f64()).collect()
-}
-
-/// Read the `fFormula` (`TFormula*`) object pointer, returning
-/// `(fFormula string, fClingParameters)`.
-pub(crate) fn read_tformula_ptr(r: &mut RBuffer) -> Result<(String, Vec<f64>)> {
-    let bc = r.be_i32()? as u32;
-    if bc == 0 {
-        return Ok((String::new(), Vec::new()));
-    }
-    let end = r.pos() + (bc & 0x3fff_ffff) as usize;
-    let tag = r.be_i32()? as u32;
-    if tag == 0xFFFF_FFFF {
-        // NUL-terminated class name "TFormula\0".
-        while r.u8()? != 0 {}
-    }
-    let _ver = r.read_version()?; // TFormula v14
-    let _named = read_tnamed(r)?;
-    let params = read_vector_f64(r)?; // fClingParameters
-    let _all_set = r.u8()?;
-    skip_param_map(r)?; // fParams
-    let formula = r.string()?; // fFormula ([pN] form)
-    r.seek(end)?;
-    Ok((formula, params))
-}
-
-/// Skip a `map<TString,int>` (`[bc][ver][count]` then `count` `{TString}{i32}`).
-fn skip_param_map(r: &mut RBuffer) -> Result<()> {
-    let _bc = r.be_i32()?;
-    let _ver = r.be_i16()?;
-    let count = r.be_i32()?.max(0) as usize;
-    for _ in 0..count {
-        let _key = r.string()?;
-        let _val = r.be_i32()?;
-    }
-    Ok(())
 }
