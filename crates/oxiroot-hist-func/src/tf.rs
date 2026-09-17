@@ -200,6 +200,40 @@ impl TF1 {
     pub fn range(&self) -> (f64, f64) {
         (self.xmin, self.xmax)
     }
+
+    /// This function as the `TF1` record a graph's `fFunctions` list holds, for
+    /// example to attach it to a graph with
+    /// [`TGraph::with_function`](oxiroot_hist::TGraph::with_function). The
+    /// record's `formula` is the canonical `[pN]` form.
+    ///
+    /// ```
+    /// use oxiroot_hist::TGraph;
+    /// use oxiroot_hist_func::TF1;
+    /// let f = TF1::new("line", "[0]+[1]*x", 0.0, 2.0)
+    ///     .unwrap()
+    ///     .with_params(vec![1.0, 2.0]);
+    /// let g = TGraph::new(vec![0.0, 1.0], vec![1.0, 3.0]).with_function(f.to_graph_function());
+    /// assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
+    /// ```
+    #[must_use]
+    pub fn to_graph_function(&self) -> GraphFunction {
+        self.core.record(self.xmin, self.xmax)
+    }
+
+    /// Rebuild a `TF1` from a `TF1` record, such as a function read from a
+    /// graph's [`functions`](oxiroot_hist::TGraph::functions), so it can be
+    /// evaluated. The range is the record's `xmin`/`xmax`.
+    ///
+    /// # Errors
+    /// Returns an error if the record's formula is not a valid expression.
+    pub fn from_graph_function(function: GraphFunction) -> Result<TF1> {
+        let (xmin, xmax) = (function.xmin, function.xmax);
+        Ok(TF1 {
+            core: FuncCore::from_record(function)?,
+            xmin,
+            xmax,
+        })
+    }
 }
 
 #[cfg(feature = "fit")]

@@ -219,13 +219,7 @@ fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> {
         )));
     }
     let mut r = RBuffer::new(object);
-    let d = GraphFunction::read_tf1_body(&mut r)?;
-    let (xmin, xmax) = (d.xmin, d.xmax);
-    Ok(TF1 {
-        core: FuncCore::from_record(d)?,
-        xmin,
-        xmax,
-    })
+    TF1::from_graph_function(GraphFunction::read_tf1_body(&mut r)?)
 }
 
 fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> {
