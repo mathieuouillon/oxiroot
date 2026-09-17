@@ -1,6 +1,7 @@
-//! Histogram/function sampling and smoothing: draw random values from a
-//! histogram's or a function's distribution (`TH1::GetRandom` / `FillRandom`,
-//! `TF1::GetRandom`) and smooth a histogram (`TH1::Smooth`).
+//! Histogram sampling and smoothing: draw random values from a histogram's or
+//! a closure's distribution (`TH1::GetRandom` / `FillRandom`) and smooth a
+//! histogram (`TH1::Smooth`). [`Random::sample_binned`] is the shared
+//! inverse-CDF draw, also used by `TF1::get_random` in `oxiroot-hist-func`.
 //!
 //! Sampling needs a uniform random source. oxiroot has no global RNG (no
 //! `gRandom`), so a small dependency-free [`Random`] is provided; seed it for
@@ -16,7 +17,6 @@
 //! assert!((drawn.mean() - src.mean()).abs() < 0.1);
 //! ```
 
-use crate::tf::TF1;
 use crate::th1::TH1;
 
 /// A small seedable pseudo-random generator (SplitMix64), yielding `f64` in
@@ -185,23 +185,6 @@ impl TH1 {
     }
 }
 
-impl TF1 {
-    /// Draw a random `x` from the function's distribution over its range (ROOT's
-    /// `TF1::GetRandom`): the function is sampled on a fine grid to build a
-    /// cumulative, then inverse-transform sampled. Assumes `f ≥ 0` on the range.
-    #[must_use]
-    pub fn get_random(&self, rng: &mut Random) -> f64 {
-        const NPX: usize = 200;
-        let (xmin, xmax) = self.range();
-        let dx = (xmax - xmin) / NPX as f64;
-        let weights: Vec<f64> = (0..NPX)
-            .map(|i| self.eval(xmin + (i as f64 + 0.5) * dx).max(0.0))
-            .collect();
-        let edges: Vec<f64> = (0..=NPX).map(|i| xmin + i as f64 * dx).collect();
-        rng.sample_binned(&weights, &edges).unwrap_or(xmin)
-    }
-}
-
 /// Median of the first `n` elements of `hh` (`n` ≤ 5).
 fn median(n: usize, hh: &[f64]) -> f64 {
     let mut v: [f64; 5] = [0.0; 5];
@@ -347,26 +330,6 @@ mod tests {
         drawn.fill_random(&src, 400_000, &mut Random::seed(11));
         assert!((drawn.mean() - src.mean()).abs() < 0.03);
         assert!((drawn.std_dev() - src.std_dev()).abs() < 0.03);
-    }
-
-    #[test]
-    fn tf1_get_random_matches_the_function() {
-        // ROOT: TF1 gaus mean 3 sigma 0.8 → GetRandom mean≈3.00, std≈0.80.
-        let f = TF1::new("g", "gaus", 0.0, 10.0)
-            .unwrap()
-            .with_params(vec![1.0, 3.0, 0.8]);
-        let mut rng = Random::seed(3);
-        let (mut s, mut s2) = (0.0, 0.0);
-        let n = 300_000;
-        for _ in 0..n {
-            let x = f.get_random(&mut rng);
-            s += x;
-            s2 += x * x;
-        }
-        let mean = s / n as f64;
-        let std = (s2 / n as f64 - mean * mean).sqrt();
-        assert!((mean - 3.0).abs() < 0.02, "mean {mean}");
-        assert!((std - 0.8).abs() < 0.02, "std {std}");
     }
 
     #[test]

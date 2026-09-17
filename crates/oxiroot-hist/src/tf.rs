@@ -17,16 +17,12 @@
 use oxiroot_formula::{derivative, integrate, Formula};
 use std::borrow::Cow;
 
-use oxiroot_io_core::buffer::RBuffer;
+use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer_gen::{any, base, basic, objanyptr, objptr, stl, strf, Cls};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::{object_bytes_any, RFile, ReadRoot, WriteRoot};
 
-use oxiroot_io_core::buffer::WBuffer;
-
-use crate::base::object_bytes_any;
-use crate::graph::GraphFunction;
-use crate::write::WriteRoot;
+use crate::{hist_streamer_blob, GraphFunction, Random};
 
 /// The data shared by [`TF1`]/[`TF2`]/[`TF3`]: a name and title, the parsed
 /// formula, the parameter values, and the fit-result metadata ROOT stores
@@ -223,6 +219,21 @@ impl TF1 {
     pub fn range(&self) -> (f64, f64) {
         (self.xmin, self.xmax)
     }
+
+    /// Draw a random `x` from the function's distribution over its range (ROOT's
+    /// `TF1::GetRandom`): the function is sampled on a fine grid to build a
+    /// cumulative, then inverse-transform sampled. Assumes `f ≥ 0` on the range.
+    #[must_use]
+    pub fn get_random(&self, rng: &mut Random) -> f64 {
+        const NPX: usize = 200;
+        let (xmin, xmax) = self.range();
+        let dx = (xmax - xmin) / NPX as f64;
+        let weights: Vec<f64> = (0..NPX)
+            .map(|i| self.eval(xmin + (i as f64 + 0.5) * dx).max(0.0))
+            .collect();
+        let edges: Vec<f64> = (0..=NPX).map(|i| xmin + i as f64 * dx).collect();
+        rng.sample_binned(&weights, &edges).unwrap_or(xmin)
+    }
 }
 
 #[cfg(feature = "fit")]
@@ -390,7 +401,7 @@ impl WriteRoot for TF1 {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob()
+        hist_streamer_blob()
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         tf_classes(1)
@@ -414,7 +425,7 @@ impl WriteRoot for TF2 {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob()
+        hist_streamer_blob()
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         tf_classes(2)
@@ -438,7 +449,7 @@ impl WriteRoot for TF3 {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob()
+        hist_streamer_blob()
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         tf_classes(3)
@@ -570,7 +581,7 @@ fn read_tf2_body(r: &mut RBuffer) -> Result<(GraphFunction, f64, f64)> {
     Ok((base, ymin, ymax))
 }
 
-pub(crate) fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> {
+fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> {
     if class != "TF1" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TF1"
@@ -586,7 +597,7 @@ pub(crate) fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> 
     })
 }
 
-pub(crate) fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> {
+fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> {
     if class != "TF2" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TF2"
@@ -604,7 +615,7 @@ pub(crate) fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> 
     })
 }
 
-pub(crate) fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> {
+fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> {
     if class != "TF3" {
         return Err(Error::Format(format!(
             "key {name:?} is a {class}, not a TF3"
@@ -628,27 +639,60 @@ pub(crate) fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> 
     })
 }
 
-pub(crate) fn read_tf1(file: &RFile, name: &str) -> Result<TF1> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tf1(name, &class, &object)
+impl ReadRoot for TF1 {
+    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+        let (class, object) = object_bytes_any(file, name)?;
+        decode_tf1(name, &class, &object)
+    }
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+        let (class, object) = file.object_in(dir, name)?;
+        decode_tf1(name, &class, &object)
+    }
 }
-pub(crate) fn read_tf1_in(file: &RFile, dir: &str, name: &str) -> Result<TF1> {
-    let (class, object) = file.object_in(dir, name)?;
-    decode_tf1(name, &class, &object)
+
+impl ReadRoot for TF2 {
+    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+        let (class, object) = object_bytes_any(file, name)?;
+        decode_tf2(name, &class, &object)
+    }
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+        let (class, object) = file.object_in(dir, name)?;
+        decode_tf2(name, &class, &object)
+    }
 }
-pub(crate) fn read_tf2(file: &RFile, name: &str) -> Result<TF2> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tf2(name, &class, &object)
+
+impl ReadRoot for TF3 {
+    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+        let (class, object) = object_bytes_any(file, name)?;
+        decode_tf3(name, &class, &object)
+    }
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+        let (class, object) = file.object_in(dir, name)?;
+        decode_tf3(name, &class, &object)
+    }
 }
-pub(crate) fn read_tf2_in(file: &RFile, dir: &str, name: &str) -> Result<TF2> {
-    let (class, object) = file.object_in(dir, name)?;
-    decode_tf2(name, &class, &object)
-}
-pub(crate) fn read_tf3(file: &RFile, name: &str) -> Result<TF3> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tf3(name, &class, &object)
-}
-pub(crate) fn read_tf3_in(file: &RFile, dir: &str, name: &str) -> Result<TF3> {
-    let (class, object) = file.object_in(dir, name)?;
-    decode_tf3(name, &class, &object)
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tf1_get_random_matches_the_function() {
+        // ROOT: TF1 gaus mean 3 sigma 0.8 → GetRandom mean≈3.00, std≈0.80.
+        let f = TF1::new("g", "gaus", 0.0, 10.0)
+            .unwrap()
+            .with_params(vec![1.0, 3.0, 0.8]);
+        let mut rng = Random::seed(3);
+        let (mut s, mut s2) = (0.0, 0.0);
+        let n = 300_000;
+        for _ in 0..n {
+            let x = f.get_random(&mut rng);
+            s += x;
+            s2 += x * x;
+        }
+        let mean = s / n as f64;
+        let std = (s2 / n as f64 - mean * mean).sqrt();
+        assert!((mean - 3.0).abs() < 0.02, "mean {mean}");
+        assert!((std - 0.8).abs() < 0.02, "std {std}");
+    }
 }
