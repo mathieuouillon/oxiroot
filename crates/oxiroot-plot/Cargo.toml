@@ -20,13 +20,13 @@ tiny-skia = { version = "0.12", optional = true }
 # fonts: the DejaVu Sans faces are bundled and loaded from memory.
 ab_glyph = "0.2"
 # ReX — a pure-Rust TeX *math* layout engine — typesets `$…$` spans in labels.
-# Git-only (unpublished); pinned to a commit for reproducibility. Only the
-# pure-Rust `ttfparser-fontparser` feature is enabled (no Cairo/femtovg/etc.);
-# a custom backend turns ReX's draw calls into the crate's own DrawCommand IR.
-# Only `$…$` math uses it (the `math` feature).
-rex = { git = "https://github.com/KenyC/ReX", rev = "aeccdba38f3fa54195c469319b65c423e17a77ae", default-features = false, features = ["ttfparser-fontparser"], optional = true }
-# Glyph outline extraction for ReX math glyphs (same version ab_glyph resolves).
-ttf-parser = "0.25"
+# It is vendored in-tree as oxiroot-rex (ReX is not on crates.io), with only its
+# ttf-parser font backend; a custom backend turns ReX's draw calls into the
+# crate's own DrawCommand IR. Only `$…$` math uses it (the `math` feature).
+oxiroot-rex = { workspace = true, optional = true }
+# Glyph outline extraction for the math font, which is parsed in every build.
+# Shared with oxiroot-rex, whose font backend exposes ttf-parser types.
+ttf-parser = { workspace = true }
 
 [features]
 # SVG and PDF output need no feature; PNG output and TeX math are on by default.
@@ -38,7 +38,7 @@ hist = ["dep:oxiroot-hist"]
 # PNG output, through the tiny-skia rasterizer.
 png = ["dep:tiny-skia"]
 # Typeset `$…$` label spans as TeX math, through the ReX engine.
-math = ["dep:rex"]
+math = ["dep:oxiroot-rex"]
 # Overlay a fitted `oxiroot_fit::Model` curve via `Axes::model`. (The general
 # `Axes::function` closure overlay is always available, with no extra deps.)
 fit = ["dep:oxiroot-fit"]

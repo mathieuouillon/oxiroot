@@ -10,15 +10,15 @@
 //! failing, and so does every math run in a build without the `math` feature.
 
 #[cfg(feature = "math")]
-use rex::font::backend::ttf_parser::TtfMathFont;
+use oxiroot_rex::font::backend::ttf_parser::TtfMathFont;
 #[cfg(feature = "math")]
-use rex::font::common::GlyphId;
+use oxiroot_rex::font::common::GlyphId;
 #[cfg(feature = "math")]
-use rex::layout::engine::LayoutBuilder;
+use oxiroot_rex::layout::engine::LayoutBuilder;
 #[cfg(feature = "math")]
-use rex::parser::parse;
+use oxiroot_rex::parser::parse;
 #[cfg(feature = "math")]
-use rex::render::{Backend, Cursor, FontBackend, GraphicsBackend, Renderer, RGBA};
+use oxiroot_rex::render::{Backend, Cursor, FontBackend, GraphicsBackend, Renderer, RGBA};
 
 use crate::color::Color;
 use crate::draw::{DrawCommand, DrawGroup, Path, Pt, Seg};

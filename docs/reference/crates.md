@@ -22,6 +22,7 @@ formula fits, and is not re-exported, so depend on it directly to use
 | [`oxiroot-stat`](../api/oxiroot_stat/index.html) | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
 | [`oxiroot-particle`](../api/oxiroot_particle/index.html) | PDG particle data: the numbering-scheme decoder and a bundled particle table |
 | [`oxiroot-plot`](../api/oxiroot_plot/index.html) | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
+| [`oxiroot-rex`](../api/oxiroot_rex/index.html) | Internal: the vendored ReX TeX math layout engine used by `oxiroot-plot` |
 
 ## Dependency graph
 
@@ -40,12 +41,12 @@ oxiroot    -> io-core, compress, rntuple, hist, hist-func, linalg, tree,
 hist-func  -> hist, io-core, formula, [fit]
 hist       -> io-core, stat, [fit]
 fit        -> formula, stat
-plot       -> [hist], [fit]
+plot       -> [hist], [fit], [rex]
 tree       -> io-core
 rntuple    -> io-core
 linalg     -> io-core
 io-core    -> compress
-formula, stat, particle, compress: no oxiroot dependencies
+formula, stat, particle, compress, rex: no oxiroot dependencies
 oxiroot-cli (oxroot) -> oxiroot
 
 [x] = optional, behind a feature. Only oxiroot crates are listed.
@@ -66,6 +67,8 @@ All pure Rust — the no-libROOT promise holds end to end:
 - [`memmap2`](https://crates.io/crates/memmap2) — memory-mapped reads (with the `mmap` feature)
 - [`bytes`](https://crates.io/crates/bytes) — zero-copy byte ranges behind the reader
 - [`ureq`](https://crates.io/crates/ureq) — HTTP(S) client (rustls) for remote range reads (with the `http` feature)
+- [ReX](https://github.com/KenyC/ReX) — TeX math layout (with the `plot` feature); not on crates.io, so a trimmed copy is vendored as `oxiroot-rex` (MIT, see its `LICENSE-3rdparty`)
+- [`ttf-parser`](https://crates.io/crates/ttf-parser), [`ab_glyph`](https://crates.io/crates/ab_glyph), [`tiny-skia`](https://crates.io/crates/tiny-skia) — font parsing, text outlines and PNG rasterization (with the `plot` feature)
 
 ## API reference
 

@@ -541,7 +541,8 @@ backend-independent draw IR fans out to a [`tiny-skia`](https://crates.io/crates
 raster (PNG) and a hand-written SVG, so the two outputs share identical geometry.
 The default font is the bundled **STIX Two** (a LaTeX-like serif), and `$…$`
 labels are typeset as real LaTeX math by the pure-Rust
-[ReX](https://github.com/KenyC/ReX) TeX engine into the same IR.
+[ReX](https://github.com/KenyC/ReX) TeX engine (vendored in-tree as
+`oxiroot-rex`) into the same IR.
 
 <p align="center">
   <img src="docs/images/plot-mass.png" alt="Z to mu mu candidates: filled MC template with data points overlaid, matplotlib look" width="46%">
@@ -847,6 +848,7 @@ on, so nothing extra is needed.
 | `oxiroot-stat` | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) |
 | `oxiroot-particle` | PDG particle data — the numbering-scheme decoder + a bundled particle table (verified vs scikit-hep `particle`) |
 | `oxiroot-plot` | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
+| `oxiroot-rex` | Internal: the vendored ReX TeX math layout engine used by `oxiroot-plot` |
 | `oxiroot-cli` | `oxroot`: a command-line inspector (`ls`/`show`/`dump`/`stat`) |
 
 Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
@@ -956,4 +958,6 @@ the `plot` feature renders the data, it does not (de)serialize ROOT graphics.
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE). `crates/oxiroot-particle` and
+`crates/oxiroot-rex` contain third-party code under their own notices (see each
+crate's `LICENSE-3rdparty`), and the bundled fonts carry their own licences.

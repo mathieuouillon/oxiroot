@@ -22,8 +22,9 @@ oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
     geometry. The fonts (STIX Two by default — see [Fonts](#fonts)) are bundled
     and text is reduced to glyph outlines, so the SVG is self-contained. `$…$`
     labels are typeset as real LaTeX math by the pure-Rust
-    [ReX](https://github.com/KenyC/ReX) TeX engine into the same IR. The `plot`
-    feature pulls a pinned git dependency on ReX (it is not on crates.io).
+    [ReX](https://github.com/KenyC/ReX) TeX engine into the same IR. ReX is not
+    on crates.io, so a trimmed copy is vendored in the workspace as
+    `oxiroot-rex`.
 
 !!! tip "An SVG/PDF-only build"
     PNG output (`png`) and TeX math (`math`) are features of `oxiroot-plot`, both
