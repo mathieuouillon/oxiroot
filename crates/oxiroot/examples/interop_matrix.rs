@@ -180,23 +180,23 @@ fn hist1_case(id: &'static str, class: &str, comp: Compression, h: &TH1, dir: &P
     match class {
         "TH1C" => h
             .clone()
-            .with_precision(Precision::Char)
+            .with_bin_content_type(BinContentType::I8)
             .write_root(&path, comp),
         "TH1S" => h
             .clone()
-            .with_precision(Precision::Short)
+            .with_bin_content_type(BinContentType::I16)
             .write_root(&path, comp),
         "TH1I" => h
             .clone()
-            .with_precision(Precision::Int)
+            .with_bin_content_type(BinContentType::I32)
             .write_root(&path, comp),
         "TH1L" => h
             .clone()
-            .with_precision(Precision::Long)
+            .with_bin_content_type(BinContentType::I64)
             .write_root(&path, comp),
         "TH1F" => h
             .clone()
-            .with_precision(Precision::Float)
+            .with_bin_content_type(BinContentType::F32)
             .write_root(&path, comp),
         "TH1D" => h.write_root(&path, comp),
         _ => unreachable!(),
@@ -230,23 +230,23 @@ fn hist2_case(id: &'static str, class: &str, comp: Compression, h: &TH2, dir: &P
     match class {
         "TH2C" => h
             .clone()
-            .with_precision(Precision::Char)
+            .with_bin_content_type(BinContentType::I8)
             .write_root(&path, comp),
         "TH2S" => h
             .clone()
-            .with_precision(Precision::Short)
+            .with_bin_content_type(BinContentType::I16)
             .write_root(&path, comp),
         "TH2I" => h
             .clone()
-            .with_precision(Precision::Int)
+            .with_bin_content_type(BinContentType::I32)
             .write_root(&path, comp),
         "TH2L" => h
             .clone()
-            .with_precision(Precision::Long)
+            .with_bin_content_type(BinContentType::I64)
             .write_root(&path, comp),
         "TH2F" => h
             .clone()
-            .with_precision(Precision::Float)
+            .with_bin_content_type(BinContentType::F32)
             .write_root(&path, comp),
         "TH2D" => h.write_root(&path, comp),
         _ => unreachable!(),
@@ -294,23 +294,23 @@ fn hist3_case(id: &'static str, class: &str, comp: Compression, h: &TH3, dir: &P
     match class {
         "TH3C" => h
             .clone()
-            .with_precision(Precision::Char)
+            .with_bin_content_type(BinContentType::I8)
             .write_root(&path, comp),
         "TH3S" => h
             .clone()
-            .with_precision(Precision::Short)
+            .with_bin_content_type(BinContentType::I16)
             .write_root(&path, comp),
         "TH3I" => h
             .clone()
-            .with_precision(Precision::Int)
+            .with_bin_content_type(BinContentType::I32)
             .write_root(&path, comp),
         "TH3L" => h
             .clone()
-            .with_precision(Precision::Long)
+            .with_bin_content_type(BinContentType::I64)
             .write_root(&path, comp),
         "TH3F" => h
             .clone()
-            .with_precision(Precision::Float)
+            .with_bin_content_type(BinContentType::F32)
             .write_root(&path, comp),
         "TH3D" => h.write_root(&path, comp),
         _ => unreachable!(),

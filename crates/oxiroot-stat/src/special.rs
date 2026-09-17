@@ -8,6 +8,23 @@ const BIG: f64 = 4.503599627370496e15;
 const BIG_INV: f64 = 2.220446049250313e-16;
 /// `ln(f64::MAX)`; an exponent below `-MAX_LOG` underflows to 0.
 const MAX_LOG: f64 = 709.782712893384;
+/// Above 2⁵³ a `f64` cannot represent `a + 1` exactly, so the incomplete-gamma
+/// series and continued fraction, which step a counter from `a` by 1, stop
+/// making progress. Near `x ≈ a` there (the only place they are reached), the
+/// functions return `NaN` rather than spin.
+const MAX_EXACT_STEP: f64 = 9_007_199_254_740_992.0;
+
+/// Iteration budget for the incomplete-gamma series and continued fraction.
+///
+/// Both converge once their terms start shrinking, but when `x` is close to `a`
+/// the series terms only fall off like `exp(−k²/2a)`, so it needs O(√a) steps:
+/// about 8√a at `a = 10⁶`, rising slowly to about 11√a near 2⁵³. The budget is
+/// `2000 + 20√a`, at least twice that everywhere. It exists only to guarantee
+/// termination; running out yields `NaN`, never a truncated sum.
+fn iteration_budget(a: f64) -> usize {
+    // Float-to-int casts saturate, so a huge `a` cannot overflow here.
+    (2000.0 + 20.0 * a.sqrt()) as usize
+}
 
 /// Natural log of the absolute gamma function, `ln|Γ(x)|` — `scipy.special.gammaln`.
 /// Lanczos approximation (g = 7), with the reflection formula for `x < 0.5`.
@@ -40,10 +57,25 @@ pub fn gammaln(x: f64) -> f64 {
 
 /// Regularized lower incomplete gamma `P(a, x)` — `scipy.special.gammainc`.
 /// The CDF of a Gamma(`a`) at `x`; `0` for `x <= 0` or `a <= 0`.
+///
+/// A `NaN` argument yields `NaN`, as does `(+∞, +∞)`; otherwise `P(a, +∞) == 1`
+/// and `P(+∞, x) == 0`. For `a >= 2⁵³` with `x` close to `a` the result is `NaN`
+/// because `a + 1` is no longer exact there.
 #[must_use]
 pub fn gammainc(a: f64, x: f64) -> f64 {
+    // Ordered before the `<= 0.0` guards: every comparison against NaN is
+    // false, so without this NaN would fall through to the series below.
+    if a.is_nan() || x.is_nan() {
+        return f64::NAN;
+    }
     if x <= 0.0 || a <= 0.0 {
         return 0.0;
+    }
+    match (a.is_infinite(), x.is_infinite()) {
+        (true, true) => return f64::NAN,
+        (false, true) => return 1.0,
+        (true, false) => return 0.0,
+        (false, false) => {}
     }
     if x > 1.0 && x > a {
         return 1.0 - gammaincc(a, x);
@@ -52,27 +84,44 @@ pub fn gammainc(a: f64, x: f64) -> f64 {
     if ax < -MAX_LOG {
         return 0.0;
     }
+    if !ax.is_finite() || a >= MAX_EXACT_STEP {
+        return f64::NAN;
+    }
     let ax = ax.exp();
     let mut r = a;
     let mut c = 1.0;
     let mut ans = 1.0;
-    loop {
+    for _ in 0..iteration_budget(a) {
         r += 1.0;
         c *= x / r;
         ans += c;
         if c / ans <= MACHEP {
-            break;
+            return ans * ax / a;
         }
     }
-    ans * ax / a
+    f64::NAN
 }
 
 /// Regularized upper incomplete gamma `Q(a, x) = 1 - P(a, x)` —
 /// `scipy.special.gammaincc`. `1` for `x <= 0` or `a <= 0`.
+///
+/// A `NaN` argument yields `NaN`, as does `(+∞, +∞)`; otherwise `Q(a, +∞) == 0`
+/// and `Q(+∞, x) == 1`. For `a >= 2⁵³` with `x` close to `a` the result is `NaN`
+/// because `a + 1` is no longer exact there.
 #[must_use]
 pub fn gammaincc(a: f64, x: f64) -> f64 {
+    // See `gammainc`: NaN must be rejected before any ordered comparison.
+    if a.is_nan() || x.is_nan() {
+        return f64::NAN;
+    }
     if x <= 0.0 || a <= 0.0 {
         return 1.0;
+    }
+    match (a.is_infinite(), x.is_infinite()) {
+        (true, true) => return f64::NAN,
+        (false, true) => return 0.0,
+        (true, false) => return 1.0,
+        (false, false) => {}
     }
     if x < 1.0 || x < a {
         return 1.0 - gammainc(a, x);
@@ -80,6 +129,9 @@ pub fn gammaincc(a: f64, x: f64) -> f64 {
     let ax = a * x.ln() - x - gammaln(a);
     if ax < -MAX_LOG {
         return 0.0;
+    }
+    if !ax.is_finite() || a >= MAX_EXACT_STEP {
+        return f64::NAN;
     }
     let ax = ax.exp();
 
@@ -91,7 +143,7 @@ pub fn gammaincc(a: f64, x: f64) -> f64 {
     let mut pkm1 = x + 1.0;
     let mut qkm1 = z * x;
     let mut ans = pkm1 / qkm1;
-    loop {
+    for _ in 0..iteration_budget(a) {
         c += 1.0;
         y += 1.0;
         z += 2.0;
@@ -103,7 +155,7 @@ pub fn gammaincc(a: f64, x: f64) -> f64 {
             let t = ((ans - r) / r).abs();
             ans = r;
             if t <= MACHEP {
-                break;
+                return ans * ax;
             }
         }
         pkm2 = pkm1;
@@ -117,7 +169,7 @@ pub fn gammaincc(a: f64, x: f64) -> f64 {
             qkm1 *= BIG_INV;
         }
     }
-    ans * ax
+    f64::NAN
 }
 
 /// The error function `erf(x)` — `scipy.special.erf`. Built from the regularized

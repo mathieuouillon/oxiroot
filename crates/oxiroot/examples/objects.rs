@@ -14,7 +14,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     // Keep the file out of the repo: a temp path tagged with THIS example's
     // name, removed before we return.
     let path = std::env::temp_dir().join("oxiroot_ex_objects.root");

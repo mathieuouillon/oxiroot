@@ -13,9 +13,9 @@ use oxiroot::prelude::*;
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run.
-struct Rng(u64);
+struct XorShift64(u64);
 
-impl Rng {
+impl XorShift64 {
     fn uniform(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -34,9 +34,9 @@ fn response(x: f64) -> f64 {
     8.0 * (1.0 - (-x / 4.0).exp())
 }
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
-    let mut rng = Rng(0x0DD_F00D_CAFE_BEEF);
+    let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
 
     // --- Fill a 1-D profile from a stream of (x, y) events. --------------------
     // A profile has the same shape as a TH1 (bins in x), but each bin stores the

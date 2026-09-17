@@ -20,6 +20,7 @@ use crate::text::FontStyle;
 static STIX_REGULAR: &[u8] = include_bytes!("../assets/STIXTwoText-Regular.otf");
 static STIX_BOLD: &[u8] = include_bytes!("../assets/STIXTwoText-Bold.otf");
 static STIX_ITALIC: &[u8] = include_bytes!("../assets/STIXTwoText-Italic.otf");
+#[cfg(feature = "math")]
 static STIX_MATH: &[u8] = include_bytes!("../assets/STIXTwoMath-Regular.otf");
 static DEJAVU_REGULAR: &[u8] = include_bytes!("../assets/DejaVuSans.ttf");
 static DEJAVU_BOLD: &[u8] = include_bytes!("../assets/DejaVuSans-Bold.ttf");
@@ -52,6 +53,7 @@ struct Inner {
     bold: FontVec,
     italic: FontVec,
     /// Raw bytes of the OpenType MATH font (parsed per math run by ReX).
+    #[cfg(feature = "math")]
     math: Vec<u8>,
 }
 
@@ -74,7 +76,7 @@ impl FontSet {
     #[must_use]
     pub fn stix() -> FontSet {
         static CELL: OnceLock<FontSet> = OnceLock::new();
-        CELL.get_or_init(|| from_static(STIX_REGULAR, STIX_BOLD, STIX_ITALIC, STIX_MATH))
+        CELL.get_or_init(|| from_static(STIX_REGULAR, STIX_BOLD, STIX_ITALIC))
             .clone()
     }
 
@@ -82,7 +84,7 @@ impl FontSet {
     #[must_use]
     pub fn dejavu() -> FontSet {
         static CELL: OnceLock<FontSet> = OnceLock::new();
-        CELL.get_or_init(|| from_static(DEJAVU_REGULAR, DEJAVU_BOLD, DEJAVU_OBLIQUE, STIX_MATH))
+        CELL.get_or_init(|| from_static(DEJAVU_REGULAR, DEJAVU_BOLD, DEJAVU_OBLIQUE))
             .clone()
     }
 
@@ -92,7 +94,15 @@ impl FontSet {
     /// # Errors
     /// If the bytes are not a valid TrueType/OpenType font.
     pub fn from_font(text: &[u8]) -> Result<FontSet> {
-        Self::from_fonts(text, STIX_MATH)
+        Ok(FontSet {
+            inner: Arc::new(Inner {
+                regular: load_text_font(text)?,
+                bold: load_text_font(text)?,
+                italic: load_text_font(text)?,
+                #[cfg(feature = "math")]
+                math: STIX_MATH.to_vec(),
+            }),
+        })
     }
 
     /// A custom text font plus a custom math font (an OpenType font with a `MATH`
@@ -100,19 +110,19 @@ impl FontSet {
     ///
     /// # Errors
     /// If either font cannot be parsed (the math font must have a `MATH` table).
+    ///
+    /// A build without the `math` feature lays `$…$` spans out as plain text and
+    /// only checks that the math font parses.
     pub fn from_fonts(text: &[u8], math: &[u8]) -> Result<FontSet> {
-        let load = |b: &[u8]| {
-            FontVec::try_from_vec(b.to_vec())
-                .map_err(|e| Error::Font(format!("invalid text font: {e}")))
-        };
         // Validate the math font parses as a face (ReX re-reads the bytes later).
         ttf_parser::Face::parse(math, 0)
             .map_err(|e| Error::Font(format!("invalid math font: {e}")))?;
         Ok(FontSet {
             inner: Arc::new(Inner {
-                regular: load(text)?,
-                bold: load(text)?,
-                italic: load(text)?,
+                regular: load_text_font(text)?,
+                bold: load_text_font(text)?,
+                italic: load_text_font(text)?,
+                #[cfg(feature = "math")]
                 math: math.to_vec(),
             }),
         })
@@ -145,19 +155,27 @@ impl FontSet {
         }
     }
 
+    #[cfg(feature = "math")]
     pub(crate) fn math_bytes(&self) -> &[u8] {
         &self.inner.math
     }
 }
 
-fn from_static(r: &[u8], b: &[u8], i: &[u8], math: &[u8]) -> FontSet {
-    let load = |bytes: &[u8]| FontVec::try_from_vec(bytes.to_vec()).expect("bundled font is valid");
+fn load_text_font(bytes: &[u8]) -> Result<FontVec> {
+    FontVec::try_from_vec(bytes.to_vec())
+        .map_err(|e| Error::Font(format!("invalid text font: {e}")))
+}
+
+/// A bundled text family, with STIX Two Math for `$…$` spans.
+fn from_static(r: &[u8], b: &[u8], i: &[u8]) -> FontSet {
+    let load = |bytes: &[u8]| load_text_font(bytes).expect("bundled font is valid");
     FontSet {
         inner: Arc::new(Inner {
             regular: load(r),
             bold: load(b),
             italic: load(i),
-            math: math.to_vec(),
+            #[cfg(feature = "math")]
+            math: STIX_MATH.to_vec(),
         }),
     }
 }

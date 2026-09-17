@@ -1,0 +1,47 @@
+//! The oxiroot-hist histogram integration tests, compiled as one binary so the
+//! suite links once. Each module is one topic.
+
+mod analysis;
+mod collections;
+mod derive;
+mod dirs;
+mod fit;
+mod graph;
+mod graph2d;
+mod graph_function;
+mod graphmultierrors;
+mod labels;
+mod linalg;
+mod malformed;
+mod naming;
+mod objlist;
+mod ops;
+mod persist_objects;
+mod profile_merge;
+mod quick_hist;
+mod read_compressed;
+mod read_family;
+mod read_integer;
+mod read_th1d;
+mod read_th2d;
+mod stats;
+mod streamer_classes;
+mod sumw2_varbins;
+mod tefficiency;
+mod th2poly;
+mod thnsparse;
+mod threaded;
+mod tmap;
+mod tprofile2d;
+mod tprofile3d;
+mod trait_api;
+mod update;
+mod weighted_fill;
+mod write_big;
+mod write_float;
+mod write_int;
+mod write_multi;
+mod write_th1d;
+mod write_th2d;
+mod write_th3d;
+mod write_tprofile;

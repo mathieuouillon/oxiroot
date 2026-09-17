@@ -13,9 +13,9 @@ use oxiroot::prelude::*;
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run.
-struct Rng(u64);
+struct XorShift64(u64);
 
-impl Rng {
+impl XorShift64 {
     fn uniform(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -28,8 +28,8 @@ impl Rng {
     }
 }
 
-fn main() -> Result<()> {
-    let mut rng = Rng(0x5A17_C0FFEE_D15EA5);
+fn main() -> oxiroot::Result<()> {
+    let mut rng = XorShift64(0x5A17_C0FFEE_D15EA5);
 
     // --- A 4-D cut-optimization space: (pt, eta, isolation, mass). -------------
     // Each axis is (nbins, lo, hi). The dense grid would be the *product* of the

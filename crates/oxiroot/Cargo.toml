@@ -12,6 +12,7 @@ oxiroot-io-core = { workspace = true }
 oxiroot-compress = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }
+oxiroot-hist-func = { workspace = true }
 oxiroot-linalg = { workspace = true }
 oxiroot-tree = { workspace = true }
 oxiroot-stat = { workspace = true }
@@ -20,11 +21,12 @@ oxiroot-fit = { workspace = true, optional = true }
 oxiroot-plot = { workspace = true, optional = true }
 
 [features]
-# Batteries-included: the facade turns on every optional capability by default —
-# fitting (Minuit2 plus the argmin Nelder–Mead backend), plotting, the
-# data-parallel helpers, and the mmap read path. Opt out of the extra
-# dependencies with `default-features = false`, then re-enable what you need.
-default = ["fit", "plot", "rayon", "mmap", "argmin"]
+# Batteries-included: the facade turns on fitting (Minuit2 plus the argmin
+# Nelder–Mead backend), plotting, and the mmap read path by default. Opt out of
+# the extra dependencies with `default-features = false`, then re-enable what you
+# need. `rayon` is opt-in, so a library never spawns threads its user did not ask
+# for.
+default = ["fit", "plot", "mmap", "argmin"]
 # Enable the memory-mapped read path (`RFile::open_mmap`).
 mmap = ["oxiroot-io-core/mmap"]
 # Enable remote reads over HTTP(S) byte-range requests (`RFile::open_url`). Opt
@@ -33,15 +35,16 @@ http = ["oxiroot-io-core/http"]
 # Enable remote reads over the XRootD `root://` protocol (`RFile::open_url`).
 # Opt-in; pure `std::net` (unix auth), so it adds no dependencies.
 xrootd = ["oxiroot-io-core/xrootd"]
-# Enable data-parallel helpers: the histogram fill (`hist::fill_par`) and
-# parallel TTree basket decode.
+# Enable the data-parallel helpers: the histogram fill (`hist::fill_par`) and
+# the parallel TTree reads (`TTree::read_branch_par` and friends).
 rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
-# Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxiroot-fit` engine
-# plus the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works. When the
-# `plot` feature is also on, this lights up `Axes::model` (fit-curve overlay).
-fit = ["oxiroot-hist/fit", "dep:oxiroot-fit", "oxiroot-plot?/fit"]
+# Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxiroot-fit` engine,
+# the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works, and
+# `TF1::to_model`. When the `plot` feature is also on, this lights up
+# `Axes::model` (fit-curve overlay).
+fit = ["oxiroot-hist/fit", "oxiroot-hist-func/fit", "dep:oxiroot-fit", "oxiroot-plot?/fit"]
 # Also build the gradient-free Nelder–Mead (`argmin`) minimizer backend.
-argmin = ["fit", "oxiroot-hist/argmin", "oxiroot-fit/argmin"]
+argmin = ["fit", "oxiroot-fit/argmin"]
 # Enable plotting (`oxiroot::plot`): render TH1/TH2/TGraph/TProfile to SVG/PNG
 # with a matplotlib-like API and mplhep style. Pulls tiny-skia, ab_glyph, and
 # the ReX TeX engine (git dependency) for `$…$` math labels.

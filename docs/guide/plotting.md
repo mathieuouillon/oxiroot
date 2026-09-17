@@ -25,6 +25,18 @@ oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
     [ReX](https://github.com/KenyC/ReX) TeX engine into the same IR. The `plot`
     feature pulls a pinned git dependency on ReX (it is not on crates.io).
 
+!!! tip "An SVG/PDF-only build"
+    PNG output (`png`) and TeX math (`math`) are features of `oxiroot-plot`, both
+    on by default. Depend on it with `default-features = false` to drop the
+    rasterizer, the TeX engine and the math font: SVG and PDF still render, `$…$`
+    labels are laid out as plain text, and asking for a PNG returns an error that
+    names the `png` feature.
+
+    ```toml
+    [dependencies]
+    oxiroot-plot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
+    ```
+
 ## API conventions
 
 The API mirrors matplotlib but reads as idiomatic Rust:

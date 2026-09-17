@@ -5,23 +5,16 @@
 //! [`TH1`] and the cosmetic/auxiliary members with ROOT's defaults.
 
 use std::borrow::Cow;
-use std::path::Path;
 
 use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
-use oxiroot_io_core::{
-    update_root_file_threshold, write_root_file_with_dirs_threshold,
-    write_root_file_with_streamers_threshold, Compression, ObjectRecord, Subdir, KSTART_BIG_FILE,
-};
-// The object framework (the `WriteRoot` trait + `record_of`) now lives in
-// `oxiroot-io-core`; re-export the trait so `oxiroot_hist::WriteRoot` and the
-// in-crate `crate::write::WriteRoot` path both keep resolving.
-pub(crate) use oxiroot_io_core::record_of;
-pub use oxiroot_io_core::WriteRoot;
+// The object framework (the `WriteRoot` trait and the `RootFile` builder) lives
+// in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, RootFile, SubdirBuilder}`
+// and the in-crate `crate::write::WriteRoot` path keep resolving.
+pub use oxiroot_io_core::{RootFile, SubdirBuilder, WriteRoot};
 
 use crate::axis::TAxis;
-use crate::base::Precision;
+use crate::base::BinContentType;
 use crate::graph::{GraphErrors, GraphFunction, TGraph};
 use crate::graph2d::TGraph2D;
 use crate::graphmultierrors::TGraphMultiErrors;
@@ -35,18 +28,21 @@ use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
-/// The `TList<TStreamerInfo>` blob a histogram-family object embeds when written
-/// on its own — the baked histogram blob plus any extra classes it (or its
-/// collection members) use. This is the [`WriteRoot::streamer_blob`]
-/// implementation shared by every writable type in this crate.
-pub(crate) fn hist_streamer_blob(obj: &dyn WriteRoot) -> Cow<'static, [u8]> {
-    let class = obj.root_class();
-    let contained = obj.contained_classes();
-    streamer_info_for(std::iter::once(class.as_str()).chain(contained.iter().map(String::as_str)))
-        .unwrap_or(Cow::Borrowed(HIST_STREAMER_INFO))
+/// The captured `TList<TStreamerInfo>` for the histogram family, as ROOT 6
+/// streams it: the histogram, profile, efficiency, sparse and graph classes this
+/// crate writes, with their bases, plus `TF1` and `TFormula` (a graph's attached
+/// functions). `TF2`/`TF3` are not in it; `oxiroot-hist-func` adds those through
+/// [`WriteRoot::streamer_classes`].
+///
+/// Return it from [`WriteRoot::streamer_blob`] for a type that belongs to this
+/// family. A file keeps only the first non-empty blob it is given, so the family
+/// must share this one list rather than bake its own.
+#[must_use]
+pub fn hist_streamer_blob() -> Cow<'static, [u8]> {
+    Cow::Borrowed(HIST_STREAMER_INFO)
 }
 
-/// `TH1`/`TH2`/`TH3` serialize at the precision carried by their `class_name`;
+/// `TH1`/`TH2`/`TH3` serialize with the bin content type carried by their `class_name`;
 /// the macro picks the right `write_th{1,2,3}{d,f,i,s,c,l}` for the suffix.
 macro_rules! impl_write_root_hist {
     ($ty:ty, $d:ident, $f:ident, $i:ident, $s:ident, $c:ident, $l:ident) => {
@@ -62,18 +58,18 @@ macro_rules! impl_write_root_hist {
             }
             fn to_root_bytes(&self) -> Vec<u8> {
                 let mut w = WBuffer::new();
-                match self.precision {
-                    Precision::Double => $d(&mut w, self),
-                    Precision::Float => $f(&mut w, self),
-                    Precision::Int => $i(&mut w, self),
-                    Precision::Short => $s(&mut w, self),
-                    Precision::Char => $c(&mut w, self),
-                    Precision::Long => $l(&mut w, self),
+                match self.bin_content_type {
+                    BinContentType::F64 => $d(&mut w, self),
+                    BinContentType::F32 => $f(&mut w, self),
+                    BinContentType::I32 => $i(&mut w, self),
+                    BinContentType::I16 => $s(&mut w, self),
+                    BinContentType::I8 => $c(&mut w, self),
+                    BinContentType::I64 => $l(&mut w, self),
                 }
                 w.into_vec()
             }
             fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_blob(self)
+                crate::write::hist_streamer_blob()
             }
         }
     };
@@ -100,7 +96,7 @@ macro_rules! impl_write_root_fixed {
                 $bytes(self)
             }
             fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_blob(self)
+                crate::write::hist_streamer_blob()
             }
         }
     };
@@ -126,7 +122,7 @@ impl WriteRoot for TGraph {
         tgraph_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_blob()
     }
 }
 
@@ -137,49 +133,20 @@ impl WriteRoot for TGraph {
 /// ROOT-written file with one of each type, kept uncompressed.
 const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
 
-/// The streamer info to embed for objects with class names `class_names`: the
-/// baked histogram blob, plus any persistable-object classes
-/// (`TObjString`/`TParameter<…>`) those objects use, so uproot can model them.
-/// Returns the baked blob borrowed when nothing extra is needed.
-fn streamer_info_for<'a>(
-    class_names: impl Iterator<Item = &'a str>,
-) -> Result<std::borrow::Cow<'static, [u8]>> {
-    use oxiroot_io_core::streamer_gen::append_streamer_infos;
-    use oxiroot_io_core::streamer_gen::Cls;
-    let mut extra: Vec<Cls> = Vec::new();
-    for class in class_names {
-        // A class may need several infos (e.g. a matrix plus its base); dedup by
-        // name so a shared base is embedded once.
-        for cls in crate::objects::streamer_classes(class) {
-            if !extra.iter().any(|c| c.name == cls.name) {
-                extra.push(cls);
-            }
-        }
-    }
-    if extra.is_empty() {
-        Ok(std::borrow::Cow::Borrowed(HIST_STREAMER_INFO))
-    } else {
-        Ok(std::borrow::Cow::Owned(append_streamer_infos(
-            HIST_STREAMER_INFO,
-            &extra,
-        )?))
-    }
-}
-
 // `fBits` values ROOT writes for the embedded TObjects in a fresh histogram.
 const HIST_BITS: u32 = 0x0300_0008;
 const AXIS_BITS: u32 = 0x0300_0000;
 const TLIST_BITS: u32 = 0x0301_0000;
 
 /// How a histogram's data `TArray` base is serialized — one of `write_tarray{c,
-/// s,i,l,f,d}`, picking the precision (`TArray{C,S,I,L64,F,D}`). Everything else
-/// in the object is identical across precisions, so a `TH*X` reuses the `TH*D`
+/// s,i,l,f,d}`, picking the bin content type (`TArray{C,S,I,L64,F,D}`). Everything
+/// else in the object is identical across bin content types, so a `TH*X` reuses the `TH*D`
 /// layout (only the outer class version differs: 0 for the Long64 `L` types).
 type ArrayWriter = fn(&mut WBuffer, &[f64]);
 
 /// Serialize a `TH1{D,F,C,S,I,L}` object (with its byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it. `version` is the class version
-/// (3 for C/S/I/F/D, 0 for L) and `write_array` picks the precision.
+/// (3 for C/S/I/F/D, 0 for L) and `write_array` picks the bin content type.
 fn write_th1_obj(w: &mut WBuffer, h: &TH1, version: u16, write_array: ArrayWriter) {
     let outer = w.begin_object(version);
     write_th1_base(w, h);
@@ -265,7 +232,7 @@ pub(crate) fn write_th3f(w: &mut WBuffer, h: &TH3) {
 }
 
 /// Generate the `write_*`/`*_to_bytes`/`write_*_file` trio for one integer
-/// histogram precision (`TH1C`/`TH2S`/`TH3I`/`TH1L`/…). The object layout is
+/// bin content type (`TH1C`/`TH2S`/`TH3I`/`TH1L`/…). The object layout is
 /// identical to the same-dimension `TH*D`/`TH*F` apart from the class version
 /// `$ver` (3/4 for C/S/I, 0 for the Long64 `L`) and the data `TArray` (`$array`).
 /// The in-memory `f64` bin contents are narrowed to the integer type.
@@ -473,7 +440,7 @@ pub(crate) fn tefficiency_to_bytes(h: &TEfficiency) -> Vec<u8> {
 
 /// Write an object-pointer member: `{byte count}{kNewClassTag}{class\0}{body}`,
 /// with `body` written by `f`.
-fn write_object_ptr(w: &mut WBuffer, class: &str, f: impl FnOnce(&mut WBuffer)) {
+pub(crate) fn write_object_ptr(w: &mut WBuffer, class: &str, f: impl FnOnce(&mut WBuffer)) {
     let bc = w.reserve(4);
     let start = w.len();
     w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
@@ -739,186 +706,11 @@ fn write_functions(w: &mut WBuffer, functions: &[GraphFunction]) {
         w.string(""); // fName
         w.be_i32(functions.len() as i32); // fSize
         for f in functions {
-            write_object_ptr(w, "TF1", |w| write_tf1_body(w, &Tf1Fields::from_graph(f)));
+            write_object_ptr(w, "TF1", |w| f.write_tf1_body(w, 1, 100));
             w.string(""); // per-element option string
         }
         w.end_object(tl);
     });
-}
-
-/// The `TF1` member data shared by a graph's `fFunctions` entry and a standalone
-/// [`TF1`](crate::TF1)/[`TF2`](crate::TF2)/[`TF3`](crate::TF3) key. `ndim`/`npx`
-/// differ between a 1-D standalone `TF1` (100 px) and a `TF2`/`TF3` base (30 px).
-pub(crate) struct Tf1Fields<'a> {
-    pub name: &'a str,
-    pub title: &'a str,
-    /// The `[pN]`-form formula string ROOT stores as `TFormula::fFormula`.
-    pub formula: &'a str,
-    pub params: &'a [f64],
-    pub par_errors: &'a [f64],
-    pub par_min: &'a [f64],
-    pub par_max: &'a [f64],
-    pub xmin: f64,
-    pub xmax: f64,
-    pub chi2: f64,
-    pub ndf: i32,
-    pub ndim: i32,
-    pub npx: i32,
-}
-
-impl<'a> Tf1Fields<'a> {
-    fn from_graph(f: &'a GraphFunction) -> Tf1Fields<'a> {
-        Tf1Fields {
-            name: &f.name,
-            title: &f.title,
-            formula: &f.formula,
-            params: &f.params,
-            par_errors: &f.par_errors,
-            par_min: &f.par_min,
-            par_max: &f.par_max,
-            xmin: f.xmin,
-            xmax: f.xmax,
-            chi2: f.chi2,
-            ndf: f.ndf,
-            ndim: 1,
-            npx: 100,
-        }
-    }
-}
-
-/// Write a `TF1` object body (version 12): the `TNamed`/`TAtt*` bases, the
-/// scalar members, the parameter `vector<double>`s, then the `fFormula`
-/// `TFormula*` and null `fParams`/`fComposition` pointers.
-pub(crate) fn write_tf1_body(w: &mut WBuffer, f: &Tf1Fields) {
-    let npar = f.params.len();
-    let obj = w.begin_object(12); // TF1 version 12
-    write_tnamed(w, 0, f.name, f.title);
-
-    let line = w.begin_object(2); // TAttLine
-    w.be_i16(2); // fLineColor (ROOT's TF1 default)
-    w.be_i16(1); // fLineStyle
-    w.be_i16(2); // fLineWidth (ROOT's TF1 default)
-    w.end_object(line);
-    let fill = w.begin_object(2); // TAttFill
-    w.be_i16(19); // fFillColor (ROOT's TF1 default)
-    w.be_i16(0); // fFillStyle
-    w.end_object(fill);
-    let marker = w.begin_object(3); // TAttMarker
-    w.be_i16(1); // fMarkerColor
-    w.be_i16(1); // fMarkerStyle
-    w.be_f32(1.0); // fMarkerSize
-    w.end_object(marker);
-
-    w.be_f64(f.xmin); // fXmin
-    w.be_f64(f.xmax); // fXmax
-    w.be_i32(npar as i32); // fNpar
-    w.be_i32(f.ndim); // fNdim
-    w.be_i32(f.npx); // fNpx
-    w.be_i32(0); // fType (kFormula)
-    w.be_i32(0); // fNpfits
-    w.be_i32(f.ndf); // fNDF
-    w.be_f64(f.chi2); // fChisquare
-    w.be_f64(-1111.0); // fMinimum
-    w.be_f64(-1111.0); // fMaximum
-    write_vector_f64(w, f.par_errors); // fParErrors
-    write_vector_f64(w, f.par_min); // fParMin
-    write_vector_f64(w, f.par_max); // fParMax
-    write_vector_f64(w, &[]); // fSave (empty)
-    w.u8(0); // fNormalized
-    w.be_f64(0.0); // fNormIntegral
-    write_object_ptr(w, "TFormula", |w| write_tformula_body(w, f)); // fFormula
-    w.be_u32(0); // fParams (TF1Parameters*) = null
-    w.be_u32(0); // fComposition (TF1AbsComposition*) = null
-    w.end_object(obj);
-}
-
-/// Write a `TF2` object body (version 4): the `TF1` base, then `fYmin`/`fYmax`,
-/// `fNpy`, and an empty `fContour` (`TArrayD`).
-pub(crate) fn write_tf2_body(w: &mut WBuffer, f: &Tf1Fields, ymin: f64, ymax: f64) {
-    let obj = w.begin_object(4); // TF2 version 4
-    write_tf1_body(w, f); // TF1 base (ndim = 2, npx = 30)
-    w.be_f64(ymin); // fYmin
-    w.be_f64(ymax); // fYmax
-    w.be_i32(f.npx); // fNpy (ROOT keeps npx == npy by default)
-    w.be_i32(0); // fContour: empty TArrayD (fN = 0)
-    w.end_object(obj);
-}
-
-/// Write a `TF3` object body (version 3): the `TF2` base, then `fZmin`/`fZmax`
-/// and `fNpz`.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn write_tf3_body(
-    w: &mut WBuffer,
-    f: &Tf1Fields,
-    ymin: f64,
-    ymax: f64,
-    zmin: f64,
-    zmax: f64,
-) {
-    let obj = w.begin_object(3); // TF3 version 3
-    write_tf2_body(w, f, ymin, ymax); // TF2 base (ndim = 3, npx = 30)
-    w.be_f64(zmin); // fZmin
-    w.be_f64(zmax); // fZmax
-    w.be_i32(f.npx); // fNpz
-    w.end_object(obj);
-}
-
-/// `TFormula::kNotGlobal` (`BIT(10)`): set on a formula owned by another object so
-/// that, on read, ROOT does *not* register it in `gROOT`'s global function list
-/// (which would re-JIT it and crash in a headless/JIT-less context). ROOT sets
-/// this on every embedded `TFormula`; omitting it makes ROOT segfault on read.
-const FORMULA_NOT_GLOBAL: u32 = 0x0000_0400;
-
-/// Write a `TFormula` object body (version 14): `TNamed`, `fClingParameters`,
-/// `fAllParametersSetted`, the `fParams` name→index map, the `[pN]`-form formula
-/// string, and the trailing scalars/empty `fLinearParts`.
-fn write_tformula_body(w: &mut WBuffer, f: &Tf1Fields) {
-    let npar = f.params.len();
-    let obj = w.begin_object(14); // TFormula version 14
-    write_tnamed(w, FORMULA_NOT_GLOBAL, f.name, f.title);
-    write_vector_f64(w, f.params); // fClingParameters
-    w.u8(1); // fAllParametersSetted
-    write_param_map(w, npar); // fParams (map<TString,int>)
-    w.string(f.formula); // fFormula (in [pN] form)
-    w.be_i32(f.ndim); // fNdim
-    w.be_i32(0); // fNumber
-                 // fLinearParts: an empty objectwise vector<TObject*>.
-    let lp = w.reserve(4);
-    let start = w.len();
-    w.be_i16(0x000a); // streamer version
-    w.be_i32(0); // count
-    let len = (w.len() - start) as u32;
-    w.patch_be_u32(lp, 0x4000_0000 | len);
-    w.u8(0); // fVectorized
-    w.end_object(obj);
-}
-
-/// Write an objectwise `vector<double>`: `{byte count}{ver 0x000a}{count}{f64s}`.
-fn write_vector_f64(w: &mut WBuffer, data: &[f64]) {
-    let bc = w.reserve(4);
-    let start = w.len();
-    w.be_i16(0x000a); // streamer version
-    w.be_i32(data.len() as i32);
-    for &d in data {
-        w.be_f64(d);
-    }
-    let len = (w.len() - start) as u32;
-    w.patch_be_u32(bc, 0x4000_0000 | len);
-}
-
-/// Write a `TFormula::fParams` `map<TString,int>` for `n` parameters: the entries
-/// `p0→0, p1→1, …` in index order (ROOT re-sorts on read by its own comparator).
-fn write_param_map(w: &mut WBuffer, n: usize) {
-    let bc = w.reserve(4);
-    let start = w.len();
-    w.be_i16(0x000a); // streamer version
-    w.be_i32(n as i32); // count
-    for i in 0..n {
-        w.string(&format!("p{i}"));
-        w.be_i32(i as i32);
-    }
-    let len = (w.len() - start) as u32;
-    w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
 /// Serialize a `TH2Poly` object to a fresh byte vector.
@@ -1060,7 +852,7 @@ impl WriteRoot for TGraph2D {
         tgraph2d_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_blob()
     }
 }
 
@@ -1137,204 +929,7 @@ impl WriteRoot for TGraphMultiErrors {
         tgraphmultierrors_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
-    }
-}
-
-/// Reject objects that cannot be addressed by key: an empty name (it could never
-/// be looked up) or two objects sharing a name in one directory (the second
-/// would silently shadow the first on read).
-fn check_names(records: &[ObjectRecord], location: &str) -> Result<()> {
-    let mut seen = std::collections::HashSet::new();
-    for r in records {
-        if r.name.is_empty() {
-            return Err(Error::Format(format!(
-                "cannot write an unnamed {} in {location}; give it a key name with `.named(\"...\")`",
-                r.class_name
-            )));
-        }
-        if !seen.insert(r.name.as_str()) {
-            return Err(Error::DuplicateName {
-                name: r.name.clone(),
-                location: location.to_string(),
-            });
-        }
-    }
-    Ok(())
-}
-
-/// Builder for composing a ROOT file from several objects — optionally organised
-/// into subdirectories, or appended to an existing file.
-///
-/// For the common case of a single object, prefer the
-/// [`WriteRoot::write_root`] shorthand. Reach for `RootFile` when a file holds
-/// several objects, uses subdirectories, or is being appended to. Any mix of
-/// writable types (histograms, profiles, graphs, …) can go in one file:
-///
-/// ```no_run
-/// use oxiroot_hist::{Compression, Hist, RootFile};
-/// let pt = Hist::reg(10, 0.0, 1.0).double().named("pt");
-/// let prof = Hist::reg(10, 0.0, 1.0).profile().named("prof");
-/// let signal = Hist::reg(10, 0.0, 1.0).double().named("sig");
-/// RootFile::create("out.root")
-///     .add(&pt)
-///     .add(&prof)
-///     .dir("by_region", |d| d.add(&signal)) // a TDirectory holding `sig`
-///     .write(Compression::Zstd(5))?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-///
-/// Append to an existing file with [`open`](RootFile::open):
-///
-/// ```no_run
-/// # use oxiroot_hist::{Compression, Hist, RootFile};
-/// # let extra = Hist::reg(10, 0.0, 1.0).double().named("extra");
-/// RootFile::open("out.root")?.add(&extra).write(Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-#[must_use = "a RootFile builder does nothing until `.write(...)` is called"]
-pub struct RootFile {
-    path: std::path::PathBuf,
-    /// `Some` in append mode (the existing file bytes); `None` for a fresh file.
-    existing: Option<Vec<u8>>,
-    root: Vec<ObjectRecord>,
-    dirs: Vec<Subdir>,
-    /// Classes contained inside added objects (collection members) whose streamer
-    /// info must also be embedded.
-    contained: Vec<String>,
-}
-
-impl RootFile {
-    /// Start a fresh ROOT file at `path` (any existing file is overwritten on
-    /// [`write`](RootFile::write)).
-    pub fn create(path: impl AsRef<Path>) -> RootFile {
-        RootFile {
-            path: path.as_ref().to_path_buf(),
-            existing: None,
-            root: Vec::new(),
-            dirs: Vec::new(),
-            contained: Vec::new(),
-        }
-    }
-
-    /// Open an existing ROOT file at `path` to append more objects to its top
-    /// directory: the current contents are kept (appended in place, so existing
-    /// objects never move) and the added objects written after them. A new object
-    /// whose name matches an existing one lands at a higher cycle, as ROOT does.
-    /// Files that contain subdirectories or an RNTuple are preserved — only
-    /// *adding* new subdirectories in this mode is unsupported. See
-    /// [`update_root_file`].
-    pub fn open(path: impl AsRef<Path>) -> Result<RootFile> {
-        let path = path.as_ref().to_path_buf();
-        let existing = std::fs::read(&path)?;
-        Ok(RootFile {
-            path,
-            existing: Some(existing),
-            root: Vec::new(),
-            dirs: Vec::new(),
-            contained: Vec::new(),
-        })
-    }
-
-    /// Add an object to the file's top directory.
-    // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> RootFile {
-        self.contained.extend(object.contained_classes());
-        self.root.push(record_of(object));
-        self
-    }
-
-    /// Add a `TDirectory` named `name` holding the objects added inside `build`
-    /// (e.g. one directory per analysis region). Only meaningful when creating a
-    /// file; see [`open`](RootFile::open).
-    pub fn dir(mut self, name: impl Into<String>, build: impl FnOnce(Dir) -> Dir) -> RootFile {
-        let dir = build(Dir {
-            objects: Vec::new(),
-            contained: Vec::new(),
-        });
-        self.contained.extend(dir.contained);
-        self.dirs.push(Subdir {
-            name: name.into(),
-            objects: dir.objects,
-        });
-        self
-    }
-
-    /// Build the file bytes and write them to the path. A fresh builder writes a
-    /// new file; one from [`open`](RootFile::open) rewrites the file with its
-    /// existing contents plus the additions. A file that grows past ~2 GiB is
-    /// written in ROOT's 64-bit ("big") container form automatically.
-    pub fn write(self, compression: Compression) -> Result<()> {
-        self.write_threshold(compression, KSTART_BIG_FILE)
-    }
-
-    /// Like [`write`](RootFile::write) but with the big-file threshold injectable
-    /// for tests, so the 64-bit container path can be exercised without producing
-    /// a 2 GiB file.
-    #[doc(hidden)]
-    pub fn write_threshold(self, compression: Compression, threshold: u64) -> Result<()> {
-        // Reject unnamed / clashing keys before writing — loudly, instead of
-        // ROOT's silent shadow-on-read.
-        check_names(&self.root, "the top directory")?;
-        for dir in &self.dirs {
-            check_names(&dir.objects, &format!("subdirectory {:?}", dir.name))?;
-        }
-        let file_name = self
-            .path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("file.root")
-            .to_string();
-        let setting = compression.setting();
-        let streamers = streamer_info_for(
-            self.root
-                .iter()
-                .chain(self.dirs.iter().flat_map(|d| d.objects.iter()))
-                .map(|r| r.class_name.as_str())
-                .chain(self.contained.iter().map(String::as_str)),
-        )?;
-        let streamers = Some(streamers.as_ref());
-        let bytes = match self.existing {
-            Some(existing) => {
-                if !self.dirs.is_empty() {
-                    return Err(Error::Format(
-                        "adding new subdirectories while appending is not supported \
-                         (append adds objects to the top directory; existing \
-                         subdirectories are preserved)"
-                            .to_string(),
-                    ));
-                }
-                update_root_file_threshold(
-                    &existing, &file_name, &self.root, setting, streamers, threshold,
-                )?
-            }
-            None if self.dirs.is_empty() => write_root_file_with_streamers_threshold(
-                &file_name, &self.root, setting, streamers, threshold,
-            )?,
-            None => write_root_file_with_dirs_threshold(
-                &file_name, &self.root, &self.dirs, setting, streamers, threshold,
-            )?,
-        };
-        std::fs::write(&self.path, bytes)?;
-        Ok(())
-    }
-}
-
-/// A subdirectory being built inside a [`RootFile`]; see [`RootFile::dir`].
-#[must_use]
-pub struct Dir {
-    objects: Vec<ObjectRecord>,
-    contained: Vec<String>,
-}
-
-impl Dir {
-    /// Add an object to this subdirectory.
-    #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> Dir {
-        self.contained.extend(object.contained_classes());
-        self.objects.push(record_of(object));
-        self
+        crate::write::hist_streamer_blob()
     }
 }
 

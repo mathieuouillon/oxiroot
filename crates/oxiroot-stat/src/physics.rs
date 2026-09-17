@@ -5,6 +5,7 @@
 use std::f64::consts::SQRT_2;
 
 use crate::distributions::ChiSquared;
+use crate::error::{check_paired, StatError};
 use crate::special::{betaincinv, erfc, gammaln, ndtri};
 
 /// One-sided p-value → Gaussian significance `Z` (number of σ): `Z = Φ⁻¹(1 − p)`.
@@ -22,36 +23,47 @@ pub fn pvalue_from_significance(z: f64) -> f64 {
 }
 
 /// Weighted arithmetic mean `Σwᵢxᵢ / Σwᵢ`.
-#[must_use]
-pub fn weighted_mean(values: &[f64], weights: &[f64]) -> f64 {
+///
+/// # Errors
+///
+/// [`StatError::LengthMismatch`] if `values` and `weights` differ in length.
+pub fn weighted_mean(values: &[f64], weights: &[f64]) -> Result<f64, StatError> {
+    check_paired(values.len(), weights.len())?;
     let sw: f64 = weights.iter().sum();
-    values
+    Ok(values
         .iter()
         .zip(weights)
         .map(|(&x, &w)| w * x)
         .sum::<f64>()
-        / sw
+        / sw)
 }
 
 /// Weighted (population) standard deviation about the weighted mean.
-#[must_use]
-pub fn weighted_std(values: &[f64], weights: &[f64]) -> f64 {
-    let m = weighted_mean(values, weights);
+///
+/// # Errors
+///
+/// [`StatError::LengthMismatch`] if `values` and `weights` differ in length.
+pub fn weighted_std(values: &[f64], weights: &[f64]) -> Result<f64, StatError> {
+    let m = weighted_mean(values, weights)?;
     let sw: f64 = weights.iter().sum();
-    (values
+    Ok((values
         .iter()
         .zip(weights)
         .map(|(&x, &w)| w * (x - m) * (x - m))
         .sum::<f64>()
         / sw)
-        .sqrt()
+        .sqrt())
 }
 
 /// Combine independent measurements `valuesᵢ ± errorsᵢ` by inverse-variance
 /// weighting. Returns the combined `(mean, error)`, where the weights are
 /// `1/errorᵢ²` and the error on the mean is `1/√Σwᵢ`.
-#[must_use]
-pub fn combine_measurements(values: &[f64], errors: &[f64]) -> (f64, f64) {
+///
+/// # Errors
+///
+/// [`StatError::LengthMismatch`] if `values` and `errors` differ in length.
+pub fn combine_measurements(values: &[f64], errors: &[f64]) -> Result<(f64, f64), StatError> {
+    check_paired(values.len(), errors.len())?;
     let weights: Vec<f64> = errors.iter().map(|&e| 1.0 / (e * e)).collect();
     let sw: f64 = weights.iter().sum();
     let mean = values
@@ -60,7 +72,7 @@ pub fn combine_measurements(values: &[f64], errors: &[f64]) -> (f64, f64) {
         .map(|(&x, &w)| w * x)
         .sum::<f64>()
         / sw;
-    (mean, (1.0 / sw).sqrt())
+    Ok((mean, (1.0 / sw).sqrt()))
 }
 
 /// Clopper–Pearson exact confidence interval for a binomial proportion (`k`

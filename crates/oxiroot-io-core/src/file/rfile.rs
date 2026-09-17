@@ -14,7 +14,7 @@ use super::header::FileHeader;
 use super::key::TKey;
 use super::source::{ByteSource, BytesSource, FileSource};
 use crate::buffer::RBuffer;
-use crate::error::{Error, Result};
+use crate::error::{decompress_payload, Error, Result};
 use crate::read_object::read_object;
 use crate::streamer_info::{parse_streamer_info, StreamerRegistry};
 use crate::value::Value;
@@ -25,7 +25,7 @@ use crate::value::Value;
 const HEADER_PROBE: u64 = 512;
 
 /// An open ROOT file, read through a [`ByteSource`]. The default
-/// [`open`](Self::open) reads the whole file into memory; [`open_ranged`] and
+/// [`open`](Self::open) reads the whole file into memory; [`open_ranged`](Self::open_ranged) and
 /// (with the `http` feature) [`open_url`](Self::open_url) read only the byte
 /// ranges each object touches, never downloading the file whole.
 ///
@@ -199,8 +199,8 @@ impl RFile {
             .max_by_key(|k| k.cycle)
             .ok_or_else(|| Error::Format(format!("no key {name:?} in subdirectory {subdir:?}")))?;
         let payload = self.key_payload(key)?;
-        let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
-            .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
+        let object =
+            decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;
         Ok((key.class_name.clone(), object, key.key_len as usize))
     }
 
@@ -256,8 +256,7 @@ impl RFile {
         let win = self.read_at(self.header.seek_info, self.header.nbytes_info as usize)?;
         let key = TKey::read(&mut RBuffer::new(&win))?;
         let payload = payload_in_window(&win, &key)?;
-        let object = oxiroot_compress::decompress(payload, key.obj_len as usize)
-            .map_err(|e| Error::Format(format!("decompressing streamer info: {e}")))?;
+        let object = decompress_payload(payload, key.obj_len as usize, "streamer info")?;
         Ok(Some((object, key.key_len as usize)))
     }
 

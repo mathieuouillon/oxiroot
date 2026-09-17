@@ -15,7 +15,7 @@
 use oxiroot::hadd::{merge_files, Merger};
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
     let path = |name: &str| dir.join(name);
 

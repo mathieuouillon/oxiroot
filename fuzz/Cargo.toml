@@ -12,6 +12,9 @@ libfuzzer-sys = "0.4"
 oxiroot-io-core = { path = "../crates/oxiroot-io-core" }
 oxiroot-rntuple = { path = "../crates/oxiroot-rntuple" }
 oxiroot-compress = { path = "../crates/oxiroot-compress" }
+oxiroot-tree = { path = "../crates/oxiroot-tree" }
+oxiroot-hist = { path = "../crates/oxiroot-hist" }
+oxiroot-hist-func = { path = "../crates/oxiroot-hist-func" }
 
 [[bin]]
 name = "rfile"
@@ -23,6 +26,20 @@ bench = false
 [[bin]]
 name = "rntuple"
 path = "fuzz_targets/rntuple.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tree"
+path = "fuzz_targets/tree.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hist"
+path = "fuzz_targets/hist.rs"
 test = false
 doc = false
 bench = false

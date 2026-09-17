@@ -10,7 +10,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     // --- Four 1-D functions, one per formula flavour. --------------------------
     // A hand-written expression: a decaying sine. Parameters are [0], [1], …; the
     // free variable is `x`. `with_params` fills them in builder style.
