@@ -60,6 +60,5 @@ impl TexSymbolType {
 pub struct Symbol<'a> {
     pub codepoint: char,
     pub name: & 'a str,
-    pub description: & 'a str,
     pub atom_type: TexSymbolType,
 }
