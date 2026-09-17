@@ -55,3 +55,29 @@ fn a_bad_formula_is_an_error() {
     let bad = GraphFunction::new("bad", "[0]*(x", vec![1.0], 0.0, 1.0);
     assert!(TF1::from_graph_function(bad).is_err());
 }
+
+#[cfg(feature = "fit")]
+#[test]
+fn to_model_works_for_a_function_with_a_free_text_title() {
+    let mut record = GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0);
+    record.title = "Linear fit".to_string(); // a legend title, not a formula
+    let f = TF1::from_graph_function(record).unwrap();
+    let model = f.to_model();
+    assert_eq!(model.params, vec![1.0, 2.0]);
+    assert_eq!(model.param_names.len(), 2);
+    for x in [0.0, 0.5, 1.75] {
+        assert_eq!(model.eval(x), f.eval(x));
+    }
+}
+
+#[cfg(feature = "fit")]
+#[test]
+fn to_model_keeps_the_names_of_a_shortcut_formula() {
+    let f = TF1::new("g", "gaus", -5.0, 5.0)
+        .unwrap()
+        .with_params(vec![2.0, 0.5, 1.5]);
+    let model = f.to_model();
+    let expected = oxiroot_fit::Model::from_formula("g", "gaus").unwrap();
+    assert_eq!(model.param_names, expected.param_names);
+    assert_eq!(model.eval(0.25), f.eval(0.25));
+}

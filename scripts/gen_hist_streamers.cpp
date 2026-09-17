@@ -1,9 +1,9 @@
 // Dev-only: regenerate crates/oxiroot-hist/src/histograms.streamerinfo.bin.
 //
-// Writes one object of every histogram class oxiroot can write (oxiroot-hist,
-// plus the TF1/TF2/TF3 of oxiroot-hist-func, which share the blob) into a
+// Writes one object of every histogram class oxiroot-hist can write into a
 // single ROOT file, so ROOT accumulates a TStreamerInfo for each (plus all their
-// bases). The combined TList<TStreamerInfo> is then extracted by oxiroot
+// bases, and TF1/TFormula for graphs' attached functions). oxiroot-hist-func's
+// TF1/TF2/TF3 share this blob and add the TF2/TF3 infos themselves. The combined TList<TStreamerInfo> is then extracted by oxiroot
 // (RFile::streamer_info_object) and baked into the crate. Adding a new
 // persistable type means adding one object here and re-running.
 //

@@ -58,7 +58,8 @@ impl Random {
     /// `GetRandom`). Makes exactly one [`uniform`](Random::uniform) draw.
     ///
     /// Returns `None`, without drawing, when `edges.len() != weights.len() + 1`
-    /// or the weights do not sum to a positive total.
+    /// or the weights do not sum to a positive, finite total (a NaN or infinite
+    /// weight included).
     ///
     /// ```
     /// use oxiroot_hist::Random;
@@ -84,7 +85,7 @@ impl Default for Random {
 
 /// The normalized cumulative of `weights` (one entry per bin): `cdf[0] = 0`,
 /// `cdf[k] = Σ weights[..k] / total`, length `weights.len() + 1`. `None` if the
-/// total is not positive (nothing to sample).
+/// total is not a positive, finite number (nothing to sample).
 fn build_cdf(weights: &[f64]) -> Option<Vec<f64>> {
     let mut cdf = vec![0.0; weights.len() + 1];
     let mut acc = 0.0;
@@ -92,7 +93,7 @@ fn build_cdf(weights: &[f64]) -> Option<Vec<f64>> {
         acc += w;
         cdf[i + 1] = acc;
     }
-    if acc <= 0.0 {
+    if !(acc.is_finite() && acc > 0.0) {
         return None;
     }
     for c in &mut cdf {
@@ -341,6 +342,14 @@ mod tests {
         // No positive total.
         assert_eq!(rng.sample_binned(&[0.0, 0.0], &[0.0, 1.0, 2.0]), None);
         assert_eq!(rng.sample_binned(&[], &[0.0]), None);
+        // No finite total.
+        assert_eq!(rng.sample_binned(&[f64::NAN], &[0.0, 1.0]), None);
+        assert_eq!(rng.sample_binned(&[1.0, f64::NAN], &[0.0, 1.0, 2.0]), None);
+        assert_eq!(rng.sample_binned(&[f64::INFINITY], &[0.0, 1.0]), None);
+        assert_eq!(
+            rng.sample_binned(&[f64::MAX, f64::MAX], &[0.0, 1.0, 2.0]),
+            None
+        );
         // None of the above consumed a draw.
         assert_eq!(rng.uniform(), Random::seed(9).uniform());
     }

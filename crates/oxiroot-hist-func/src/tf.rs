@@ -241,11 +241,23 @@ impl TF1 {
     /// Convert to a fittable [`Model`](oxiroot_fit::Model), seeded with this
     /// function's current parameters — so `data.fit(&tf1.to_model())` fits data
     /// to this function's shape. Requires the `fit` feature.
+    ///
+    /// The model evaluates the same formula as [`eval`](TF1::eval). Its
+    /// parameter names come from the title when the title is a formula with the
+    /// same number of parameters (so `gaus` keeps its named parameters);
+    /// otherwise, as for a read function whose title is free text, from the
+    /// canonical `[pN]` formula.
     #[must_use]
     pub fn to_model(&self) -> oxiroot_fit::Model {
-        oxiroot_fit::Model::from_formula(self.name(), self.title())
-            .expect("a TF1 always holds an already-parsed formula")
-            .with_params(self.params().to_vec())
+        let formula = self.core.formula.clone();
+        let names: Vec<String> = match Formula::parse(self.title()) {
+            Ok(title) if title.npar() == formula.npar() => title.param_names().to_vec(),
+            _ => formula.param_names().to_vec(),
+        };
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        oxiroot_fit::Model::new(self.name(), &names, self.params().to_vec(), move |x, p| {
+            formula.eval1(x, p)
+        })
     }
 }
 

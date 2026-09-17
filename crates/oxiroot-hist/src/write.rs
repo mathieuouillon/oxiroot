@@ -28,9 +28,11 @@ use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
-/// The captured `TList<TStreamerInfo>` describing the histogram family: every
-/// class the histogram types (and the `TF1`/`TF2`/`TF3` functions of
-/// `oxiroot-hist-func`) write, as ROOT 6 streams it.
+/// The captured `TList<TStreamerInfo>` for the histogram family, as ROOT 6
+/// streams it: the histogram, profile, efficiency, sparse and graph classes this
+/// crate writes, with their bases, plus `TF1` and `TFormula` (a graph's attached
+/// functions). `TF2`/`TF3` are not in it; `oxiroot-hist-func` adds those through
+/// [`WriteRoot::streamer_classes`].
 ///
 /// Return it from [`WriteRoot::streamer_blob`] for a type that belongs to this
 /// family. A file keeps only the first non-empty blob it is given, so the family

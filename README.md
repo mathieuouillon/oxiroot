@@ -834,7 +834,7 @@ on, so nothing extra is needed.
 
 | Crate | Purpose |
 |-------|---------|
-| `oxiroot` | Facade: `prelude` + re-exports of everything below |
+| `oxiroot` | Facade: `prelude` + re-exports of the library crates below (not `oxiroot-formula` or the CLI) |
 | `oxiroot-io-core` | `TFile` container, buffer primitives, streamer + object-reference engine, the `WriteRoot`/`ReadRoot` object framework, `Error` |
 | `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
