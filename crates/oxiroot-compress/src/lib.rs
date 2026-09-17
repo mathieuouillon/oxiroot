@@ -11,7 +11,9 @@
 
 mod codec;
 mod header;
+mod setting;
 pub use header::{Algorithm, BlockHeader, HDR_SIZE, MAX_CHUNK_SIZE};
+pub use setting::Compression;
 
 use std::fmt;
 
@@ -147,7 +149,8 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
     Ok(out)
 }
 
-/// Compress `src` according to `settings` (`algorithm * 100 + level`).
+/// Compress `src` according to `settings` (`algorithm * 100 + level`, as
+/// [`Compression::setting`] returns).
 ///
 /// `settings == 0` means "store uncompressed": the input is returned unchanged
 /// (the caller stores it without a block header). Otherwise the data is encoded

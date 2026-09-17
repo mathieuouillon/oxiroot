@@ -1,13 +1,19 @@
 //! Pure-Rust plotting for ROOT histograms and graphs.
 //!
-//! `oxiroot-plot` renders [`oxiroot_hist`] objects (`TH1`/`TH2`/`TGraph`/
-//! `TProfile`) to **SVG, PNG, and PDF** with a matplotlib-like API and an
-//! mplhep-style histogram look — no ROOT, no matplotlib, no system fonts.
+//! `oxiroot-plot` renders histograms and graphs to **SVG, PNG, and PDF** with a
+//! matplotlib-like API and an mplhep-style histogram look — no ROOT, no
+//! matplotlib, no system fonts. It draws the `oxiroot-hist` types
+//! (`TH1`/`TH2`/`TGraph`/`TProfile`, the `hist` feature) and any other data that
+//! implements [`Hist1dData`], [`Hist2dData`] or [`PointData`].
 //! Everything is drawn through one backend-independent draw IR that fans out
 //! to a tiny-skia raster (PNG), a hand-written SVG, and a hand-written PDF, so
 //! the three outputs share identical geometry. The default font is STIX Two (a
 //! LaTeX-like serif; see [`FontSet`]), and `$…$` math is typeset with the ReX
 //! TeX engine into the same IR.
+//!
+//! The `hist`, `png` (PNG output) and `math` (TeX math) features are on by
+//! default. Without them, SVG and PDF still render, math spans are laid out as
+//! plain text, and a PNG request returns [`Error::MissingFeature`].
 //!
 //! # What it can draw
 //!
@@ -86,6 +92,7 @@
 pub mod axes;
 pub mod cmap;
 pub mod color;
+pub mod data;
 pub mod error;
 pub mod figure;
 pub mod fonts;
@@ -112,6 +119,7 @@ pub use artists::{HistType, Marker, ParseHistTypeError, ParseMarkerError};
 pub use axes::{Axes, CurveOpts, ErrorbarOpts, Hist2dOpts, HistOpts};
 pub use cmap::{Colormap, ParseColormapError};
 pub use color::{Color, ParseColorError, TAB10};
+pub use data::{Hist1dData, Hist2dData, PointData};
 pub use error::{Error, Result};
 pub use figure::{
     ratio_subplots, ratio_subplots_with, subplots, subplots_grid, subplots_grid_with,
@@ -130,12 +138,25 @@ mod tests {
     // The render IR, text/math layout, and backends are private to the crate;
     // the tests reach them through `crate::` (still accessible in-crate).
     use crate::{draw, mathtext, render, text};
+    #[cfg(feature = "hist")]
     use oxiroot_hist::{Hist, TGraph, TH1};
 
-    fn is_png(bytes: &[u8]) -> bool {
-        bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+    /// `groups` render to a PNG, or, without the `png` feature, to the error
+    /// that names it; they render to an SVG either way.
+    fn assert_renders(groups: &[draw::DrawGroup], w: u32, h: u32) {
+        let png = render::raster::render_png(groups, w, h, Color::WHITE);
+        #[cfg(feature = "png")]
+        assert!(png.unwrap().starts_with(b"\x89PNG\r\n\x1a\n"));
+        #[cfg(not(feature = "png"))]
+        assert!(matches!(
+            png,
+            Err(Error::MissingFeature { feature: "png", .. })
+        ));
+        let svg = render::svg::render(groups, w, h, Color::WHITE);
+        assert!(svg.starts_with("<svg") && svg.contains("</svg>"));
     }
 
+    #[cfg(feature = "hist")]
     fn gauss_hist() -> TH1 {
         let mut seed = 0x2545_F491_4F6C_DD1Du64;
         let mut next = move || {
@@ -177,9 +198,7 @@ mod tests {
             0.0,
         ));
         let groups = [g];
-        assert!(is_png(
-            &render::raster::render_png(&groups, w, h, Color::WHITE).unwrap()
-        ));
+        assert_renders(&groups, w, h);
         let svg = render::svg::render(&groups, w, h, Color::WHITE);
         assert!(svg.starts_with("<svg") && svg.contains("</svg>") && svg.contains("<path"));
     }
@@ -192,27 +211,25 @@ mod tests {
         ax.plot(&xs, &ys);
         ax.xlabel("$x$ [rad]");
         let (w, h) = ax.style.figsize_px();
-        assert!(is_png(
-            &render::raster::render_png(&ax.render(w, h), w, h, Color::WHITE).unwrap()
-        ));
+        assert_renders(&ax.render(w, h), w, h);
     }
 
     #[test]
+    #[cfg(feature = "hist")]
     fn hist_step_and_errorbar() {
         let h = gauss_hist();
         let mut ax = Axes::new();
         ax.hist_with(&h, HistOpts::new().yerr());
         let (w, hh) = ax.style.figsize_px();
         let groups = ax.render(w, hh);
-        assert!(is_png(
-            &render::raster::render_png(&groups, w, hh, Color::WHITE).unwrap()
-        ));
+        assert_renders(&groups, w, hh);
         // mplhep step + yerr emits many primitives (staircase + error bars).
         let cmds: usize = groups.iter().map(|g| g.cmds.len()).sum();
         assert!(cmds > 40, "expected a rich staircase, got {cmds} commands");
     }
 
     #[test]
+    #[cfg(feature = "hist")]
     fn graph_with_legend() {
         let x: Vec<f64> = (0..6).map(|i| 60.0 + 12.0 * i as f64).collect();
         let y: Vec<f64> = x
@@ -225,12 +242,11 @@ mod tests {
         ax.errorbar_with(&g, ErrorbarOpts::new().color(Color::BLACK).label("data"));
         ax.legend();
         let (w, h) = ax.style.figsize_px();
-        assert!(is_png(
-            &render::raster::render_png(&ax.render(w, h), w, h, Color::WHITE).unwrap()
-        ));
+        assert_renders(&ax.render(w, h), w, h);
     }
 
     #[test]
+    #[cfg(feature = "hist")]
     fn hist2d_heatmap_with_colorbar() {
         let mut h2 = Hist::reg(20, -3.0, 3.0)
             .reg(20, -3.0, 3.0)
@@ -246,9 +262,7 @@ mod tests {
         let mut ax = Axes::new();
         ax.hist2d_with(&h2, Hist2dOpts::new().label("entries"));
         let (w, h) = ax.style.figsize_px();
-        assert!(is_png(
-            &render::raster::render_png(&ax.render(w, h), w, h, Color::WHITE).unwrap()
-        ));
+        assert_renders(&ax.render(w, h), w, h);
     }
 
     #[test]
@@ -293,6 +307,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn math_label_emits_glyph_paths() {
         use draw::{DrawCommand, DrawGroup};
         let fonts = FontSet::stix();
@@ -322,6 +337,31 @@ mod tests {
             .count();
         assert!(paths > 5, "expected glyph paths, got {paths}");
         assert!(rules >= 1, "expected a fraction/radical rule, got {rules}");
+    }
+
+    #[test]
+    #[cfg(not(feature = "math"))]
+    fn math_label_without_the_math_feature_is_plain_text() {
+        use draw::{DrawCommand, DrawGroup};
+        let mut g = DrawGroup::new(None);
+        mathtext::layout_label(
+            &mut g,
+            &FontSet::stix(),
+            "$\\mathrm{p}_{T}$ [GeV]",
+            10.0,
+            40.0,
+            28.0,
+            Color::BLACK,
+            text::HAlign::Left,
+            text::VAlign::Baseline,
+            0.0,
+        );
+        // Glyph outlines for the stripped source text, and no TeX rules.
+        assert!(g.cmds.iter().any(|c| matches!(c, DrawCommand::Path { .. })));
+        assert!(!g
+            .cmds
+            .iter()
+            .any(|c| matches!(c, DrawCommand::Polygon { .. })));
     }
 
     #[test]
@@ -383,6 +423,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "hist")]
     fn visual_dump() {
         let Ok(dir) = std::env::var("PLOT_DUMP") else {
             return;

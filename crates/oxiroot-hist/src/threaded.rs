@@ -9,8 +9,8 @@
 //! thread, fill locally without locking, merge at the end", and the merged
 //! histogram is identical to a serial fill (up to floating-point summation order).
 //!
-//! - [`Merge`] — the reduction trait (`merge` == `add(other, 1.0)`); its
-//!   [`merge_all`](Merge::merge_all) folds an iterator of histograms into one
+//! - [`Mergeable`] — the reduction trait (`merge` == `add(other, 1.0)`); its
+//!   [`merge_all`](Mergeable::merge_all) folds an iterator of histograms into one
 //!   (an in-memory `hadd`).
 //! - [`ThreadedHist`] — the accumulator: share `&ThreadedHist`, call
 //!   [`fill`](ThreadedHist::fill) from any thread (each gets its own copy), then
@@ -24,17 +24,19 @@ use std::thread::ThreadId;
 
 use oxiroot_io_core::error::Result;
 
-use crate::{TProfile, TH1, TH2, TH3};
+use crate::{TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3};
 
-/// Histograms that combine into one — the reduction behind multithreaded fills
-/// and `hadd`-style multi-file merges.
+/// Histograms that combine into one — the reduction behind in-memory merges
+/// (multithreaded fills, [`ThreadedHist`], `fill_par`). The file merger
+/// (`hadd`) sums histograms with `add` directly.
 ///
-/// [`merge`](Merge::merge) is the bin-by-bin combine of `add(other, 1.0)`: it
+/// [`merge`](Mergeable::merge) is the bin-by-bin combine of `add(other, 1.0)`: it
 /// sums contents, per-bin `Sumw2`, the entry count, and every moment sum, so the
 /// result is identical to having filled one histogram with all the data. It
 /// returns [`oxiroot_io_core::Error::BinningMismatch`] (leaving `self` unchanged)
 /// if the binnings differ.
-pub trait Merge: Clone + Send + Sized {
+#[doc(alias = "Merge")]
+pub trait Mergeable: Clone + Send + Sized {
     /// Combine `other` into `self` (the `c == 1` case of `add`).
     fn merge(&mut self, other: &Self) -> Result<()>;
 
@@ -53,16 +55,16 @@ pub trait Merge: Clone + Send + Sized {
     }
 }
 
-macro_rules! impl_merge {
+macro_rules! impl_mergeable {
     ($($t:ty),+ $(,)?) => {$(
-        impl Merge for $t {
+        impl Mergeable for $t {
             fn merge(&mut self, other: &Self) -> Result<()> {
                 self.add(other, 1.0)
             }
         }
     )+};
 }
-impl_merge!(TH1, TH2, TH3, TProfile);
+impl_mergeable!(TH1, TH2, TH3, TProfile, TProfile2D, TProfile3D);
 
 /// A multithreaded fill accumulator — the pure-Rust analog of ROOT's
 /// `TThreadedObject<TH1>`.
@@ -101,7 +103,7 @@ impl_merge!(TH1, TH2, TH3, TProfile);
 /// let merged = hist.merge().unwrap(); // combine every thread's copy
 /// assert_eq!(merged.entries, 1000.0);
 /// ```
-pub struct ThreadedHist<H: Merge> {
+pub struct ThreadedHist<H: Mergeable> {
     template: H,
     /// One private copy per thread, keyed by its (never-reused) [`ThreadId`].
     /// The `Arc` lets a fill clone its slot out and drop the map lock before
@@ -109,7 +111,7 @@ pub struct ThreadedHist<H: Merge> {
     slots: RwLock<HashMap<ThreadId, Arc<Mutex<H>>>>,
 }
 
-impl<H: Merge> ThreadedHist<H> {
+impl<H: Mergeable> ThreadedHist<H> {
     /// Create an accumulator from a template histogram — a binning prototype,
     /// normally empty. Each thread's private copy is a clone of it.
     pub fn new(template: H) -> Self {
@@ -222,11 +224,33 @@ impl ThreadedHist<TProfile> {
     }
 }
 
+impl ThreadedHist<TProfile2D> {
+    /// Profile `z` at `(x, y)` in the calling thread's copy (weight 1).
+    pub fn fill(&self, x: f64, y: f64, z: f64) {
+        self.with_local(|h| h.fill(x, y, z));
+    }
+    /// Profile `z` at `(x, y)` in the calling thread's copy with weight `w`.
+    pub fn fill_weight(&self, x: f64, y: f64, z: f64, w: f64) {
+        self.with_local(|h| h.fill_weight(x, y, z, w));
+    }
+}
+
+impl ThreadedHist<TProfile3D> {
+    /// Profile `t` at `(x, y, z)` in the calling thread's copy (weight 1).
+    pub fn fill(&self, x: f64, y: f64, z: f64, t: f64) {
+        self.with_local(|h| h.fill(x, y, z, t));
+    }
+    /// Profile `t` at `(x, y, z)` in the calling thread's copy with weight `w`.
+    pub fn fill_weight(&self, x: f64, y: f64, z: f64, t: f64, w: f64) {
+        self.with_local(|h| h.fill_weight(x, y, z, t, w));
+    }
+}
+
 /// Fill a histogram from a slice in parallel (requires the `rayon` feature).
 ///
 /// Convenience over [`ThreadedHist`] for the common "one histogram, fill from a
 /// `&[T]`" case: rayon splits `data`, each task folds into a private
-/// `template.clone()`, and the partial histograms reduce with [`Merge::merge`].
+/// `template.clone()`, and the partial histograms reduce with [`Mergeable::merge`].
 /// The result equals a serial fill (up to floating-point summation order).
 ///
 /// `fill(&mut h, &item)` applies one item — e.g. `|h, &x| h.fill(x)` for a 1-D
@@ -244,7 +268,7 @@ impl ThreadedHist<TProfile> {
 #[cfg(feature = "rayon")]
 pub fn fill_par<H, T, F>(template: &H, data: &[T], fill: F) -> H
 where
-    H: Merge + Sync,
+    H: Mergeable + Sync,
     T: Sync,
     F: Fn(&mut H, &T) + Sync,
 {

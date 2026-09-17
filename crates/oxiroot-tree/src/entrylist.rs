@@ -10,7 +10,7 @@
 //! yet expanded.
 
 use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::error::{decompress_payload, Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
 use oxiroot_io_core::RFile;
@@ -41,8 +41,7 @@ impl TEntryList {
             )));
         }
         let payload = file.key_payload(key)?;
-        let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
-            .map_err(|e| Error::Format(format!("decompressing TEntryList: {e}")))?;
+        let object = decompress_payload(&payload, key.obj_len as usize, "TEntryList")?;
         read_entry_list(&object, key.key_len as usize)
     }
 

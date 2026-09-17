@@ -9,7 +9,7 @@
 //! `fEntryOffset` array.
 
 use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::error::{decompress_payload, Error, Result};
 use oxiroot_io_core::RFile;
 
 /// Key version at or above which a `TKey` uses 64-bit seek pointers.
@@ -107,8 +107,7 @@ impl Basket {
         let data = if on_disk == obj_len as usize {
             raw
         } else {
-            oxiroot_compress::decompress(&raw, obj_len as usize)
-                .map_err(|e| Error::Format(format!("decompressing basket: {e}")))?
+            decompress_payload(&raw, obj_len as usize, "TBasket")?
         };
 
         // `fLast` is measured from the key start; the boundary within the data

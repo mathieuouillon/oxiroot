@@ -6,7 +6,7 @@
 
 use oxiroot_io_core::error::{Error, Result};
 
-use crate::{TProfile, TH1, TH2, TH3};
+use crate::{TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3};
 
 /// Effective per-bin error² for `other`: its `fSumw2[i]` if tracked, else the
 /// content (for an unweighted histogram, `Σw² == Σw == content`).
@@ -24,7 +24,11 @@ fn binning_mismatch(op: &str) -> Error {
 
 impl TH1 {
     /// Multiply all bin contents (and errors) by `c`. The mean is preserved.
+    ///
+    /// Turns on per-bin error tracking first, as ROOT's `Scale` does: once
+    /// scaled, the errors can no longer be derived as `√content`.
     pub fn scale(&mut self, c: f64) {
+        self.sumw2();
         for v in &mut self.contents {
             *v *= c;
         }
@@ -117,7 +121,11 @@ impl TH1 {
 
 impl TH2 {
     /// Multiply all bin contents (and errors) by `c`.
+    ///
+    /// Turns on per-bin error tracking first, as ROOT's `Scale` does: once
+    /// scaled, the errors can no longer be derived as `√content`.
     pub fn scale(&mut self, c: f64) {
+        self.sumw2();
         for v in &mut self.contents {
             *v *= c;
         }
@@ -175,7 +183,11 @@ impl TH2 {
 
 impl TH3 {
     /// Multiply all bin contents (and errors) by `c`.
+    ///
+    /// Turns on per-bin error tracking first, as ROOT's `Scale` does: once
+    /// scaled, the errors can no longer be derived as `√content`.
     pub fn scale(&mut self, c: f64) {
+        self.sumw2();
         for v in &mut self.contents {
             *v *= c;
         }
@@ -240,56 +252,125 @@ impl TH3 {
     }
 }
 
-impl TProfile {
-    /// Merge `c * other` into this profile bin-by-bin (a `hadd`-style merge when
-    /// `c == 1`). A profile cannot be merged through the plain `TH1` path: its
-    /// per-bin weight sums (`fBinEntries`), weighted-`y` sums (the `TH1` base
-    /// contents), weighted-`y²` sums (`fSumw2`), and `Σw²` (`fBinSumw2`) must all
-    /// be summed so the profiled value `Σwy / Σw` and its error stay correct.
-    /// Returns [`Error::BinningMismatch`] if the binnings differ.
-    pub fn add(&mut self, other: &TProfile, c: f64) -> Result<()> {
-        if !self.xaxis.same_binning(&other.xaxis)
-            || self.sums.len() != other.sums.len()
-            || self.bin_entries.len() != other.bin_entries.len()
-        {
-            return Err(binning_mismatch("add"));
-        }
-        // If only one side tracks Σw² explicitly, seed the other from its weight
-        // sums (for unweighted fills Σw² == Σw) so the merged array is coherent.
-        if self.bin_sumw2.is_empty() && !other.bin_sumw2.is_empty() {
-            self.bin_sumw2 = self.bin_entries.clone();
-        }
-        for i in 0..self.sums.len() {
-            self.sums[i] += c * other.sums[i];
-        }
-        for i in 0..self.bin_entries.len() {
-            self.bin_entries[i] += c * other.bin_entries[i];
-        }
-        let ny2 = self.sumy2.len().min(other.sumy2.len());
-        for i in 0..ny2 {
-            self.sumy2[i] += c * other.sumy2[i];
-        }
-        if !self.bin_sumw2.is_empty() {
-            // `other`'s Σw² is its `fBinSumw2` if tracked, else its weight sums.
-            let src: &[f64] = if other.bin_sumw2.is_empty() {
-                &other.bin_entries
-            } else {
-                &other.bin_sumw2
-            };
-            for (dst, &s) in self.bin_sumw2.iter_mut().zip(src.iter()) {
-                *dst += c * s;
-            }
-        }
-        self.entries += c * other.entries;
-        self.tsumw += c * other.tsumw;
-        self.tsumw2 += c * c * other.tsumw2;
-        self.tsumwx += c * other.tsumwx;
-        self.tsumwx2 += c * other.tsumwx2;
-        self.tsumwy += c * other.tsumwy;
-        self.tsumwy2 += c * c * other.tsumwy2;
-        Ok(())
+/// Add `c · src` into `dst` for a per-cell array a file may leave empty, where
+/// empty means every cell is zero (a profile's `fSumw2`). An empty `dst` is
+/// filled with zeros first so `src` is never dropped; an empty `src` adds nothing.
+fn add_optional_cells(dst: &mut Vec<f64>, src: &[f64], c: f64, ncells: usize) {
+    if src.is_empty() {
+        return;
+    }
+    if dst.is_empty() {
+        dst.resize(ncells, 0.0);
+    }
+    for (d, &s) in dst.iter_mut().zip(src) {
+        *d += c * s;
     }
 }
+
+/// Whether an optional per-cell array is either absent or covers every cell.
+fn optional_len_ok(len: usize, ncells: usize) -> bool {
+    len == 0 || len == ncells
+}
+
+/// `add` for the whole profile family. The three profiles differ only in their
+/// axes, the name of their per-cell `Σw·v²` array and their moment sums, so one
+/// body serves them all: the per-cell error bookkeeping is exactly where
+/// hand-copied versions had already drifted apart.
+macro_rules! impl_profile_add {
+    (
+        $ty:ident, $dim:literal,
+        axes: [$($axis:ident),+],
+        value_sq: $sumv2:ident,
+        moments: [$($moment:ident),+ $(,)?] $(,)?
+    ) => {
+        impl $ty {
+            #[doc = concat!("Merge `c * other` into this ", $dim, " profile cell by cell (a")]
+            /// `hadd`-style merge when `c == 1`). A profile cannot be merged like a
+            /// plain histogram: its per-cell weight sums (`fBinEntries`), weighted-value
+            /// sums (the base contents), weighted-value² sums (`fSumw2`) and `Σw²`
+            /// (`fBinSumw2`) must all be summed so the profiled value `Σwv / Σw` and its
+            /// error stay correct.
+            ///
+            /// As in ROOT's `TProfileHelper::Add`, `c` scales the weights by `|c|`
+            /// and a negative `c` flips the sign of the profiled values: the
+            /// weighted-value sums scale by `c`; the weight sums, weighted-value²
+            /// sums, entries and moments by `|c|`; and `Σw²` by `c²`. Returns
+            /// [`Error::BinningMismatch`], leaving `self` unchanged, if the binnings
+            /// or per-cell array lengths differ.
+            pub fn add(&mut self, other: &$ty, c: f64) -> Result<()> {
+                let ncells = self.sums.len();
+                let compatible = $(self.$axis.same_binning(&other.$axis))&&+
+                    && other.sums.len() == ncells
+                    && self.bin_entries.len() == ncells
+                    && other.bin_entries.len() == ncells
+                    && optional_len_ok(self.$sumv2.len(), ncells)
+                    && optional_len_ok(other.$sumv2.len(), ncells)
+                    && optional_len_ok(self.bin_sumw2.len(), ncells)
+                    && optional_len_ok(other.bin_sumw2.len(), ncells);
+                if !compatible {
+                    return Err(binning_mismatch("add"));
+                }
+                // The weights of `other` enter scaled by |c|.
+                let ac = c.abs();
+                // Seed our Σw² from the weight sums (exact for unit weights) before
+                // any sum changes, whenever it is about to stop being derivable from
+                // them: `other` tracks it explicitly, or its weights are rescaled,
+                // since Σ(|c|·w)² ≠ Σ(|c|·w) unless |c| == 1.
+                if !other.bin_sumw2.is_empty() || ac != 1.0 {
+                    self.track_bin_sumw2();
+                }
+                if !self.bin_sumw2.is_empty() {
+                    // `other`'s Σw² is its `fBinSumw2` if tracked, else its weight sums.
+                    let src: &[f64] = if other.bin_sumw2.is_empty() {
+                        &other.bin_entries
+                    } else {
+                        &other.bin_sumw2
+                    };
+                    // Σw² is quadratic in the weight: Σ(c·w)² = c²·Σw².
+                    for (d, &s) in self.bin_sumw2.iter_mut().zip(src) {
+                        *d += c * c * s;
+                    }
+                }
+                for (d, &s) in self.sums.iter_mut().zip(&other.sums) {
+                    *d += c * s;
+                }
+                for (d, &s) in self.bin_entries.iter_mut().zip(&other.bin_entries) {
+                    *d += ac * s;
+                }
+                add_optional_cells(&mut self.$sumv2, &other.$sumv2, ac, ncells);
+
+                self.entries += ac * other.entries;
+                // Σw² is quadratic in the weight; every other moment is linear in
+                // it, so takes |c|.
+                self.tsumw2 += c * c * other.tsumw2;
+                $(self.$moment += ac * other.$moment;)+
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_profile_add!(
+    TProfile, "1-D",
+    axes: [xaxis],
+    value_sq: sumy2,
+    moments: [tsumw, tsumwx, tsumwx2, tsumwy, tsumwy2],
+);
+impl_profile_add!(
+    TProfile2D, "2-D",
+    axes: [xaxis, yaxis],
+    value_sq: sumz2,
+    moments: [tsumw, tsumwx, tsumwx2, tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2],
+);
+impl_profile_add!(
+    TProfile3D, "3-D",
+    axes: [xaxis, yaxis, zaxis],
+    value_sq: sumt2,
+    moments: [
+        tsumw, tsumwx, tsumwx2, tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz,
+        tsumwt, tsumwt2,
+    ],
+);
 
 // --- Standard operator/formatting traits over the inherent histogram ops. ---
 // `scale` is infallible, so `*=`/`*` are clean; `add`/`multiply`/`divide` stay

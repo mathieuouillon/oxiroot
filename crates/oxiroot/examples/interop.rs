@@ -101,7 +101,7 @@ fn hist(name: &str, contents: &[f64]) -> TH1 {
     h
 }
 
-fn write(dir: &Path) -> Result<()> {
+fn write(dir: &Path) -> oxiroot::Result<()> {
     let h = canonical_hist();
     h.write_root(dir.join("rust_hist.root"), Compression::None)?;
 
@@ -166,7 +166,7 @@ fn write(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read(dir: &Path) -> Result<()> {
+fn read(dir: &Path) -> oxiroot::Result<()> {
     // Histogram written by the ROOT oracle.
     let f = RFile::open(dir.join("oracle_hist.root"))?;
     let h = TH1::read_root(&f, "h")?;
@@ -210,7 +210,7 @@ fn read(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_oracle_tree(dir: &Path) -> Result<()> {
+fn read_oracle_tree(dir: &Path) -> oxiroot::Result<()> {
     let f = RFile::open(dir.join("oracle_tree.root"))?;
     let t = TTree::open(&f, "otree")?;
     match t.read_branch(&f, "oi")? {

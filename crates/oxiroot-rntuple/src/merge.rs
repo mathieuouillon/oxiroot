@@ -3,15 +3,18 @@
 //! [`concat_ntuples`] reads the same fields from several [`RNTuple`]s and
 //! appends their entries into one writable [`Ntuple`]. Unlike a `TTree` branch,
 //! an RNTuple field's type is fully determined by its [`FieldValues`] variant,
-//! so the mapping back to a [`Field`] is direct. It is the building block the
-//! `oxiroot` facade's file merger uses for RNTuple keys.
+//! so the mapping back to a [`Field`] is direct. [`append_ntuples`] streams the
+//! same merge into an [`RNTupleWriter`], one cluster per input; the `oxiroot`
+//! facade's file merger uses it for RNTuple keys.
+
+use std::io::{Seek, Write};
 
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::RFile;
 
 use crate::field::FieldValues;
 use crate::reader::RNTuple;
-use crate::writer::{Field, Ntuple};
+use crate::writer::{Field, Ntuple, RNTupleWriter};
 
 /// Concatenate several `RNTuple`s entry-wise into one writable [`Ntuple`] named
 /// `name`.
@@ -53,6 +56,39 @@ pub fn concat_ntuples(name: &str, inputs: &[(&RFile, &RNTuple)]) -> Result<Ntupl
     }
 
     Ok(Ntuple::new(name, fields))
+}
+
+/// Append every entry of `inputs` to `writer`, one input at a time: each input's
+/// fields are read, written as one cluster, and dropped before the next input is
+/// read. Returns the number of entries appended.
+///
+/// The inputs must agree on their fields as for [`concat_ntuples`]; the first
+/// cluster the writer receives fixes the schema.
+///
+/// # Errors
+///
+/// As [`concat_ntuples`], plus any error from [`RNTupleWriter::write_batch`].
+pub fn append_ntuples<W: Write + Seek>(
+    writer: &mut RNTupleWriter<W>,
+    inputs: &[(&RFile, &RNTuple)],
+) -> Result<u64> {
+    let &(_, first) = inputs
+        .first()
+        .ok_or_else(|| Error::Format("append_ntuples: no input RNTuples".into()))?;
+    let field_names = first.field_names();
+    let mut appended = 0;
+    for (i, &(file, ntuple)) in inputs.iter().enumerate() {
+        let mut batch = Vec::with_capacity(field_names.len());
+        for &field in &field_names {
+            let values = ntuple.read_field(file, field).map_err(|e| {
+                Error::Format(format!("append_ntuples: input #{i} field {field:?}: {e}"))
+            })?;
+            batch.push(build_field(field, values)?);
+        }
+        writer.write_batch(&batch)?;
+        appended += ntuple.num_entries();
+    }
+    Ok(appended)
 }
 
 /// Rebuild a writable [`Field`] from a field's concatenated values.

@@ -1,7 +1,7 @@
 //! Opening an RNTuple from a ROOT file: anchor → header/footer envelopes →
 //! page-list envelopes → on-demand column decoding.
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::error::{decompress_payload, Error, Result};
 use oxiroot_io_core::RFile;
 
 use crate::anchor::{RNTupleAnchor, ANCHOR_CLASS};
@@ -64,8 +64,8 @@ impl RNTuple {
         }
 
         let anchor_payload = file.key_payload(key)?;
-        let anchor_object = oxiroot_compress::decompress(&anchor_payload, key.obj_len as usize)
-            .map_err(|e| Error::Format(format!("decompressing anchor: {e}")))?;
+        let anchor_object =
+            decompress_payload(&anchor_payload, key.obj_len as usize, "RNTuple anchor")?;
         let anchor = RNTupleAnchor::read(&anchor_object)?;
 
         let header_bytes = read_blob(
@@ -599,6 +599,5 @@ fn read_blob(file: &RFile, seek: u64, nbytes: u64, len: u64, what: &str) -> Resu
     let win = file
         .read_at(seek, nbytes as usize)
         .map_err(|_| Error::Format(format!("{what} blob at {seek} runs past end of file")))?;
-    oxiroot_compress::decompress(&win, len as usize)
-        .map_err(|e| Error::Format(format!("decompressing {what}: {e}")))
+    decompress_payload(&win, len as usize, what)
 }

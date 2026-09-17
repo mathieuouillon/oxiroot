@@ -14,7 +14,7 @@ use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{object_bytes, object_bytes_in, read_tarray, Precision};
+use crate::base::{object_bytes, object_bytes_in, read_tarray, BinContentType};
 
 /// A filled cell: one (per-axis, flow-inclusive) bin index per dimension, and its
 /// content.
@@ -142,8 +142,8 @@ impl THnSparse {
         let entries = r.be_f64()?;
         let tsumw = r.be_f64()?;
         let tsumw2 = r.be_f64()?;
-        let tsumwx = read_tarray(r, Precision::Double)?;
-        let tsumwx2 = read_tarray(r, Precision::Double)?;
+        let tsumwx = read_tarray(r, BinContentType::F64)?;
+        let tsumwx2 = read_tarray(r, BinContentType::F64)?;
         if let Some(end) = thnbase.end {
             r.seek(end)?;
         }
@@ -231,13 +231,13 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
         let coords = r.bytes(coords_size)?.to_vec();
         // fContent: a TArrayD* of the contents (sized to the chunk capacity).
         let content = if enter_object(r)? {
-            read_tarray(r, Precision::Double)?
+            read_tarray(r, BinContentType::F64)?
         } else {
             Vec::new()
         };
         // fSumw2: a TArrayD* (often null); skip it.
         if enter_object(r)? {
-            read_tarray(r, Precision::Double)?;
+            read_tarray(r, BinContentType::F64)?;
         }
         let n_filled = coords_size.checked_div(single).unwrap_or(0);
         for i in 0..n_filled {

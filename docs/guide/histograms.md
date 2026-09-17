@@ -61,8 +61,8 @@ the statistical moment sums accumulate only for in-range fills.
 use oxiroot::prelude::*;
 
 let mut pt = Hist::var(&[0.0, 10.0, 20.0, 40.0, 80.0, 160.0]).double().named("pt");
-pt.sumw2(); // track per-bin errors before filling (see below)
 
+// The first weight other than 1 turns on per-bin error tracking (see below).
 for &(x, w) in &[(5.0, 1.2), (15.0, 0.8), (35.0, 1.5)] {
     pt.fill_weight(x, w);
 }
@@ -73,10 +73,16 @@ for &(x, w) in &[(5.0, 1.2), (15.0, 0.8), (35.0, 1.5)] {
 
 ### Per-bin errors with `sumw2`
 
-`sumw2()` enables ROOT's `Sumw2` error tracking: it allocates the `fSumw2` array,
-seeds it from the current contents, and from then on every fill also accumulates
-`weight²`. Call it *before* filling for correct weighted errors. It returns
-`&mut Self`, so it chains:
+ROOT's `Sumw2` error tracking keeps the per-bin sum of squared weights in the
+`fSumw2` array, so that `bin_error` is `√Σw²` rather than `√content`. As in ROOT,
+it switches on by itself: at the first `fill_weight` with a weight other than 1
+(seeded from the contents so far, which were unit-weight fills), and when you
+`scale` a histogram. Derived histograms (`rebin`, `slice`, `cumulative`,
+projections and profiles) carry it along.
+
+`sumw2()` turns it on explicitly — useful for a histogram filled only with unit
+weights that you want to write with an `fSumw2` array. It returns `&mut Self`, so
+it chains:
 
 ```rust
 let mut h = Hist::reg(100, 0.0, 1.0).double();
@@ -92,14 +98,14 @@ underflow, `1..=nbins` are in range.
     `nbins + 1` is overflow. `values()` returns the in-range contents only, while
     indexing (`h[cell]`) and `contents` cover every cell including flow.
 
-## Precision and class names
+## Bin content type and class names
 
 A `TH1`/`TH2`/`TH3` keeps its bin contents as `f64` in memory regardless of
-on-disk precision. The class suffix (`D`/`F`/`I`/`S`/`C`/`L`) is a typed
-[`Precision`](../api/oxiroot/index.html) value chosen by the builder's storage
+their on-disk type. The class suffix (`D`/`F`/`I`/`S`/`C`/`L`) is a typed
+[`BinContentType`](../api/oxiroot/index.html) value chosen by the builder's storage
 finalizer: `double()` → `TH1D`, `float()` → `TH1F`, `int32()` → `TH1I`,
 `int16()` → `TH1S`, `int8()` → `TH1C`, `int64()` → `TH1L`. To change the
-precision of a histogram you already built or read back, use `with_precision`;
+type of a histogram you already built or read back, use `with_bin_content_type`;
 either way the contents are narrowed only at write time.
 
 ```rust
@@ -108,18 +114,19 @@ use oxiroot::prelude::*;
 let h = Hist::reg(100, 0.0, 1.0).float().named("h");
 assert_eq!(h.class_name(), "TH1F"); // the finalizer picked the class
 
-// Re-precision an existing histogram (e.g. store a filled TH1D compactly):
-let hc = h.clone().with_precision(Precision::Char);
+// Retype an existing histogram (e.g. store a filled TH1D compactly):
+let hc = h.clone().with_bin_content_type(BinContentType::I8);
 assert_eq!(hc.class_name(), "TH1C");
 ```
 
 | Method | Returns |
 | --- | --- |
-| `precision()` | the typed `Precision` (the class suffix) |
-| `with_precision(p)` | `Self` with the on-disk precision set |
+| `bin_content_type()` | the typed `BinContentType` (the class suffix) |
+| `with_bin_content_type(t)` | `Self` with the on-disk bin content type set |
 | `class_name()` | the exact ROOT class, e.g. `"TH1D"` / `"TH2F"` |
 
-`Precision` covers `Double`, `Float`, `Int`, `Short`, `Char`, and `Long`.
+`BinContentType` covers `F64` (`D`, the default), `F32` (`F`), `I32` (`I`),
+`I16` (`S`), `I8` (`C`), and `I64` (`L`).
 
 ## The type family
 
@@ -172,7 +179,10 @@ stay inherent and fallible; the infallible `scale` is also exposed as `*`/`*=`.
 
 `add`, `multiply`, and `divide` return `Error::BinningMismatch` and make no
 change if the binnings differ. `add` is implemented for `TH1`/`TH2`/`TH3` and
-`TProfile` (which merges its per-bin weight sums correctly).
+for `TProfile`/`TProfile2D`/`TProfile3D`, which merge their per-bin weight sums
+correctly. For a profile, as in ROOT, a negative `c` flips the profiled values
+but keeps the weights non-negative, so `p.add(&q, -1.0)` subtracts `q`'s
+values.
 
 ```rust
 use oxiroot::prelude::*;
@@ -270,7 +280,7 @@ let prof = corr.profile_x("pfx");           // TH2 → TProfile
 Draw random values from a histogram's distribution (ROOT's `GetRandom` /
 `FillRandom`) — the bin contents are the density, a bin is picked in proportion
 to its content, and the value is interpolated within it. Sampling needs a uniform
-source; oxiroot has no `gRandom`, so a small seedable [`Rng`](../api/oxiroot/index.html)
+source; oxiroot has no `gRandom`, so a small seedable [`Random`](../api/oxiroot/index.html)
 is provided (no `rand` dependency, reproducible draws).
 
 ```rust
@@ -279,7 +289,7 @@ use oxiroot::prelude::*;
 let mut source = Hist::reg(100, -5.0, 5.0).double();
 for x in &data { source.fill(*x); }
 
-let mut rng = Rng::seed(12345);
+let mut rng = Random::seed(12345);
 let x = source.get_random(&mut rng);        // one draw
 
 // Fill a new histogram with 100k draws from `source`'s shape (efficient — the

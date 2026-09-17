@@ -69,7 +69,7 @@ impl TH1 {
         }
         .named(self.name.clone())
         .titled(self.title.clone());
-        out.precision = self.precision;
+        out.bin_content_type = self.bin_content_type;
         let track = !self.sumw2.is_empty();
         if track {
             out.sumw2 = vec![0.0; out.contents.len()];
@@ -87,6 +87,13 @@ impl TH1 {
         let over: f64 =
             self.contents[n + 1] + (newn * ng + 1..=n).map(|i| self.contents[i]).sum::<f64>();
         out.contents[newn + 1] = over;
+        if track {
+            // The flow bins fold in exactly the bins their contents do, so their
+            // variances add the same way (ROOT's `Rebin` sums them in quadrature).
+            out.sumw2[0] = self.sumw2[0];
+            out.sumw2[newn + 1] =
+                self.sumw2[n + 1] + (newn * ng + 1..=n).map(|i| self.sumw2[i]).sum::<f64>();
+        }
 
         copy_th1_moments(self, &mut out);
         out
@@ -96,7 +103,8 @@ impl TH1 {
     /// `h[hist.loc(lo):hist.loc(hi)]`): keep the in-range bins from `find_bin(lo)`
     /// through `find_bin(hi)`. Content outside the kept range is summed into the
     /// new under/overflow, so the total content (with flow) is preserved; `Sumw2`
-    /// carries over per bin, and the moment sums are recomputed from the kept
+    /// carries over per bin and folds into the flow bins the same way, and the
+    /// moment sums are recomputed from the kept
     /// bins (their centres), so `mean`/`std_dev` describe the slice.
     #[must_use]
     pub fn slice(&self, lo: f64, hi: f64) -> TH1 {
@@ -112,7 +120,7 @@ impl TH1 {
         let mut out = TH1::new_variable(&sub_edges)
             .named(self.name.clone())
             .titled(self.title.clone());
-        out.precision = self.precision;
+        out.bin_content_type = self.bin_content_type;
         out.xaxis.title = self.xaxis.title.clone();
         let track = !self.sumw2.is_empty();
         if track {
@@ -129,6 +137,13 @@ impl TH1 {
         out.contents[0] = self.contents[0] + (1..ilo).map(|i| self.contents[i]).sum::<f64>();
         out.contents[oc - 1] =
             self.contents[n + 1] + (ihi + 1..=n).map(|i| self.contents[i]).sum::<f64>();
+        if track {
+            // Fold the dropped bins' variances into the flow bins alongside their
+            // contents.
+            out.sumw2[0] = self.sumw2[0] + (1..ilo).map(|i| self.sumw2[i]).sum::<f64>();
+            out.sumw2[oc - 1] =
+                self.sumw2[n + 1] + (ihi + 1..=n).map(|i| self.sumw2[i]).sum::<f64>();
+        }
 
         out.entries = self.entries;
         out.tsumw = 0.0;
@@ -148,26 +163,33 @@ impl TH1 {
 
     /// The cumulative histogram (ROOT's `GetCumulative`): bin `i` becomes the
     /// running sum of the in-range bins up to `i` (`forward`) or from `i` to the
-    /// top (`!forward`). Binning and moment sums are preserved.
+    /// top (`!forward`). Binning and moment sums are preserved; the flow bins are
+    /// emptied.
+    ///
+    /// If `Sumw2` is tracked, each bin's error comes from the running sum of the
+    /// variances it accumulates, as in ROOT; otherwise the result stays untracked
+    /// and its errors are `√content`, which is right for counts.
     #[must_use]
     pub fn cumulative(&self, forward: bool) -> TH1 {
         let n = self.xaxis.nbins.max(0) as usize;
+        let track = !self.sumw2.is_empty();
         let mut out = self.clone();
         out.contents.iter_mut().for_each(|v| *v = 0.0);
-        let mut acc = 0.0;
-        if forward {
-            for i in 1..=n {
-                acc += self.contents[i];
-                out.contents[i] = acc;
-            }
+        out.sumw2.iter_mut().for_each(|v| *v = 0.0);
+        let order: Vec<usize> = if forward {
+            (1..=n).collect()
         } else {
-            for i in (1..=n).rev() {
-                acc += self.contents[i];
-                out.contents[i] = acc;
+            (1..=n).rev().collect()
+        };
+        let (mut acc, mut acc2) = (0.0, 0.0);
+        for i in order {
+            acc += self.contents[i];
+            out.contents[i] = acc;
+            if track {
+                acc2 += self.sumw2[i];
+                out.sumw2[i] = acc2;
             }
         }
-        // Errors of a running sum are not a simple per-bin copy; drop them.
-        out.sumw2 = Vec::new();
         out
     }
 }
@@ -274,8 +296,15 @@ impl TH2 {
                 other + stride * keep
             }
         };
+        // Each cell enters the profile with its content as the weight. A weighted
+        // TH2 must carry its own Σw² across (ROOT's `DoProfile` does), or the
+        // profile's effective entries would assume unit weights.
+        let track = !self.sumw2.is_empty();
+        if track {
+            p.bin_sumw2 = vec![0.0; p.bin_entries.len()];
+        }
         for k in 0..=n_keep + 1 {
-            let (mut be, mut s, mut s2) = (0.0, 0.0, 0.0);
+            let (mut be, mut s, mut s2, mut w2) = (0.0, 0.0, 0.0, 0.0);
             // `o` indexes both the cell and the bin-center table.
             #[allow(clippy::needless_range_loop)]
             for o in 1..=n_other {
@@ -284,10 +313,16 @@ impl TH2 {
                 be += c;
                 s += c * yc;
                 s2 += c * yc * yc;
+                if track {
+                    w2 += self.sumw2[cell(k, o)];
+                }
             }
             p.bin_entries[k] = be;
             p.sums[k] = s;
             p.sumy2[k] = s2;
+            if track {
+                p.bin_sumw2[k] = w2;
+            }
         }
         p.entries = self.entries;
         p.tsumw = self.tsumw;
@@ -320,7 +355,7 @@ impl TH2 {
         let mut out = TH2::new_variable(&xedges, &yedges)
             .named(self.name.clone())
             .titled(self.title.clone());
-        out.precision = self.precision;
+        out.bin_content_type = self.bin_content_type;
         let track = !self.sumw2.is_empty();
         if track {
             out.sumw2 = vec![0.0; out.contents.len()];
@@ -371,7 +406,7 @@ impl TH3 {
         )
         .named(self.name.clone())
         .titled(self.title.clone());
-        out.precision = self.precision;
+        out.bin_content_type = self.bin_content_type;
         out.xaxis = TAxis::variable("xaxis", &group_edges(&self.xaxis.edges(), ngx, newnx));
         out.yaxis = TAxis::variable("yaxis", &group_edges(&self.yaxis.edges(), ngy, newny));
         out.zaxis = TAxis::variable("zaxis", &group_edges(&self.zaxis.edges(), ngz, newnz));

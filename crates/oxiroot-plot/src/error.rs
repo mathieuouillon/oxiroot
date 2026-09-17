@@ -16,6 +16,13 @@ pub enum Error {
     BadSize(String),
     /// A custom font could not be parsed.
     Font(String),
+    /// The output needs a crate feature this build does not enable.
+    MissingFeature {
+        /// The output that was asked for (e.g. `"PNG"`).
+        output: &'static str,
+        /// The `oxiroot-plot` feature that provides it.
+        feature: &'static str,
+    },
 }
 
 impl fmt::Display for Error {
@@ -31,6 +38,10 @@ impl fmt::Display for Error {
             }
             Error::BadSize(m) => write!(f, "invalid figure size: {m}"),
             Error::Font(m) => write!(f, "font error: {m}"),
+            Error::MissingFeature { output, feature } => write!(
+                f,
+                "{output} output needs the `{feature}` feature of oxiroot-plot"
+            ),
         }
     }
 }

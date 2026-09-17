@@ -13,7 +13,7 @@
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
 use oxiroot_io_core::buffer::{RBuffer, K_BYTE_COUNT_MASK};
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::error::{decompress_payload, Error, Result};
 use oxiroot_io_core::file::TKey;
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
@@ -213,8 +213,7 @@ impl TTree {
         let registry = file.streamer_registry()?;
 
         let payload = file.key_payload(key)?;
-        let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
-            .map_err(|e| Error::Format(format!("decompressing TTree: {e}")))?;
+        let object = decompress_payload(&payload, key.obj_len as usize, "TTree")?;
         let mut tree = read_tree(&object, key.key_len as usize, &registry, &key.class_name)?;
         tree.streamer_classes = registry
             .infos()
@@ -339,11 +338,25 @@ impl TTree {
     ///
     /// Scalar branches yield a flat [`BranchValues`]; fixed (`x[N]`) and
     /// variable (`x[n]`) branches yield a nested one; `TLeafC` yields strings.
+    ///
+    /// Baskets are decompressed in order on the calling thread; see
+    /// [`read_branch_par`](Self::read_branch_par) for the parallel variant.
     pub fn read_branch(&self, file: &RFile, name: &str) -> Result<BranchValues> {
+        self.read_branch_with(file, name, Decode::Serial)
+    }
+
+    /// [`read_branch`](Self::read_branch), decompressing the baskets in parallel
+    /// on rayon's global thread pool. Requires the `rayon` feature.
+    #[cfg(feature = "rayon")]
+    pub fn read_branch_par(&self, file: &RFile, name: &str) -> Result<BranchValues> {
+        self.read_branch_with(file, name, Decode::Parallel)
+    }
+
+    fn read_branch_with(&self, file: &RFile, name: &str, decode: Decode) -> Result<BranchValues> {
         let branch = self
             .branch(name)
             .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
-        let baskets = read_baskets(file, branch, 0..branch.n_baskets)?;
+        let baskets = read_baskets(file, branch, 0..branch.n_baskets, decode)?;
         decode_baskets(branch, &baskets)
     }
 
@@ -351,12 +364,40 @@ impl TTree {
     /// baskets that cover the range rather than the whole branch. `stop` is
     /// clamped to the entry count and `start` to `stop`, so an out-of-range
     /// window yields fewer (or no) entries instead of an error.
+    ///
+    /// Baskets are decompressed in order on the calling thread; see
+    /// [`read_branch_range_par`](Self::read_branch_range_par) for the parallel
+    /// variant.
     pub fn read_branch_range(
         &self,
         file: &RFile,
         name: &str,
         start: u64,
         stop: u64,
+    ) -> Result<BranchValues> {
+        self.read_branch_range_with(file, name, start, stop, Decode::Serial)
+    }
+
+    /// [`read_branch_range`](Self::read_branch_range), decompressing the baskets
+    /// in parallel on rayon's global thread pool. Requires the `rayon` feature.
+    #[cfg(feature = "rayon")]
+    pub fn read_branch_range_par(
+        &self,
+        file: &RFile,
+        name: &str,
+        start: u64,
+        stop: u64,
+    ) -> Result<BranchValues> {
+        self.read_branch_range_with(file, name, start, stop, Decode::Parallel)
+    }
+
+    fn read_branch_range_with(
+        &self,
+        file: &RFile,
+        name: &str,
+        start: u64,
+        stop: u64,
+        decode: Decode,
     ) -> Result<BranchValues> {
         let branch = self
             .branch(name)
@@ -390,7 +431,7 @@ impl TTree {
             }
         }
 
-        let baskets = read_baskets(file, branch, indices.iter().copied())?;
+        let baskets = read_baskets(file, branch, indices.iter().copied(), decode)?;
         let values = decode_baskets(branch, &baskets)?;
         // `values` covers [first_entry, ..); slice out [start, stop).
         let off = start.saturating_sub(first_entry) as usize;
@@ -403,7 +444,22 @@ impl TTree {
     /// for scalar (one element per entry), fixed `x[N]`, multidimensional, and
     /// variable/jagged numeric branches; string branches are not supported (use
     /// [`read_branch`](Self::read_branch)).
+    ///
+    /// Baskets are decompressed in order on the calling thread; see
+    /// [`read_branch_flat_par`](Self::read_branch_flat_par) for the parallel
+    /// variant.
     pub fn read_branch_flat(&self, file: &RFile, name: &str) -> Result<Jagged> {
+        self.read_branch_flat_with(file, name, Decode::Serial)
+    }
+
+    /// [`read_branch_flat`](Self::read_branch_flat), decompressing the baskets in
+    /// parallel on rayon's global thread pool. Requires the `rayon` feature.
+    #[cfg(feature = "rayon")]
+    pub fn read_branch_flat_par(&self, file: &RFile, name: &str) -> Result<Jagged> {
+        self.read_branch_flat_with(file, name, Decode::Parallel)
+    }
+
+    fn read_branch_flat_with(&self, file: &RFile, name: &str, decode: Decode) -> Result<Jagged> {
         let branch = self
             .branch(name)
             .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
@@ -417,7 +473,7 @@ impl TTree {
                 "branch {name:?} is a TBranchObject member; use read_branch"
             )));
         }
-        let baskets = read_baskets(file, branch, 0..branch.n_baskets)?;
+        let baskets = read_baskets(file, branch, 0..branch.n_baskets, decode)?;
         let regions = entry_regions(branch, &baskets);
         let size = branch.leaf_type.size().max(1);
 
@@ -468,12 +524,23 @@ fn entry_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Vec<&'a [u8]> {
     chunk_regions(baskets, stride)
 }
 
-/// Read the requested baskets of `branch` (by index) and decompress them, in
-/// order. With the `rayon` feature the per-basket decompress runs in parallel.
+/// How [`read_baskets`] decompresses: in order on the calling thread, or, only
+/// when a caller asks for it, across rayon's global pool. Enabling the `rayon`
+/// feature adds the parallel read methods; it never changes the serial ones.
+#[derive(Clone, Copy)]
+enum Decode {
+    Serial,
+    #[cfg(feature = "rayon")]
+    Parallel,
+}
+
+/// Read the requested baskets of `branch` (by index) and decompress them,
+/// returning them in index order either way.
 fn read_baskets(
     file: &RFile,
     branch: &Branch,
     indices: impl Iterator<Item = usize>,
+    decode: Decode,
 ) -> Result<Vec<Basket>> {
     let seek_of = |i: usize| -> Result<u64> {
         branch.basket_seek.get(i).copied().ok_or_else(|| {
@@ -489,24 +556,22 @@ fn read_baskets(
             .and_then(|&b| (b > 0).then_some(b as usize))
     };
 
-    #[cfg(feature = "rayon")]
-    {
-        use rayon::prelude::*;
-        let indices: Vec<usize> = indices.collect();
-        // par_iter().collect() into a Result preserves order and short-circuits
-        // on the first error; the file source and branch are read-only (Sync).
-        indices
-            .into_par_iter()
+    match decode {
+        // Stops at the first error.
+        Decode::Serial => indices
             .map(|i| Basket::read(file, seek_of(i)?, bytes_of(i)))
-            .collect()
-    }
-    #[cfg(not(feature = "rayon"))]
-    {
-        let mut out = Vec::new();
-        for i in indices {
-            out.push(Basket::read(file, seek_of(i)?, bytes_of(i))?);
+            .collect(),
+        #[cfg(feature = "rayon")]
+        Decode::Parallel => {
+            use rayon::prelude::*;
+            let indices: Vec<usize> = indices.collect();
+            // par_iter().collect() into a Result preserves order and short-circuits
+            // on the first error; the file source and branch are read-only (Sync).
+            indices
+                .into_par_iter()
+                .map(|i| Basket::read(file, seek_of(i)?, bytes_of(i)))
+                .collect()
         }
-        Ok(out)
     }
 }
 

@@ -8,6 +8,8 @@ cargo install cargo-fuzz
 cargo +nightly fuzz run rfile        # TFile container parser
 cargo +nightly fuzz run rntuple      # RNTuple anchor/envelope/page decode
 cargo +nightly fuzz run decompress   # ROOT compression block decoder
+cargo +nightly fuzz run tree         # TTree branches and baskets
+cargo +nightly fuzz run hist         # typed histogram/graph/function readers
 ```
 
 Seed the corpus from the committed fixtures for faster coverage:

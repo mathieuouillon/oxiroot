@@ -3,15 +3,18 @@
 //! [`concat_trees`] reads the same branches from several [`TTree`]s and appends
 //! their entries into one writable [`Tree`], reconstructing each branch's kind
 //! (scalar, fixed array, jagged, `std::vector`, or string) so the result writes
-//! back the way it was read. It is the building block the `oxiroot` facade's
-//! file merger uses for tree keys.
+//! back the way it was read. [`append_trees`] streams the same merge into a
+//! [`TTreeWriter`], holding one input's entries at a time; the `oxiroot`
+//! facade's file merger uses it for tree keys.
+
+use std::io::{Seek, Write};
 
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::RFile;
 
 use crate::reader::{BranchMetaLite, TTree};
 use crate::value::BranchValues;
-use crate::writer::{Branch, Tree};
+use crate::writer::{Branch, TTreeWriter, Tree};
 
 /// Concatenate several `TTree`s entry-wise into one writable [`Tree`].
 ///
@@ -74,6 +77,50 @@ pub fn concat_trees(inputs: &[(&RFile, &TTree)]) -> Result<Tree> {
     }
 
     Ok(Tree::new(first.name(), branches))
+}
+
+/// Append every entry of `inputs` to `writer`, one input at a time: each input's
+/// branches are read, written as one batch (one basket per branch), and dropped
+/// before the next input is read. Returns the number of entries appended.
+///
+/// The inputs must agree on their branches as for [`concat_trees`]; the first
+/// batch the writer receives fixes the schema.
+///
+/// # Errors
+///
+/// As [`concat_trees`], plus any error from [`TTreeWriter::write_batch`].
+pub fn append_trees<W: Write + Seek>(
+    writer: &mut TTreeWriter<W>,
+    inputs: &[(&RFile, &TTree)],
+) -> Result<u64> {
+    let &(_, first) = inputs
+        .first()
+        .ok_or_else(|| Error::Format("append_trees: no input trees".into()))?;
+    let names = first.branch_names();
+    let mut appended = 0;
+    for (i, &(file, tree)) in inputs.iter().enumerate() {
+        if let Some((name, reason)) = tree.unsupported_branches().first() {
+            return Err(Error::Format(format!(
+                "append_trees: input #{i} ({:?}) has an unreadable branch {name:?} ({reason}); \
+                 cannot merge it without losing data",
+                tree.name(),
+            )));
+        }
+        let mut batch = Vec::with_capacity(names.len());
+        for &name in &names {
+            let meta = tree.branch_meta(name).ok_or_else(|| {
+                Error::Format(format!(
+                    "append_trees: input #{i} ({:?}) is missing branch {name:?} \
+                     present in the first tree",
+                    tree.name(),
+                ))
+            })?;
+            batch.push(build_branch(name, &meta, tree.read_branch(file, name)?)?);
+        }
+        writer.write_batch(&batch)?;
+        appended += tree.num_entries();
+    }
+    Ok(appended)
 }
 
 /// Rebuild a writable [`Branch`] of the correct kind from a branch's read

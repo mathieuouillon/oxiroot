@@ -9,7 +9,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
 
     // --- Fill histograms, as in an event loop. ---------------------------------
@@ -108,8 +108,8 @@ fn main() -> Result<()> {
     for (region, &(p, ..)) in events.iter().enumerate() {
         prof.fill(region as f64 + 0.5, p);
     }
-    // Write `pt` as a float-precision TH1F just by setting its on-disk precision.
-    let pt_f32 = pt.clone().with_precision(Precision::Float);
+    // Write `pt` as a float-precision TH1F just by setting its on-disk bin content type.
+    let pt_f32 = pt.clone().with_bin_content_type(BinContentType::F32);
     let multi_path = dir.join("analysis_multi.root");
     RootFile::create(&multi_path)
         .add(&pt_f32)

@@ -9,11 +9,8 @@ use oxiroot_io_core::error::Result;
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::RFile;
 
-use crate::base::{object_bytes, object_bytes_in, Precision};
+use crate::base::{object_bytes, object_bytes_in, BinContentType};
 use crate::th1::TH1;
-
-/// ROOT's default confidence level (one Gaussian sigma).
-pub const DEFAULT_CONF_LEVEL: f64 = 0.682689492137086;
 
 /// An efficiency plot (ROOT `TEfficiency`).
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +36,9 @@ pub struct TEfficiency {
 }
 
 impl TEfficiency {
+    /// ROOT's default confidence level: one Gaussian sigma.
+    pub const DEFAULT_CONF_LEVEL: f64 = 0.682689492137086;
+
     /// Create an empty `TEfficiency` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and ROOT's default interval parameters.
     pub fn new(nbins: i32, xlo: f64, xhi: f64) -> TEfficiency {
@@ -49,7 +49,7 @@ impl TEfficiency {
             title: String::new(),
             passed,
             total,
-            conf_level: DEFAULT_CONF_LEVEL,
+            conf_level: Self::DEFAULT_CONF_LEVEL,
             statistic_option: 0,
             weight: 1.0,
             beta_alpha: 1.0,
@@ -129,7 +129,7 @@ fn read_embedded_th1d(r: &mut RBuffer) -> Result<TH1> {
         while r.u8()? != 0 {}
     }
     // Otherwise `tag` was a class back-reference (already consumed).
-    TH1::read(r, Precision::Double)
+    TH1::read(r, BinContentType::F64)
 }
 
 /// Read a `TEfficiency` named `name` from `file`.
