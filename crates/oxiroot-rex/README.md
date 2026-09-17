@@ -71,8 +71,8 @@ and list them here.
   unchanged. They load the fonts in `resources/`.
 - `tests/history.rs` replays upstream's backend-independent render history
   (`tests/data/history_regression_render.yaml`, converted to
-  `tests/history.txt`): every snippet must lay out to the same size and draw
-  the same glyphs and rules.
+  `tests/history.txt`; 154 snippets): every snippet must lay out to the same
+  size and draw the same glyphs and rules.
 
 ## Regenerating the tables
 
@@ -101,8 +101,15 @@ python3 scripts/gen_rex_history.py <ReX checkout> crates/oxiroot-rex/tests/histo
 
 1. Diff upstream `src/` against this crate's `src/`, mapping
    `deps/unicode-math/src/{lib,common}.rs` to `src/unicode_math/{mod,common}.rs`.
+   Also diff upstream `deps/unicode-math/src/{build.rs,parser.rs,parser/}` and
+   `deps/unicode-math/resources/`: if they changed, regenerate the tables as
+   above and update the SHA-1 sums.
 2. Apply the change, keeping the local patches above.
 3. Rename any new snapshot from `rex__…` to `oxiroot_rex__…`.
 4. If upstream re-recorded its render history, rerun
    `scripts/gen_rex_history.py`.
-5. Update the `rev` in `Cargo.toml` (`[package.metadata.vendored]`) and here.
+5. Update the rev (and the version, if it changed) in `Cargo.toml`
+   (`[package.metadata.vendored]` `rev` and `upstream-version`), in this README
+   (the header and the `git checkout` above), in the `src/lib.rs` crate header,
+   and in `LICENSE-3rdparty`, checking upstream's authors and licence text
+   there.

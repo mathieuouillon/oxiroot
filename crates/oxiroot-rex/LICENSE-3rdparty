@@ -45,9 +45,13 @@ licenses" sentence is the Rust project's standard dual-licence notice. Of the
 two licences offered for the original ReX code, oxiroot-rex takes MIT.
 
 The `min!`/`max!` macros in src/macros.rs were borrowed, per the upstream
-source comment, from the min_max_macros crate by Emanuel Claesson
-(https://gitlab.com/EClaesson/min_max_macros), published under the MIT license.
-(The upstream comment spells the crate name as "max_min_macros".)
+source comment, from the min_max_macros crate
+(https://gitlab.com/EClaesson/min_max_macros; the comment spells it
+"max_min_macros"). That crate is published under the MIT license:
+
+    Copyright (c) 2016 Emanuel Claesson
+
+and the MIT permission notice and disclaimer reproduced above apply to it.
 
 
 2. unicode-math (ReX's deps/unicode-math, a fork of
@@ -89,9 +93,16 @@ from these inputs:
   "This work may be distributed and/or modified under the conditions of the
   LaTeX Project Public License, either version 1.3 of this license or (at
   your option) any later version."
-- unicode-math-table.tex from the LaTeX `unicode-math` package. The package is
-  distributed under the LaTeX Project Public License 1.3c; the file itself
-  carries no header.
+- unicode-math-table.tex from the LaTeX `unicode-math` package
+  (wspr.io/unicode-math), whose closing comment block reads:
+
+      This package is free software and may be redistributed and/or modified
+      under the conditions of the LaTeX Project Public License, version 1.3c
+      or higher (your choice): <http://www.latex-project.org/lppl/>.
+      Copyright 2006-2019  Will Robertson, LPPL "maintainer"
+      Copyright 2010-2017  Philipp Stephani
+      Copyright 2011-2017  Joseph Wright
+      Copyright 2012-2015  Khaled Hosny
 - The Unicode names list, for the 24 code-point replacements of the reserved
   holes in U+1D400–U+1D7FF (Unicode terms of use,
   https://www.unicode.org/copyright.html).

@@ -14,8 +14,8 @@ commands) from an upstream ReX checkout, and writes one record per snippet:
     END
     ERR <Xits|Garamond> <hex TeX>                   a render that failed
 
-History entries whose snippet is no longer in regression_render.yaml are
-skipped and counted. Needs PyYAML.
+Fails if a history entry has no snippet in regression_render.yaml. Needs
+PyYAML.
 """
 
 import sys
@@ -30,7 +30,9 @@ def main() -> None:
     rex = Path(sys.argv[1])
     out_path = Path(sys.argv[2])
     data = rex / "tests" / "data"
-    regression = yaml.safe_load((data / "regression_render.yaml").read_text())
+    # BaseLoader keeps every snippet a string, as upstream's `Vec<String>` does;
+    # the default loader would read the snippet `+2` as the integer 2.
+    regression = yaml.load((data / "regression_render.yaml").read_text(), Loader=yaml.BaseLoader)
     history = yaml.safe_load((data / "history_regression_render.yaml").read_text())
 
     fonts = {}
@@ -65,6 +67,8 @@ def main() -> None:
         lines.append("END")
         ok += 1
 
+    if skipped:
+        sys.exit(f"{skipped} history entries have no snippet in regression_render.yaml")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n")
     print(f"{out_path}: {ok} renders, {err} errors, {skipped} history entries skipped")

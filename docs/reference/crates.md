@@ -3,13 +3,13 @@
 oxiroot is a Cargo workspace of small, focused crates. The `oxiroot` facade
 re-exports the library crates and provides the `prelude`; depend on it for the
 full surface, or pull in a single leaf crate to compile only what you use.
-`oxiroot-formula` is the exception: it is the engine behind the functions and
-formula fits, and is not re-exported, so depend on it directly to use
-`Formula` on its own.
+Two crates are not re-exported: `oxiroot-formula`, the engine behind the
+functions and formula fits (depend on it directly to use `Formula` on its own),
+and `oxiroot-rex`, an internal part of `oxiroot-plot`.
 
 | Crate | Purpose |
 |-------|---------|
-| [`oxiroot`](../api/oxiroot/index.html) | Facade: `prelude` + re-exports of the crates below (except `oxiroot-formula`) |
+| [`oxiroot`](../api/oxiroot/index.html) | Facade: `prelude` + re-exports of the crates below (except `oxiroot-formula` and the internal `oxiroot-rex`) |
 | [`oxiroot-io-core`](../api/oxiroot_io_core/index.html) | `TFile` container, buffer primitives, streamer + object-reference engine, the `WriteRoot`/`ReadRoot` object framework, `Error` |
 | [`oxiroot-compress`](../api/oxiroot_compress/index.html) | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | [`oxiroot-rntuple`](../api/oxiroot_rntuple/index.html) | RNTuple reader/writer (spec v1.0.0.0) |
