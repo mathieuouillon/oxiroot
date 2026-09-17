@@ -16,31 +16,46 @@
 //!
 //! # What a fileset may contain
 //!
-//! One invocation writes **one** output file, and oxiroot does not yet assemble
-//! a single container that mixes histograms with a `TTree`/RNTuple (each of
-//! those owns auxiliary basket/page keys). So a fileset must be one of:
+//! One invocation writes **one** output file. The merger does not yet combine
+//! histograms with a `TTree` or RNTuple in one output (a
+//! [`RootFile`](oxiroot_io_core::RootFile) can hold all three, but the merger
+//! concatenates each tree or RNTuple on its own path). So a fileset must be one
+//! of:
 //!
-//! * **all histogram-family objects** — `TH1`/`TH2`/`TH3`/`TProfile` are summed;
-//!   graphs, 2D/3D profiles, efficiencies, functions, strings, matrices, … are
-//!   copied from the first file; unknown classes are skipped and reported;
+//! * **all histogram-family objects** — `TH1`/`TH2`/`TH3` and the 1-, 2- and
+//!   3-D profiles are summed; graphs, efficiencies, functions, strings,
+//!   matrices, … are copied from the first file; unknown classes are skipped and
+//!   reported;
 //! * **a single `TTree`** (and nothing else) — entries concatenated;
 //! * **a single RNTuple** (and nothing else) — entries concatenated.
 //!
 //! Anything else — a `TTree` or RNTuple alongside histograms, or more than one
 //! of them — is refused with an error that names the keys, rather than writing a
-//! partial file. For finer control, merge the pieces yourself with
-//! [`oxiroot_hist::merge_histogram_files`], [`oxiroot_tree::concat_trees`], or
+//! partial file.
+//!
+//! The inputs are read on demand rather than loaded whole. A tree or RNTuple is
+//! streamed to the output one input at a time (one batch of baskets, or one
+//! cluster, per input), so memory holds a single input's entries. A large
+//! merge is written in ROOT's 64-bit container form. The output must not be
+//! one of the inputs. For finer control, merge the pieces yourself with
+//! [`merge_histogram_files`], [`oxiroot_tree::concat_trees`], or
 //! [`oxiroot_rntuple::concat_ntuples`].
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, RFile, KSTART_BIG_FILE};
 
-use oxiroot_hist::merge_histogram_files;
-use oxiroot_rntuple::{concat_ntuples, RNTuple, ANCHOR_CLASS};
-use oxiroot_tree::{concat_trees, TTree};
+mod histograms;
+pub use histograms::{merge_histogram_files, HistMergeOutcome};
+use oxiroot_rntuple::{append_ntuples, concat_ntuples, RNTuple, RNTupleWriter, ANCHOR_CLASS};
+use oxiroot_tree::{append_trees, concat_trees, TTree, TTreeWriter};
+
+/// Inputs larger than this in total are merged straight into the 64-bit
+/// container form; smaller ones switch to it only if the output turns out not to
+/// fit the 32-bit form.
+const LARGE_INPUT_BYTES: u64 = KSTART_BIG_FILE / 2;
 
 /// What kind of merge [`merge_files`] performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,7 +201,23 @@ pub fn merge_files<P: AsRef<Path>>(
         return Err(Error::Format("merge_files: no input files".into()));
     }
 
-    let files: Vec<RFile> = inputs.iter().map(RFile::open).collect::<Result<Vec<_>>>()?;
+    // The inputs are read on demand, so the output must not be one of them.
+    let out_path = std::fs::canonicalize(output).ok();
+    for input in inputs {
+        if out_path.is_some() && std::fs::canonicalize(input).ok() == out_path {
+            return Err(Error::Format(format!(
+                "merge_files: the output {} is also an input",
+                output.display()
+            )));
+        }
+    }
+    // Positioned reads: only the objects and data a merge touches are read, one
+    // input's worth of tree or RNTuple entries at a time.
+    let files: Vec<RFile> = inputs
+        .iter()
+        .map(RFile::open_ranged)
+        .collect::<Result<Vec<_>>>()?;
+    let large = files.iter().map(RFile::size).sum::<u64>() > LARGE_INPUT_BYTES;
 
     // Union of top-level key names (first-seen order) with each key's class.
     let mut seen = std::collections::HashSet::new();
@@ -210,9 +241,16 @@ pub fn merge_files<P: AsRef<Path>>(
         // No trees or RNTuples: a histogram-family fileset.
         (0, 0, _) => merge_histograms(output, &files, inputs.len(), compression),
         // Exactly one TTree and nothing else.
-        (1, 0, 0) => merge_tree(output, &files, &trees[0], inputs.len(), compression),
+        (1, 0, 0) => merge_tree(output, &files, &trees[0], inputs.len(), compression, large),
         // Exactly one RNTuple and nothing else.
-        (0, 1, 0) => merge_rntuple(output, &files, &rntuples[0], inputs.len(), compression),
+        (0, 1, 0) => merge_rntuple(
+            output,
+            &files,
+            &rntuples[0],
+            inputs.len(),
+            compression,
+            large,
+        ),
         // Anything mixed or plural: refuse loudly rather than write a partial file.
         _ => Err(Error::Format(format!(
             "merge_files: this fileset mixes objects oxiroot cannot combine into one file yet \
@@ -244,12 +282,22 @@ fn merge_histograms(
     })
 }
 
+/// Run `write` in the 32-bit container form unless `large`, and once more in the
+/// 64-bit form if the 32-bit file turned out too large.
+fn with_form_fallback(large: bool, mut write: impl FnMut(bool) -> Result<()>) -> Result<()> {
+    match write(large) {
+        Err(Error::FileTooLarge { .. }) if !large => write(true),
+        other => other,
+    }
+}
+
 fn merge_tree(
     output: &Path,
     files: &[RFile],
     name: &str,
     inputs: usize,
     compression: Compression,
+    large: bool,
 ) -> Result<MergeReport> {
     let trees: Vec<TTree> = files
         .iter()
@@ -258,8 +306,22 @@ fn merge_tree(
     let entries = trees.iter().map(TTree::num_entries).sum();
     let pairs: Vec<(&RFile, &TTree)> = files.iter().zip(&trees).collect();
 
-    let merged = concat_trees(&pairs)?;
-    merged.write_root(output, compression)?;
+    if entries == 0 {
+        // The streaming writer needs at least one entry; an empty tree is small.
+        concat_trees(&pairs)?.write_root(output, compression)?;
+    } else {
+        // Stream one input at a time: one batch of baskets per input.
+        let tree_name = trees[0].name();
+        with_form_fallback(large, |big| {
+            let mut writer = if big {
+                TTreeWriter::create_large(output, tree_name, compression)?
+            } else {
+                TTreeWriter::create(output, tree_name, compression)?
+            };
+            append_trees(&mut writer, &pairs)?;
+            writer.finish().map(drop)
+        })?;
+    }
 
     Ok(MergeReport {
         output: output.to_path_buf(),
@@ -278,6 +340,7 @@ fn merge_rntuple(
     name: &str,
     inputs: usize,
     compression: Compression,
+    large: bool,
 ) -> Result<MergeReport> {
     let ntuples: Vec<RNTuple> = files
         .iter()
@@ -286,8 +349,21 @@ fn merge_rntuple(
     let entries = ntuples.iter().map(RNTuple::num_entries).sum();
     let pairs: Vec<(&RFile, &RNTuple)> = files.iter().zip(&ntuples).collect();
 
-    let merged = concat_ntuples(name, &pairs)?;
-    merged.write_root(output, compression)?;
+    if entries == 0 {
+        // The streaming writer needs at least one entry; an empty RNTuple is small.
+        concat_ntuples(name, &pairs)?.write_root(output, compression)?;
+    } else {
+        // Stream one input at a time: one cluster per input.
+        with_form_fallback(large, |big| {
+            let mut writer = if big {
+                RNTupleWriter::create_large(output, name, compression)?
+            } else {
+                RNTupleWriter::create(output, name, compression)?
+            };
+            append_ntuples(&mut writer, &pairs)?;
+            writer.finish()
+        })?;
+    }
 
     Ok(MergeReport {
         output: output.to_path_buf(),
@@ -298,4 +374,44 @@ fn merge_rntuple(
         skipped: Vec::new(),
         entries: Some(entries),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_form_fallback;
+    use oxiroot_io_core::Error;
+
+    #[test]
+    fn a_too_large_small_file_is_rewritten_in_the_large_form() {
+        let mut forms = Vec::new();
+        let result = with_form_fallback(false, |big| {
+            forms.push(big);
+            if big {
+                Ok(())
+            } else {
+                Err(Error::FileTooLarge { size: 3 << 30 })
+            }
+        });
+        assert!(result.is_ok());
+        assert_eq!(forms, [false, true]);
+    }
+
+    #[test]
+    fn other_errors_and_large_writes_are_not_retried() {
+        let mut calls = 0;
+        let result = with_form_fallback(false, |_| {
+            calls += 1;
+            Err(Error::Format("bad branch".into()))
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
+
+        let mut forms = Vec::new();
+        let result = with_form_fallback(true, |big| {
+            forms.push(big);
+            Err(Error::FileTooLarge { size: 1 })
+        });
+        assert!(matches!(result, Err(Error::FileTooLarge { .. })));
+        assert_eq!(forms, [true]);
+    }
 }

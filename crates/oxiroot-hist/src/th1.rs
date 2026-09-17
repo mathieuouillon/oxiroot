@@ -9,17 +9,17 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, histogram_object, histogram_object_in, precision_of, read_th1_object,
-    Precision,
+    bin_content_type_of, cell_count, check_cells, histogram_object, histogram_object_in,
+    read_th1_object, BinContentType,
 };
 
 /// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TH1 {
-    /// On-disk [`Precision`] (the class suffix). Read the class name via
-    /// [`class_name`](TH1::class_name); `pub(crate)` so the precision stays a
+    /// On-disk [`BinContentType`] (the class suffix). Read the class name via
+    /// [`class_name`](TH1::class_name); `pub(crate)` so the type stays a
     /// typed value rather than a free-form string.
-    pub(crate) precision: Precision,
+    pub(crate) bin_content_type: BinContentType,
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
@@ -46,8 +46,10 @@ pub struct TH1 {
     pub tsumwx2: f64,
     /// Bin contents including under/overflow (length `ncells`).
     pub contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty unless error tracking is
-    /// enabled via [`TH1::sumw2`]. When present, `bin_error = sqrt(sumw2[bin])`.
+    /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
+    /// turned on, by [`TH1::sumw2`], [`TH1::scale`], or the first
+    /// [`fill_weight`](TH1::fill_weight) with a weight other than 1. When
+    /// present, `bin_error = sqrt(sumw2[bin])`.
     pub sumw2: Vec<f64>,
 }
 
@@ -58,7 +60,7 @@ impl TH1 {
     pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> TH1 {
         let cells = (nbins.max(0) as usize) + 2;
         TH1 {
-            precision: Precision::Double,
+            bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
             xaxis: TAxis::new("xaxis", nbins, xmin, xmax),
@@ -81,7 +83,7 @@ impl TH1 {
     pub(crate) fn new_variable(edges: &[f64]) -> TH1 {
         let cells = edges.len() + 1; // (edges.len() - 1) bins + 2 flow
         TH1 {
-            precision: Precision::Double,
+            bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
             xaxis: TAxis::variable("xaxis", edges),
@@ -100,8 +102,9 @@ impl TH1 {
 
     /// Enable per-bin error tracking (ROOT's `Sumw2`): allocate the `fSumw2`
     /// array and seed it from the current contents, after which every fill also
-    /// accumulates `weight^2`. Call before filling for correct weighted errors.
-    /// Returns `&mut self` so it can chain (`h.sumw2().fill(x)`).
+    /// accumulates `weight^2`. Weighted fills and [`scale`](TH1::scale) turn it
+    /// on by themselves, so this is only needed to track a unit-weight
+    /// histogram. Returns `&mut self` so it can chain (`h.sumw2().fill(x)`).
     pub fn sumw2(&mut self) -> &mut Self {
         if self.sumw2.len() != self.contents.len() {
             self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
@@ -127,28 +130,28 @@ impl TH1 {
     }
 
     /// The exact ROOT class name (`"TH1D"`/`"TH1F"`/…), derived from the stored
-    /// [`precision`](TH1::precision).
+    /// [`bin_content_type`](TH1::bin_content_type).
     #[must_use]
     pub fn class_name(&self) -> String {
-        self.precision.class_name("TH1")
+        self.bin_content_type.class_name("TH1")
     }
 
-    /// This histogram's on-disk [`Precision`] — the class suffix
-    /// (`TH1`**`D`**/`F`/`I`/`S`/`C`/`L`). [`Precision::Double`] by default.
+    /// This histogram's on-disk [`BinContentType`] — the class suffix
+    /// (`TH1`**`D`**/`F`/`I`/`S`/`C`/`L`). [`BinContentType::F64`] by default.
     #[must_use]
-    pub fn precision(&self) -> Precision {
-        self.precision
+    pub fn bin_content_type(&self) -> BinContentType {
+        self.bin_content_type
     }
 
-    /// Change the on-disk precision of an existing histogram — the
+    /// Change the on-disk bin content type of an existing histogram — the
     /// post-construction counterpart of the builder's storage finalizers. Build
-    /// at a precision with [`Hist::reg(...).float()`](crate::Hist) (→ `TH1F`),
-    /// `.int32()` (→ `TH1I`), …; use this to re-precision a histogram you already
+    /// with a given type via [`Hist::reg(...).float()`](crate::Hist) (→ `TH1F`),
+    /// `.int32()` (→ `TH1I`), …; use this to retype a histogram you already
     /// filled or read back. Bin contents stay `f64` in memory and are narrowed
     /// only at write time.
     #[must_use]
-    pub fn with_precision(mut self, precision: Precision) -> Self {
-        self.precision = precision;
+    pub fn with_bin_content_type(mut self, bin_content_type: BinContentType) -> Self {
+        self.bin_content_type = bin_content_type;
         self
     }
 
@@ -161,7 +164,16 @@ impl TH1 {
     /// entry count, and the running statistics (ROOT `Fill` semantics: every
     /// fill increments `fEntries`; the moment sums accumulate for in-range
     /// fills only).
+    ///
+    /// The first fill with `w != 1` turns on per-bin error tracking, as ROOT's
+    /// `Fill` does, so weighted errors are right without an explicit
+    /// [`sumw2`](Self::sumw2) call.
     pub fn fill_weight(&mut self, x: f64, w: f64) {
+        // Before the contents change: `sumw2` seeds from them, and every earlier
+        // fill had unit weight (otherwise tracking would already be on).
+        if w != 1.0 && self.sumw2.is_empty() {
+            self.sumw2();
+        }
         let nbins = self.xaxis.nbins.max(0) as usize;
         let bin = self.xaxis.find_bin(x);
         if let Some(c) = self.contents.get_mut(bin) {
@@ -205,13 +217,13 @@ impl TH1 {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer, precision: Precision) -> Result<TH1> {
-        let (c, contents) = read_th1_object(r, precision)?;
+    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<TH1> {
+        let (c, contents) = read_th1_object(r, bin_content_type)?;
         let cells = cell_count(&[c.xaxis.nbins])?;
         check_cells("TH1 contents", contents.len(), cells, false)?;
         check_cells("TH1 fSumw2", c.sumw2.len(), cells, true)?;
         Ok(TH1 {
-            precision,
+            bin_content_type,
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -373,8 +385,8 @@ impl TH1 {
     }
 }
 
-/// Read any 1-D histogram (`TH1D/F/I/S/C/L`), detecting the precision from the
-/// stored class.
+/// Read any 1-D histogram (`TH1D/F/I/S/C/L`), detecting the bin content type
+/// from the stored class.
 pub(crate) fn read_th1(file: &RFile, name: &str) -> Result<TH1> {
     decode_th1(histogram_object(file, name, "TH1")?)
 }
@@ -385,5 +397,5 @@ pub(crate) fn read_th1_in(file: &RFile, subdir: &str, name: &str) -> Result<TH1>
 }
 
 pub(crate) fn decode_th1((class, object): (String, Vec<u8>)) -> Result<TH1> {
-    TH1::read(&mut RBuffer::new(&object), precision_of(&class)?)
+    TH1::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
 }

@@ -210,8 +210,10 @@ for fun in &g.functions {
 ```
 
 Build one from scratch with `GraphFunction::new(name, formula, params, xmin, xmax)`
-and attach it with `with_function`. The formula may use either `[0]`/`[1]` or
-`[p0]`/`[p1]` to reference parameters; it is stored in ROOT's `[pN]` form.
+(or convert a `TF1` with `to_graph_function()`, see
+[Functions](functions.md#read-and-write)) and attach it with `with_function`.
+The formula may use either `[0]`/`[1]` or `[p0]`/`[p1]` to reference parameters;
+it is stored in ROOT's `[pN]` form.
 
 ```rust
 use oxiroot::prelude::*;

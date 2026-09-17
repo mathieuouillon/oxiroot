@@ -3,14 +3,13 @@
 
 use std::ops::Range;
 
-use oxiroot_hist::{GraphErrors, TGraph, TProfile, TH1, TH2};
-
 use crate::artists::{
     Artist, ErrorbarArtist, HistType, LineArtist, Marker, MeshArtist, StepArtist,
 };
 use crate::cmap::Colormap;
 use crate::color::Color;
 use crate::colorbar::ColorbarSpec;
+use crate::data::{Hist1dData, Hist2dData, PointData};
 use crate::draw::{DrawCommand, DrawGroup, Rect, Stroke};
 use crate::figure::SaveOpts;
 use crate::style::{Style, TickDir};
@@ -300,12 +299,14 @@ impl Axes {
         (ax.render(w, h), w, h)
     }
 
-    /// Plot a `TH1` as an mplhep step staircase (the matplotlib `hist` analog).
-    pub fn hist(&mut self, h: &TH1) -> &mut Self {
+    /// Plot a 1-D histogram (a `TH1`, or any [`Hist1dData`]) as an mplhep step
+    /// staircase (the matplotlib `hist` analog).
+    pub fn hist(&mut self, h: &impl Hist1dData) -> &mut Self {
         self.hist_with(h, HistOpts::default())
     }
 
-    /// Plot a `TH1` with explicit options (histtype, error bars, color, label).
+    /// Plot a 1-D histogram with explicit options (histtype, error bars, color,
+    /// label).
     ///
     /// # Examples
     /// ```no_run
@@ -316,13 +317,13 @@ impl Axes {
     /// ax.hist_with(&h, HistOpts::new().histtype(HistType::Step).yerr().label("MC"));
     /// ax.save("h.svg").unwrap();
     /// ```
-    pub fn hist_with(&mut self, h: &TH1, opts: HistOpts) -> &mut Self {
+    pub fn hist_with(&mut self, h: &impl Hist1dData, opts: HistOpts) -> &mut Self {
         let edges = h.edges();
-        let values = h.values().to_vec();
+        let values = h.values();
         let n = values.len();
         let color = opts.color.unwrap_or_else(|| self.next_color());
         let errs = if opts.yerr {
-            Some((0..n).map(|i| h.bin_error(i + 1)).collect())
+            Some((0..n).map(|i| h.error(i)).collect())
         } else {
             None
         };
@@ -351,7 +352,8 @@ impl Axes {
         self
     }
 
-    /// Plot a `TGraph` (any error variant) as data points with error bars.
+    /// Plot points with their error bars: a `TGraph` (any error variant), or any
+    /// [`PointData`].
     ///
     /// # Examples
     /// ```no_run
@@ -362,35 +364,15 @@ impl Axes {
     /// ax.errorbar(&g);
     /// ax.save("g.png").unwrap();
     /// ```
-    pub fn errorbar(&mut self, g: &TGraph) -> &mut Self {
+    pub fn errorbar(&mut self, g: &impl PointData) -> &mut Self {
         self.errorbar_with(g, ErrorbarOpts::default())
     }
 
-    /// Plot a `TGraph` with explicit options.
-    pub fn errorbar_with(&mut self, g: &TGraph, opts: ErrorbarOpts) -> &mut Self {
-        let n = g.len();
-        let xs = g.x[..n].to_vec();
-        let ys = g.y[..n].to_vec();
-        let fit = |v: &[f64]| {
-            let mut o = v.to_vec();
-            o.resize(n, 0.0);
-            o
-        };
-        let (xerr, yerr) = match &g.errors {
-            GraphErrors::Symmetric { ex, ey } => {
-                (Some((fit(ex), fit(ex))), Some((fit(ey), fit(ey))))
-            }
-            GraphErrors::Asymmetric {
-                ex_low,
-                ex_high,
-                ey_low,
-                ey_high,
-            } => (
-                Some((fit(ex_low), fit(ex_high))),
-                Some((fit(ey_low), fit(ey_high))),
-            ),
-            _ => (None, None),
-        };
+    /// Plot points with explicit options.
+    pub fn errorbar_with(&mut self, g: &impl PointData, opts: ErrorbarOpts) -> &mut Self {
+        let xs = g.xs();
+        let ys = g.ys();
+        let (xerr, yerr) = (g.x_errors(), g.y_errors());
         let color = opts.color.unwrap_or_else(|| self.next_color());
         self.add_artist(Artist::Errorbar(ErrorbarArtist {
             xs,
@@ -410,7 +392,8 @@ impl Axes {
         self
     }
 
-    /// Plot a `TProfile` as data points with y error bars at bin centers.
+    /// Plot a profile (a `TProfile`, or any [`Hist1dData`]) as data points with y
+    /// error bars at bin centers.
     ///
     /// # Examples
     /// ```no_run
@@ -421,7 +404,7 @@ impl Axes {
     /// ax.profile(&tp);
     /// ax.save("profile.png").unwrap();
     /// ```
-    pub fn profile(&mut self, tp: &TProfile) -> &mut Self {
+    pub fn profile(&mut self, tp: &impl Hist1dData) -> &mut Self {
         let edges = tp.edges();
         let vals = tp.values();
         let n = vals.len();
@@ -429,7 +412,7 @@ impl Axes {
             return self;
         }
         let xs: Vec<f64> = (0..n).map(|i| 0.5 * (edges[i] + edges[i + 1])).collect();
-        let yerr: Vec<f64> = (0..n).map(|i| tp.bin_error(i + 1)).collect();
+        let yerr: Vec<f64> = (0..n).map(|i| tp.error(i)).collect();
         let color = self.next_color();
         self.add_artist(Artist::Errorbar(ErrorbarArtist {
             xs,
@@ -447,12 +430,14 @@ impl Axes {
         self
     }
 
-    /// Plot a `TH2` as a color mesh with a colorbar (matplotlib `pcolormesh`).
-    pub fn hist2d(&mut self, h: &TH2) -> &mut Self {
+    /// Plot a 2-D histogram (a `TH2`, or any [`Hist2dData`]) as a color mesh
+    /// with a colorbar (matplotlib `pcolormesh`).
+    pub fn hist2d(&mut self, h: &impl Hist2dData) -> &mut Self {
         self.hist2d_with(h, Hist2dOpts::default())
     }
 
-    /// Plot a `TH2` with explicit options (colormap, value range, colorbar label).
+    /// Plot a 2-D histogram with explicit options (colormap, value range,
+    /// colorbar label).
     ///
     /// # Examples
     /// ```no_run
@@ -463,10 +448,10 @@ impl Axes {
     /// ax.hist2d_with(&h, Hist2dOpts::new().cmap(Colormap::Viridis).label("entries"));
     /// ax.save("h2.png").unwrap();
     /// ```
-    pub fn hist2d_with(&mut self, h: &TH2, opts: Hist2dOpts) -> &mut Self {
-        let xedges = h.xaxis.edges();
-        let yedges = h.yaxis.edges();
-        let values = h.values();
+    pub fn hist2d_with(&mut self, h: &impl Hist2dData, opts: Hist2dOpts) -> &mut Self {
+        let xedges = h.x_edges();
+        let yedges = h.y_edges();
+        let values = h.grid();
         // Autoscale over the bins that actually hold data. Empty bins (content
         // exactly 0) are not drawn — they show the page background, like ROOT's
         // COLZ — so they must not anchor the color scale at 0 either.

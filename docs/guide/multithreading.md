@@ -4,7 +4,7 @@
 [`TThreadedObject<TH1>`](https://root.cern/doc/master/classROOT_1_1TThreadedObject.html):
 share one accumulator across threads, fill it from any of them, then merge the
 per-thread copies into a single histogram that is identical to a serial fill.
-This page covers `ThreadedHist`, the `Merge` trait (and its `merge_all`), and the
+This page covers `ThreadedHist`, the `Mergeable` trait (and its `merge_all`), and the
 optional `rayon`-powered `fill_par`.
 
 ## The model
@@ -79,7 +79,8 @@ contended.
 | `merge()` | Consume the accumulator, returning the combined histogram (`Result<H>`). |
 
 The `fill` / `fill_weight` convenience methods are provided for every
-fillable type — `TH1`, `TH2`, `TH3`, and `TProfile` — with the matching arity:
+fillable type — `TH1`, `TH2`, `TH3` and the three profiles — with the matching
+arity:
 
 | Type | `fill` | `fill_weight` |
 | --- | --- | --- |
@@ -87,6 +88,8 @@ fillable type — `TH1`, `TH2`, `TH3`, and `TProfile` — with the matching arit
 | `ThreadedHist<TH2>` | `fill(x, y)` | `fill_weight(x, y, w)` |
 | `ThreadedHist<TH3>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
 | `ThreadedHist<TProfile>` | `fill(x, y)` | `fill_weight(x, y, w)` |
+| `ThreadedHist<TProfile2D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
+| `ThreadedHist<TProfile3D>` | `fill(x, y, z, t)` | `fill_weight(x, y, z, t, w)` |
 
 ### `with_local`
 
@@ -122,15 +125,15 @@ println!("filled across {} thread-local copies", hist.num_slots());
     summation order. You can assert `merged.values() == serial.values()` and
     `merged.entries == serial.entries` against a reference serial fill.
 
-## The `Merge` trait
+## The `Mergeable` trait
 
-`merge()` is built on the `Merge` trait, implemented for `TH1`, `TH2`, `TH3`,
-and `TProfile`. `Merge::merge(&mut self, other)` is the bin-by-bin combine of
+`merge()` is built on the `Mergeable` trait, implemented for `TH1`, `TH2`, `TH3`,
+`TProfile`, `TProfile2D` and `TProfile3D`. `Mergeable::merge(&mut self, other)` is the bin-by-bin combine of
 `add(other, 1.0)`; it returns
 [`Error::BinningMismatch`](../api/oxiroot/index.html) (leaving `self` unchanged)
 when the binnings differ.
 
-Its `Merge::merge_all` folds an iterator of histograms into one — an in-memory
+Its `Mergeable::merge_all` folds an iterator of histograms into one — an in-memory
 equivalent of ROOT's `hadd`. It returns `Ok(None)` for an empty iterator, or the
 binning-mismatch error from the first incompatible pair:
 
@@ -147,7 +150,7 @@ let total: Option<TH1> = TH1::merge_all(partials)?;
 For the common "one histogram, fill from a `&[T]`" case, the optional `rayon`
 feature adds a single-call parallel fill. rayon splits `data`, each task folds
 items into a private `template.clone()`, and the partials reduce with
-`Merge::merge`:
+`Mergeable::merge`:
 
 ```rust
 use oxiroot::prelude::*;
@@ -162,11 +165,11 @@ assert_eq!(hist.entries, data.len() as f64);
 The closure `|h, item|` applies one element, so it generalizes beyond 1-D — for
 example `|h, ev| h.fill_weight(ev.x, ev.w)` over a slice of event structs.
 
-`fill_par` comes from the **`rayon`** feature, which is on by default:
+`fill_par` comes from the **`rayon`** feature, which is opt-in:
 
 ```toml
 [dependencies]
-oxiroot = { version = "*" } # the `rayon` feature is on by default
+oxiroot = { version = "*", features = ["rayon"] }
 ```
 
 !!! warning "Summation order"
@@ -181,7 +184,7 @@ oxiroot = { version = "*" } # the `rayon` feature is on by default
 | --- | --- |
 | `ThreadedHist` | You control thread spawning, want to fill from arbitrary call sites, or are filling more than one histogram in the same scope. |
 | `fill_par` | One histogram, data already in a `&[T]`, and you want the parallelism handled for you (requires `rayon`). |
-| `Merge::merge_all` | You already have a collection of compatible histograms to combine (in-memory `hadd`). |
+| `Mergeable::merge_all` | You already have a collection of compatible histograms to combine (in-memory `hadd`). |
 
 A full runnable example lives at
 [`crates/oxiroot/examples/threaded.rs`](https://github.com/mathieuouillon/oxiroot/blob/main/crates/oxiroot/examples/threaded.rs)

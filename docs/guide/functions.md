@@ -6,7 +6,9 @@ evaluate in pure Rust — `eval`, `integral`, `derivative` — and read and writ
 ordinary ROOT `TF1`/`TF2`/`TF3` keys (each embeds a `TFormula`), so ROOT C++ and
 uproot read what oxiroot writes and vice versa.
 
-The expression engine behind them is the dependency-free
+The functions live in the `oxiroot-hist-func` crate and are re-exported as
+`oxiroot::hist::{TF1, TF2, TF3}` and in the prelude. The expression engine
+behind them is the dependency-free
 [`oxiroot-formula`](../reference/crates.md) crate; the same engine powers
 [`Model::from_formula`](fitting.md) so any formula is also fittable.
 
@@ -98,6 +100,22 @@ They also go into a multi-object file or a subdirectory via the `RootFile`
 builder, and a graph's attached fitted functions (`fFunctions`) use the same
 `TF1`/`TFormula` serialization — see [Graphs](graphs.md).
 
+A `TF1` and a graph's `GraphFunction` are the same ROOT record, so they convert
+both ways: `to_graph_function()` attaches a function to a graph, and
+`TF1::from_graph_function` turns an attached function back into something you
+can evaluate:
+
+```rust
+use oxiroot::prelude::*;
+let f = TF1::new("line", "[0]+[1]*x", 0.0, 2.0)?.with_params(vec![1.0, 2.0]);
+let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.1, 2.9, 5.2])
+    .named("g")
+    .with_function(f.to_graph_function());
+let attached = TF1::from_graph_function(g.functions[0].clone())?;
+assert_eq!(attached.eval(1.5), f.eval(1.5));
+# Ok::<(), oxiroot::Error>(())
+```
+
 ROOT C++ and uproot both read oxiroot's `TF1`, `TF2`, and `TF3` and re-evaluate
 them: oxiroot embeds the `TF1`/`TF2`/`TF3`/`TFormula` `TStreamerInfo` (including
 the `std::vector<double>`/`std::map` members) so uproot builds a model for each.
@@ -106,7 +124,8 @@ the `std::vector<double>`/`std::map` members) so uproot builds a model for each.
 
 To fit data to a formula, build a [`Model`](fitting.md) from it — either directly
 with `Model::from_formula`, or from an existing `TF1` with `to_model()` (the
-`fit` feature) — and fit any histogram, graph, or point set:
+`fit` feature of `oxiroot` or `oxiroot-hist-func`) — and fit any histogram,
+graph, or point set:
 
 ```rust
 use oxiroot::prelude::*;

@@ -20,7 +20,7 @@ mod writer;
 
 pub use chain::TChain;
 pub use entrylist::TEntryList;
-pub use merge::concat_trees;
+pub use merge::{append_trees, concat_trees};
 pub use reader::{Friend, TTree};
 pub use value::{BranchValues, Jagged, LeafType};
 pub use writer::{

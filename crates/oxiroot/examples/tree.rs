@@ -13,7 +13,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let keep = std::env::args().nth(1);
     let path = keep.clone().unwrap_or_else(|| {
         std::env::temp_dir()

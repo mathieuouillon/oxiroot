@@ -1,36 +1,43 @@
-//! Histogram/function sampling and smoothing: draw random values from a
-//! histogram's or a function's distribution (`TH1::GetRandom` / `FillRandom`,
-//! `TF1::GetRandom`) and smooth a histogram (`TH1::Smooth`).
+//! Histogram sampling and smoothing: draw random values from a histogram's or
+//! a closure's distribution (`TH1::GetRandom` / `FillRandom`) and smooth a
+//! histogram (`TH1::Smooth`). [`Random::sample_binned`] is the shared
+//! inverse-CDF draw, also used by `TF1::get_random` in `oxiroot-hist-func`.
 //!
 //! Sampling needs a uniform random source. oxiroot has no global RNG (no
-//! `gRandom`), so a small dependency-free [`Rng`] is provided; seed it for
+//! `gRandom`), so a small dependency-free [`Random`] is provided; seed it for
 //! reproducible draws.
 //!
 //! ```
-//! use oxiroot_hist::{Hist, Rng};
+//! use oxiroot_hist::{Hist, Random};
 //! let mut src = Hist::reg(100, -5.0, 5.0).double();
 //! for x in [-1.0, 0.0, 0.0, 1.0, 2.0] { src.fill(x); }
-//! let mut rng = Rng::seed(1);
+//! let mut rng = Random::seed(1);
 //! let mut drawn = Hist::reg(100, -5.0, 5.0).double();
 //! drawn.fill_random(&src, 10_000, &mut rng); // draw 10k from src's shape
 //! assert!((drawn.mean() - src.mean()).abs() < 0.1);
 //! ```
 
-use crate::tf::TF1;
 use crate::th1::TH1;
 
 /// A small seedable pseudo-random generator (SplitMix64), yielding `f64` in
-/// `[0, 1)`. Dependency-free and reproducible — seed it and the draws repeat.
+/// `[0, 1)` — oxiroot's `TRandom`. Dependency-free and reproducible — seed it
+/// and the draws repeat.
+#[doc(
+    alias = "TRandom",
+    alias = "gRandom",
+    alias = "Rng",
+    alias = "SplitMix64"
+)]
 #[derive(Debug, Clone)]
-pub struct Rng {
+pub struct Random {
     state: u64,
 }
 
-impl Rng {
+impl Random {
     /// A generator seeded with `seed` (any value, including 0).
     #[must_use]
-    pub fn seed(seed: u64) -> Rng {
-        Rng { state: seed }
+    pub fn seed(seed: u64) -> Random {
+        Random { state: seed }
     }
 
     /// The next uniform `f64` in `[0, 1)`.
@@ -44,17 +51,41 @@ impl Rng {
         // Top 53 bits → a double in [0, 1).
         (z >> 11) as f64 / (1u64 << 53) as f64
     }
+
+    /// Draw one value from a binned density: bin `k` spans
+    /// `[edges[k], edges[k + 1])` and is picked with probability proportional to
+    /// `weights[k]`, and the value is interpolated within it (ROOT's
+    /// `GetRandom`). Makes exactly one [`uniform`](Random::uniform) draw.
+    ///
+    /// Returns `None`, without drawing, when `edges.len() != weights.len() + 1`
+    /// or the weights do not sum to a positive, finite total (a NaN or infinite
+    /// weight included).
+    ///
+    /// ```
+    /// use oxiroot_hist::Random;
+    /// let mut rng = Random::seed(5);
+    /// let x = rng.sample_binned(&[0.0, 1.0, 0.0], &[0.0, 1.0, 2.0, 3.0]).unwrap();
+    /// assert!((1.0..2.0).contains(&x)); // only the middle bin has weight
+    /// assert_eq!(rng.sample_binned(&[1.0], &[0.0]), None);
+    /// ```
+    pub fn sample_binned(&mut self, weights: &[f64], edges: &[f64]) -> Option<f64> {
+        if edges.len() != weights.len() + 1 {
+            return None;
+        }
+        let cdf = build_cdf(weights)?;
+        Some(sample_cdf(&cdf, edges, self.uniform()))
+    }
 }
 
-impl Default for Rng {
-    fn default() -> Rng {
-        Rng::seed(0)
+impl Default for Random {
+    fn default() -> Random {
+        Random::seed(0)
     }
 }
 
 /// The normalized cumulative of `weights` (one entry per bin): `cdf[0] = 0`,
 /// `cdf[k] = Σ weights[..k] / total`, length `weights.len() + 1`. `None` if the
-/// total is not positive (nothing to sample).
+/// total is not a positive, finite number (nothing to sample).
 fn build_cdf(weights: &[f64]) -> Option<Vec<f64>> {
     let mut cdf = vec![0.0; weights.len() + 1];
     let mut acc = 0.0;
@@ -62,7 +93,7 @@ fn build_cdf(weights: &[f64]) -> Option<Vec<f64>> {
         acc += w;
         cdf[i + 1] = acc;
     }
-    if acc <= 0.0 {
+    if !(acc.is_finite() && acc > 0.0) {
         return None;
     }
     for c in &mut cdf {
@@ -107,17 +138,15 @@ impl TH1 {
     /// For many draws, prefer [`fill_random`](TH1::fill_random) (it builds the
     /// cumulative once).
     #[must_use]
-    pub fn get_random(&self, rng: &mut Rng) -> f64 {
+    pub fn get_random(&self, rng: &mut Random) -> f64 {
         let edges = self.xaxis.edges();
-        match build_cdf(self.values()) {
-            Some(cdf) => sample_cdf(&cdf, &edges, rng.uniform()),
-            None => edges.first().copied().unwrap_or(0.0),
-        }
+        rng.sample_binned(self.values(), &edges)
+            .unwrap_or_else(|| edges.first().copied().unwrap_or(0.0))
     }
 
     /// Fill this histogram with `n` values drawn from `source`'s distribution
     /// (ROOT's `FillRandom(TH1*, n)`). Efficient: the cumulative is built once.
-    pub fn fill_random(&mut self, source: &TH1, n: usize, rng: &mut Rng) {
+    pub fn fill_random(&mut self, source: &TH1, n: usize, rng: &mut Random) {
         let edges = source.xaxis.edges();
         if let Some(cdf) = build_cdf(source.values()) {
             for _ in 0..n {
@@ -129,7 +158,7 @@ impl TH1 {
     /// Fill this histogram with `n` values drawn from a function `f` over this
     /// histogram's range (ROOT's `FillRandom(TF1*, n)`): `f` is sampled at the
     /// bin centres to form the density.
-    pub fn fill_random_fn<F: Fn(f64) -> f64>(&mut self, f: F, n: usize, rng: &mut Rng) {
+    pub fn fill_random_fn<F: Fn(f64) -> f64>(&mut self, f: F, n: usize, rng: &mut Random) {
         let nbins = self.xaxis.nbins.max(0) as usize;
         let weights: Vec<f64> = (1..=nbins)
             .map(|b| f(self.xaxis.bin_center(b)).max(0.0))
@@ -153,26 +182,6 @@ impl TH1 {
         smooth_array(&mut vals, ntimes);
         for (i, v) in vals.into_iter().enumerate() {
             self.contents[i + 1] = v;
-        }
-    }
-}
-
-impl TF1 {
-    /// Draw a random `x` from the function's distribution over its range (ROOT's
-    /// `TF1::GetRandom`): the function is sampled on a fine grid to build a
-    /// cumulative, then inverse-transform sampled. Assumes `f ≥ 0` on the range.
-    #[must_use]
-    pub fn get_random(&self, rng: &mut Rng) -> f64 {
-        const NPX: usize = 200;
-        let (xmin, xmax) = self.range();
-        let dx = (xmax - xmin) / NPX as f64;
-        let weights: Vec<f64> = (0..NPX)
-            .map(|i| self.eval(xmin + (i as f64 + 0.5) * dx).max(0.0))
-            .collect();
-        let edges: Vec<f64> = (0..=NPX).map(|i| xmin + i as f64 * dx).collect();
-        match build_cdf(&weights) {
-            Some(cdf) => sample_cdf(&cdf, &edges, rng.uniform()),
-            None => xmin,
         }
     }
 }
@@ -313,41 +322,62 @@ mod tests {
         src.fill_random_fn(
             |x| (-0.5 * (x - 5.0).powi(2)).exp(),
             400_000,
-            &mut Rng::seed(7),
+            &mut Random::seed(7),
         );
         assert!((src.mean() - 5.0).abs() < 0.02, "mean {}", src.mean());
         assert!((src.std_dev() - 1.0).abs() < 0.02, "std {}", src.std_dev());
 
         let mut drawn = Hist::reg(100, 0.0, 10.0).double();
-        drawn.fill_random(&src, 400_000, &mut Rng::seed(11));
+        drawn.fill_random(&src, 400_000, &mut Random::seed(11));
         assert!((drawn.mean() - src.mean()).abs() < 0.03);
         assert!((drawn.std_dev() - src.std_dev()).abs() < 0.03);
     }
 
     #[test]
-    fn tf1_get_random_matches_the_function() {
-        // ROOT: TF1 gaus mean 3 sigma 0.8 → GetRandom mean≈3.00, std≈0.80.
-        let f = TF1::new("g", "gaus", 0.0, 10.0)
-            .unwrap()
-            .with_params(vec![1.0, 3.0, 0.8]);
-        let mut rng = Rng::seed(3);
-        let (mut s, mut s2) = (0.0, 0.0);
-        let n = 300_000;
-        for _ in 0..n {
-            let x = f.get_random(&mut rng);
-            s += x;
-            s2 += x * x;
+    fn sample_binned_rejects_bad_input_without_drawing() {
+        let mut rng = Random::seed(9);
+        // Mismatched lengths.
+        assert_eq!(rng.sample_binned(&[1.0, 2.0], &[0.0, 1.0]), None);
+        assert_eq!(rng.sample_binned(&[1.0], &[0.0, 1.0, 2.0]), None);
+        // No positive total.
+        assert_eq!(rng.sample_binned(&[0.0, 0.0], &[0.0, 1.0, 2.0]), None);
+        assert_eq!(rng.sample_binned(&[], &[0.0]), None);
+        // No finite total.
+        assert_eq!(rng.sample_binned(&[f64::NAN], &[0.0, 1.0]), None);
+        assert_eq!(rng.sample_binned(&[1.0, f64::NAN], &[0.0, 1.0, 2.0]), None);
+        assert_eq!(rng.sample_binned(&[f64::INFINITY], &[0.0, 1.0]), None);
+        assert_eq!(
+            rng.sample_binned(&[f64::MAX, f64::MAX], &[0.0, 1.0, 2.0]),
+            None
+        );
+        // None of the above consumed a draw.
+        assert_eq!(rng.uniform(), Random::seed(9).uniform());
+    }
+
+    #[test]
+    fn sample_binned_draws_within_the_weighted_bins() {
+        let mut rng = Random::seed(4);
+        let edges = [0.0, 1.0, 3.0, 4.0];
+        for _ in 0..10_000 {
+            let x = rng.sample_binned(&[1.0, 0.0, 3.0], &edges).unwrap();
+            assert!((0.0..1.0).contains(&x) || (3.0..4.0).contains(&x), "{x}");
         }
-        let mean = s / n as f64;
-        let std = (s2 / n as f64 - mean * mean).sqrt();
-        assert!((mean - 3.0).abs() < 0.02, "mean {mean}");
-        assert!((std - 0.8).abs() < 0.02, "std {std}");
+    }
+
+    #[test]
+    fn get_random_on_a_malformed_histogram_returns_the_lower_edge() {
+        let mut h = Hist::reg(4, 1.0, 5.0).double();
+        for x in [1.5, 2.5, 3.5, 4.5] {
+            h.fill(x);
+        }
+        h.contents.push(1.0); // contents no longer match the axis
+        assert_eq!(h.get_random(&mut Random::seed(1)), 1.0);
     }
 
     #[test]
     fn rng_is_uniform_and_reproducible() {
-        let mut a = Rng::seed(42);
-        let mut b = Rng::seed(42);
+        let mut a = Random::seed(42);
+        let mut b = Random::seed(42);
         let mut sum = 0.0;
         for _ in 0..100_000 {
             let x = a.uniform();

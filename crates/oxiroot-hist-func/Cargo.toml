@@ -1,0 +1,24 @@
+[package]
+name = "oxiroot-hist-func"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ROOT parametric functions (TF1/TF2/TF3) evaluated in pure Rust, with ROOT read/write"
+
+[dependencies]
+oxiroot-hist = { workspace = true }
+oxiroot-io-core = { workspace = true }
+oxiroot-formula = { workspace = true }
+oxiroot-fit = { workspace = true, optional = true }
+
+[features]
+# Opt-in fitting: `TF1::to_model` turns a function into an `oxiroot_fit::Model`.
+fit = ["dep:oxiroot-fit"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true

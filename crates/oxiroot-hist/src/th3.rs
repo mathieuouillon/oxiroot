@@ -12,16 +12,16 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, histogram_object, histogram_object_in, precision_of, read_tarray,
-    read_th1_base, Precision,
+    bin_content_type_of, cell_count, check_cells, histogram_object, histogram_object_in,
+    read_tarray, read_th1_base, BinContentType,
 };
 
 /// A 3-D classic histogram (`TH3D` or `TH3F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TH3 {
-    /// On-disk [`Precision`] (the class suffix); read the class name via
+    /// On-disk [`BinContentType`] (the class suffix); read the class name via
     /// [`class_name`](TH3::class_name).
-    pub(crate) precision: Precision,
+    pub(crate) bin_content_type: BinContentType,
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
@@ -61,13 +61,14 @@ pub struct TH3 {
     pub tsumwyz: f64,
     /// Bin contents including flow (length `ncells`, x fastest then y then z).
     pub contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty unless enabled via
-    /// [`TH3::sumw2`].
+    /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
+    /// turned on by [`TH3::sumw2`], [`TH3::scale`], or a weighted fill (see
+    /// [`TH1::fill_weight`](crate::TH1::fill_weight)).
     pub sumw2: Vec<f64>,
 }
 
 impl TH3 {
-    pub(crate) fn read(r: &mut RBuffer, precision: Precision) -> Result<TH3> {
+    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<TH3> {
         let _th3x = r.read_version()?; // TH3x wrapper
         let th3 = r.read_version()?; // TH3 wrapper
 
@@ -85,14 +86,14 @@ impl TH3 {
             .end
             .ok_or_else(|| Error::Format("TH3 record has no byte count".into()))?;
         r.seek(end)?;
-        let contents = read_tarray(r, precision)?;
+        let contents = read_tarray(r, bin_content_type)?;
 
         let cells = cell_count(&[c.xaxis.nbins, c.yaxis.nbins, c.zaxis.nbins])?;
         check_cells("TH3 contents", contents.len(), cells, false)?;
         check_cells("TH3 fSumw2", c.sumw2.len(), cells, true)?;
 
         Ok(TH3 {
-            precision,
+            bin_content_type,
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -167,7 +168,7 @@ impl TH3 {
     ) -> TH3 {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2);
         TH3 {
-            precision: Precision::Double,
+            bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
             xaxis: TAxis::new("xaxis", nx, xlo, xhi),
@@ -207,25 +208,25 @@ impl TH3 {
     }
 
     /// The exact ROOT class name (`"TH3D"`/`"TH3F"`/…), derived from the stored
-    /// [`precision`](TH3::precision).
+    /// [`bin_content_type`](TH3::bin_content_type).
     #[must_use]
     pub fn class_name(&self) -> String {
-        self.precision.class_name("TH3")
+        self.bin_content_type.class_name("TH3")
     }
 
-    /// This histogram's on-disk [`Precision`] (the class suffix);
-    /// [`Precision::Double`] by default. See [`crate::TH1::precision`].
+    /// This histogram's on-disk [`BinContentType`] (the class suffix);
+    /// [`BinContentType::F64`] by default. See [`crate::TH1::bin_content_type`].
     #[must_use]
-    pub fn precision(&self) -> Precision {
-        self.precision
+    pub fn bin_content_type(&self) -> BinContentType {
+        self.bin_content_type
     }
 
-    /// Change the on-disk precision of an existing histogram — the
+    /// Change the on-disk bin content type of an existing histogram — the
     /// post-construction counterpart of the builder's storage finalizers (build
-    /// at a precision with [`Hist::reg(...).reg(...).reg(...).float()`](crate::Hist) → `TH3F`, …).
+    /// with a given type via [`Hist::reg(...).reg(...).reg(...).float()`](crate::Hist) → `TH3F`, …).
     #[must_use]
-    pub fn with_precision(mut self, precision: Precision) -> Self {
-        self.precision = precision;
+    pub fn with_bin_content_type(mut self, bin_content_type: BinContentType) -> Self {
+        self.bin_content_type = bin_content_type;
         self
     }
 
@@ -253,6 +254,10 @@ impl TH3 {
     /// counts toward `fEntries`, the cell (including flow) is incremented, and
     /// the moment sums accumulate only when all three coordinates are in range.
     pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, w: f64) {
+        // Before the contents change; see `TH1::fill_weight`.
+        if w != 1.0 && self.sumw2.is_empty() {
+            self.sumw2();
+        }
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let binx = self.xaxis.find_bin(x);
         let biny = self.yaxis.find_bin(y);
@@ -311,7 +316,7 @@ impl TH3 {
     }
 }
 
-/// Read any 3-D histogram (`TH3D/F/I/S/C/L`), detecting the precision from the
+/// Read any 3-D histogram (`TH3D/F/I/S/C/L`), detecting the bin content type from the
 /// stored class.
 pub(crate) fn read_th3(file: &RFile, name: &str) -> Result<TH3> {
     decode_th3(histogram_object(file, name, "TH3")?)
@@ -323,5 +328,5 @@ pub(crate) fn read_th3_in(file: &RFile, subdir: &str, name: &str) -> Result<TH3>
 }
 
 pub(crate) fn decode_th3((class, object): (String, Vec<u8>)) -> Result<TH3> {
-    TH3::read(&mut RBuffer::new(&object), precision_of(&class)?)
+    TH3::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
 }

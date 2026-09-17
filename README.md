@@ -27,7 +27,7 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   N-dimensional `THnSparse`, and polygon-binned `TH2Poly` — all read **and** write.
 - 🎲 **Sampling & smoothing** — draw from a histogram's or function's
   distribution (`get_random`/`fill_random`, ROOT's `GetRandom`/`FillRandom`) and
-  smooth with ROOT's `353QH` (`smooth`), via a small seedable built-in `Rng` (no
+  smooth with ROOT's `353QH` (`smooth`), via a small seedable built-in `Random` (no
   `rand` dependency).
 - 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, plus `TGraph2D`
   and `TGraphMultiErrors` — read and write, including a graph's display frame
@@ -101,17 +101,18 @@ independent, so a histogram-only project never compiles the others.
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple, fitting, plotting — through
-# the facade. The optional capabilities (fit, plot, rayon, mmap, argmin) are ON
-# BY DEFAULT, so nothing extra to enable:
+# the facade. Fitting, plotting, mmap and argmin are ON BY DEFAULT, so nothing
+# extra to enable (add `features = ["rayon"]` for the parallel helpers):
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 
-# …leaner, just the format core (drops the fitting/plotting/rayon/mmap deps):
+# …leaner, just the format core (drops the fitting/plotting/mmap deps):
 # oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
 
 # …or depend on just one crate from the same repo:
-oxiroot-hist    = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
-oxiroot-tree    = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
-oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
+oxiroot-hist      = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
+oxiroot-hist-func = { git = "https://github.com/mathieuouillon/oxiroot" }  # TF1/TF2/TF3
+oxiroot-tree      = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
+oxiroot-rntuple   = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
 ```
 
 ```rust
@@ -167,10 +168,10 @@ cargo run -p oxiroot --example analysis
   `h.write_root(path, compression)?` and read one with
   `TH1::read_root(&file, name)?` (the `WriteRoot`/`ReadRoot` traits; also
   `h.to_root_bytes()` and `TH1::read_root_in(&file, dir, name)?` for a
-  subdirectory). A `TH1`/`TH2`/`TH3`'s on-disk precision is a typed `Precision`
-  chosen by the builder's storage finalizer (`.float()` writes a `TH1F`; see
+  subdirectory). A `TH1`/`TH2`/`TH3`'s on-disk bin content type is a typed
+  `BinContentType` chosen by the builder's storage finalizer (`.float()` writes a `TH1F`; see
   below), or changed on a histogram you already built or read with
-  `.with_precision(Precision::Float)`; `h.class_name()` reconstructs the ROOT
+  `.with_bin_content_type(BinContentType::F32)`; `h.class_name()` reconstructs the ROOT
   class. Profiles carry a typed `ErrorMode`.
 - **No forced names, no global registry.** A histogram is just data: construct
   it with the `Hist` builder (`Hist::reg(nbins, lo, hi).double()`) and name it
@@ -179,9 +180,10 @@ cargo run -p oxiroot --example analysis
   is no `gROOT`/`gDirectory`, so any number of same-named histograms coexist in
   memory; and writing two objects under the same key name in one directory is a
   loud `DuplicateName` error, never ROOT's silent shadow-on-read.
-- Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics; `sumw2()`
-  (chains: `h.sumw2().fill(x)`) enables weighted per-bin errors (`bin_error`) on
-  a histogram not already built with `.weight()`.
+- Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics, including its
+  automatic `Sumw2`: the first weight other than 1 turns on weighted per-bin
+  errors (`bin_error`). `sumw2()` (chains: `h.sumw2().fill(x)`) turns them on
+  explicitly for a unit-weight histogram.
 - **The one way to build a histogram is the scikit-hep
   [`hist`](https://github.com/scikit-hep/hist)-style `Hist` builder**, mapped
   onto ROOT so the result is an ordinary `TH1`/`TH2`/`TH3`.
@@ -213,7 +215,7 @@ cargo run -p oxiroot --example analysis
 - Sampling & smoothing: `get_random` / `fill_random` draw from a histogram's (or,
   via `fill_random_fn` / `TF1::get_random`, a function's) distribution
   (inverse-CDF, ROOT's `GetRandom`/`FillRandom`); `smooth` is ROOT's `353QH`
-  smoother. A small seedable `Rng` means no `rand` dependency and reproducible
+  smoother. A small seedable `Random` means no `rand` dependency and reproducible
   draws.
 - Compatibility tests: `chi2_test`/`chi2_test_with` (Pearson χ², all three
   `UU`/`UW`/`WW` weighting schemes) and `kolmogorov_test`, returning ROOT-matched
@@ -242,7 +244,7 @@ cargo run -p oxiroot --example analysis
   let merged = hist.merge()?;
   ```
   No `Arc`, no manual slots; `with_local(|h| …)` batches fills or reaches any
-  method, and the `rayon` feature (on by default) adds a one-call
+  method, and the opt-in `rayon` feature adds a one-call
   `fill_par(&template, &data, |h, &x| h.fill(x))`. See
   [`examples/threaded.rs`](crates/oxiroot/examples/threaded.rs).
 - Write one object with `h.write_root(path, compression)`. For several objects,
@@ -539,7 +541,8 @@ backend-independent draw IR fans out to a [`tiny-skia`](https://crates.io/crates
 raster (PNG) and a hand-written SVG, so the two outputs share identical geometry.
 The default font is the bundled **STIX Two** (a LaTeX-like serif), and `$…$`
 labels are typeset as real LaTeX math by the pure-Rust
-[ReX](https://github.com/KenyC/ReX) TeX engine into the same IR.
+[ReX](https://github.com/KenyC/ReX) TeX engine (vendored in-tree as
+`oxiroot-rex`) into the same IR.
 
 <p align="center">
   <img src="docs/images/plot-mass.png" alt="Z to mu mu candidates: filled MC template with data points overlaid, matplotlib look" width="46%">
@@ -643,7 +646,8 @@ ax2.save("heatmap.svg")?;
 - `read_branch` reads a whole branch,
   `read_branch_range(start, stop)` only the baskets covering a window, and
   `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `TChain` spans many
-  files (optional `rayon` decodes baskets in parallel). Introspect with
+  files. With the `rayon` feature, `read_branch_par` (and the `_range_par` /
+  `_flat_par` variants) decompress baskets in parallel. Introspect with
   `branch_type`/`branch_shape`/`branch_title`, and see what was skipped via
   `unsupported_branches()`. Worked example: `cargo run -p oxiroot --example tree`.
 - `friends()` returns the friend trees attached with `TTree::AddFriend` (read
@@ -699,9 +703,10 @@ ax2.save("heatmap.svg")?;
 - `Ntuple::new(name, fields).write_root(path, compression)` is the method form
   (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
   free `write_rntuple_file` remains.
-- `NtupleFile` writes **several RNTuples per file** and RNTuples **inside a
-  `TDirectory`** — `NtupleFile::new().add(events).add(runs).dir("cal", |d|
-  d.add(pedestals)).write_root(…)`. Read a nested one with
+- `RootFile::put` writes **several RNTuples per file**, RNTuples **inside a
+  `TDirectory`**, and RNTuples next to histograms and trees —
+  `RootFile::create(path).put(events).put(runs).dir("cal", |d|
+  d.put(pedestals)).write(…)`. Read a nested one with
   `RNTuple::open_in(file, "cal", "pedestals")`. ROOT and uproot navigate the
   result natively.
 - `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is
@@ -712,14 +717,14 @@ ax2.save("heatmap.svg")?;
 - **A pure-Rust [`hadd`](https://root.cern/doc/master/classTFileMerger.html)** —
   `merge_files("all.root", &["run1.root", "run2.root"], Compression::Zstd(5))?`
   combines several ROOT files the way ROOT's most-used command-line tool does:
-  **`TH1`/`TH2`/`TH3`/`TProfile` summed** bin-by-bin (the exact `add` reduction —
-  contents, `Sumw2`, entries, moments), and **`TTree` / RNTuple entries
-  concatenated**. Other supported objects (graphs, 2D/3D profiles, efficiencies,
+  **`TH1`/`TH2`/`TH3` and the 1-, 2- and 3-D profiles summed** bin-by-bin (the
+  exact `add` reduction — contents, `Sumw2`, entries, moments), and **`TTree` /
+  RNTuple entries concatenated**. Other supported objects (graphs, efficiencies,
   functions, strings, matrices, …) are copied from the first file; unknown
   classes are **skipped and listed in the report**, never silently dropped.
 - Each concatenated branch keeps its original kind (scalar, `x[N]`, jagged `x[n]`,
   `std::vector<T>`, string). The standalone `oxiroot_tree::concat_trees`,
-  `oxiroot_rntuple::concat_ntuples`, and `oxiroot_hist::merge_histogram_files`
+  `oxiroot_rntuple::concat_ntuples`, and `oxiroot::hadd::merge_histogram_files`
   do the per-format work and can be called directly.
 - `Merger::new().inputs(paths).compression(c).merge("all.root")?` is the
   composable builder; `merge_files` returns a `MergeReport` (what was summed /
@@ -830,17 +835,20 @@ on, so nothing extra is needed.
 
 | Crate | Purpose |
 |-------|---------|
-| `oxiroot` | Facade: `prelude` + re-exports of everything below |
+| `oxiroot` | Facade: `prelude` + re-exports of the library crates below (not `oxiroot-formula`, the internal `oxiroot-rex`, or the CLI) |
 | `oxiroot-io-core` | `TFile` container, buffer primitives, streamer + object-reference engine, the `WriteRoot`/`ReadRoot` object framework, `Error` |
 | `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
 | `oxiroot-hist` | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
+| `oxiroot-hist-func` | `TF1`/`TF2`/`TF3` parametric functions, with ROOT read/write |
+| `oxiroot-formula` | Dependency-free `TFormula` expression engine behind the functions and formula fits |
 | `oxiroot-linalg` | ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym` |
 | `oxiroot-tree` | Classic `TTree` read/write |
 | `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | `oxiroot-stat` | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) |
 | `oxiroot-particle` | PDG particle data — the numbering-scheme decoder + a bundled particle table (verified vs scikit-hep `particle`) |
 | `oxiroot-plot` | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
+| `oxiroot-rex` | Internal: the vendored ReX TeX math layout engine used by `oxiroot-plot` |
 | `oxiroot-cli` | `oxroot`: a command-line inspector (`ls`/`show`/`dump`/`stat`) |
 
 Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
@@ -854,15 +862,15 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 | Feature | Default | Effect |
 |---------|:---:|--------|
 | `mmap` | ✅ | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
-| `rayon` | ✅ | Data-parallel histogram fill (`hist::fill_par`) and TTree basket decode; adds `rayon`. |
+| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TTree::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 | `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `TH1`/`TH2`/`TGraph`/`TProfile`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
 | `http` | — | Remote reads over HTTP(S) byte-range requests (`RFile::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
 | `xrootd` | — | Remote reads over the XRootD `root://` protocol (`RFile::open_url`), with `unix` auth for public data (e.g. `root://eospublic.cern.ch`). Pure `std::net` — adds no dependencies. |
 
-All are **on by default** — the facade is batteries-included. For a lean,
-pure-Rust format core with a minimal dependency set, opt out with
+The facade is batteries-included: everything marked ✅ is on by default. For a
+lean, pure-Rust format core with a minimal dependency set, opt out with
 `default-features = false` and re-enable what you need.
 
 ## Build & test
@@ -950,4 +958,6 @@ the `plot` feature renders the data, it does not (de)serialize ROOT graphics.
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE). `crates/oxiroot-particle` and
+`crates/oxiroot-rex` contain third-party code under their own notices (see each
+crate's `LICENSE-3rdparty`), and the bundled fonts carry their own licences.

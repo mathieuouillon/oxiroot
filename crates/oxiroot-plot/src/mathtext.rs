@@ -7,13 +7,18 @@
 //! crate's own [`Path`]/polygon IR. Both kinds of run share one baseline, then
 //! the whole block is anchored and rotated exactly like [`crate::text::layout`].
 //! A malformed math run falls back to a stripped plain-text rendering rather than
-//! failing.
+//! failing, and so does every math run in a build without the `math` feature.
 
-use rex::font::backend::ttf_parser::TtfMathFont;
-use rex::font::common::GlyphId;
-use rex::layout::engine::LayoutBuilder;
-use rex::parser::parse;
-use rex::render::{Backend, Cursor, FontBackend, GraphicsBackend, Renderer, RGBA};
+#[cfg(feature = "math")]
+use oxiroot_rex::font::backend::ttf_parser::TtfMathFont;
+#[cfg(feature = "math")]
+use oxiroot_rex::font::common::GlyphId;
+#[cfg(feature = "math")]
+use oxiroot_rex::layout::engine::LayoutBuilder;
+#[cfg(feature = "math")]
+use oxiroot_rex::parser::parse;
+#[cfg(feature = "math")]
+use oxiroot_rex::render::{Backend, Cursor, FontBackend, GraphicsBackend, Renderer, RGBA};
 
 use crate::color::Color;
 use crate::draw::{DrawCommand, DrawGroup, Path, Pt, Seg};
@@ -25,6 +30,7 @@ enum LocalPrim {
     /// A filled glyph outline.
     Fill(Path),
     /// A filled axis-aligned rule (fraction bar, radical) as a polygon.
+    #[cfg(feature = "math")]
     Poly(Vec<Pt>),
 }
 
@@ -48,6 +54,7 @@ impl LocalPrim {
                     }
                 }
             }
+            #[cfg(feature = "math")]
             LocalPrim::Poly(pts) => {
                 for p in pts {
                     p.0 += dx;
@@ -150,6 +157,7 @@ pub(crate) fn layout_label(
                 fill: Some(color),
                 stroke: None,
             }),
+            #[cfg(feature = "math")]
             LocalPrim::Poly(pts) => g.push(DrawCommand::Polygon {
                 pts: pts.iter().map(|&(lx, ly)| xf(lx, ly)).collect(),
                 fill: Some(color),
@@ -208,8 +216,15 @@ fn split_runs(s: &str) -> Vec<(bool, String)> {
     runs
 }
 
+/// Without the `math` feature every math run takes the plain-text fallback.
+#[cfg(not(feature = "math"))]
+fn render_math(_: &FontSet, _: &str, _: f32) -> Option<(Vec<LocalPrim>, f32, f32, f32)> {
+    None
+}
+
 /// Typeset one math run with ReX, returning local prims plus `(width, ascent,
 /// descent)` in pixels. `None` on a font or parse error.
+#[cfg(feature = "math")]
 fn render_math(
     fonts: &FontSet,
     tex: &str,
@@ -240,11 +255,13 @@ fn strip_math(s: &str) -> String {
         .replace(['{', '}'], "")
 }
 
+#[cfg(feature = "math")]
 /// A ReX [`Backend`] collecting glyph outlines + rules into [`LocalPrim`]s.
 struct MathCollector {
     prims: Vec<LocalPrim>,
 }
 
+#[cfg(feature = "math")]
 impl FontBackend<TtfMathFont<'_>> for MathCollector {
     fn symbol(&mut self, pos: Cursor, gid: GlyphId, scale: f64, ctx: &TtfMathFont<'_>) {
         let m = ctx.font_matrix();
@@ -261,6 +278,7 @@ impl FontBackend<TtfMathFont<'_>> for MathCollector {
     }
 }
 
+#[cfg(feature = "math")]
 impl GraphicsBackend for MathCollector {
     fn rule(&mut self, pos: Cursor, width: f64, height: f64) {
         let (x, y, w, h) = (pos.x as f32, pos.y as f32, width as f32, height as f32);
@@ -275,8 +293,10 @@ impl GraphicsBackend for MathCollector {
     fn end_color(&mut self) {}
 }
 
+#[cfg(feature = "math")]
 impl Backend<TtfMathFont<'_>> for MathCollector {}
 
+#[cfg(feature = "math")]
 /// Maps a glyph outline (font units) through the ReX font matrix + scale + a
 /// Y-flip + the glyph position, building a [`Path`] in the math run's local frame.
 struct OutlineToPath {
@@ -286,6 +306,7 @@ struct OutlineToPath {
     pos: (f32, f32),
 }
 
+#[cfg(feature = "math")]
 impl OutlineToPath {
     fn map(&self, x: f32, y: f32) -> (f32, f32) {
         let (sx, ky, kx, sy, tx, ty) = self.m;
@@ -295,6 +316,7 @@ impl OutlineToPath {
     }
 }
 
+#[cfg(feature = "math")]
 impl ttf_parser::OutlineBuilder for OutlineToPath {
     fn move_to(&mut self, x: f32, y: f32) {
         let (a, b) = self.map(x, y);

@@ -11,7 +11,8 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_object, Precision,
+    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_object,
+    BinContentType,
 };
 
 /// How a profile's per-bin error bar is computed (ROOT's `fErrorMode`). Shared
@@ -102,15 +103,15 @@ impl TProfile {
         let tprofile = r.read_version()?; // TProfile wrapper
 
         // The TH1D base: its own wrapper, the TH1 base, and the TArrayD sums.
-        let (core, sums) = read_th1_object(r, Precision::Double)?;
+        let (core, sums) = read_th1_object(r, BinContentType::F64)?;
 
-        let bin_entries = read_tarray(r, Precision::Double)?;
+        let bin_entries = read_tarray(r, BinContentType::F64)?;
         let error_mode = ErrorMode::from_code(r.be_i32()?);
         let ymin = r.be_f64()?;
         let ymax = r.be_f64()?;
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;
-        let bin_sumw2 = read_tarray(r, Precision::Double)?;
+        let bin_sumw2 = read_tarray(r, BinContentType::F64)?;
 
         if let Some(end) = tprofile.end {
             r.seek(end)?;
@@ -257,6 +258,16 @@ impl TProfile {
         }
     }
 
+    /// Turn on per-bin `Σw²` tracking (ROOT's `TProfile::Sumw2`), seeding each
+    /// bin from its weight sum — exact for the unit-weight fills made so far.
+    /// A no-op once tracking is on. Call before the current fill touches
+    /// `bin_entries`.
+    pub(crate) fn track_bin_sumw2(&mut self) {
+        if self.bin_sumw2.is_empty() {
+            self.bin_sumw2 = self.bin_entries.clone();
+        }
+    }
+
     /// Profile a point `(x, y)` with unit weight.
     pub fn fill(&mut self, x: f64, y: f64) {
         self.fill_weight(x, y, 1.0);
@@ -266,9 +277,16 @@ impl TProfile {
     /// accumulate the per-bin sums of `w*y` and `w*y^2` and the per-bin weight,
     /// plus the x/y moment sums (the latter only when x is in range). A `y` range
     /// (`ymin != ymax`) rejects out-of-range points before they are counted.
+    ///
+    /// The first fill with `w != 1` turns on per-bin tracking of `Σw²`
+    /// (`fBinSumw2`), as ROOT's `Fill` does; without it the effective entry count,
+    /// and so every bin error, would assume unit weights.
     pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) {
         if self.ymin != self.ymax && (y < self.ymin || y > self.ymax || y.is_nan()) {
             return;
+        }
+        if w != 1.0 {
+            self.track_bin_sumw2();
         }
         let nbins = self.xaxis.nbins.max(0) as usize;
         let bin = self.xaxis.find_bin(x);
@@ -280,6 +298,9 @@ impl TProfile {
         }
         if let Some(e) = self.bin_entries.get_mut(bin) {
             *e += w;
+        }
+        if let Some(s) = self.bin_sumw2.get_mut(bin) {
+            *s += w * w;
         }
         self.entries += 1.0;
 

@@ -17,9 +17,10 @@ histogram-only project never compiles the others.
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 
 # …or depend on just one crate from the same repo:
-oxiroot-hist    = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
-oxiroot-tree    = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
-oxiroot-rntuple = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
+oxiroot-hist      = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
+oxiroot-hist-func = { git = "https://github.com/mathieuouillon/oxiroot" }  # TF1/TF2/TF3
+oxiroot-tree      = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
+oxiroot-rntuple   = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
 ```
 
 Then bring the common types into scope with the prelude:
@@ -30,22 +31,23 @@ use oxiroot::prelude::*;
 
 ## Optional features
 
-The `oxiroot` facade is **batteries-included**: every optional capability is on
-by default, so there is nothing extra to enable. Opt out with
-`default-features = false` (then re-enable à la carte) when you want just the
-lean, pure-Rust format core.
+The `oxiroot` facade is **batteries-included**: fitting, plotting and the mmap
+read path are on by default, so there is usually nothing extra to enable. The
+parallel helpers (`rayon`) and remote reads (`http`, `xrootd`) are opt-in. Opt
+out with `default-features = false` (then re-enable à la carte) when you want
+just the lean, pure-Rust format core.
 
 | Feature | Default | Effect |
 |---------|:---:|--------|
 | `mmap` | ✅ | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
-| `rayon` | ✅ | Data-parallel histogram fill (`hist::fill_par`) and TTree basket decode; adds `rayon`. |
+| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TTree::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 | `plot` | ✅ | Plotting to SVG/PNG/PDF (`oxiroot::plot`); adds `tiny-skia`/`ab_glyph` and the ReX TeX engine. |
 
 ```toml
 [dependencies]
-# Batteries-included — fitting, plotting, rayon, mmap, and argmin all on:
+# Batteries-included — fitting, plotting, mmap, and argmin all on:
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 
 # …or the lean format core only (drops the extra dependencies):

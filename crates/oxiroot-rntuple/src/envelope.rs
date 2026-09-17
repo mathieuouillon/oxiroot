@@ -59,15 +59,11 @@ pub fn read_envelope(bytes: &[u8]) -> Result<Envelope<'_>> {
 }
 
 /// A frame within an envelope payload: a record (single set of fields) or a
-/// list (a count of homogeneous items). The reader uses `size` to skip.
+/// list (a count of homogeneous items). The reader uses `end` to skip.
 #[derive(Debug, Clone, Copy)]
 pub struct Frame {
-    /// Whether this is a list frame (vs a record frame).
-    pub is_list: bool,
-    /// Number of items, for list frames.
+    /// Number of items, for list frames (0 for a record frame).
     pub n_items: u32,
-    /// Absolute buffer offset of the frame's inner payload (after the header).
-    pub inner_start: usize,
     /// Absolute buffer offset one past the end of the frame.
     pub end: usize,
 }
@@ -94,12 +90,7 @@ pub fn read_frame(r: &mut RBuffer) -> Result<Frame> {
         .ok_or_else(|| {
             Error::Format(format!("frame size {size} runs past the envelope payload"))
         })?;
-    Ok(Frame {
-        is_list,
-        n_items,
-        inner_start,
-        end,
-    })
+    Ok(Frame { n_items, end })
 }
 
 /// A standard (type-0) on-disk locator: a compressed byte count and a file
@@ -140,4 +131,24 @@ pub(crate) fn read_string(r: &mut RBuffer) -> Result<String> {
 pub(crate) fn read_feature_flags(r: &mut RBuffer) -> Result<()> {
     while r.le_i64()? < 0 {}
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_envelope;
+    use crate::RNTuple;
+    use oxiroot_io_core::RFile;
+
+    #[test]
+    fn a_root_written_rntuple_has_typed_envelopes() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/rntuple_scalars_uncompressed.root");
+        let f = RFile::open(path).unwrap();
+        let ntpl = RNTuple::open(&f, "ntpl").unwrap();
+        let header = read_envelope(ntpl.header_envelope()).unwrap();
+        assert_eq!(header.type_id, 0x01);
+        // The payload is the envelope minus its 8-byte preamble and checksum.
+        assert_eq!(header.payload.len(), ntpl.header_envelope().len() - 16);
+        assert_eq!(read_envelope(ntpl.footer_envelope()).unwrap().type_id, 0x02);
+    }
 }
