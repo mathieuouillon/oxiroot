@@ -28,9 +28,15 @@ use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
-/// The captured `TList<TStreamerInfo>` describing the histogram family: the
-/// [`WriteRoot::streamer_blob`] of every histogram-family type in this crate.
-pub(crate) fn hist_streamer_list() -> Cow<'static, [u8]> {
+/// The captured `TList<TStreamerInfo>` describing the histogram family: every
+/// class the histogram types (and the `TF1`/`TF2`/`TF3` functions of
+/// `oxiroot-hist-func`) write, as ROOT 6 streams it.
+///
+/// Return it from [`WriteRoot::streamer_blob`] for a type that belongs to this
+/// family. A file keeps only the first non-empty blob it is given, so the family
+/// must share this one list rather than bake its own.
+#[must_use]
+pub fn hist_streamer_blob() -> Cow<'static, [u8]> {
     Cow::Borrowed(HIST_STREAMER_INFO)
 }
 
@@ -61,7 +67,7 @@ macro_rules! impl_write_root_hist {
                 w.into_vec()
             }
             fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_list()
+                crate::write::hist_streamer_blob()
             }
         }
     };
@@ -88,7 +94,7 @@ macro_rules! impl_write_root_fixed {
                 $bytes(self)
             }
             fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_list()
+                crate::write::hist_streamer_blob()
             }
         }
     };
@@ -114,7 +120,7 @@ impl WriteRoot for TGraph {
         tgraph_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_list()
+        crate::write::hist_streamer_blob()
     }
 }
 
@@ -844,7 +850,7 @@ impl WriteRoot for TGraph2D {
         tgraph2d_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_list()
+        crate::write::hist_streamer_blob()
     }
 }
 
@@ -921,7 +927,7 @@ impl WriteRoot for TGraphMultiErrors {
         tgraphmultierrors_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_list()
+        crate::write::hist_streamer_blob()
     }
 }
 

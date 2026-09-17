@@ -51,6 +51,29 @@ impl Random {
         // Top 53 bits → a double in [0, 1).
         (z >> 11) as f64 / (1u64 << 53) as f64
     }
+
+    /// Draw one value from a binned density: bin `k` spans
+    /// `[edges[k], edges[k + 1])` and is picked with probability proportional to
+    /// `weights[k]`, and the value is interpolated within it (ROOT's
+    /// `GetRandom`). Makes exactly one [`uniform`](Random::uniform) draw.
+    ///
+    /// Returns `None`, without drawing, when `edges.len() != weights.len() + 1`
+    /// or the weights do not sum to a positive total.
+    ///
+    /// ```
+    /// use oxiroot_hist::Random;
+    /// let mut rng = Random::seed(5);
+    /// let x = rng.sample_binned(&[0.0, 1.0, 0.0], &[0.0, 1.0, 2.0, 3.0]).unwrap();
+    /// assert!((1.0..2.0).contains(&x)); // only the middle bin has weight
+    /// assert_eq!(rng.sample_binned(&[1.0], &[0.0]), None);
+    /// ```
+    pub fn sample_binned(&mut self, weights: &[f64], edges: &[f64]) -> Option<f64> {
+        if edges.len() != weights.len() + 1 {
+            return None;
+        }
+        let cdf = build_cdf(weights)?;
+        Some(sample_cdf(&cdf, edges, self.uniform()))
+    }
 }
 
 impl Default for Random {
@@ -116,10 +139,8 @@ impl TH1 {
     #[must_use]
     pub fn get_random(&self, rng: &mut Random) -> f64 {
         let edges = self.xaxis.edges();
-        match build_cdf(self.values()) {
-            Some(cdf) => sample_cdf(&cdf, &edges, rng.uniform()),
-            None => edges.first().copied().unwrap_or(0.0),
-        }
+        rng.sample_binned(self.values(), &edges)
+            .unwrap_or_else(|| edges.first().copied().unwrap_or(0.0))
     }
 
     /// Fill this histogram with `n` values drawn from `source`'s distribution
@@ -177,10 +198,7 @@ impl TF1 {
             .map(|i| self.eval(xmin + (i as f64 + 0.5) * dx).max(0.0))
             .collect();
         let edges: Vec<f64> = (0..=NPX).map(|i| xmin + i as f64 * dx).collect();
-        match build_cdf(&weights) {
-            Some(cdf) => sample_cdf(&cdf, &edges, rng.uniform()),
-            None => xmin,
-        }
+        rng.sample_binned(&weights, &edges).unwrap_or(xmin)
     }
 }
 
@@ -349,6 +367,39 @@ mod tests {
         let std = (s2 / n as f64 - mean * mean).sqrt();
         assert!((mean - 3.0).abs() < 0.02, "mean {mean}");
         assert!((std - 0.8).abs() < 0.02, "std {std}");
+    }
+
+    #[test]
+    fn sample_binned_rejects_bad_input_without_drawing() {
+        let mut rng = Random::seed(9);
+        // Mismatched lengths.
+        assert_eq!(rng.sample_binned(&[1.0, 2.0], &[0.0, 1.0]), None);
+        assert_eq!(rng.sample_binned(&[1.0], &[0.0, 1.0, 2.0]), None);
+        // No positive total.
+        assert_eq!(rng.sample_binned(&[0.0, 0.0], &[0.0, 1.0, 2.0]), None);
+        assert_eq!(rng.sample_binned(&[], &[0.0]), None);
+        // None of the above consumed a draw.
+        assert_eq!(rng.uniform(), Random::seed(9).uniform());
+    }
+
+    #[test]
+    fn sample_binned_draws_within_the_weighted_bins() {
+        let mut rng = Random::seed(4);
+        let edges = [0.0, 1.0, 3.0, 4.0];
+        for _ in 0..10_000 {
+            let x = rng.sample_binned(&[1.0, 0.0, 3.0], &edges).unwrap();
+            assert!((0.0..1.0).contains(&x) || (3.0..4.0).contains(&x), "{x}");
+        }
+    }
+
+    #[test]
+    fn get_random_on_a_malformed_histogram_returns_the_lower_edge() {
+        let mut h = Hist::reg(4, 1.0, 5.0).double();
+        for x in [1.5, 2.5, 3.5, 4.5] {
+            h.fill(x);
+        }
+        h.contents.push(1.0); // contents no longer match the axis
+        assert_eq!(h.get_random(&mut Random::seed(1)), 1.0);
     }
 
     #[test]
