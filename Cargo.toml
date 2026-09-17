@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# Temporary: the verbatim ReX import does not build until the next commit trims it.
+exclude = ["crates/oxiroot-rex"]
 
 [workspace.package]
 version = "0.0.1"

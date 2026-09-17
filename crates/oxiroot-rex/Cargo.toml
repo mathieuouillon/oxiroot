@@ -1,0 +1,42 @@
+[package]
+name = "oxiroot-rex"
+version.workspace = true
+# Pinned, not inherited: upstream ReX is 2021-edition code, and a workspace
+# edition bump must not migrate it implicitly.
+edition = "2021"
+rust-version.workspace = true
+# The ReX fork's changes are MIT (Keny C); the original ReX is offered under
+# MIT/Apache-2.0 (MIT taken); unicode-math is MIT (Sebastian Koeln). See
+# LICENSE-3rdparty.
+license = "MIT"
+repository.workspace = true
+description = "TeX math layout for oxiroot-plot: a trimmed, vendored copy of the ReX engine (KenyC/ReX). Internal; not a stable API."
+include = ["/src/**/*.rs", "/README.md", "/LICENSE-3rdparty"]
+
+[dependencies]
+# ReX uses `ttf_parser::{gsub, math}` (the `opentype-layout` feature).
+ttf-parser = { workspace = true, features = ["opentype-layout"] }
+
+[dev-dependencies]
+# The upstream parser snapshot tests, unchanged.
+insta = { version = "1.48", default-features = false }
+
+# Not `[lints] workspace = true`: Cargo cannot combine inherited lints with
+# overrides, and the vendored code is kept upstream-shaped rather than brought
+# up to the workspace's `missing_docs` and `clippy::all` levels.
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "allow", priority = -1 }
+correctness = "deny"
+
+[lints.rustdoc]
+# Stale upstream links; `crate::render` is both a function and a module.
+broken_intra_doc_links = "allow"
+redundant_explicit_links = "allow"
+
+[package.metadata.vendored]
+upstream = "https://github.com/KenyC/ReX"
+rev = "aeccdba38f3fa54195c469319b65c423e17a77ae"
+upstream-version = "0.1.2"
