@@ -35,6 +35,7 @@ use crate::{TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3};
 /// result is identical to having filled one histogram with all the data. It
 /// returns [`oxiroot_io_core::Error::BinningMismatch`] (leaving `self` unchanged)
 /// if the binnings differ.
+#[doc(alias = "Merge")]
 pub trait Mergeable: Clone + Send + Sized {
     /// Combine `other` into `self` (the `c == 1` case of `add`).
     fn merge(&mut self, other: &Self) -> Result<()>;

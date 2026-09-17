@@ -278,7 +278,7 @@ impl RootFile {
 /// A subdirectory (a `TDirectory`) being built inside a [`RootFile`]; see
 /// [`RootFile::dir`]. The methods take and return `self`, so return the builder
 /// from the `dir` closure.
-#[doc(alias = "TDirectory", alias = "mkdir")]
+#[doc(alias = "Dir", alias = "TDirectory", alias = "mkdir")]
 #[must_use = "SubdirBuilder methods consume self; return it from the closure"]
 pub struct SubdirBuilder {
     entries: Entries,
