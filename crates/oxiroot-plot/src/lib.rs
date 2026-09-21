@@ -341,6 +341,124 @@ mod tests {
         assert!(rules >= 1, "expected a fraction/radical rule, got {rules}");
     }
 
+    /// The vertical ink extent `(top, bottom)` of the glyph paths and rules in
+    /// `g` (y grows downward), from their end and control points.
+    #[cfg(feature = "math")]
+    fn ink_y_extent(g: &draw::DrawGroup) -> (f32, f32) {
+        use draw::{DrawCommand, Seg};
+        let mut ys = Vec::new();
+        for c in &g.cmds {
+            match c {
+                DrawCommand::Path { path, .. } => {
+                    for s in &path.segs {
+                        match *s {
+                            Seg::Move(_, y) | Seg::Line(_, y) => ys.push(y),
+                            Seg::Quad(_, y1, _, y2) => ys.extend([y1, y2]),
+                            Seg::Cubic(_, y1, _, y2, _, y3) => ys.extend([y1, y2, y3]),
+                            Seg::Close => {}
+                        }
+                    }
+                }
+                DrawCommand::Polygon { pts, .. } => ys.extend(pts.iter().map(|p| p.1)),
+                _ => {}
+            }
+        }
+        let top = ys.iter().copied().fold(f32::INFINITY, f32::min);
+        let bottom = ys.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        (top, bottom)
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
+    fn math_glyphs_have_the_text_size() {
+        // An `x` set as text and as math at the same size has the same height:
+        // STIX Two Text and STIX Two Math share their metrics (matplotlib sets
+        // mathtext at the text's point size too). ReX takes its size in points,
+        // so handing it pixels drew math 4/3 too large.
+        let fonts = FontSet::stix();
+        let height = |label: &str| {
+            let mut g = draw::DrawGroup::new(None);
+            mathtext::layout_label(
+                &mut g,
+                &fonts,
+                label,
+                0.0,
+                0.0,
+                100.0,
+                Color::BLACK,
+                text::HAlign::Left,
+                text::VAlign::Baseline,
+                0.0,
+            );
+            let (top, bottom) = ink_y_extent(&g);
+            bottom - top
+        };
+        let (text, math) = (height("x"), height("$x$"));
+        assert!(
+            (math / text - 1.0).abs() < 0.05,
+            "math x is {math:.2} px tall, text x {text:.2} px"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
+    fn bottom_aligned_math_label_stays_above_its_anchor() {
+        // `VAlign::Bottom` puts the bottom of the label at `y` (a title sits on
+        // the frame this way). A fraction's denominator hangs below the
+        // baseline, so the label's descent must count it.
+        let fonts = FontSet::stix();
+        let mut g = draw::DrawGroup::new(None);
+        mathtext::layout_label(
+            &mut g,
+            &fonts,
+            "yield $\\frac{a}{b}$",
+            0.0,
+            200.0,
+            40.0,
+            Color::BLACK,
+            text::HAlign::Left,
+            text::VAlign::Bottom,
+            0.0,
+        );
+        let (_, bottom) = ink_y_extent(&g);
+        assert!(
+            bottom <= 200.5,
+            "the label's ink reaches y = {bottom}, below 200"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
+    fn inline_math_is_set_in_text_style() {
+        // A `$…$` span is inline math: TeX's text style, which sets a
+        // fraction's numerator and denominator smaller than display style does
+        // (`\\displaystyle` switches back to display style).
+        let fonts = FontSet::stix();
+        let height = |label: &str| {
+            let mut g = draw::DrawGroup::new(None);
+            mathtext::layout_label(
+                &mut g,
+                &fonts,
+                label,
+                0.0,
+                0.0,
+                100.0,
+                Color::BLACK,
+                text::HAlign::Left,
+                text::VAlign::Baseline,
+                0.0,
+            );
+            let (top, bottom) = ink_y_extent(&g);
+            bottom - top
+        };
+        let inline = height("$\\frac{a}{b}$");
+        let display = height("$\\displaystyle\\frac{a}{b}$");
+        assert!(
+            inline < 0.9 * display,
+            "inline fraction {inline:.1} px vs display {display:.1} px"
+        );
+    }
+
     #[test]
     #[cfg(not(feature = "math"))]
     fn math_label_without_the_math_feature_is_plain_text() {
