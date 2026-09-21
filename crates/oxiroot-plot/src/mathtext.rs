@@ -222,8 +222,13 @@ fn render_math(_: &FontSet, _: &str, _: f32) -> Option<(Vec<LocalPrim>, f32, f32
     None
 }
 
+/// Points per pixel at ReX's fixed 96 px/in (72 / 96).
+#[cfg(feature = "math")]
+const PT_PER_PX: f64 = 0.75;
+
 /// Typeset one math run with ReX, returning local prims plus `(width, ascent,
-/// descent)` in pixels. `None` on a font or parse error.
+/// descent)` in pixels, with the descent (the extent below the baseline)
+/// positive like [`text::measure`]'s. `None` on a font or parse error.
 #[cfg(feature = "math")]
 fn render_math(
     fonts: &FontSet,
@@ -232,19 +237,23 @@ fn render_math(
 ) -> Option<(Vec<LocalPrim>, f32, f32, f32)> {
     let face = ttf_parser::Face::parse(fonts.math_bytes(), 0).ok()?;
     let font = TtfMathFont::new(face).ok()?;
+    // ReX takes the font size in points and converts it to its pixel units at
+    // 96 px/in; `size_px` is already the em size in pixels (as for plain text),
+    // so hand it over in points.
     let engine = LayoutBuilder::new(&font)
-        .font_size(f64::from(size_px))
+        .font_size(f64::from(size_px) * PT_PER_PX)
         .build();
     let nodes = parse(tex).ok()?;
     let layout = engine.layout(&nodes).ok()?;
     let dims = layout.size();
     let mut collector = MathCollector { prims: Vec::new() };
     Renderer::new().render(&layout, &mut collector);
+    // ReX's depth is signed, negative below the baseline.
     Some((
         collector.prims,
         dims.width as f32,
         dims.height as f32,
-        dims.depth as f32,
+        -dims.depth as f32,
     ))
 }
 
