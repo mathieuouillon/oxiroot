@@ -794,6 +794,10 @@ integrity check, verified on read.
   root directory record are widened in place (every oxiroot/ROOT file reserves the
   64-bit directory width up front, as ROOT does). All big-format writes are
   verified against ROOT C++ and uproot.
+- Histograms and profiles written by older ROOT releases read too, back to the
+  first class versions ROOT stores through streamer info: axes from ROOT 3.02,
+  and profiles from before ROOT 5.24, which have no per-bin weight sums
+  (`fBinSumw2`). Older class versions of these are an error, not a misread.
 - `Error` is `#[non_exhaustive]` and preserves the underlying `io::ErrorKind`.
 
 ## Examples

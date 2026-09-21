@@ -10,8 +10,8 @@ use oxiroot_io_core::FileReader;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_base,
-    BinContentType,
+    cell_count, check_cells, end_record, in_range_sum, object_bytes, object_bytes_in, read_tarray,
+    read_th1_base, unsupported_version, BinContentType,
 };
 use crate::tprofile::ErrorMode;
 
@@ -236,8 +236,19 @@ impl TProfile2D {
     }
 
     pub(crate) fn read(r: &mut RBuffer) -> Result<TProfile2D> {
+        // Older class versions lack the trailing members: fTsumwz/fTsumwz2 arrived
+        // in version 5 (ROOT 4) and fBinSumw2 in version 7 (ROOT 5.24). Version 1
+        // (ROOT 1) stored fZmin/fZmax as floats, and its TH2D its members in
+        // another order.
         let tp = r.read_version()?; // TProfile2D wrapper
-        let _th2d = r.read_version()?; // TH2D wrapper
+        let version = tp.version;
+        if version < 2 {
+            return Err(unsupported_version("TProfile2D", version, "ROOT 1"));
+        }
+        let th2d = r.read_version()?; // TH2D wrapper
+        if th2d.version < 2 {
+            return Err(unsupported_version("TH2D", th2d.version, "ROOT 1"));
+        }
         let th2 = r.read_version()?; // TH2 wrapper (TH1 base + TH2 members)
 
         let c = read_th1_base(r)?;
@@ -255,19 +266,30 @@ impl TProfile2D {
         let error_mode = ErrorMode::from_code(r.be_i32()?);
         let zmin = r.be_f64()?;
         let zmax = r.be_f64()?;
-        let tsumwz = r.be_f64()?;
-        let tsumwz2 = r.be_f64()?;
-        let bin_sumw2 = read_tarray(r, BinContentType::F64)?;
-
-        if let Some(end) = tp.end {
-            r.seek(end)?;
-        }
+        let stored_z_sums = if version >= 5 {
+            Some((r.be_f64()?, r.be_f64()?)) // fTsumwz, fTsumwz2
+        } else {
+            None
+        };
+        let bin_sumw2 = if version >= 7 {
+            read_tarray(r, BinContentType::F64)?
+        } else {
+            Vec::new() // no fBinSumw2: weights were not tracked
+        };
+        end_record(r, &tp, "TProfile2D")?;
 
         let cells = cell_count(&[c.xaxis.nbins, c.yaxis.nbins])?;
         check_cells("TProfile2D sums", sums.len(), cells, false)?;
         check_cells("TProfile2D fBinEntries", bin_entries.len(), cells, false)?;
         check_cells("TProfile2D fSumw2", c.sumw2.len(), cells, true)?;
         check_cells("TProfile2D fBinSumw2", bin_sumw2.len(), cells, true)?;
+
+        // Before version 5 the z sums were not stored: take them from the bins,
+        // as ROOT's GetStats does for a profile without stored statistics.
+        let (tsumwz, tsumwz2) = stored_z_sums.unwrap_or_else(|| {
+            let nbins = [c.xaxis.nbins, c.yaxis.nbins];
+            (in_range_sum(&sums, &nbins), in_range_sum(&c.sumw2, &nbins))
+        });
 
         Ok(TProfile2D {
             name: c.name,

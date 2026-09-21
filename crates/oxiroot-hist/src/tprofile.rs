@@ -4,6 +4,10 @@
 //! fYmin, fYmax, fTsumwy, fTsumwy2, fBinSumw2(TArrayD) }`. The `TH1D` base's
 //! bin contents are the per-bin sums of y; `fBinEntries` is the per-bin count.
 //! The profiled value of a bin is `sum / entries`.
+//!
+//! Older class versions lack the trailing members: `fTsumwy`/`fTsumwy2` arrived
+//! in version 4 (ROOT 4) and `fBinSumw2` in version 6 (ROOT 5.24). Versions 2
+//! onwards are read; version 1 (ROOT 1) stored `fYmin`/`fYmax` as floats.
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::Result;
@@ -11,8 +15,8 @@ use oxiroot_io_core::FileReader;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_object,
-    BinContentType,
+    cell_count, check_cells, end_record, in_range_sum, object_bytes, object_bytes_in, read_tarray,
+    read_th1_object, unsupported_version, BinContentType,
 };
 
 /// How a profile's per-bin error bar is computed (ROOT's `fErrorMode`). Shared
@@ -101,6 +105,10 @@ pub struct TProfile {
 impl TProfile {
     pub(crate) fn read(r: &mut RBuffer) -> Result<TProfile> {
         let tprofile = r.read_version()?; // TProfile wrapper
+        let version = tprofile.version;
+        if version < 2 {
+            return Err(unsupported_version("TProfile", version, "ROOT 1"));
+        }
 
         // The TH1D base: its own wrapper, the TH1 base, and the TArrayD sums.
         let (core, sums) = read_th1_object(r, BinContentType::F64)?;
@@ -109,19 +117,33 @@ impl TProfile {
         let error_mode = ErrorMode::from_code(r.be_i32()?);
         let ymin = r.be_f64()?;
         let ymax = r.be_f64()?;
-        let tsumwy = r.be_f64()?;
-        let tsumwy2 = r.be_f64()?;
-        let bin_sumw2 = read_tarray(r, BinContentType::F64)?;
-
-        if let Some(end) = tprofile.end {
-            r.seek(end)?;
-        }
+        let stored_y_sums = if version >= 4 {
+            Some((r.be_f64()?, r.be_f64()?)) // fTsumwy, fTsumwy2
+        } else {
+            None
+        };
+        let bin_sumw2 = if version >= 6 {
+            read_tarray(r, BinContentType::F64)?
+        } else {
+            Vec::new() // no fBinSumw2: weights were not tracked
+        };
+        end_record(r, &tprofile, "TProfile")?;
 
         let cells = cell_count(&[core.xaxis.nbins])?;
         check_cells("TProfile sums", sums.len(), cells, false)?;
         check_cells("TProfile fBinEntries", bin_entries.len(), cells, false)?;
         check_cells("TProfile fSumw2", core.sumw2.len(), cells, true)?;
         check_cells("TProfile fBinSumw2", bin_sumw2.len(), cells, true)?;
+
+        // Before version 4 the y sums were not stored: take them from the bins,
+        // as ROOT's GetStats does for a profile without stored statistics.
+        let (tsumwy, tsumwy2) = stored_y_sums.unwrap_or_else(|| {
+            let nbins = [core.xaxis.nbins];
+            (
+                in_range_sum(&sums, &nbins),
+                in_range_sum(&core.sumw2, &nbins),
+            )
+        });
 
         Ok(TProfile {
             name: core.name,

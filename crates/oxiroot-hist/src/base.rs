@@ -4,7 +4,7 @@
 //! so we read the members we need and seek to `TH1`'s end. `TArray*` bin
 //! contents are streamed inline — just a count and the values, no header.
 
-use oxiroot_io_core::buffer::RBuffer;
+use oxiroot_io_core::buffer::{RBuffer, VersionHeader};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::FileReader;
@@ -124,10 +124,74 @@ pub struct TH1Core {
     pub sumw2: Vec<f64>,
 }
 
+/// An object written by a ROOT release older than this crate can read: `class`
+/// at `version` still used a hand-written streamer (`what` says which ROOT).
+pub(crate) fn unsupported_version(class: &str, version: u16, what: &str) -> Error {
+    Error::Format(format!(
+        "{class} class version {version} ({what}) is not supported"
+    ))
+}
+
+/// Move past the rest of `header`'s record: the members a newer class version
+/// added. It is an error if the members read ran past the record's end.
+pub(crate) fn end_record(r: &mut RBuffer, header: &VersionHeader, class: &str) -> Result<()> {
+    if let Some(end) = header.end {
+        if r.pos() > end {
+            return Err(Error::Format(format!(
+                "{class} (class version {}) is shorter than its members",
+                header.version
+            )));
+        }
+        r.seek(end)?;
+    }
+    Ok(())
+}
+
+/// The sum of `values` over the in-range cells of a histogram with the given
+/// per-axis bin counts (flow cells excluded), as ROOT's `GetStats` sums them.
+/// `values` has one entry per cell, flow included; an empty slice sums to 0.
+pub(crate) fn in_range_sum(values: &[f64], axis_nbins: &[i32]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let sizes: Vec<usize> = axis_nbins.iter().map(|&n| n.max(0) as usize).collect();
+    if sizes.contains(&0) {
+        return 0.0;
+    }
+    let mut total = 0.0;
+    let mut index = vec![1usize; sizes.len()];
+    loop {
+        // Global cell index: x + (nx+2)*(y + (ny+2)*z).
+        let mut cell = 0;
+        for (i, &n) in sizes.iter().enumerate().rev() {
+            cell = cell * (n + 2) + index[i];
+        }
+        total += values.get(cell).copied().unwrap_or(0.0);
+        // Advance the multi-index over 1..=n per axis, x fastest.
+        let mut axis = 0;
+        loop {
+            if axis == sizes.len() {
+                return total;
+            }
+            if index[axis] < sizes[axis] {
+                index[axis] += 1;
+                break;
+            }
+            index[axis] = 1;
+            axis += 1;
+        }
+    }
+}
+
 /// Read a `TH1` base object (its header, the `TNamed`/`TAtt*` bases, and the
 /// members up to the core statistics), then seek to the `TH1` record's end.
 pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<TH1Core> {
     let th1 = r.read_version()?;
+    // Class version 1 (ROOT 1) stored fMaximum, fMinimum, fNormFactor and
+    // fContour as floats; every later version reads the same up to fSumw2.
+    if th1.version < 2 {
+        return Err(unsupported_version("TH1", th1.version, "ROOT 1"));
+    }
 
     let named = read_tnamed(r)?;
     skip_versioned(r)?; // TAttLine
