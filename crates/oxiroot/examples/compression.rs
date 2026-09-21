@@ -13,9 +13,9 @@ use oxiroot::prelude::*;
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and builds the same payload every run.
-struct Rng(u64);
+struct XorShift64(u64);
 
-impl Rng {
+impl XorShift64 {
     fn uniform(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -36,7 +36,7 @@ fn main() -> oxiroot::Result<()> {
     // compresses well; `index` is a monotone counter (very compressible); `id` is
     // a small-range category. Real detector data sits somewhere in between.
     let n = 20_000;
-    let mut rng = Rng(0x0DD_F00D_CAFE_BEEF);
+    let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
     let mut energy = Vec::with_capacity(n);
     let mut index = Vec::with_capacity(n);
     let mut id = Vec::with_capacity(n);

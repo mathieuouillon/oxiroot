@@ -69,7 +69,7 @@ impl TH1 {
         }
         .named(self.name.clone())
         .titled(self.title.clone());
-        out.precision = self.precision;
+        out.bin_content_type = self.bin_content_type;
         let track = !self.sumw2.is_empty();
         if track {
             out.sumw2 = vec![0.0; out.contents.len()];
@@ -120,7 +120,7 @@ impl TH1 {
         let mut out = TH1::new_variable(&sub_edges)
             .named(self.name.clone())
             .titled(self.title.clone());
-        out.precision = self.precision;
+        out.bin_content_type = self.bin_content_type;
         out.xaxis.title = self.xaxis.title.clone();
         let track = !self.sumw2.is_empty();
         if track {
@@ -355,7 +355,7 @@ impl TH2 {
         let mut out = TH2::new_variable(&xedges, &yedges)
             .named(self.name.clone())
             .titled(self.title.clone());
-        out.precision = self.precision;
+        out.bin_content_type = self.bin_content_type;
         let track = !self.sumw2.is_empty();
         if track {
             out.sumw2 = vec![0.0; out.contents.len()];
@@ -406,7 +406,7 @@ impl TH3 {
         )
         .named(self.name.clone())
         .titled(self.title.clone());
-        out.precision = self.precision;
+        out.bin_content_type = self.bin_content_type;
         out.xaxis = TAxis::variable("xaxis", &group_edges(&self.xaxis.edges(), ngx, newnx));
         out.yaxis = TAxis::variable("yaxis", &group_edges(&self.yaxis.edges(), ngy, newny));
         out.zaxis = TAxis::variable("zaxis", &group_edges(&self.zaxis.edges(), ngz, newnz));

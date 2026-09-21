@@ -27,7 +27,7 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   N-dimensional `THnSparse`, and polygon-binned `TH2Poly` — all read **and** write.
 - 🎲 **Sampling & smoothing** — draw from a histogram's or function's
   distribution (`get_random`/`fill_random`, ROOT's `GetRandom`/`FillRandom`) and
-  smooth with ROOT's `353QH` (`smooth`), via a small seedable built-in `Rng` (no
+  smooth with ROOT's `353QH` (`smooth`), via a small seedable built-in `Random` (no
   `rand` dependency).
 - 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, plus `TGraph2D`
   and `TGraphMultiErrors` — read and write, including a graph's display frame
@@ -167,10 +167,10 @@ cargo run -p oxiroot --example analysis
   `h.write_root(path, compression)?` and read one with
   `TH1::read_root(&file, name)?` (the `WriteRoot`/`ReadRoot` traits; also
   `h.to_root_bytes()` and `TH1::read_root_in(&file, dir, name)?` for a
-  subdirectory). A `TH1`/`TH2`/`TH3`'s on-disk precision is a typed `Precision`
-  chosen by the builder's storage finalizer (`.float()` writes a `TH1F`; see
+  subdirectory). A `TH1`/`TH2`/`TH3`'s on-disk bin content type is a typed
+  `BinContentType` chosen by the builder's storage finalizer (`.float()` writes a `TH1F`; see
   below), or changed on a histogram you already built or read with
-  `.with_precision(Precision::Float)`; `h.class_name()` reconstructs the ROOT
+  `.with_bin_content_type(BinContentType::F32)`; `h.class_name()` reconstructs the ROOT
   class. Profiles carry a typed `ErrorMode`.
 - **No forced names, no global registry.** A histogram is just data: construct
   it with the `Hist` builder (`Hist::reg(nbins, lo, hi).double()`) and name it
@@ -214,7 +214,7 @@ cargo run -p oxiroot --example analysis
 - Sampling & smoothing: `get_random` / `fill_random` draw from a histogram's (or,
   via `fill_random_fn` / `TF1::get_random`, a function's) distribution
   (inverse-CDF, ROOT's `GetRandom`/`FillRandom`); `smooth` is ROOT's `353QH`
-  smoother. A small seedable `Rng` means no `rand` dependency and reproducible
+  smoother. A small seedable `Random` means no `rand` dependency and reproducible
   draws.
 - Compatibility tests: `chi2_test`/`chi2_test_with` (Pearson χ², all three
   `UU`/`UW`/`WW` weighting schemes) and `kolmogorov_test`, returning ROOT-matched

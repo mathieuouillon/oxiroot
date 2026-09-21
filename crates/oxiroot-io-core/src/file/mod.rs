@@ -14,7 +14,7 @@ mod source;
 #[cfg(feature = "xrootd")]
 mod xrootd;
 
-pub use builder::{Dir, RootFile};
+pub use builder::{RootFile, SubdirBuilder};
 pub use container::{
     compress_if_smaller, ContainerWriter, DirId, DATIME, FILE_VERSION, KSTART_BIG_FILE,
 };

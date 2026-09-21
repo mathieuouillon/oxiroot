@@ -16,7 +16,7 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
 use oxiroot_io_core::RFile;
 
-use crate::base::{object_bytes_any, precision_of, Precision};
+use crate::base::{bin_content_type_of, object_bytes_any, BinContentType};
 use crate::th1::TH1;
 
 /// Error bars attached to a graph's points.
@@ -218,10 +218,10 @@ impl TGraph {
 
     /// Attach a display frame (`fHistogram`) — the axis-frame ROOT would build on
     /// draw. Stored (and persisted) as a `TH1F`, ROOT's declared type for
-    /// `fHistogram`, so the precision is coerced to `Float`. Chainable.
+    /// `fHistogram`, so the bin content type is coerced to `F32`. Chainable.
     #[must_use]
     pub fn with_histogram(mut self, histogram: TH1) -> Self {
-        self.histogram = Some(histogram.with_precision(Precision::Float));
+        self.histogram = Some(histogram.with_bin_content_type(BinContentType::F32));
         self
     }
 
@@ -373,7 +373,7 @@ fn read_opt_th1(r: &mut RBuffer) -> Result<Option<TH1>> {
         return Ok(None); // null pointer
     }
     let tag = r.be_i32()? as u32;
-    let precision = if tag == 0xFFFF_FFFF {
+    let bin_content_type = if tag == 0xFFFF_FFFF {
         // kNewClassTag: a NUL-terminated class name follows (e.g. "TH1F").
         let mut class = String::new();
         loop {
@@ -383,11 +383,11 @@ fn read_opt_th1(r: &mut RBuffer) -> Result<Option<TH1>> {
             }
             class.push(b as char);
         }
-        precision_of(&class)?
+        bin_content_type_of(&class)?
     } else {
-        Precision::Float // a back-reference: fHistogram is always a TH1F
+        BinContentType::F32 // a back-reference: fHistogram is always a TH1F
     };
-    Ok(Some(TH1::read(r, precision)?))
+    Ok(Some(TH1::read(r, bin_content_type)?))
 }
 
 /// Read a `Double_t* //[n]` member: a presence-marker byte then (if present)

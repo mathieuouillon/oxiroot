@@ -9,12 +9,12 @@ use std::borrow::Cow;
 use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
 // The object framework (the `WriteRoot` trait and the `RootFile` builder) lives
-// in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, RootFile, Dir}`
+// in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, RootFile, SubdirBuilder}`
 // and the in-crate `crate::write::WriteRoot` path keep resolving.
-pub use oxiroot_io_core::{Dir, RootFile, WriteRoot};
+pub use oxiroot_io_core::{RootFile, SubdirBuilder, WriteRoot};
 
 use crate::axis::TAxis;
-use crate::base::Precision;
+use crate::base::BinContentType;
 use crate::graph::{GraphErrors, GraphFunction, TGraph};
 use crate::graph2d::TGraph2D;
 use crate::graphmultierrors::TGraphMultiErrors;
@@ -34,7 +34,7 @@ pub(crate) fn hist_streamer_list() -> Cow<'static, [u8]> {
     Cow::Borrowed(HIST_STREAMER_INFO)
 }
 
-/// `TH1`/`TH2`/`TH3` serialize at the precision carried by their `class_name`;
+/// `TH1`/`TH2`/`TH3` serialize with the bin content type carried by their `class_name`;
 /// the macro picks the right `write_th{1,2,3}{d,f,i,s,c,l}` for the suffix.
 macro_rules! impl_write_root_hist {
     ($ty:ty, $d:ident, $f:ident, $i:ident, $s:ident, $c:ident, $l:ident) => {
@@ -50,13 +50,13 @@ macro_rules! impl_write_root_hist {
             }
             fn to_root_bytes(&self) -> Vec<u8> {
                 let mut w = WBuffer::new();
-                match self.precision {
-                    Precision::Double => $d(&mut w, self),
-                    Precision::Float => $f(&mut w, self),
-                    Precision::Int => $i(&mut w, self),
-                    Precision::Short => $s(&mut w, self),
-                    Precision::Char => $c(&mut w, self),
-                    Precision::Long => $l(&mut w, self),
+                match self.bin_content_type {
+                    BinContentType::F64 => $d(&mut w, self),
+                    BinContentType::F32 => $f(&mut w, self),
+                    BinContentType::I32 => $i(&mut w, self),
+                    BinContentType::I16 => $s(&mut w, self),
+                    BinContentType::I8 => $c(&mut w, self),
+                    BinContentType::I64 => $l(&mut w, self),
                 }
                 w.into_vec()
             }
@@ -131,14 +131,14 @@ const AXIS_BITS: u32 = 0x0300_0000;
 const TLIST_BITS: u32 = 0x0301_0000;
 
 /// How a histogram's data `TArray` base is serialized — one of `write_tarray{c,
-/// s,i,l,f,d}`, picking the precision (`TArray{C,S,I,L64,F,D}`). Everything else
-/// in the object is identical across precisions, so a `TH*X` reuses the `TH*D`
+/// s,i,l,f,d}`, picking the bin content type (`TArray{C,S,I,L64,F,D}`). Everything
+/// else in the object is identical across bin content types, so a `TH*X` reuses the `TH*D`
 /// layout (only the outer class version differs: 0 for the Long64 `L` types).
 type ArrayWriter = fn(&mut WBuffer, &[f64]);
 
 /// Serialize a `TH1{D,F,C,S,I,L}` object (with its byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it. `version` is the class version
-/// (3 for C/S/I/F/D, 0 for L) and `write_array` picks the precision.
+/// (3 for C/S/I/F/D, 0 for L) and `write_array` picks the bin content type.
 fn write_th1_obj(w: &mut WBuffer, h: &TH1, version: u16, write_array: ArrayWriter) {
     let outer = w.begin_object(version);
     write_th1_base(w, h);
@@ -224,7 +224,7 @@ pub(crate) fn write_th3f(w: &mut WBuffer, h: &TH3) {
 }
 
 /// Generate the `write_*`/`*_to_bytes`/`write_*_file` trio for one integer
-/// histogram precision (`TH1C`/`TH2S`/`TH3I`/`TH1L`/…). The object layout is
+/// bin content type (`TH1C`/`TH2S`/`TH3I`/`TH1L`/…). The object layout is
 /// identical to the same-dimension `TH*D`/`TH*F` apart from the class version
 /// `$ver` (3/4 for C/S/I, 0 for the Long64 `L`) and the data `TArray` (`$array`).
 /// The in-memory `f64` bin contents are narrowed to the integer type.

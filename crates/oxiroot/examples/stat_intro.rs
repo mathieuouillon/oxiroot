@@ -15,9 +15,9 @@ use oxiroot::stat::{
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run.
-struct Rng(u64);
+struct XorShift64(u64);
 
-impl Rng {
+impl XorShift64 {
     fn uniform(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -35,7 +35,7 @@ fn main() {
     // Pretend these are 20 readings of some quantity whose true value is 10.0
     // with a spread of 0.5 — e.g. a calibration constant measured 20 times.
     // Drawn from a fixed-seed Gaussian, so the numbers below never change.
-    let mut rng = Rng(0x0DD_F00D_CAFE_BEEF);
+    let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
     let (truth, spread) = (10.0, 0.5);
     let sample: Vec<f64> = (0..20).map(|_| rng.gauss(truth, spread)).collect();
     let n = sample.len();

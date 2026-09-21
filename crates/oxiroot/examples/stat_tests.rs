@@ -14,9 +14,9 @@ use oxiroot::stat::{self, StatError};
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run.
-struct Rng(u64);
+struct XorShift64(u64);
 
-impl Rng {
+impl XorShift64 {
     fn uniform(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -30,7 +30,7 @@ impl Rng {
 }
 
 fn main() -> Result<(), StatError> {
-    let mut rng = Rng(0x51A7_7E57_C0DE_1234);
+    let mut rng = XorShift64(0x51A7_7E57_C0DE_1234);
 
     // A tidy printer for a test: name, statistic, p-value, and the 0.05 verdict.
     // The null hypothesis H0 is "no effect" (samples identical / no correlation);

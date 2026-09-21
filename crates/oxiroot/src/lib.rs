@@ -109,8 +109,8 @@ pub mod prelude {
     // `Error` and `Result` are deliberately not here: a glob import would shadow
     // `std::result::Result`. Name them as `oxiroot::Error` / `oxiroot::Result`.
     pub use oxiroot_io_core::{
-        Compression, Dir, FromMember, ListKind, ObjList, ParamValue, RFile, ReadRoot, RootFile,
-        TMap, TObjString, TParameter, WriteInto, WriteRoot,
+        Compression, FromMember, ListKind, ObjList, ParamValue, RFile, ReadRoot, RootFile,
+        SubdirBuilder, TMap, TObjString, TParameter, WriteInto, WriteRoot,
     };
 
     pub use crate::hadd::{merge_files, MergeKind, MergeReport, Merger};
@@ -122,8 +122,8 @@ pub mod prelude {
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     pub use oxiroot_hist::{
-        Chi2TestKind, Chi2TestResult, ErrorMode, GraphErrors, GraphFunction, Hist, Histogram,
-        KsTestResult, Merge, PolyBin, Precision, Rng, SparseBin, TAxis, TEfficiency, TGraph,
+        BinContentType, Chi2TestKind, Chi2TestResult, ErrorMode, GraphErrors, GraphFunction, Hist,
+        Histogram, KsTestResult, Mergeable, PolyBin, Random, SparseBin, TAxis, TEfficiency, TGraph,
         TGraph2D, TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMultiGraph, TProfile,
         TProfile2D, TProfile3D, ThreadedHist, TF1, TF2, TF3, TH1, TH2, TH3,
     };

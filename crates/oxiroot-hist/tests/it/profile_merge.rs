@@ -1,14 +1,14 @@
 //! Adding and merging the 2-D and 3-D profiles (summing them across files is
 //! tested with the file merger, in the `oxiroot` crate).
 //!
-//! `add` and `Merge` used to exist only for `TH1`/`TH2`/`TH3`/`TProfile`, so a
+//! `add` and `Mergeable` used to exist only for `TH1`/`TH2`/`TH3`/`TProfile`, so a
 //! file merge copied `TProfile2D`/`TProfile3D` from the first input where ROOT's
-//! `hadd` sums them. The defining property checked here is the one `Merge`
+//! `hadd` sums them. The defining property checked here is the one `Mergeable`
 //! documents: merging two profiles must give exactly the profile you would get by
 //! filling one with all of their data. Every value below is a small dyadic
 //! rational, so that equality is exact whatever order the sums happen in.
 
-use oxiroot_hist::{Hist, Merge, TProfile, TProfile2D, TProfile3D, ThreadedHist};
+use oxiroot_hist::{Hist, Mergeable, TProfile, TProfile2D, TProfile3D, ThreadedHist};
 use oxiroot_io_core::Error;
 
 // --------------------------------------------------------------------- data
@@ -212,7 +212,7 @@ fn an_empty_value_squared_array_is_treated_as_zeros() {
     assert_eq!(c.sumy2[1], 4.0);
 }
 
-// ------------------------------------------------------------------- Merge
+// ------------------------------------------------------------------- Mergeable
 
 #[test]
 fn merge_all_folds_2d_and_3d_profiles() {

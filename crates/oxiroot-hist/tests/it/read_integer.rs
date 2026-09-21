@@ -1,5 +1,5 @@
 //! Integration test for integer-typed histograms (TArrayC/S/I/L64), read via
-//! `TH1::read_root` which detects the precision from the stored class.
+//! `TH1::read_root` which detects the bin content type from the stored class.
 
 use std::path::PathBuf;
 

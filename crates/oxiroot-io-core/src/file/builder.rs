@@ -196,8 +196,12 @@ impl RootFile {
     /// Add a `TDirectory` named `name` holding the objects added inside `build`
     /// (e.g. one directory per analysis region). Only meaningful when creating a
     /// file; see [`open`](RootFile::open).
-    pub fn dir(mut self, name: impl Into<String>, build: impl FnOnce(Dir) -> Dir) -> RootFile {
-        let dir = build(Dir {
+    pub fn dir(
+        mut self,
+        name: impl Into<String>,
+        build: impl FnOnce(SubdirBuilder) -> SubdirBuilder,
+    ) -> RootFile {
+        let dir = build(SubdirBuilder {
             entries: Entries::default(),
         });
         self.dirs.push((name.into(), dir.entries));
@@ -271,22 +275,25 @@ impl RootFile {
     }
 }
 
-/// A subdirectory being built inside a [`RootFile`]; see [`RootFile::dir`].
-#[must_use]
-pub struct Dir {
+/// A subdirectory (a `TDirectory`) being built inside a [`RootFile`]; see
+/// [`RootFile::dir`]. The methods take and return `self`, so return the builder
+/// from the `dir` closure.
+#[doc(alias = "Dir", alias = "TDirectory", alias = "mkdir")]
+#[must_use = "SubdirBuilder methods consume self; return it from the closure"]
+pub struct SubdirBuilder {
     entries: Entries,
 }
 
-impl Dir {
+impl SubdirBuilder {
     /// Add an object to this subdirectory.
     #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> Dir {
+    pub fn add(mut self, object: &dyn WriteRoot) -> SubdirBuilder {
         self.entries.add(object);
         self
     }
 
     /// Put a multi-record object (a `TTree`, an RNTuple) in this subdirectory.
-    pub fn put(mut self, object: impl WriteInto + 'static) -> Dir {
+    pub fn put(mut self, object: impl WriteInto + 'static) -> SubdirBuilder {
         self.entries.put(object);
         self
     }

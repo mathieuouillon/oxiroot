@@ -2,7 +2,7 @@
 //! then read back through our own reader. The /tmp files are also checked by
 //! uproot/ROOT C++ when run by hand.
 
-use oxiroot_hist::{Hist, Precision, ReadRoot, WriteRoot, TH1, TH2, TH3};
+use oxiroot_hist::{BinContentType, Hist, ReadRoot, WriteRoot, TH1, TH2, TH3};
 use oxiroot_io_core::{Compression, RFile};
 
 fn filled_th1() -> TH1 {
@@ -28,22 +28,22 @@ fn check_th1(out: &str, cls: &str, h: &TH1) {
 fn th1_integer_variants_round_trip() {
     let h = filled_th1();
     h.clone()
-        .with_precision(Precision::Char)
+        .with_bin_content_type(BinContentType::I8)
         .write_root("/tmp/oxiroot_th1c.root", Compression::None)
         .expect("write C");
     check_th1("/tmp/oxiroot_th1c.root", "TH1C", &h);
     h.clone()
-        .with_precision(Precision::Short)
+        .with_bin_content_type(BinContentType::I16)
         .write_root("/tmp/oxiroot_th1s.root", Compression::None)
         .expect("write S");
     check_th1("/tmp/oxiroot_th1s.root", "TH1S", &h);
     h.clone()
-        .with_precision(Precision::Int)
+        .with_bin_content_type(BinContentType::I32)
         .write_root("/tmp/oxiroot_th1i.root", Compression::None)
         .expect("write I");
     check_th1("/tmp/oxiroot_th1i.root", "TH1I", &h);
     h.clone()
-        .with_precision(Precision::Long)
+        .with_bin_content_type(BinContentType::I64)
         .write_root("/tmp/oxiroot_th1l.root", Compression::None)
         .expect("write L");
     check_th1("/tmp/oxiroot_th1l.root", "TH1L", &h);
@@ -60,7 +60,7 @@ fn th2i_th3i_round_trip() {
     h2.fill(1.5, 1.5);
     let out = std::path::PathBuf::from("/tmp/oxiroot_th2i.root");
     h2.clone()
-        .with_precision(Precision::Int)
+        .with_bin_content_type(BinContentType::I32)
         .write_root(&out, Compression::None)
         .expect("write");
     let f = RFile::open(&out).expect("reopen");
@@ -76,7 +76,7 @@ fn th2i_th3i_round_trip() {
     h3.fill(0.5, 0.5, 0.5);
     let out = std::path::PathBuf::from("/tmp/oxiroot_th3i.root");
     h3.clone()
-        .with_precision(Precision::Int)
+        .with_bin_content_type(BinContentType::I32)
         .write_root(&out, Compression::None)
         .expect("write");
     let f = RFile::open(&out).expect("reopen");
