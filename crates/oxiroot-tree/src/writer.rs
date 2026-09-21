@@ -9,7 +9,7 @@
 //! file self-describing.
 
 use std::collections::HashMap;
-use std::io::{Seek, Write};
+use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
 use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
@@ -17,7 +17,8 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
 use oxiroot_io_core::streamer_gen::{basic, Cls};
 use oxiroot_io_core::{
-    compress_if_smaller, Compression, ContainerWriter, DirId, TKey, DATIME, KSTART_BIG_FILE,
+    compress_if_smaller, Compression, ContainerWriter, DirId, TKey, WriteInto, DATIME,
+    KSTART_BIG_FILE,
 };
 
 use crate::value::BranchValues;
@@ -342,7 +343,7 @@ fn class_checksum(class_name: &str, members: &[SplitMember]) -> u32 {
 /// member per struct member, as ROOT writes it for a class without `ClassDef`.
 fn split_class(spec: &SplitSpec) -> Cls<'_> {
     Cls {
-        name: &spec.class_name,
+        name: spec.class_name.as_str().into(),
         version: 1,
         checksum: class_checksum(&spec.class_name, &spec.members),
         elements: spec
@@ -892,6 +893,40 @@ impl Tree {
     }
 }
 
+/// A `Tree` goes into a [`RootFile`](oxiroot_io_core::RootFile) with
+/// [`put`](oxiroot_io_core::RootFile::put), next to histograms or RNTuples, with
+/// one basket per branch:
+///
+/// ```no_run
+/// use oxiroot_io_core::{Compression, RootFile, TParameter};
+/// use oxiroot_tree::{Branch, Tree};
+///
+/// RootFile::create("run.root")
+///     .add(&TParameter::f64("lumi", 12.5))
+///     .put(Tree::new("Events", vec![Branch::f64("energy", vec![10.5, 20.1])]))
+///     .dir("cal", |d| d.put(Tree::new("Pedestals", vec![Branch::i32("adc", vec![3, 4])])))
+///     .write(Compression::Zstd(5))?;
+/// # Ok::<(), oxiroot_io_core::Error>(())
+/// ```
+impl WriteInto for Tree {
+    fn root_class(&self) -> String {
+        "TTree".to_string()
+    }
+    fn root_name(&self) -> &str {
+        &self.name
+    }
+    fn write_into(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
+        check_branches(&self.branches)?;
+        write_tree_records(file, dir, &self.name, &self.branches, 0)
+    }
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        tree_streamer_classes(&self.branches)
+            .into_iter()
+            .map(Cls::into_owned)
+            .collect()
+    }
+}
+
 /// A column's identity, used to check that every batch shares the first batch's
 /// schema: name, value-variant, and the array/`std::vector` flags. Fixed-array
 /// width is folded into the variant via `flen` so a shape change is caught too.
@@ -1132,7 +1167,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
     /// Emit one basket for column `col`, append its record, and grow that
     /// column's leaf aggregate (count `fMaximum` / string `fLen`).
     fn emit(&mut self, col: usize, branch: &Branch, tree_name: &str) -> Result<()> {
-        let rec = write_basket(&mut self.file, branch, tree_name)?;
+        let rec = write_basket(&mut self.file, DirId::TOP, branch, tree_name)?;
         let c = &mut self.columns[col];
         c.baskets.push(rec);
         match &mut c.agg {
@@ -1239,8 +1274,7 @@ fn str_rep(len: i32) -> BranchValues {
 
 /// Shared body of [`tree_file_bytes`] / [`write_tree_file_baskets`]:
 /// `entries_per_basket` of `0` means one basket per branch. The file switches to
-/// ROOT's 64-bit container form once it would exceed `big_threshold` bytes, so
-/// for a small file the result matches the streaming writer's byte for byte.
+/// ROOT's 64-bit container form once it would exceed `big_threshold` bytes.
 fn tree_bytes(
     file_name: &str,
     tree_name: &str,
@@ -1249,6 +1283,17 @@ fn tree_bytes(
     entries_per_basket: usize,
     big_threshold: u64,
 ) -> Result<Vec<u8>> {
+    check_branches(branches)?;
+    let classes = tree_streamer_classes(branches);
+    ContainerWriter::build(file_name, compression, big_threshold, |file| {
+        write_tree_records(file, DirId::TOP, tree_name, branches, entries_per_basket)?;
+        file.place_streamer_info(&[], &classes)
+    })
+}
+
+/// Reject branches the writer cannot lay out: a fixed-array branch with rows
+/// of differing length, and a split branch whose members disagree.
+fn check_branches(branches: &[Branch]) -> Result<()> {
     for b in branches {
         if !b.jagged() && !b.stl_vector() && b.is_jagged() {
             return Err(Error::Format(format!(
@@ -1261,7 +1306,29 @@ fn tree_bytes(
             check_split_members(&b.name, spec)?;
         }
     }
+    Ok(())
+}
 
+/// The `TStreamerInfo` entries a tree with these branches needs: the canonical
+/// TTree hierarchy (including the TBranchElement/TLeafElement `std::vector`
+/// streamers), then each split branch's struct.
+fn tree_streamer_classes(branches: &[Branch]) -> Vec<Cls<'_>> {
+    let mut classes = crate::streamer_gen::tree_classes();
+    classes.extend(branches.iter().filter_map(Branch::split).map(split_class));
+    classes
+}
+
+/// Write a tree's baskets at the end of `file`, then the `TTree` that lists
+/// them under a key in `dir`. A leaf branch has one basket per chunk of
+/// `entries_per_basket` entries (`0` = one basket); a split branch has a count
+/// basket plus one per member sub-branch.
+fn write_tree_records<W: Write + Seek>(
+    file: &mut ContainerWriter<W>,
+    dir: DirId,
+    tree_name: &str,
+    branches: &[Branch],
+    entries_per_basket: usize,
+) -> Result<()> {
     // Expand each jagged branch into [count branch, jagged branch], matching
     // ROOT/uproot. `counts` owns the synthetic count branches so the effective
     // list `eff` can borrow them alongside the caller's branches.
@@ -1277,46 +1344,32 @@ fn tree_bytes(
     }
     let n_entries = eff.first().map(|b| b.n_entries()).unwrap_or(0);
 
-    // The canonical TTree-hierarchy TStreamerInfo describes every class a tree
-    // uses (including the TBranchElement/TLeafElement std::vector streamers); a
-    // split branch additionally needs its struct's generated TStreamerInfo.
-    let split_classes: Vec<Cls> = branches
+    let basket_groups: Vec<Vec<BasketRec>> = eff
         .iter()
-        .filter_map(Branch::split)
-        .map(split_class)
-        .collect();
-    let streamer_info = crate::streamer_gen::tree_streamer_info();
-
-    ContainerWriter::build(file_name, compression, big_threshold, |file| {
-        // Baskets first (a leaf branch has one per chunk; a split branch has a
-        // count basket plus one per member sub-branch), then the tree that lists
-        // them, then the streamer info.
-        let basket_groups: Vec<Vec<BasketRec>> = eff
-            .iter()
-            .map(|&b| write_branch_baskets(file, b, tree_name, entries_per_basket))
-            .collect::<Result<_>>()?;
-        let tot_bytes: i64 = basket_groups
-            .iter()
-            .flatten()
-            .map(|r| i64::from(r.nbytes))
-            .sum();
-        let tree_obj = build_tree_object(
-            tree_name,
-            &eff,
-            &basket_groups,
-            i64::from(n_entries),
-            tot_bytes,
-            file.is_big(),
-        );
-        file.place_key(DirId::TOP, "TTree", tree_name, "", &tree_obj)?;
-        file.place_streamer_info(&streamer_info, &split_classes)?;
-        Ok(())
-    })
+        .map(|&b| write_branch_baskets(file, dir, b, tree_name, entries_per_basket))
+        .collect::<Result<_>>()?;
+    let tot_bytes: i64 = basket_groups
+        .iter()
+        .flatten()
+        .map(|r| i64::from(r.nbytes))
+        .sum();
+    let tree_obj = build_tree_object(
+        tree_name,
+        &eff,
+        &basket_groups,
+        i64::from(n_entries),
+        tot_bytes,
+        file.is_big(),
+    );
+    file.place_key(dir, "TTree", tree_name, "", &tree_obj)?;
+    Ok(())
 }
 
-/// Write one `TBasket` at the end of `file`, returning its location.
+/// Write one `TBasket` of a tree in directory `dir` at the end of `file`,
+/// returning its location.
 fn write_basket<W: Write + Seek>(
     file: &mut ContainerWriter<W>,
+    dir: DirId,
     branch: &Branch,
     tree_name: &str,
 ) -> Result<BasketRec> {
@@ -1325,20 +1378,22 @@ fn write_basket<W: Write + Seek>(
         tree_name,
         file.compression_setting(),
         file.position(),
+        file.dir_offset(dir)?,
     );
     file.place_blob(&bytes)?;
     Ok(rec)
 }
 
 /// The on-disk bytes of one `TBasket`, written as if it begins at absolute file
-/// offset `seek` (baked into the key's `fSeekKey`), plus its [`BasketRec`]. A
-/// basket's key is always in the big form, with the `TBasket` fields appended to
-/// the header.
+/// offset `seek` (baked into the key's `fSeekKey`), plus its [`BasketRec`].
+/// `seek_pdir` is the offset of the tree's directory. A basket's key is always
+/// in the big form, with the `TBasket` fields appended to the header.
 fn basket_bytes(
     branch: &Branch,
     tree_name: &str,
     compression: u32,
     seek: u64,
+    seek_pdir: u64,
 ) -> (Vec<u8>, BasketRec) {
     let (data, offsets) = branch.basket_content();
     let n_entries = branch.n_entries();
@@ -1377,7 +1432,7 @@ fn basket_bytes(
     w.be_u16(klen as u16);
     w.be_u16(0); // cycle
     w.be_u64(seek);
-    w.be_u64(100); // fSeekPdir
+    w.be_u64(seek_pdir); // fSeekPdir
     w.string("TBasket");
     w.string(&branch.name);
     w.string(tree_name);
@@ -1456,6 +1511,7 @@ fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> BranchValues {
 /// the members, matching the order [`write_split_parent`] reads them back.
 fn write_branch_baskets<W: Write + Seek>(
     file: &mut ContainerWriter<W>,
+    dir: DirId,
     branch: &Branch,
     tree_name: &str,
     entries_per_basket: usize,
@@ -1475,13 +1531,14 @@ fn write_branch_baskets<W: Write + Seek>(
             let len = epb.min(n - start);
             recs.push(write_basket(
                 file,
+                dir,
                 &chunk_branch(branch, start, len),
                 tree_name,
             )?);
             start += len;
         }
         if recs.is_empty() {
-            recs.push(write_basket(file, branch, tree_name)?);
+            recs.push(write_basket(file, dir, branch, tree_name)?);
         }
         return Ok(recs);
     };
@@ -1493,14 +1550,14 @@ fn write_branch_baskets<W: Write + Seek>(
         values: BranchValues::VecI32(counts.into_iter().map(|n| vec![n]).collect()),
         kind: BranchKind::Jagged,
     };
-    let mut recs = vec![write_basket(file, &count_branch, tree_name)?];
+    let mut recs = vec![write_basket(file, dir, &count_branch, tree_name)?];
     for m in &spec.members {
         let sub = Branch {
             name: format!("{}.{}", branch.name, m.name),
             values: m.values.clone(),
             kind: BranchKind::Jagged,
         };
-        recs.push(write_basket(file, &sub, tree_name)?);
+        recs.push(write_basket(file, dir, &sub, tree_name)?);
     }
     Ok(recs)
 }

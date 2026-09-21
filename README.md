@@ -701,9 +701,10 @@ ax2.save("heatmap.svg")?;
 - `Ntuple::new(name, fields).write_root(path, compression)` is the method form
   (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
   free `write_rntuple_file` remains.
-- `NtupleFile` writes **several RNTuples per file** and RNTuples **inside a
-  `TDirectory`** — `NtupleFile::new().add(events).add(runs).dir("cal", |d|
-  d.add(pedestals)).write_root(…)`. Read a nested one with
+- `RootFile::put` writes **several RNTuples per file**, RNTuples **inside a
+  `TDirectory`**, and RNTuples next to histograms and trees —
+  `RootFile::create(path).put(events).put(runs).dir("cal", |d|
+  d.put(pedestals)).write(…)`. Read a nested one with
   `RNTuple::open_in(file, "cal", "pedestals")`. ROOT and uproot navigate the
   result natively.
 - `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is
@@ -721,7 +722,7 @@ ax2.save("heatmap.svg")?;
   classes are **skipped and listed in the report**, never silently dropped.
 - Each concatenated branch keeps its original kind (scalar, `x[N]`, jagged `x[n]`,
   `std::vector<T>`, string). The standalone `oxiroot_tree::concat_trees`,
-  `oxiroot_rntuple::concat_ntuples`, and `oxiroot_hist::merge_histogram_files`
+  `oxiroot_rntuple::concat_ntuples`, and `oxiroot::hadd::merge_histogram_files`
   do the per-format work and can be called directly.
 - `Merger::new().inputs(paths).compression(c).merge("all.root")?` is the
   composable builder; `merge_files` returns a `MergeReport` (what was summed /

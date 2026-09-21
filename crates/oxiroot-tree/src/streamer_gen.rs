@@ -22,7 +22,7 @@ fn leaf_subclass(
     min_tn: &'static str,
 ) -> Cls<'static> {
     Cls {
-        name,
+        name: name.into(),
         version: 1,
         checksum,
         elements: vec![
@@ -35,10 +35,10 @@ fn leaf_subclass(
 
 /// The canonical class list, in dependency order (bases before the classes that
 /// use them, as ROOT writes). Checksums and versions are ROOT's own values.
-fn classes() -> Vec<Cls<'static>> {
+pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
     vec![
         Cls {
-            name: "TObject",
+            name: "TObject".into(),
             version: 1,
             checksum: 2417737773,
             elements: vec![
@@ -47,19 +47,19 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "TString",
+            name: "TString".into(),
             version: 2,
             checksum: 95257,
             elements: vec![],
         },
         Cls {
-            name: "TNamed",
+            name: "TNamed".into(),
             version: 1,
             checksum: 3753331260,
             elements: vec![base("TObject", 1), strf("fName"), strf("fTitle")],
         },
         Cls {
-            name: "TCollection",
+            name: "TCollection".into(),
             version: 3,
             checksum: 1474546588,
             elements: vec![
@@ -69,13 +69,13 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "TSeqCollection",
+            name: "TSeqCollection".into(),
             version: 0,
             checksum: 4234951622,
             elements: vec![base("TCollection", 3)],
         },
         Cls {
-            name: "TObjArray",
+            name: "TObjArray".into(),
             version: 3,
             checksum: 2845730130,
             elements: vec![
@@ -85,13 +85,13 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "TList",
+            name: "TList".into(),
             version: 5,
             checksum: 1774568379,
             elements: vec![base("TSeqCollection", 0)],
         },
         Cls {
-            name: "TAttLine",
+            name: "TAttLine".into(),
             version: 2,
             checksum: 2483504457,
             elements: vec![
@@ -101,7 +101,7 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "TAttFill",
+            name: "TAttFill".into(),
             version: 2,
             checksum: 4292422290,
             elements: vec![
@@ -110,7 +110,7 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "TAttMarker",
+            name: "TAttMarker".into(),
             version: 2,
             checksum: 689802220,
             elements: vec![
@@ -120,13 +120,13 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "ROOT::TIOFeatures",
+            name: "ROOT::TIOFeatures".into(),
             version: 1,
             checksum: 446770960,
             elements: vec![basic("fIOBits", 11, 1, "unsigned char")],
         },
         Cls {
-            name: "TLeaf",
+            name: "TLeaf".into(),
             version: 2,
             checksum: 1830715730,
             elements: vec![
@@ -148,7 +148,7 @@ fn classes() -> Vec<Cls<'static>> {
         leaf_subclass("TLeafD", 294553462, 8, 8, "double"),
         leaf_subclass("TLeafC", 4226003699, 3, 4, "int"),
         Cls {
-            name: "TLeafElement",
+            name: "TLeafElement".into(),
             version: 1,
             checksum: 2689566867,
             elements: vec![
@@ -158,7 +158,7 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "TBranch",
+            name: "TBranch".into(),
             version: 13,
             checksum: 278366892,
             elements: vec![
@@ -187,7 +187,7 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "TBranchElement",
+            name: "TBranchElement".into(),
             version: 10,
             checksum: 3880738403,
             elements: vec![
@@ -206,7 +206,7 @@ fn classes() -> Vec<Cls<'static>> {
             ],
         },
         Cls {
-            name: "TTree",
+            name: "TTree".into(),
             version: 20,
             checksum: 1919213695,
             elements: vec![
@@ -252,7 +252,7 @@ fn classes() -> Vec<Cls<'static>> {
 /// describing the whole `TTree` class hierarchy. Every written tree embeds it so
 /// the file is self-describing.
 pub(crate) fn tree_streamer_info() -> Vec<u8> {
-    streamer_info_list(&classes())
+    streamer_info_list(&tree_classes())
 }
 
 #[cfg(test)]

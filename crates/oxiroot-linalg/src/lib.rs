@@ -10,13 +10,11 @@
 //! several objects in a file via the builder in `oxiroot-hist` / the `oxiroot`
 //! facade).
 
-use std::borrow::Cow;
-
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tobject, write_tobject};
-use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, streamer_info_list, Cls};
-use oxiroot_io_core::{object_bytes_any, RFile, ReadRoot, WriteRoot};
+use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, Cls};
+use oxiroot_io_core::{object_bytes_any, FromMember, RFile, ReadRoot, WriteRoot};
 
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default
 /// `DBL_EPSILON`. Matched so written files equal ROOT's byte-for-byte.
@@ -119,8 +117,8 @@ impl WriteRoot for TVectorD {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        Cow::Owned(streamer_info_list(&streamer_classes("TVectorT<double>")))
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        streamer_classes("TVectorT<double>")
     }
 }
 
@@ -240,8 +238,8 @@ impl WriteRoot for TMatrixD {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        Cow::Owned(streamer_info_list(&streamer_classes("TMatrixT<double>")))
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        streamer_classes("TMatrixT<double>")
     }
 }
 
@@ -362,8 +360,8 @@ impl WriteRoot for TMatrixDSym {
         }
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        Cow::Owned(streamer_info_list(&streamer_classes("TMatrixTSym<double>")))
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        streamer_classes("TMatrixTSym<double>")
     }
 }
 
@@ -405,17 +403,37 @@ pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMat
     })
 }
 
+// --- Collection members -----------------------------------------------------
+
+impl FromMember for TVectorD {
+    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
+        (class == "TVectorT<double>").then(|| decode_tvectord("", class, bytes))
+    }
+}
+
+impl FromMember for TMatrixD {
+    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
+        (class == "TMatrixT<double>").then(|| decode_tmatrixd("", class, bytes))
+    }
+}
+
+impl FromMember for TMatrixDSym {
+    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
+        (class == "TMatrixTSym<double>").then(|| decode_tmatrixdsym("", class, bytes))
+    }
+}
+
 // --- Streamer info ----------------------------------------------------------
 
 /// The `TStreamerInfo` [`Cls`] entries describing a matrix/vector `class` — the
 /// deepest base first — so a written file is self-describing (uproot reads it;
 /// ROOT C++ uses its own compiled streamers). Returns an empty vector for a
-/// non-matrix class. `oxiroot-hist`'s central streamer collector delegates the
-/// matrix class names here.
+/// non-matrix class. Each matrix/vector type's
+/// [`WriteRoot::streamer_classes`] returns these.
 pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
     // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
     let matrix_base = || Cls {
-        name: "TMatrixTBase<double>",
+        name: "TMatrixTBase<double>".into(),
         version: 5,
         checksum: 2_333_786_657,
         elements: vec![
@@ -431,7 +449,7 @@ pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
     };
     match class {
         "TVectorT<double>" => vec![Cls {
-            name: "TVectorT<double>",
+            name: "TVectorT<double>".into(),
             version: 4,
             checksum: 1_779_256_495,
             elements: vec![
@@ -444,7 +462,7 @@ pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
         "TMatrixT<double>" => vec![
             matrix_base(),
             Cls {
-                name: "TMatrixT<double>",
+                name: "TMatrixT<double>".into(),
                 version: 4,
                 checksum: 135_074_716,
                 elements: vec![

@@ -16,9 +16,11 @@
 //!
 //! # What a fileset may contain
 //!
-//! One invocation writes **one** output file, and oxiroot does not yet assemble
-//! a single container that mixes histograms with a `TTree`/RNTuple (each of
-//! those owns auxiliary basket/page keys). So a fileset must be one of:
+//! One invocation writes **one** output file. The merger does not yet combine
+//! histograms with a `TTree` or RNTuple in one output (a
+//! [`RootFile`](oxiroot_io_core::RootFile) can hold all three, but the merger
+//! concatenates each tree or RNTuple on its own path). So a fileset must be one
+//! of:
 //!
 //! * **all histogram-family objects** — `TH1`/`TH2`/`TH3` and the 1-, 2- and
 //!   3-D profiles are summed; graphs, efficiencies, functions, strings,
@@ -30,7 +32,7 @@
 //! Anything else — a `TTree` or RNTuple alongside histograms, or more than one
 //! of them — is refused with an error that names the keys, rather than writing a
 //! partial file. For finer control, merge the pieces yourself with
-//! [`oxiroot_hist::merge_histogram_files`], [`oxiroot_tree::concat_trees`], or
+//! [`merge_histogram_files`], [`oxiroot_tree::concat_trees`], or
 //! [`oxiroot_rntuple::concat_ntuples`].
 
 use std::fmt;
@@ -39,7 +41,8 @@ use std::path::{Path, PathBuf};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::{Compression, RFile};
 
-use oxiroot_hist::merge_histogram_files;
+mod histograms;
+pub use histograms::{merge_histogram_files, HistMergeOutcome};
 use oxiroot_rntuple::{concat_ntuples, RNTuple, ANCHOR_CLASS};
 use oxiroot_tree::{concat_trees, TTree};
 

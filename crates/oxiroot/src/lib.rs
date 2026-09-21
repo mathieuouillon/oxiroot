@@ -126,8 +126,7 @@ pub mod prelude {
     pub use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
     pub use oxiroot_rntuple::{
-        write_rntuple_file, Column, Field, FieldValues, Ntuple, NtupleDir, NtupleFile, RNTuple,
-        RNTupleWriter,
+        write_rntuple_file, Column, Field, FieldValues, Ntuple, RNTuple, RNTupleWriter,
     };
 
     pub use oxiroot_tree::{

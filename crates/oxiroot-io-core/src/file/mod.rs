@@ -1,6 +1,7 @@
 //! The ROOT (TFile) on-disk container: header, keys, directories, free list,
 //! and the [`RFile`] reading entry point.
 
+mod builder;
 mod container;
 mod directory;
 mod free;
@@ -13,6 +14,7 @@ mod source;
 #[cfg(feature = "xrootd")]
 mod xrootd;
 
+pub use builder::{Dir, RootFile};
 pub use container::{
     compress_if_smaller, ContainerWriter, DirId, DATIME, FILE_VERSION, KSTART_BIG_FILE,
 };

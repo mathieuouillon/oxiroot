@@ -11,22 +11,16 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use oxiroot_io_core::buffer::{RBuffer, WBuffer};
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::object::TagReader;
-use oxiroot_io_core::streamer::{read_tobject, write_tobject};
-use oxiroot_io_core::RFile;
+use crate::buffer::{RBuffer, WBuffer};
+use crate::error::{Error, Result};
+use crate::object::TagReader;
+use crate::object_io::{object_bytes_any_keyed, ReadRoot, StreamerSet, WriteRoot};
+use crate::streamer::{read_tobject, write_object_any, write_tobject};
+use crate::streamer_gen::Cls;
+use crate::RFile;
 
-use crate::base::object_bytes_any_keyed;
-use crate::collections::write_object;
-use crate::graph::{decode_tgraph, TGraph};
-use crate::objects::{decode_tobjstring, decode_tparameter, TObjString, TParameter};
-use crate::th1::{decode_th1, TH1};
-use crate::th2::{decode_th2, TH2};
-use crate::th3::{decode_th3, TH3};
-use crate::write::WriteRoot;
-use oxiroot_linalg::{
-    decode_tmatrixd, decode_tmatrixdsym, decode_tvectord, TMatrixD, TMatrixDSym, TVectorD,
+use super::scalars::{
+    decode_tobjstring, decode_tparameter, member_classes, TObjString, TParameter,
 };
 
 /// Whether an [`ObjList`] serializes as a `TList` (ordered, with per-element
@@ -42,32 +36,43 @@ pub enum ListKind {
 /// A `TList` or `TObjArray` of objects stored under a single key. Build with
 /// [`ObjList::list`] / [`ObjList::array`], name it with [`named`](ObjList::named),
 /// and [`add`](ObjList::add) any writable objects; read one back with
-/// [`ObjList::read_root`](crate::ReadRoot::read_root) and extract members by type with
+/// [`ObjList::read_root`](ReadRoot::read_root) and extract members by type with
 /// [`items`](ObjList::items).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ObjList {
     kind: ListKind,
     name: String,
     /// Each member as `(class_name, streamed object body)`.
     members: Vec<(String, Vec<u8>)>,
+    /// The streamer info the members added with [`add`](ObjList::add) need.
+    streamers: StreamerSet,
+}
+
+/// Two lists are equal when they hold the same members; where the members'
+/// streamer info came from does not matter.
+impl PartialEq for ObjList {
+    fn eq(&self, other: &Self) -> bool {
+        (self.kind, &self.name, &self.members) == (other.kind, &other.name, &other.members)
+    }
 }
 
 impl ObjList {
     /// An empty `TList`.
     pub fn list() -> ObjList {
-        ObjList {
-            kind: ListKind::List,
-            name: String::new(),
-            members: Vec::new(),
-        }
+        ObjList::empty(ListKind::List)
     }
 
     /// An empty `TObjArray`.
     pub fn array() -> ObjList {
+        ObjList::empty(ListKind::Array)
+    }
+
+    fn empty(kind: ListKind) -> ObjList {
         ObjList {
-            kind: ListKind::Array,
+            kind,
             name: String::new(),
             members: Vec::new(),
+            streamers: StreamerSet::default(),
         }
     }
 
@@ -83,6 +88,7 @@ impl ObjList {
     #[allow(clippy::should_implement_trait)]
     #[must_use]
     pub fn add(mut self, object: &dyn WriteRoot) -> ObjList {
+        self.streamers.add(object);
         self.members
             .push((object.root_class(), object.to_root_bytes()));
         self
@@ -132,9 +138,6 @@ impl WriteRoot for ObjList {
     fn root_title(&self) -> &str {
         ""
     }
-    fn contained_classes(&self) -> Vec<String> {
-        self.members.iter().map(|(c, _)| c.clone()).collect()
-    }
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
         match self.kind {
@@ -144,7 +147,7 @@ impl WriteRoot for ObjList {
                 w.string(&self.name); // fName
                 w.be_i32(self.members.len() as i32); // nobjects
                 for (class, body) in &self.members {
-                    write_object(&mut w, class, body);
+                    write_object_any(&mut w, class, body);
                     w.string(""); // the per-object option string
                 }
                 w.end_object(obj);
@@ -156,7 +159,7 @@ impl WriteRoot for ObjList {
                 w.be_i32(self.members.len() as i32); // nobjects
                 w.be_i32(0); // fLowerBound
                 for (class, body) in &self.members {
-                    write_object(&mut w, class, body);
+                    write_object_any(&mut w, class, body);
                 }
                 w.end_object(obj);
             }
@@ -164,8 +167,25 @@ impl WriteRoot for ObjList {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        self.streamers.blob()
     }
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        member_streamer_classes(&self.streamers, self.members.iter().map(|(c, _)| c))
+    }
+}
+
+/// What a collection's members need described: the classes gathered when they
+/// were added, plus those known by name (a collection read from a file keeps
+/// only its members' class names).
+fn member_streamer_classes<'a>(
+    added: &StreamerSet,
+    names: impl Iterator<Item = &'a String>,
+) -> Vec<Cls<'static>> {
+    let mut set = added.clone();
+    for class in names {
+        set.add_classes(member_classes(class));
+    }
+    set.classes().to_vec()
 }
 
 /// A member's class name and the byte range of its streamed body within the
@@ -227,21 +247,23 @@ fn decode_objlist(class: &str, object: &[u8], keylen: usize) -> Result<ObjList> 
         kind,
         name,
         members,
+        streamers: StreamerSet::default(),
     })
 }
 
-pub(crate) fn read_objlist(file: &RFile, name: &str) -> Result<ObjList> {
+fn read_objlist(file: &RFile, name: &str) -> Result<ObjList> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
     decode_objlist(&class, &object, keylen)
 }
 
-pub(crate) fn read_objlist_in(file: &RFile, subdir: &str, name: &str) -> Result<ObjList> {
+fn read_objlist_in(file: &RFile, subdir: &str, name: &str) -> Result<ObjList> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     decode_objlist(&class, &object, keylen)
 }
 
-/// A type that can be decoded from an [`ObjList`] member's `(class, body)`.
-/// Implemented for the object types oxiroot models; [`ObjList::items`] uses it to
+/// A type that can be decoded from an [`ObjList`] or [`TMap`] member's
+/// `(class, body)`. The crate that defines an object type implements it (the
+/// histogram and matrix crates do for theirs); [`ObjList::items`] uses it to
 /// pull members of one type out of a mixed collection.
 pub trait FromMember: Sized {
     /// Decode from a member's class name and streamed body, or `None` if the
@@ -249,32 +271,6 @@ pub trait FromMember: Sized {
     fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>>;
 }
 
-impl FromMember for TH1 {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        class
-            .starts_with("TH1")
-            .then(|| decode_th1((class.to_string(), bytes.to_vec())))
-    }
-}
-impl FromMember for TH2 {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        (class.starts_with("TH2") && class != "TH2Poly")
-            .then(|| decode_th2((class.to_string(), bytes.to_vec())))
-    }
-}
-impl FromMember for TH3 {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        class
-            .starts_with("TH3")
-            .then(|| decode_th3((class.to_string(), bytes.to_vec())))
-    }
-}
-impl FromMember for TGraph {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        matches!(class, "TGraph" | "TGraphErrors" | "TGraphAsymmErrors")
-            .then(|| decode_tgraph(class, class, bytes))
-    }
-}
 impl FromMember for TObjString {
     fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
         (class == "TObjString").then(|| decode_tobjstring("", class, bytes))
@@ -287,22 +283,6 @@ impl FromMember for TParameter {
             .then(|| decode_tparameter("", class, bytes))
     }
 }
-impl FromMember for TVectorD {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        (class == "TVectorT<double>").then(|| decode_tvectord("", class, bytes))
-    }
-}
-impl FromMember for TMatrixD {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        (class == "TMatrixT<double>").then(|| decode_tmatrixd("", class, bytes))
-    }
-}
-impl FromMember for TMatrixDSym {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        (class == "TMatrixTSym<double>").then(|| decode_tmatrixdsym("", class, bytes))
-    }
-}
-
 // --- TMap -------------------------------------------------------------------
 
 /// One side of a [`TMap`] pair: a member's `(class_name, streamed body)`.
@@ -311,16 +291,25 @@ type MapEntry = (String, Vec<u8>);
 /// A `TMap` — ROOT's keyed map of object → object, stored under one key (the way
 /// ROOT keeps string-keyed metadata). Build it with [`TMap::insert`] (string
 /// keys) or [`TMap::add`] (any key object); read one back with
-/// [`TMap::read_root`](crate::ReadRoot::read_root) and look values up by string key with
+/// [`TMap::read_root`](ReadRoot::read_root) and look values up by string key with
 /// [`get`](TMap::get).
 ///
 /// Note: uproot has no `TMap` model, so a `TMap` is unreadable there (ROOT's own
 /// `TMap`s share this). ROOT C++ reads what oxiroot writes, and oxiroot reads
 /// ROOT's `TMap`s.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct TMap {
     name: String,
     pairs: Vec<(MapEntry, MapEntry)>,
+    /// The streamer info the entries added with [`add`](TMap::add) need.
+    streamers: StreamerSet,
+}
+
+/// Two maps are equal when they hold the same entries.
+impl PartialEq for TMap {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.name, &self.pairs) == (&other.name, &other.pairs)
+    }
 }
 
 impl TMap {
@@ -347,6 +336,8 @@ impl TMap {
     /// Insert a `value` under an arbitrary object `key`.
     #[must_use]
     pub fn add(mut self, key: &dyn WriteRoot, value: &dyn WriteRoot) -> TMap {
+        self.streamers.add(key);
+        self.streamers.add(value);
         self.pairs.push((
             (key.root_class(), key.to_root_bytes()),
             (value.root_class(), value.to_root_bytes()),
@@ -418,12 +409,6 @@ impl WriteRoot for TMap {
     fn root_title(&self) -> &str {
         ""
     }
-    fn contained_classes(&self) -> Vec<String> {
-        self.pairs
-            .iter()
-            .flat_map(|((kc, _), (vc, _))| [kc.clone(), vc.clone()])
-            .collect()
-    }
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
         let obj = w.begin_object(3); // TMap version 3
@@ -431,14 +416,20 @@ impl WriteRoot for TMap {
         w.string(&self.name); // fName
         w.be_i32(self.pairs.len() as i32); // number of pairs
         for ((kc, kb), (vc, vb)) in &self.pairs {
-            write_object(&mut w, kc, kb); // key object
-            write_object(&mut w, vc, vb); // value object
+            write_object_any(&mut w, kc, kb); // key object
+            write_object_any(&mut w, vc, vb); // value object
         }
         w.end_object(obj);
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        self.streamers.blob()
+    }
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        member_streamer_classes(
+            &self.streamers,
+            self.pairs.iter().flat_map(|((kc, _), (vc, _))| [kc, vc]),
+        )
     }
 }
 
@@ -478,15 +469,37 @@ fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
         let value = read_entry(&mut r, &mut tags, object)?;
         pairs.push((key, value));
     }
-    Ok(TMap { name, pairs })
+    Ok(TMap {
+        name,
+        pairs,
+        streamers: StreamerSet::default(),
+    })
 }
 
-pub(crate) fn read_tmap(file: &RFile, name: &str) -> Result<TMap> {
+fn read_tmap(file: &RFile, name: &str) -> Result<TMap> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
     decode_tmap(&class, &object, keylen)
 }
 
-pub(crate) fn read_tmap_in(file: &RFile, subdir: &str, name: &str) -> Result<TMap> {
+fn read_tmap_in(file: &RFile, subdir: &str, name: &str) -> Result<TMap> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     decode_tmap(&class, &object, keylen)
+}
+
+impl ReadRoot for ObjList {
+    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+        read_objlist(file, name)
+    }
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+        read_objlist_in(file, dir, name)
+    }
+}
+
+impl ReadRoot for TMap {
+    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+        read_tmap(file, name)
+    }
+    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+        read_tmap_in(file, dir, name)
+    }
 }

@@ -9,12 +9,14 @@
 //! (and the page locators) point to; only the anchor is a `TKey`. Validated by
 //! reading the result back and by official ROOT / uproot.
 
-use std::io::{Seek, Write};
+use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer_gen::{basic, streamer_info_list, Cls};
-use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, KSTART_BIG_FILE};
+use oxiroot_io_core::{
+    compress_if_smaller, Compression, ContainerWriter, DirId, WriteInto, KSTART_BIG_FILE,
+};
 
 use crate::anchor::{anchor_streamer_class, ANCHOR_CLASS};
 use crate::column::ColumnType;
@@ -1298,9 +1300,9 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
                 })
                 .collect();
             if let Some(elements) = elements {
-                if !classes.iter().any(|c| c.name == type_name) {
+                if !classes.iter().any(|c| c.name == type_name.as_str()) {
                     classes.push(Cls {
-                        name: type_name,
+                        name: type_name.into(),
                         version: 1,
                         checksum: class_checksum(type_name, members),
                         elements,
@@ -1329,14 +1331,20 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
     }
 }
 
-/// The file's `TList<TStreamerInfo>`: the anchor class, which ROOT describes in
-/// every RNTuple file, then the user classes of `fields`.
-fn ntuple_streamer_info<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<u8> {
+/// The `TStreamerInfo` entries a file holding RNTuples with these fields needs:
+/// the anchor class, which ROOT describes in every RNTuple file, then the user
+/// classes of `fields`.
+fn ntuple_classes<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<Cls<'a>> {
     let mut classes = vec![anchor_streamer_class()];
     for field in fields {
         collect_classes(&field.data, &mut classes);
     }
-    streamer_info_list(&classes)
+    classes
+}
+
+/// [`ntuple_classes`] as a serialized `TList<TStreamerInfo>`.
+fn ntuple_streamer_info<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<u8> {
+    streamer_info_list(&ntuple_classes(fields))
 }
 
 /// Assign field ids by a depth-first pre-order walk (parents before children,
@@ -1725,15 +1733,13 @@ fn rntuple_file_bytes_threshold(
     compression: Compression,
     threshold: u64,
 ) -> Result<Vec<u8>> {
-    // A one-RNTuple file is just the general layout with a single root entry and
-    // no subdirectories.
-    rntuples_file_bytes_threshold(
-        file_name,
-        &[(ntuple_name, fields)],
-        &[],
-        compression,
-        threshold,
-    )
+    // Lower and compress once; only the placement differs between the forms.
+    let prep = prep_ntuple(ntuple_name, fields, compression.setting())?;
+    let classes = ntuple_classes(fields);
+    ContainerWriter::build(file_name, compression, threshold, |file| {
+        write_one_rntuple(file, DirId::TOP, &prep)?;
+        file.place_streamer_info(&[], &classes)
+    })
 }
 
 /// One RNTuple's fully-lowered, page-encoded payload, ready to place into a file
@@ -1873,10 +1879,10 @@ fn extended_rntuple_file_bytes(
     compression: Compression,
 ) -> Result<Vec<u8>> {
     let prep = prep_ntuple_extended(ntuple_name, base_fields, late, compression.setting())?;
-    let streamer_info = ntuple_streamer_info(base_fields.iter().chain(late.iter().map(|(_, f)| f)));
+    let classes = ntuple_classes(base_fields.iter().chain(late.iter().map(|(_, f)| f)));
     ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, |file| {
         write_one_rntuple(file, DirId::TOP, &prep)?;
-        file.place_streamer_info(&streamer_info, &[])
+        file.place_streamer_info(&[], &classes)
     })
 }
 
@@ -1952,57 +1958,6 @@ fn write_one_rntuple<W: Write + Seek>(
 fn offset(seek: u64) -> Result<usize> {
     usize::try_from(seek)
         .map_err(|_| Error::Format(format!("file offset {seek} does not fit this platform")))
-}
-
-/// One RNTuple to write: its key name and its fields.
-type NtupleSpec<'a> = (&'a str, &'a [Field]);
-/// A subdirectory of RNTuples: its directory name and the RNTuples it holds.
-type DirSpec<'a> = (&'a str, Vec<NtupleSpec<'a>>);
-
-/// Build a ROOT file holding several RNTuples (`root`, in the top directory) plus
-/// one level of subdirectories (`dirs`, each `(name, ntuples)`), switching to the
-/// 64-bit container form once the file would exceed `big_threshold` bytes.
-fn rntuples_file_bytes_threshold(
-    file_name: &str,
-    root: &[NtupleSpec],
-    dirs: &[DirSpec],
-    compression: Compression,
-    big_threshold: u64,
-) -> Result<Vec<u8>> {
-    let setting = compression.setting();
-    let root_preps: Vec<NtuplePrep> = root
-        .iter()
-        .map(|(n, f)| prep_ntuple(n, f, setting))
-        .collect::<Result<_>>()?;
-    let dir_preps: Vec<(&str, Vec<NtuplePrep>)> = dirs
-        .iter()
-        .map(|(name, ntuples)| {
-            let preps = ntuples
-                .iter()
-                .map(|(n, f)| prep_ntuple(n, f, setting))
-                .collect::<Result<Vec<_>>>()?;
-            Ok((*name, preps))
-        })
-        .collect::<Result<_>>()?;
-    let all_fields = root
-        .iter()
-        .chain(dirs.iter().flat_map(|(_, ntuples)| ntuples))
-        .flat_map(|(_, fields)| fields.iter());
-    let streamer_info = ntuple_streamer_info(all_fields);
-
-    ContainerWriter::build(file_name, compression, big_threshold, |file| {
-        for p in &root_preps {
-            write_one_rntuple(file, DirId::TOP, p)?;
-        }
-        for (name, preps) in &dir_preps {
-            let dir = file.mkdir(DirId::TOP, name)?;
-            for p in preps {
-                write_one_rntuple(file, dir, p)?;
-            }
-            file.close_dir(dir)?;
-        }
-        file.place_streamer_info(&streamer_info, &[])
-    })
 }
 
 /// Write a one-RNTuple ROOT file to `path`, optionally compressing pages
@@ -2115,141 +2070,39 @@ impl Ntuple {
     }
 }
 
-/// A ROOT file holding **several RNTuples** — in the top directory and inside
-/// `TDirectory` subdirectories. [`Ntuple::write_root`] writes the one-RNTuple,
-/// root-directory case; this builder adds more than one per file and one level
-/// of nesting. ROOT and uproot navigate the result natively.
+/// An `Ntuple` goes into a [`RootFile`](oxiroot_io_core::RootFile) with
+/// [`put`](oxiroot_io_core::RootFile::put): several RNTuples in one file, inside
+/// `TDirectory` subdirectories, or next to histograms and trees. ROOT and uproot
+/// navigate the result natively.
 ///
 /// ```no_run
-/// use oxiroot_rntuple::{Field, NtupleFile, Ntuple};
-/// use oxiroot_io_core::Compression;
-/// NtupleFile::new()
-///     .add(Ntuple::new("events", vec![Field::i32("x", vec![1, 2, 3])]))
-///     .add(Ntuple::new("runs", vec![Field::i32("run", vec![7])]))
-///     .dir("cal", |d| d.add(Ntuple::new("pedestals", vec![Field::f64("p", vec![0.5])])))
-///     .write_root("multi.root", Compression::None)?;
+/// use oxiroot_io_core::{Compression, RootFile};
+/// use oxiroot_rntuple::{Field, Ntuple};
+///
+/// RootFile::create("multi.root")
+///     .put(Ntuple::new("events", vec![Field::i32("x", vec![1, 2, 3])]))
+///     .put(Ntuple::new("runs", vec![Field::i32("run", vec![7])]))
+///     .dir("cal", |d| d.put(Ntuple::new("pedestals", vec![Field::f64("p", vec![0.5])])))
+///     .write(Compression::None)?;
 /// # Ok::<(), oxiroot_io_core::error::Error>(())
 /// ```
-#[derive(Default)]
-pub struct NtupleFile {
-    root: Vec<Ntuple>,
-    dirs: Vec<(String, Vec<Ntuple>)>,
-}
-
-impl NtupleFile {
-    /// Start an empty file.
-    pub fn new() -> NtupleFile {
-        NtupleFile::default()
+impl WriteInto for Ntuple {
+    fn root_class(&self) -> String {
+        ANCHOR_CLASS.to_string()
     }
-
-    /// Add an RNTuple to the file's top directory.
-    // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, ntuple: Ntuple) -> NtupleFile {
-        self.root.push(ntuple);
-        self
+    fn root_name(&self) -> &str {
+        &self.name
     }
-
-    /// Add a `TDirectory` named `name` holding the RNTuples added inside `build`.
-    pub fn dir(
-        mut self,
-        name: impl Into<String>,
-        build: impl FnOnce(NtupleDir) -> NtupleDir,
-    ) -> NtupleFile {
-        let dir = build(NtupleDir {
-            ntuples: Vec::new(),
-        });
-        self.dirs.push((name.into(), dir.ntuples));
-        self
+    fn write_into(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
+        let prep = prep_ntuple(&self.name, &self.fields, file.compression_setting())?;
+        write_one_rntuple(file, dir, &prep)
     }
-
-    /// Build the file bytes and write them to `path`.
-    pub fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
-        let file_name = path
-            .as_ref()
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("file.root")
-            .to_string();
-        let bytes = self.to_root_bytes(&file_name, compression)?;
-        std::fs::write(path, bytes)?;
-        Ok(())
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        ntuple_classes(&self.fields)
+            .into_iter()
+            .map(Cls::into_owned)
+            .collect()
     }
-
-    /// The complete ROOT-file bytes; `file_name` is the `TFile` name in the header.
-    pub fn to_root_bytes(&self, file_name: &str, compression: Compression) -> Result<Vec<u8>> {
-        self.check_names()?;
-        let root: Vec<NtupleSpec> = self
-            .root
-            .iter()
-            .map(|n| (n.name.as_str(), n.fields.as_slice()))
-            .collect();
-        let dirs: Vec<DirSpec> = self
-            .dirs
-            .iter()
-            .map(|(name, nts)| {
-                (
-                    name.as_str(),
-                    nts.iter()
-                        .map(|n| (n.name.as_str(), n.fields.as_slice()))
-                        .collect(),
-                )
-            })
-            .collect();
-        rntuples_file_bytes_threshold(file_name, &root, &dirs, compression, KSTART_BIG_FILE)
-    }
-
-    /// Reject empty or clashing names before writing — loudly, rather than ROOT's
-    /// silent shadow-on-read. Top-directory RNTuple names and subdirectory names
-    /// share one namespace; each subdirectory's RNTuple names must be unique
-    /// within it.
-    fn check_names(&self) -> Result<()> {
-        let mut top: Vec<&str> = Vec::new();
-        for n in &self.root {
-            top.push(n.name.as_str());
-        }
-        for (name, _) in &self.dirs {
-            top.push(name.as_str());
-        }
-        check_unique(&top, "the top directory")?;
-        for (name, nts) in &self.dirs {
-            let names: Vec<&str> = nts.iter().map(|n| n.name.as_str()).collect();
-            check_unique(&names, &format!("subdirectory {name:?}"))?;
-        }
-        Ok(())
-    }
-}
-
-/// A subdirectory being built inside an [`NtupleFile`]; see [`NtupleFile::dir`].
-#[must_use]
-pub struct NtupleDir {
-    ntuples: Vec<Ntuple>,
-}
-
-impl NtupleDir {
-    /// Add an RNTuple to this subdirectory.
-    // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, ntuple: Ntuple) -> NtupleDir {
-        self.ntuples.push(ntuple);
-        self
-    }
-}
-
-/// Error on any empty or duplicate `name` in `where_` (one directory level).
-fn check_unique(names: &[&str], where_: &str) -> Result<()> {
-    let mut seen = std::collections::HashSet::new();
-    for &name in names {
-        if name.is_empty() {
-            return Err(Error::Format(format!("{where_} has an unnamed entry")));
-        }
-        if !seen.insert(name) {
-            return Err(Error::Format(format!(
-                "{where_} has two entries named {name:?}"
-            )));
-        }
-    }
-    Ok(())
 }
 
 // --- streaming, multi-cluster writer --------------------------------------

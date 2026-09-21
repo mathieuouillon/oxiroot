@@ -5,18 +5,13 @@
 //! [`TH1`] and the cosmetic/auxiliary members with ROOT's defaults.
 
 use std::borrow::Cow;
-use std::path::Path;
 
 use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
-use oxiroot_io_core::streamer_gen::{append_streamer_infos, Cls};
-use oxiroot_io_core::{Compression, ContainerWriter, DirId, ObjectRecord, KSTART_BIG_FILE};
-// The object framework (the `WriteRoot` trait + `record_of`) now lives in
-// `oxiroot-io-core`; re-export the trait so `oxiroot_hist::WriteRoot` and the
-// in-crate `crate::write::WriteRoot` path both keep resolving.
-pub(crate) use oxiroot_io_core::record_of;
-pub use oxiroot_io_core::WriteRoot;
+// The object framework (the `WriteRoot` trait and the `RootFile` builder) lives
+// in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, RootFile, Dir}`
+// and the in-crate `crate::write::WriteRoot` path keep resolving.
+pub use oxiroot_io_core::{Dir, RootFile, WriteRoot};
 
 use crate::axis::TAxis;
 use crate::base::Precision;
@@ -33,15 +28,10 @@ use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
-/// The `TList<TStreamerInfo>` blob a histogram-family object embeds when written
-/// on its own — the baked histogram blob plus any extra classes it (or its
-/// collection members) use. This is the [`WriteRoot::streamer_blob`]
-/// implementation shared by every writable type in this crate.
-pub(crate) fn hist_streamer_blob(obj: &dyn WriteRoot) -> Cow<'static, [u8]> {
-    let class = obj.root_class();
-    let contained = obj.contained_classes();
-    streamer_info_for(std::iter::once(class.as_str()).chain(contained.iter().map(String::as_str)))
-        .unwrap_or(Cow::Borrowed(HIST_STREAMER_INFO))
+/// The captured `TList<TStreamerInfo>` describing the histogram family: the
+/// [`WriteRoot::streamer_blob`] of every histogram-family type in this crate.
+pub(crate) fn hist_streamer_list() -> Cow<'static, [u8]> {
+    Cow::Borrowed(HIST_STREAMER_INFO)
 }
 
 /// `TH1`/`TH2`/`TH3` serialize at the precision carried by their `class_name`;
@@ -71,7 +61,7 @@ macro_rules! impl_write_root_hist {
                 w.into_vec()
             }
             fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_blob(self)
+                crate::write::hist_streamer_list()
             }
         }
     };
@@ -98,7 +88,7 @@ macro_rules! impl_write_root_fixed {
                 $bytes(self)
             }
             fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_blob(self)
+                crate::write::hist_streamer_list()
             }
         }
     };
@@ -124,7 +114,7 @@ impl WriteRoot for TGraph {
         tgraph_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
     }
 }
 
@@ -134,38 +124,6 @@ impl WriteRoot for TGraph {
 /// Embedded in every written file so it is self-describing. Sourced from a
 /// ROOT-written file with one of each type, kept uncompressed.
 const HIST_STREAMER_INFO: &[u8] = include_bytes!("histograms.streamerinfo.bin");
-
-/// The classes, beyond the baked histogram blob, that objects with class names
-/// `class_names` need described (`TObjString`/`TParameter<…>`, matrices, …), so
-/// uproot can model them. Each class appears once.
-fn extra_streamer_classes<'a>(class_names: impl Iterator<Item = &'a str>) -> Vec<Cls<'static>> {
-    let mut extra: Vec<Cls<'static>> = Vec::new();
-    for class in class_names {
-        // A class may need several infos (e.g. a matrix plus its base); dedup by
-        // name so a shared base is embedded once.
-        for cls in crate::objects::streamer_classes(class) {
-            if !extra.iter().any(|c| c.name == cls.name) {
-                extra.push(cls);
-            }
-        }
-    }
-    extra
-}
-
-/// The streamer info to embed for objects with class names `class_names`: the
-/// baked histogram blob plus [`extra_streamer_classes`]. Returns the baked blob
-/// borrowed when nothing extra is needed.
-fn streamer_info_for<'a>(class_names: impl Iterator<Item = &'a str>) -> Result<Cow<'static, [u8]>> {
-    let extra = extra_streamer_classes(class_names);
-    if extra.is_empty() {
-        Ok(Cow::Borrowed(HIST_STREAMER_INFO))
-    } else {
-        Ok(Cow::Owned(append_streamer_infos(
-            HIST_STREAMER_INFO,
-            &extra,
-        )?))
-    }
-}
 
 // `fBits` values ROOT writes for the embedded TObjects in a fresh histogram.
 const HIST_BITS: u32 = 0x0300_0008;
@@ -1061,7 +1019,7 @@ impl WriteRoot for TGraph2D {
         tgraph2d_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
+        crate::write::hist_streamer_list()
     }
 }
 
@@ -1138,233 +1096,7 @@ impl WriteRoot for TGraphMultiErrors {
         tgraphmultierrors_to_bytes(self)
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob(self)
-    }
-}
-
-/// Reject keys that cannot be addressed: an empty name (it could never be looked
-/// up) or two keys sharing a name in one directory (the second would silently
-/// shadow the first on read). `subdirs` names the subdirectories created in the
-/// same directory, which share its namespace.
-fn check_names(records: &[ObjectRecord], subdirs: &[&str], location: &str) -> Result<()> {
-    let mut seen = std::collections::HashSet::new();
-    for r in records {
-        if r.name.is_empty() {
-            return Err(Error::Format(format!(
-                "cannot write an unnamed {} in {location}; give it a key name with `.named(\"...\")`",
-                r.class_name
-            )));
-        }
-        if !seen.insert(r.name.as_str()) {
-            return Err(Error::DuplicateName {
-                name: r.name.clone(),
-                location: location.to_string(),
-            });
-        }
-    }
-    for &name in subdirs {
-        if name.is_empty() {
-            return Err(Error::Format(format!(
-                "cannot create a subdirectory with an empty name in {location}"
-            )));
-        }
-        if !seen.insert(name) {
-            return Err(Error::DuplicateName {
-                name: name.to_string(),
-                location: location.to_string(),
-            });
-        }
-    }
-    Ok(())
-}
-
-/// The objects added inside one [`RootFile::dir`] call.
-struct SubdirRecords {
-    name: String,
-    objects: Vec<ObjectRecord>,
-}
-
-/// Builder for composing a ROOT file from several objects — optionally organised
-/// into subdirectories, or appended to an existing file.
-///
-/// For the common case of a single object, prefer the
-/// [`WriteRoot::write_root`] shorthand. Reach for `RootFile` when a file holds
-/// several objects, uses subdirectories, or is being appended to. Any mix of
-/// writable types (histograms, profiles, graphs, …) can go in one file:
-///
-/// ```no_run
-/// use oxiroot_hist::{Compression, Hist, RootFile};
-/// let pt = Hist::reg(10, 0.0, 1.0).double().named("pt");
-/// let prof = Hist::reg(10, 0.0, 1.0).profile().named("prof");
-/// let signal = Hist::reg(10, 0.0, 1.0).double().named("sig");
-/// RootFile::create("out.root")
-///     .add(&pt)
-///     .add(&prof)
-///     .dir("by_region", |d| d.add(&signal)) // a TDirectory holding `sig`
-///     .write(Compression::Zstd(5))?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-///
-/// Append to an existing file with [`open`](RootFile::open):
-///
-/// ```no_run
-/// # use oxiroot_hist::{Compression, Hist, RootFile};
-/// # let extra = Hist::reg(10, 0.0, 1.0).double().named("extra");
-/// RootFile::open("out.root")?.add(&extra).write(Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-#[must_use = "a RootFile builder does nothing until `.write(...)` is called"]
-pub struct RootFile {
-    path: std::path::PathBuf,
-    /// `Some` in append mode (the existing file bytes); `None` for a fresh file.
-    existing: Option<Vec<u8>>,
-    root: Vec<ObjectRecord>,
-    dirs: Vec<SubdirRecords>,
-    /// Classes contained inside added objects (collection members) whose streamer
-    /// info must also be embedded.
-    contained: Vec<String>,
-}
-
-impl RootFile {
-    /// Start a fresh ROOT file at `path` (any existing file is overwritten on
-    /// [`write`](RootFile::write)).
-    pub fn create(path: impl AsRef<Path>) -> RootFile {
-        RootFile {
-            path: path.as_ref().to_path_buf(),
-            existing: None,
-            root: Vec::new(),
-            dirs: Vec::new(),
-            contained: Vec::new(),
-        }
-    }
-
-    /// Open an existing ROOT file at `path` to append more objects to its top
-    /// directory: the current contents are kept (appended in place, so existing
-    /// objects never move) and the added objects written after them. A new object
-    /// whose name matches an existing one lands at a higher cycle, as ROOT does.
-    /// Files that contain subdirectories or an RNTuple are preserved — only
-    /// *adding* new subdirectories in this mode is unsupported. See
-    /// [`ContainerWriter::append`].
-    pub fn open(path: impl AsRef<Path>) -> Result<RootFile> {
-        let path = path.as_ref().to_path_buf();
-        let existing = std::fs::read(&path)?;
-        Ok(RootFile {
-            path,
-            existing: Some(existing),
-            root: Vec::new(),
-            dirs: Vec::new(),
-            contained: Vec::new(),
-        })
-    }
-
-    /// Add an object to the file's top directory.
-    // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> RootFile {
-        self.contained.extend(object.contained_classes());
-        self.root.push(record_of(object));
-        self
-    }
-
-    /// Add a `TDirectory` named `name` holding the objects added inside `build`
-    /// (e.g. one directory per analysis region). Only meaningful when creating a
-    /// file; see [`open`](RootFile::open).
-    pub fn dir(mut self, name: impl Into<String>, build: impl FnOnce(Dir) -> Dir) -> RootFile {
-        let dir = build(Dir {
-            objects: Vec::new(),
-            contained: Vec::new(),
-        });
-        self.contained.extend(dir.contained);
-        self.dirs.push(SubdirRecords {
-            name: name.into(),
-            objects: dir.objects,
-        });
-        self
-    }
-
-    /// Build the file bytes and write them to the path. A fresh builder writes a
-    /// new file; one from [`open`](RootFile::open) rewrites the file with its
-    /// existing contents plus the additions. A file that grows past ~2 GiB is
-    /// written in ROOT's 64-bit ("big") container form automatically.
-    pub fn write(self, compression: Compression) -> Result<()> {
-        self.write_threshold(compression, KSTART_BIG_FILE)
-    }
-
-    /// Like [`write`](RootFile::write), but switch to the 64-bit container form
-    /// once the file would exceed `threshold` bytes rather than ROOT's ~2 GiB
-    /// ([`KSTART_BIG_FILE`]). A threshold of 0 always writes the 64-bit form,
-    /// which is useful for testing readers against it.
-    pub fn write_threshold(self, compression: Compression, threshold: u64) -> Result<()> {
-        // Reject unnamed / clashing keys before writing — loudly, instead of
-        // ROOT's silent shadow-on-read.
-        let subdir_names: Vec<&str> = self.dirs.iter().map(|d| d.name.as_str()).collect();
-        check_names(&self.root, &subdir_names, "the top directory")?;
-        for dir in &self.dirs {
-            check_names(&dir.objects, &[], &format!("subdirectory {:?}", dir.name))?;
-        }
-        let file_name = self
-            .path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("file.root")
-            .to_string();
-        // The baked histogram list, plus the classes it lacks. When appending to a
-        // file that has streamer info, only those extra classes are added to it
-        // (readers know the histogram classes).
-        let extra = extra_streamer_classes(
-            self.root
-                .iter()
-                .chain(self.dirs.iter().flat_map(|d| d.objects.iter()))
-                .map(|r| r.class_name.as_str())
-                .chain(self.contained.iter().map(String::as_str)),
-        );
-        let layout = |c: &mut ContainerWriter<_>| {
-            for r in &self.root {
-                c.place_key(DirId::TOP, &r.class_name, &r.name, &r.title, &r.object)?;
-            }
-            c.place_streamer_info(HIST_STREAMER_INFO, &extra)?;
-            for dir in &self.dirs {
-                let id = c.mkdir(DirId::TOP, &dir.name)?;
-                for r in &dir.objects {
-                    c.place_key(id, &r.class_name, &r.name, &r.title, &r.object)?;
-                }
-                c.close_dir(id)?;
-            }
-            Ok(())
-        };
-        let bytes = match &self.existing {
-            Some(existing) => {
-                if !self.dirs.is_empty() {
-                    return Err(Error::Format(
-                        "adding new subdirectories while appending is not supported \
-                         (append adds objects to the top directory; existing \
-                         subdirectories are preserved)"
-                            .to_string(),
-                    ));
-                }
-                ContainerWriter::build_append(existing, &file_name, compression, threshold, layout)?
-            }
-            None => ContainerWriter::build(&file_name, compression, threshold, layout)?,
-        };
-        std::fs::write(&self.path, bytes)?;
-        Ok(())
-    }
-}
-
-/// A subdirectory being built inside a [`RootFile`]; see [`RootFile::dir`].
-#[must_use]
-pub struct Dir {
-    objects: Vec<ObjectRecord>,
-    contained: Vec<String>,
-}
-
-impl Dir {
-    /// Add an object to this subdirectory.
-    #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> Dir {
-        self.contained.extend(object.contained_classes());
-        self.objects.push(record_of(object));
-        self
+        crate::write::hist_streamer_list()
     }
 }
 
