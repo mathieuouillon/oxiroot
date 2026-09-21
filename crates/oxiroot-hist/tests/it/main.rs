@@ -28,7 +28,6 @@ mod stats;
 mod streamer_classes;
 mod sumw2_varbins;
 mod tefficiency;
-mod tf;
 mod th2poly;
 mod thnsparse;
 mod threaded;

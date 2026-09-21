@@ -28,8 +28,9 @@
 //! set via [`FitOptions::loss`].
 //!
 //! The evaluable, persistable ROOT function objects `TF1`/`TF2`/`TF3` live in
-//! [`oxiroot_hist`](https://crates.io/crates/oxiroot-hist); a `TF1` converts to a
-//! `Model` for fitting.
+//! [`oxiroot_hist_func`](https://crates.io/crates/oxiroot-hist-func) (re-exported
+//! as `oxiroot::hist::{TF1, TF2, TF3}`); with that crate's `fit` feature,
+//! `TF1::to_model` converts one to a `Model` for fitting.
 
 mod data;
 mod engine;

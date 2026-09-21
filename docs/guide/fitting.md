@@ -88,7 +88,8 @@ assert!((fit.params[1] - 2.0).abs() < 1e-6); // slope ≈ 2
 `Model` is a named parametric fit function `f(x, params)` with named parameters
 and optional per-parameter constraints. (The evaluable, persistable ROOT
 function object is [`TF1`](functions.md); `TF1::to_model()` converts one to a
-`Model` for fitting.)
+`Model` for fitting. It needs the `fit` feature of `oxiroot-hist-func`, which
+the facade's `fit` feature turns on.)
 
 ### Built-in shapes
 

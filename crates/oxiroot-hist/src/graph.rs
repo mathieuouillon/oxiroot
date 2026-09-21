@@ -325,20 +325,7 @@ fn read_function_element(r: &mut RBuffer) -> Result<Option<GraphFunction>> {
         String::new() // back-reference; we cannot resolve it, so skip
     };
     let function = if class == "TF1" {
-        let d = crate::tf::read_tf1_body(r)?;
-        Some(GraphFunction {
-            name: d.name,
-            title: d.title,
-            formula: d.formula,
-            params: d.params,
-            par_errors: d.par_errors,
-            par_min: d.par_min,
-            par_max: d.par_max,
-            xmin: d.xmin,
-            xmax: d.xmax,
-            chi2: d.chi2,
-            ndf: d.ndf,
-        })
+        Some(GraphFunction::read_tf1_body(r)?)
     } else {
         None
     };

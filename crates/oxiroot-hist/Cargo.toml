@@ -5,12 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Classic ROOT histograms (TH1/TH2/TH3/TProfile) read/write"
+description = "Classic ROOT histograms, profiles and graphs (TH1/TH2/TH3/TProfile/TGraph…) read/write"
 
 [dependencies]
 oxiroot-io-core = { workspace = true }
 oxiroot-stat = { workspace = true }
-oxiroot-formula = { workspace = true }
 rayon = { version = "1", optional = true }
 oxiroot-fit = { workspace = true, optional = true }
 
@@ -24,8 +23,9 @@ oxiroot-linalg = { workspace = true }
 # accumulator (std::thread based) is always available.
 rayon = ["dep:rayon"]
 # Opt-in fitting: implements `FitData` for `TH1`/`TGraph` (so `h.fit(&model)`
-# works) and re-exports the `oxiroot-fit` crate, which carries the Minuit2
-# minimizer. Off by default to keep the core dependency-light.
+# works) and re-exports the fitting types from `oxiroot-fit`, which carries the
+# Minuit2 minimizer. Off by default to keep the core dependency-light.
+# (`TF1::to_model` is behind the `fit` feature of `oxiroot-hist-func`.)
 fit = ["dep:oxiroot-fit"]
 
 [package.metadata.docs.rs]

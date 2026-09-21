@@ -8,7 +8,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, RootFile, WriteRoot, TF1, TF2, TF3};
+use oxiroot_hist::{ReadRoot, RootFile, WriteRoot};
+use oxiroot_hist_func::{TF1, TF2, TF3};
 use oxiroot_io_core::{Compression, RFile};
 
 fn fixture(name: &str) -> RFile {

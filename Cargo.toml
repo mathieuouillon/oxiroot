@@ -26,6 +26,7 @@ oxiroot-compress = { path = "crates/oxiroot-compress", version = "0.0.1" }
 oxiroot-linalg = { path = "crates/oxiroot-linalg", version = "0.0.1" }
 oxiroot-rntuple = { path = "crates/oxiroot-rntuple", version = "0.0.1" }
 oxiroot-hist = { path = "crates/oxiroot-hist", version = "0.0.1" }
+oxiroot-hist-func = { path = "crates/oxiroot-hist-func", version = "0.0.1" }
 oxiroot-tree = { path = "crates/oxiroot-tree", version = "0.0.1" }
 oxiroot-stat = { path = "crates/oxiroot-stat", version = "0.0.1" }
 oxiroot-particle = { path = "crates/oxiroot-particle", version = "0.0.1" }

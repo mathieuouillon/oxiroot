@@ -231,7 +231,7 @@ impl WriteRoot for THStack {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_list()
+        crate::write::hist_streamer_blob()
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         vec![thstack_class()]
@@ -349,7 +349,7 @@ impl WriteRoot for TMultiGraph {
         w.into_vec()
     }
     fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_list()
+        crate::write::hist_streamer_blob()
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         vec![tmultigraph_class()]

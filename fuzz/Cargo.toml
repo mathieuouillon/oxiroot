@@ -14,6 +14,7 @@ oxiroot-rntuple = { path = "../crates/oxiroot-rntuple" }
 oxiroot-compress = { path = "../crates/oxiroot-compress" }
 oxiroot-tree = { path = "../crates/oxiroot-tree" }
 oxiroot-hist = { path = "../crates/oxiroot-hist" }
+oxiroot-hist-func = { path = "../crates/oxiroot-hist-func" }
 
 [[bin]]
 name = "rfile"

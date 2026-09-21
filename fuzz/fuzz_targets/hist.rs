@@ -4,9 +4,10 @@
 use libfuzzer_sys::fuzz_target;
 use oxiroot_hist::{
     ObjList, ReadRoot, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
-    THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D, TF1,
-    TF2, TF3, TH1, TH2, TH3,
+    THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D, TH1,
+    TH2, TH3,
 };
+use oxiroot_hist_func::{TF1, TF2, TF3};
 use oxiroot_io_core::RFile;
 
 /// Try every typed reader on `name`; each checks the key's class first, so the

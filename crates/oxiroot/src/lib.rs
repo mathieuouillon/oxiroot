@@ -43,9 +43,12 @@ pub mod compress {
     pub use oxiroot_compress::*;
 }
 
-/// Classic ROOT histograms — `TH1`/`TH2`/`TH3`/`TProfile` (from `oxiroot-hist`).
+/// Classic ROOT histograms, profiles, graphs and functions —
+/// `TH1`/`TH2`/`TH3`/`TProfile`/`TGraph`/`TF1`… (from `oxiroot-hist` and
+/// `oxiroot-hist-func`).
 pub mod hist {
     pub use oxiroot_hist::*;
+    pub use oxiroot_hist_func::{TF1, TF2, TF3};
 }
 
 /// ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym` (from
@@ -125,8 +128,9 @@ pub mod prelude {
         BinContentType, Chi2TestKind, Chi2TestResult, ErrorMode, GraphErrors, GraphFunction, Hist,
         Histogram, KsTestResult, Mergeable, PolyBin, Random, SparseBin, TAxis, TEfficiency, TGraph,
         TGraph2D, TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMultiGraph, TProfile,
-        TProfile2D, TProfile3D, ThreadedHist, TF1, TF2, TF3, TH1, TH2, TH3,
+        TProfile2D, TProfile3D, ThreadedHist, TH1, TH2, TH3,
     };
+    pub use oxiroot_hist_func::{TF1, TF2, TF3};
     pub use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
     pub use oxiroot_rntuple::{
