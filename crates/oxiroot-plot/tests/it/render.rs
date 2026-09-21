@@ -4,10 +4,19 @@
 //! artist / layout actually renders. No pixel comparison — only structural and
 //! invariant checks that won't flake.
 
-use oxiroot_hist::{Hist, TGraph, TProfile, TH1, TH2};
+// These tests plot the oxiroot histogram types.
+#![cfg(feature = "hist")]
+
+#[cfg(feature = "png")]
+use oxiroot_hist::TProfile;
+use oxiroot_hist::{Hist, TGraph, TH1, TH2};
+#[cfg(feature = "png")]
+use oxiroot_plot::Norm;
+#[cfg(feature = "png")]
+use oxiroot_plot::SaveOpts;
 use oxiroot_plot::{
     ratio_subplots, subplots, subplots_grid, Axes, Color, CurveOpts, Error, ErrorbarOpts, FontSet,
-    Hist2dOpts, HistOpts, HistType, Norm, PdfPages, SaveOpts, Style,
+    Hist2dOpts, HistOpts, HistType, PdfPages, Style,
 };
 
 // --- deterministic fixtures (a tiny LCG → reproducible bytes, no rng dep) ---
@@ -57,6 +66,7 @@ fn th2() -> TH2 {
     h
 }
 
+#[cfg(feature = "png")]
 fn profile() -> TProfile {
     let mut p = Hist::reg(10, 0.0, 10.0).profile().named("p");
     for i in 0..400 {
@@ -67,6 +77,7 @@ fn profile() -> TProfile {
 }
 
 /// Decode just the width/height from a PNG's IHDR (big-endian at bytes 16..24).
+#[cfg(feature = "png")]
 fn png_dims(b: &[u8]) -> (u32, u32) {
     assert!(b.starts_with(b"\x89PNG\r\n\x1a\n"), "not a PNG");
     let w = u32::from_be_bytes([b[16], b[17], b[18], b[19]]);
@@ -88,6 +99,7 @@ fn scratch(tag: &str) -> std::path::PathBuf {
 // --- output format selection ---------------------------------------------------
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn save_picks_format_from_extension() {
     let dir = scratch("formats");
     let mut ax = Axes::new();
@@ -124,6 +136,7 @@ fn unknown_extension_is_an_error_that_mentions_the_formats() {
 // --- in-memory rendering -------------------------------------------------------
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn in_memory_render_produces_each_format() {
     let mut ax = Axes::new();
     ax.hist(&gauss_hist());
@@ -139,6 +152,7 @@ fn in_memory_render_produces_each_format() {
 }
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn file_and_in_memory_bytes_agree() {
     let dir = scratch("agree");
     let mut ax = Axes::new();
@@ -183,6 +197,7 @@ fn hep_label_adds_glyphs_above_the_frame() {
 }
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn rendering_is_deterministic() {
     // Two independently built identical plots must produce identical bytes.
     let render = || {
@@ -212,6 +227,7 @@ fn rendering_is_deterministic() {
 // --- save options --------------------------------------------------------------
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn dpi_scales_the_png_raster() {
     let mut ax = Axes::new();
     ax.hist(&gauss_hist());
@@ -227,6 +243,7 @@ fn dpi_scales_the_png_raster() {
 }
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn transparency_changes_the_raster() {
     let mut ax = Axes::new();
     ax.hist(&gauss_hist());
@@ -323,6 +340,7 @@ fn all_histtypes_render() {
 }
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn graph_profile_plot_and_function_render() {
     // symmetric + asymmetric error graphs
     let sym = graph();
@@ -439,6 +457,7 @@ fn subplots_grid_returns_one_axes_per_cell() {
 }
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn figure_grid_renders_all_panels() {
     let h = gauss_hist();
     let (fig, mut axs) = subplots_grid(2, 2);
@@ -493,6 +512,7 @@ fn ratio_subplots_renders() {
 }
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn figure_in_memory_render_all_formats() {
     let (fig, mut ax) = subplots();
     ax.hist(&gauss_hist());
@@ -508,6 +528,7 @@ fn figure_in_memory_render_all_formats() {
 // --- edge cases ----------------------------------------------------------------
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn empty_axes_renders_without_panicking() {
     let ax = Axes::new();
     assert!(ax.to_svg_string().contains("<svg"));
@@ -563,7 +584,7 @@ fn font_choice_changes_the_glyphs() {
 fn custom_text_font_from_bytes_renders() {
     // A real font, embedded from the crate's own assets (so the test is
     // environment-independent), drives the custom-font path.
-    static DEJAVU: &[u8] = include_bytes!("../assets/DejaVuSans.ttf");
+    static DEJAVU: &[u8] = include_bytes!("../../assets/DejaVuSans.ttf");
     let fonts = FontSet::from_font(DEJAVU).expect("DejaVu is a valid font");
     let mut ax = Axes::new();
     ax.fonts(fonts);
@@ -574,8 +595,8 @@ fn custom_text_font_from_bytes_renders() {
 
 #[test]
 fn custom_text_and_math_fonts_render() {
-    static DEJAVU: &[u8] = include_bytes!("../assets/DejaVuSans.ttf");
-    static MATH: &[u8] = include_bytes!("../assets/STIXTwoMath-Regular.otf");
+    static DEJAVU: &[u8] = include_bytes!("../../assets/DejaVuSans.ttf");
+    static MATH: &[u8] = include_bytes!("../../assets/STIXTwoMath-Regular.otf");
     let fonts = FontSet::from_fonts(DEJAVU, MATH).expect("valid text + math fonts");
     let mut ax = Axes::new();
     ax.fonts(fonts);
@@ -587,7 +608,7 @@ fn custom_text_and_math_fonts_render() {
 #[test]
 fn custom_font_rejects_garbage() {
     assert!(FontSet::from_font(b"definitely not a font").is_err());
-    static DEJAVU: &[u8] = include_bytes!("../assets/DejaVuSans.ttf");
+    static DEJAVU: &[u8] = include_bytes!("../../assets/DejaVuSans.ttf");
     assert!(
         FontSet::from_fonts(DEJAVU, b"not a math font").is_err(),
         "a non-font math argument must be rejected"
@@ -701,6 +722,7 @@ fn pdf_pages_saves_and_matches_single_page_document() {
 // --- log / symlog color norm ---------------------------------------------------
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn log_norm_changes_heatmap_and_is_valid() {
     let h = th2();
     let linear = {
@@ -745,6 +767,7 @@ fn log_norm_colorbar_shows_decade_ticks() {
 }
 
 #[test]
+#[cfg(feature = "png")] // renders PNG too
 fn symlog_norm_handles_data_straddling_zero() {
     // A row of cells running from strongly negative to strongly positive — the
     // regime where a plain log norm masks everything and only SymLog works.

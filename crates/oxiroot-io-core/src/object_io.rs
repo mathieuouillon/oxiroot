@@ -14,7 +14,7 @@ use std::path::Path;
 
 use std::io::Cursor;
 
-use crate::error::{Error, Result};
+use crate::error::{decompress_payload, Error, Result};
 use crate::file::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use crate::streamer_gen::Cls;
 use crate::{Compression, RFile};
@@ -249,8 +249,7 @@ pub fn object_bytes_any(file: &RFile, name: &str) -> Result<(String, Vec<u8>)> {
         .key(name)
         .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
     let payload = file.key_payload(key)?;
-    let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
-        .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
+    let object = decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;
     Ok((key.class_name.clone(), object))
 }
 
@@ -263,7 +262,6 @@ pub fn object_bytes_any_keyed(file: &RFile, name: &str) -> Result<(String, Vec<u
         .key(name)
         .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
     let payload = file.key_payload(key)?;
-    let object = oxiroot_compress::decompress(&payload, key.obj_len as usize)
-        .map_err(|e| Error::Format(format!("decompressing {name:?}: {e}")))?;
+    let object = decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;
     Ok((key.class_name.clone(), object, key.key_len as usize))
 }

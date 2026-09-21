@@ -15,30 +15,30 @@ mod compare;
 mod from_member;
 mod naming;
 mod ops;
-pub mod quick;
+mod quick;
 mod read;
 
-pub mod axis;
+mod axis;
 mod derive;
 #[cfg(feature = "fit")]
-pub mod fit;
-pub mod graph;
-pub mod graph2d;
-pub mod graphmultierrors;
-pub mod sample;
+mod fit;
+mod graph;
+mod graph2d;
+mod graphmultierrors;
+mod sample;
 mod stats;
-pub mod tefficiency;
-pub mod tf;
-pub mod th1;
-pub mod th2;
-pub mod th2poly;
-pub mod th3;
-pub mod thnsparse;
-pub mod threaded;
-pub mod tprofile;
-pub mod tprofile2d;
-pub mod tprofile3d;
-pub mod write;
+mod tefficiency;
+mod tf;
+mod th1;
+mod th2;
+mod th2poly;
+mod th3;
+mod thnsparse;
+mod threaded;
+mod tprofile;
+mod tprofile2d;
+mod tprofile3d;
+mod write;
 
 pub use oxiroot_io_core::Compression;
 
@@ -57,7 +57,7 @@ pub use ops::Histogram;
 pub use oxiroot_io_core::{
     FromMember, ListKind, ObjList, ParamValue, TMap, TObjString, TParameter,
 };
-pub use quick::Hist;
+pub use quick::{Hist, H1, H2, H3};
 pub use read::ReadRoot;
 pub use sample::Rng;
 pub use tefficiency::TEfficiency;

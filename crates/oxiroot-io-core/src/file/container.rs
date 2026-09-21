@@ -573,7 +573,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// key list, and fill in the header. Returns the sink.
     ///
     /// A small file that grew past [`KSTART_BIG_FILE`] bytes cannot address its
-    /// own records and is an error.
+    /// own records: that is [`Error::FileTooLarge`].
     pub fn finish(self) -> Result<W> {
         self.finish_checked(true)
     }
@@ -590,10 +590,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
 
         let end = self.pos;
         if check_size && !self.big && end > KSTART_BIG_FILE {
-            return Err(Error::Format(format!(
-                "file size {end} bytes exceeds the {KSTART_BIG_FILE}-byte small-format \
-                 TFile limit; write it in the 64-bit form instead"
-            )));
+            return Err(Error::FileTooLarge { size: end });
         }
 
         match std::mem::replace(&mut self.header_update, HeaderUpdate::Patch) {

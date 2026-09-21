@@ -1,6 +1,7 @@
 //! Histograms, a `TTree` and an RNTuple in one file, through one `RootFile`.
 
 use oxiroot::prelude::*;
+use oxiroot::Error;
 
 fn hist() -> TH1 {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("pt");

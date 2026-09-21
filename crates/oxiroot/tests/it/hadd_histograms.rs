@@ -4,6 +4,7 @@
 
 use oxiroot::hadd::merge_histogram_files;
 use oxiroot::prelude::*;
+use oxiroot::Error;
 
 // --------------------------------------------------------------------- data
 

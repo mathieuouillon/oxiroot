@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use oxiroot_compress::CompressError;
+
 /// Convenience alias for results produced by this crate.
 ///
 /// The error type defaults to [`Error`] but can be overridden, so
@@ -34,15 +36,16 @@ pub enum Error {
         /// Bytes actually consumed reading it.
         got: usize,
     },
-    /// An object class version is not supported by this reader.
-    UnsupportedVersion {
-        /// The ROOT class name.
-        class: &'static str,
-        /// The unsupported on-disk class version.
-        version: u16,
-    },
     /// A generic, described format violation.
     Format(String),
+    /// A stored payload could not be decompressed. `source` says why; a codec
+    /// this build cannot decode is [`CompressError::CodecUnavailable`].
+    Decompress {
+        /// What was being read (e.g. `key "h"`, `RNTuple page`); may be empty.
+        context: String,
+        /// The codec's error.
+        source: CompressError,
+    },
     /// Two objects were given the same key name in one directory (which would
     /// silently shadow on read). Name them distinctly, or write them to separate
     /// subdirectories.
@@ -62,6 +65,13 @@ pub enum Error {
     SchemaChanged {
         /// Human-readable description of the schema change.
         detail: String,
+    },
+    /// A file written in the 32-bit ("small") container form grew past the
+    /// ~2 GiB it can address. Write it in the 64-bit form instead (e.g.
+    /// `TTreeWriter::create_large`); nothing it wrote is usable.
+    FileTooLarge {
+        /// The size the file reached, in bytes.
+        size: u64,
     },
     /// An underlying I/O error. The [`std::io::ErrorKind`] is preserved so
     /// callers can branch on it; the message is rendered to a string so `Error`
@@ -100,18 +110,51 @@ impl fmt::Display for Error {
                     "byte-count mismatch: object ends at {expected} but cursor is at {got}"
                 )
             }
-            Error::UnsupportedVersion { class, version } => {
-                write!(f, "unsupported {class} version {version}")
-            }
             Error::Format(s) => write!(f, "format error: {s}"),
+            Error::Decompress { context, source } if context.is_empty() => {
+                write!(f, "decompression failed: {source}")
+            }
+            Error::Decompress { context, source } => {
+                write!(f, "decompressing {context}: {source}")
+            }
             Error::BinningMismatch { detail } => write!(f, "binning mismatch: {detail}"),
             Error::SchemaChanged { detail } => write!(f, "schema changed: {detail}"),
+            Error::FileTooLarge { size } => write!(
+                f,
+                "the file reached {size} bytes, more than the 32-bit container form can \
+                 address (2 GiB); write it in the 64-bit form"
+            ),
             Error::Io { message, .. } => write!(f, "I/O error: {message}"),
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Decompress { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl From<CompressError> for Error {
+    fn from(source: CompressError) -> Self {
+        Error::Decompress {
+            context: String::new(),
+            source,
+        }
+    }
+}
+
+/// Decompress a stored payload into `len` bytes (see
+/// [`oxiroot_compress::decompress`]), naming `what` was read if it fails.
+pub fn decompress_payload(payload: &[u8], len: usize, what: impl fmt::Display) -> Result<Vec<u8>> {
+    oxiroot_compress::decompress(payload, len).map_err(|source| Error::Decompress {
+        context: what.to_string(),
+        source,
+    })
+}
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {

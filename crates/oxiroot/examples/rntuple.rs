@@ -13,7 +13,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
 
     // --- Build one flat event dataset, column by column. -----------------------

@@ -26,7 +26,7 @@ impl Rng {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     let mut rng = Rng(0x0DD_F00D_CAFE_BEEF);
 
     // The true turn-on: 50% efficiency at x50 GeV, rising over a width w.

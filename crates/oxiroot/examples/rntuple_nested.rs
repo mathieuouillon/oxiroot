@@ -11,7 +11,7 @@
 
 use oxiroot::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> oxiroot::Result<()> {
     // (a) std::vector<std::string>: per-entry lists of tags.
     let tags = Field::vec_str(
         "tags",
