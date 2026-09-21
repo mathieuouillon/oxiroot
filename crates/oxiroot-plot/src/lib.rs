@@ -460,6 +460,40 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "math")]
+    fn malformed_or_zero_size_math_labels_do_not_panic() {
+        use draw::{DrawCommand, DrawGroup};
+        let fonts = FontSet::stix();
+        let draw = |label: &str, size: f32| {
+            let mut g = DrawGroup::new(None);
+            mathtext::layout_label(
+                &mut g,
+                &fonts,
+                label,
+                0.0,
+                0.0,
+                size,
+                Color::BLACK,
+                text::HAlign::Left,
+                text::VAlign::Middle,
+                0.0,
+            );
+            g
+        };
+        // An array row with more cells than columns does not parse (as in
+        // LaTeX), so the label falls back to its source as plain text.
+        let g = draw("$\\begin{array}{l} a & b \\end{array}$", 20.0);
+        assert!(g.cmds.iter().any(|c| matches!(c, DrawCommand::Path { .. })));
+        // ReX's glyph assembly overflowed at a zero size.
+        for size in [0.0, -1.0, f32::NAN] {
+            draw(
+                "$\\overbrace{\\begin{array}{c} a \\\\ b \\end{array}}$",
+                size,
+            );
+        }
+    }
+
+    #[test]
     #[cfg(not(feature = "math"))]
     fn math_label_without_the_math_feature_is_plain_text() {
         use draw::{DrawCommand, DrawGroup};

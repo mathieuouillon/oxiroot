@@ -237,6 +237,11 @@ fn render_math(
     tex: &str,
     size_px: f32,
 ) -> Option<(Vec<LocalPrim>, f32, f32, f32)> {
+    // ReX's glyph assembly overflows at a zero size; a label that small (or
+    // negative, or not a number) cannot be seen, so it gets no math layout.
+    if !(size_px > 0.0 && size_px.is_finite()) {
+        return None;
+    }
     let face = ttf_parser::Face::parse(fonts.math_bytes(), 0).ok()?;
     let font = TtfMathFont::new(face).ok()?;
     // ReX takes the font size in points and converts it to its pixel units at
