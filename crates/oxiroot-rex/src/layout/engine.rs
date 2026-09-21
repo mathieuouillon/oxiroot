@@ -1052,9 +1052,11 @@ impl<'f, F : MathFont> LayoutEngine<'f, F> {
 
 
         // Don't bother constructing a new node if there is nothing.
+        // The column format sets the number of columns: a row may have fewer cells
+        // (the rest are empty), and the parser rejects rows with more.
         let num_rows = array.rows.len();
-        let num_columns = array.rows.iter().map(Vec::len).max().unwrap_or(0);
-        if num_columns == 0 {
+        let num_columns = array.col_format.alignment.len();
+        if num_columns == 0 || array.rows.iter().all(Vec::is_empty) {
             return Ok(Vec::new());
         }
 

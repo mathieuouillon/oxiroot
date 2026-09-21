@@ -77,6 +77,15 @@ impl<'a, I : Iterator<Item = TexToken<'a>>> Parser<'a, I> {
         }
         let mut rows = self.parse_array_body(env)?;
 
+        // As in LaTeX, a row may have fewer cells than the column format declares
+        // columns (the rest are empty) but not more.
+        if let Some(format) = &col_format {
+            let declared = format.alignment.len();
+            if let Some(row) = rows.iter().find(|row| row.len() > declared) {
+                return Err(ParseError::TooManyCellsInArrayRow { declared, found : row.len() });
+            }
+        }
+
         let left_delimiter;
         let right_delimiter;
 
@@ -125,7 +134,7 @@ impl<'a, I : Iterator<Item = TexToken<'a>>> Parser<'a, I> {
         }
 
         let col_format = col_format.unwrap_or_else(|| {
-            let n_cols = rows.last().map_or(0, |row| row.len());
+            let n_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
             if let Environment::Aligned = env {
                 ArrayColumnsFormatting {
                     alignment:  [ArrayColumnAlign::Right, ArrayColumnAlign::Left].iter().cycle().cloned().take(n_cols).collect(),

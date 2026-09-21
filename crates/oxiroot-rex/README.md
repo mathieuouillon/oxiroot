@@ -51,6 +51,15 @@ Everything else under `src/` is byte-identical to upstream (with
   `src/parser/{mod,environments,control_sequence,symbols}.rs`.
 - Warnings fixed: an unused `VBox` import and an unused `LayoutError` import in
   `src/layout/engine.rs`, and an unneeded `mut` in `src/parser/mod.rs`.
+- Array column counts (bug fixes; upstream dropped cells, and debug builds
+  panicked on a `debug_assert_eq!` in the array layout):
+  - `src/parser/environments.rs`: a `matrix`/`pmatrix`/…/`aligned` environment
+    takes its column count from its widest row, not its last row; an `array`
+    row with more cells than its column format declares is the new
+    `ParseError::TooManyCellsInArrayRow` (LaTeX's "Extra alignment tab").
+  - `src/parser/error.rs`: that variant and its message.
+  - `src/layout/engine.rs`: the array layout takes its column count from the
+    column format, so a format wider than its rows lays out empty cells.
 - `src/unicode_math/mod.rs`: a module header; the tables are included from the
   committed files; the `OPERATOR_LIMITS` re-export is removed.
 - `src/unicode_math/common.rs`: the `serde` `cfg_attr`, `OPERATOR_LIMITS` and

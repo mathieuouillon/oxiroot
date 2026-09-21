@@ -56,6 +56,14 @@ pub enum ParseError {
     /// The argument of `\begin{array}{..}` is not of the correct form: 
     /// it can only contain the characters `c`, `l`, `r`, whitespaces, braces, `|`  or macros that ultimately expand to one of these.
     UnrecognizedArrayColumnFormat,
+    /// A row of `\begin{array}{..}` has more cells than its column format declares columns
+    /// (LaTeX: "Extra alignment tab has been changed to \cr").
+    TooManyCellsInArrayRow {
+        /// Number of columns the column format declares
+        declared : usize,
+        /// Number of cells in the row
+        found    : usize,
+    },
     /// The token immediately following `\left`, `\middle` and `\right` isn't a symbol
     ExpectedSymbolAfterDelimiterCommand,
     /// The symbol immediately following `\big`, `\Bigl`, etc. is not Open, Close or Fence symbol type (delimiter types)
@@ -123,6 +131,8 @@ impl fmt::Display for ParseError {
                 write!(f, "Unknown environment '{}'", env_name),
             UnrecognizedArrayColumnFormat => 
                 write!(f, "Unrecognized character in column format"),
+            TooManyCellsInArrayRow { declared, found } => 
+                write!(f, "an array row has {} cells but its column format declares {} columns", found, declared),
             ExpectedSymbolAfterDelimiterCommand => 
                 write!(f, r"Token after '\left', '\middle', '\right', '\big', etc. is not a symbol"),
             ExpectedDelimiter => 
