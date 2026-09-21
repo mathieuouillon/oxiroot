@@ -295,9 +295,11 @@ let pt = chain.read_branch("pt")?; // values from both files, in add order
 than the others.
 
 !!! tip
-    With the `rayon` feature enabled, per-basket decompression runs in parallel
-    inside `read_branch`/`read_branch_range`, with no API change. See
-    [Compression](compression.md) for the supported codecs.
+    With the `rayon` feature enabled, `read_branch_par`, `read_branch_range_par`
+    and `read_branch_flat_par` decompress a branch's baskets in parallel and
+    return exactly what their serial counterparts do. The plain methods always
+    read on the calling thread. See [Compression](compression.md) for the
+    supported codecs.
 
 ## See also
 

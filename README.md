@@ -101,11 +101,11 @@ independent, so a histogram-only project never compiles the others.
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple, fitting, plotting — through
-# the facade. The optional capabilities (fit, plot, rayon, mmap, argmin) are ON
-# BY DEFAULT, so nothing extra to enable:
+# the facade. Fitting, plotting, mmap and argmin are ON BY DEFAULT, so nothing
+# extra to enable (add `features = ["rayon"]` for the parallel helpers):
 oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 
-# …leaner, just the format core (drops the fitting/plotting/rayon/mmap deps):
+# …leaner, just the format core (drops the fitting/plotting/mmap deps):
 # oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
 
 # …or depend on just one crate from the same repo:
@@ -243,7 +243,7 @@ cargo run -p oxiroot --example analysis
   let merged = hist.merge()?;
   ```
   No `Arc`, no manual slots; `with_local(|h| …)` batches fills or reaches any
-  method, and the `rayon` feature (on by default) adds a one-call
+  method, and the opt-in `rayon` feature adds a one-call
   `fill_par(&template, &data, |h, &x| h.fill(x))`. See
   [`examples/threaded.rs`](crates/oxiroot/examples/threaded.rs).
 - Write one object with `h.write_root(path, compression)`. For several objects,
@@ -644,7 +644,8 @@ ax2.save("heatmap.svg")?;
 - `read_branch` reads a whole branch,
   `read_branch_range(start, stop)` only the baskets covering a window, and
   `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `TChain` spans many
-  files (optional `rayon` decodes baskets in parallel). Introspect with
+  files. With the `rayon` feature, `read_branch_par` (and the `_range_par` /
+  `_flat_par` variants) decompress baskets in parallel. Introspect with
   `branch_type`/`branch_shape`/`branch_title`, and see what was skipped via
   `unsupported_branches()`. Worked example: `cargo run -p oxiroot --example tree`.
 - `friends()` returns the friend trees attached with `TTree::AddFriend` (read
@@ -855,15 +856,15 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 | Feature | Default | Effect |
 |---------|:---:|--------|
 | `mmap` | ✅ | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
-| `rayon` | ✅ | Data-parallel histogram fill (`hist::fill_par`) and TTree basket decode; adds `rayon`. |
+| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TTree::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 | `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `TH1`/`TH2`/`TGraph`/`TProfile`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
 | `http` | — | Remote reads over HTTP(S) byte-range requests (`RFile::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
 | `xrootd` | — | Remote reads over the XRootD `root://` protocol (`RFile::open_url`), with `unix` auth for public data (e.g. `root://eospublic.cern.ch`). Pure `std::net` — adds no dependencies. |
 
-All are **on by default** — the facade is batteries-included. For a lean,
-pure-Rust format core with a minimal dependency set, opt out with
+The facade is batteries-included: everything marked ✅ is on by default. For a
+lean, pure-Rust format core with a minimal dependency set, opt out with
 `default-features = false` and re-enable what you need.
 
 ## Build & test

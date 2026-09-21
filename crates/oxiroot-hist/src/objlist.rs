@@ -42,7 +42,8 @@ pub enum ListKind {
 /// A `TList` or `TObjArray` of objects stored under a single key. Build with
 /// [`ObjList::list`] / [`ObjList::array`], name it with [`named`](ObjList::named),
 /// and [`add`](ObjList::add) any writable objects; read one back with
-/// [`ObjList::read_root`] and extract members by type with [`items`](ObjList::items).
+/// [`ObjList::read_root`](crate::ReadRoot::read_root) and extract members by type with
+/// [`items`](ObjList::items).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjList {
     kind: ListKind,
@@ -310,7 +311,8 @@ type MapEntry = (String, Vec<u8>);
 /// A `TMap` — ROOT's keyed map of object → object, stored under one key (the way
 /// ROOT keeps string-keyed metadata). Build it with [`TMap::insert`] (string
 /// keys) or [`TMap::add`] (any key object); read one back with
-/// [`TMap::read_root`] and look values up by string key with [`get`](TMap::get).
+/// [`TMap::read_root`](crate::ReadRoot::read_root) and look values up by string key with
+/// [`get`](TMap::get).
 ///
 /// Note: uproot has no `TMap` model, so a `TMap` is unreadable there (ROOT's own
 /// `TMap`s share this). ROOT C++ reads what oxiroot writes, and oxiroot reads
