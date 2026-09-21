@@ -376,6 +376,7 @@ pub fn subplots_grid_with(style: Style, grid: GridSpec) -> (Figure, Vec<Axes>) {
 ///
 /// # Examples
 /// ```no_run
+/// # #[cfg(feature = "hist")] {
 /// use oxiroot_plot::ratio_subplots;
 /// use oxiroot_hist::Hist;
 /// let h = Hist::reg(20, 0.0, 10.0).double().named("h");
@@ -386,6 +387,7 @@ pub fn subplots_grid_with(style: Style, grid: GridSpec) -> (Figure, Vec<Axes>) {
 /// ratio.ylabel("data/MC");
 /// ratio.xlabel("x");
 /// fig.ratio(main, ratio).save("ratio.svg").unwrap();
+/// # }
 /// ```
 #[must_use]
 pub fn ratio_subplots() -> (Figure, Axes, Axes) {

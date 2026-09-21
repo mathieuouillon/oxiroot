@@ -45,6 +45,7 @@
 //! # A histogram with data points
 //!
 //! ```no_run
+//! # #[cfg(feature = "hist")] {
 //! use oxiroot_plot::{Axes, Color, ErrorbarOpts, HistOpts, HistType};
 //! use oxiroot_hist::{Hist, TGraph};
 //!
@@ -62,12 +63,14 @@
 //! ax.ylabel("Events");
 //! ax.legend();
 //! ax.save("pt.png")?;         // or "pt.svg" / "pt.pdf"
+//! # }
 //! # Ok::<(), oxiroot_plot::Error>(())
 //! ```
 //!
 //! # A ratio plot
 //!
 //! ```no_run
+//! # #[cfg(feature = "hist")] {
 //! use oxiroot_plot::{ratio_subplots, Color, ErrorbarOpts, HistOpts, HistType};
 //! use oxiroot_hist::{Hist, TGraph};
 //!
@@ -83,6 +86,7 @@
 //! ratio.ylabel("data/MC");
 //! ratio.xlabel("$p_T$ [GeV]");
 //! fig.ratio(main, ratio).save("ratio.pdf")?;
+//! # }
 //! # Ok::<(), oxiroot_plot::Error>(())
 //! ```
 
@@ -668,8 +672,9 @@ mod tests {
 
     /// Overlaying a fitted `Model` adds a curve (one polyline) on top of the
     /// histogram. Lives in-crate because it needs the optional `oxiroot_fit`
-    /// dependency, which is only present under the `fit` feature.
-    #[cfg(feature = "fit")]
+    /// dependency, which is only present under the `fit` feature (and the
+    /// histogram needs `hist`).
+    #[cfg(all(feature = "fit", feature = "hist"))]
     #[test]
     fn model_overlay_adds_a_curve() {
         use oxiroot_fit::Model;
