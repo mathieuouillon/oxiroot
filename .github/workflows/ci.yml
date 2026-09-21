@@ -148,14 +148,10 @@ jobs:
 
       - name: Package and verify every publishable crate
         # Builds each crate from its packaged sources, resolving the others
-        # through a temporary local registry, so a missing file or a
-        # dependency without a version fails here instead of at release.
-        # oxiroot-plot depends on the unpublished ReX by git, which crates.io
-        # does not accept, and the facade and CLI depend on oxiroot-plot; they
-        # are excluded until that dependency is resolved.
-        run: >-
-          cargo package --workspace
-          --exclude oxiroot-plot --exclude oxiroot --exclude oxiroot-cli
+        # through a temporary local registry, so a missing file, a git
+        # dependency, or a dependency without a version fails here instead of
+        # at release.
+        run: cargo package --workspace
 
   fuzz-build:
     name: fuzz targets build

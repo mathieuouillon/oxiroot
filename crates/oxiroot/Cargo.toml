@@ -47,7 +47,7 @@ fit = ["oxiroot-hist/fit", "oxiroot-hist-func/fit", "dep:oxiroot-fit", "oxiroot-
 argmin = ["fit", "oxiroot-fit/argmin"]
 # Enable plotting (`oxiroot::plot`): render TH1/TH2/TGraph/TProfile to SVG/PNG
 # with a matplotlib-like API and mplhep style. Pulls tiny-skia, ab_glyph, and
-# the ReX TeX engine (git dependency) for `$…$` math labels.
+# the ReX TeX engine (vendored as oxiroot-rex) for `$…$` math labels.
 plot = ["dep:oxiroot-plot"]
 
 # Build docs.rs with every feature so fitting, the argmin backend, rayon, and
