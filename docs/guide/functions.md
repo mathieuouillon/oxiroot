@@ -91,12 +91,12 @@ other object — [Reading & writing](reading-writing.md):
 use oxiroot::prelude::*;
 let f = TF1::new("resp", "[0]*exp(-[1]*x)", 0.0, 5.0)?.with_params(vec![10.0, 0.5]);
 f.write_root("func.root", Compression::None)?;             // a standalone TF1 key
-let back = TF1::read_root(&RFile::open("func.root")?, "resp")?;
+let back = TF1::read_root(&FileReader::open("func.root")?, "resp")?;
 assert!((back.eval(2.0) - f.eval(2.0)).abs() < 1e-12);
 # Ok::<(), oxiroot::Error>(())
 ```
 
-They also go into a multi-object file or a subdirectory via the `RootFile`
+They also go into a multi-object file or a subdirectory via the `FileWriter`
 builder, and a graph's attached fitted functions (`fFunctions`) use the same
 `TF1`/`TFormula` serialization — see [Graphs](graphs.md).
 

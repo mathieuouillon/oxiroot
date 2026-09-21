@@ -4,8 +4,8 @@
 //! `std::atomic<T>` is stored as the bare `T`. Round-tripped here; the written
 //! files are also read by ROOT C++ (`RNTupleReader`) and uproot.
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_rntuple::{Field, FieldValues, Ntuple, RNTuple};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader};
 
 fn write(path: &str, compression: Compression) {
     Ntuple::new(
@@ -25,8 +25,8 @@ fn optional_and_unique_ptr_round_trip_as_nullable() {
     let path = std::env::temp_dir().join("oxiroot_opt.root");
     let path = path.to_str().unwrap();
     write(path, Compression::None);
-    let f = RFile::open(path).unwrap();
-    let nt = RNTuple::open(&f, "ntpl").unwrap();
+    let f = FileReader::open(path).unwrap();
+    let nt = NtupleReader::open(&f, "ntpl").unwrap();
 
     // optional<float> reads back as a nullable.
     let maybe = nt.read_field(&f, "maybe").unwrap();
@@ -47,8 +47,8 @@ fn atomic_reads_as_a_scalar() {
     let path = std::env::temp_dir().join("oxiroot_atomic.root");
     let path = path.to_str().unwrap();
     write(path, Compression::None);
-    let f = RFile::open(path).unwrap();
-    let nt = RNTuple::open(&f, "ntpl").unwrap();
+    let f = FileReader::open(path).unwrap();
+    let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(
         nt.read_field(&f, "counter").unwrap(),
         FieldValues::I32(vec![0, 100, 200, 300])
@@ -60,8 +60,8 @@ fn nullable_fields_compress() {
     let path = std::env::temp_dir().join("oxiroot_opt_zstd.root");
     let path = path.to_str().unwrap();
     write(path, Compression::Zstd(5));
-    let f = RFile::open(path).unwrap();
-    let nt = RNTuple::open(&f, "ntpl").unwrap();
+    let f = FileReader::open(path).unwrap();
+    let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(
         nt.read_field(&f, "maybe").unwrap().opt_f32(),
         Some(vec![Some(1.5), None, Some(3.5), None])
@@ -85,8 +85,8 @@ fn all_present_and_all_absent() {
     )
     .write_root(path, Compression::None)
     .unwrap();
-    let f = RFile::open(path).unwrap();
-    let nt = RNTuple::open(&f, "ntpl").unwrap();
+    let f = FileReader::open(path).unwrap();
+    let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(
         nt.read_field(&f, "full").unwrap().opt_f64(),
         Some(vec![Some(1.0), Some(2.0), Some(3.0)])

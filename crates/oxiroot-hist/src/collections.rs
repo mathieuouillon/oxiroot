@@ -16,7 +16,7 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tobject, write_object_any, write_tnamed, write_tobject};
 use oxiroot_io_core::streamer_gen::{base, basic, objptr, Cls};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::base::object_bytes_any_keyed;
 use crate::graph::{decode_tgraph, TGraph};
@@ -153,7 +153,7 @@ fn list_member_ranges(
 /// A `THStack` — a named stack of histograms (drawn overlaid or summed). Build
 /// one with [`THStack::new`], name it with [`named`](THStack::named), and
 /// [`add`](THStack::add) the histograms; write it through
-/// [`RootFile`](crate::RootFile) or [`write_root`](crate::WriteRoot::write_root).
+/// [`FileWriter`](crate::FileWriter) or [`write_root`](crate::WriteRoot::write_root).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct THStack {
     name: String,
@@ -256,12 +256,12 @@ fn decode_thstack(class: &str, object: &[u8], keylen: usize) -> Result<THStack> 
     Ok(THStack { name, title, hists })
 }
 
-pub(crate) fn read_thstack(file: &RFile, name: &str) -> Result<THStack> {
+pub(crate) fn read_thstack(file: &FileReader, name: &str) -> Result<THStack> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
     decode_thstack(&class, &object, keylen)
 }
 
-pub(crate) fn read_thstack_in(file: &RFile, subdir: &str, name: &str) -> Result<THStack> {
+pub(crate) fn read_thstack_in(file: &FileReader, subdir: &str, name: &str) -> Result<THStack> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     decode_thstack(&class, &object, keylen)
 }
@@ -380,12 +380,16 @@ fn decode_tmultigraph(class: &str, object: &[u8], keylen: usize) -> Result<TMult
     })
 }
 
-pub(crate) fn read_tmultigraph(file: &RFile, name: &str) -> Result<TMultiGraph> {
+pub(crate) fn read_tmultigraph(file: &FileReader, name: &str) -> Result<TMultiGraph> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
     decode_tmultigraph(&class, &object, keylen)
 }
 
-pub(crate) fn read_tmultigraph_in(file: &RFile, subdir: &str, name: &str) -> Result<TMultiGraph> {
+pub(crate) fn read_tmultigraph_in(
+    file: &FileReader,
+    subdir: &str,
+    name: &str,
+) -> Result<TMultiGraph> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     decode_tmultigraph(&class, &object, keylen)
 }

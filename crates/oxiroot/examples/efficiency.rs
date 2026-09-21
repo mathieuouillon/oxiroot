@@ -93,12 +93,12 @@ fn main() -> oxiroot::Result<()> {
     // Temp file, named for this example, removed before we return — no litter.
     // (uproot cannot read TEfficiency, but ROOT C++ and oxiroot itself can.)
     let path = std::env::temp_dir().join("oxiroot_ex_efficiency.root");
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&eff)
         .write(Compression::Zstd(5))?;
     println!("\nwrote TEfficiency -> {}", path.display());
 
-    let file = RFile::open(&path)?;
+    let file = FileReader::open(&path)?;
     let back = TEfficiency::read_root(&file, "trig_turnon")?;
     println!(
         "read back `{}`: {} total trials, mid-bin eff = {:.4} (matches: {})",

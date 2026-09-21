@@ -1,7 +1,7 @@
 //! A miniature analysis end-to-end: fill weighted histograms (with variable
 //! bins), combine and normalize them (`*=`, `Index`, the `Histogram` trait),
 //! write them — into subdirectories and a flat heterogeneous file via the
-//! `RootFile` builder (with a float-precision `TH1F`) — write a columnar event
+//! `FileWriter` (with a float-precision `TH1F`) — write a columnar event
 //! dataset, and read it back (`TH1::read_root`) — all readable by official ROOT
 //! and uproot.
 //!
@@ -89,10 +89,10 @@ fn main() -> oxiroot::Result<()> {
     println!("normalized signal integral = {:.6}", signal.integral());
     println!("{signal}"); // Display: one-line summary
 
-    // --- Compose a file with the `RootFile` builder: top-level objects plus -----
+    // --- Compose a file with `FileWriter`: top-level objects plus -----------------
     // per-region subdirectories. The one way to write more than a single object.
     let hist_path = dir.join("analysis_hists.root");
-    RootFile::create(&hist_path)
+    FileWriter::create(&hist_path)
         .add(&pt) // top level
         .add(&eta_phi)
         .dir("signal", |d| d.add(&signal)) // a TDirectory per region
@@ -111,7 +111,7 @@ fn main() -> oxiroot::Result<()> {
     // Write `pt` as a float-precision TH1F just by setting its on-disk bin content type.
     let pt_f32 = pt.clone().with_bin_content_type(BinContentType::F32);
     let multi_path = dir.join("analysis_multi.root");
-    RootFile::create(&multi_path)
+    FileWriter::create(&multi_path)
         .add(&pt_f32)
         .add(&eta_phi)
         .add(&prof)
@@ -122,11 +122,11 @@ fn main() -> oxiroot::Result<()> {
         pt_f32.class_name(),
     );
 
-    // --- Append one more object to that existing file (RootFile::open). --------
+    // --- Append one more object to that existing file (FileWriter::open). --------
     // The file keeps its existing keys; the normalized signal is added alongside.
     let mut sig = signal.clone();
     sig.name = "signal".to_string();
-    RootFile::open(&multi_path)?
+    FileWriter::open(&multi_path)?
         .add(&sig)
         .write(Compression::Zstd(5))?;
     println!("appended `{}` to {}", sig.name, multi_path.display());
@@ -159,7 +159,7 @@ fn main() -> oxiroot::Result<()> {
     println!("wrote TTree   -> {}", tree_path.display());
 
     // --- Read it all back (idiomatic `TH1::read_root`; subdir via `read_root_in`).
-    let f = RFile::open(&hist_path)?;
+    let f = FileReader::open(&hist_path)?;
     let pt_back = TH1::read_root(&f, "pt")?;
     let sig_back = TH1::read_root_in(&f, "signal", "pt")?;
     println!(
@@ -168,15 +168,15 @@ fn main() -> oxiroot::Result<()> {
         sig_back.integral(),
     );
 
-    let g = RFile::open(&ntuple_path)?;
-    let events = RNTuple::open(&g, "events")?;
+    let g = FileReader::open(&ntuple_path)?;
+    let events = NtupleReader::open(&g, "events")?;
     println!("RNTuple `events`: {} entries", events.num_entries());
     if let FieldValues::VecF64(jets) = events.read_field(&g, "jet_pt")? {
         println!("  jet_pt per event: {jets:?}");
     }
 
-    let h = RFile::open(&tree_path)?;
-    let tree = TTree::open(&h, "Events")?;
+    let h = FileReader::open(&tree_path)?;
+    let tree = TreeReader::open(&h, "Events")?;
     println!("TTree `Events`: {} entries", tree.num_entries());
     if let BranchValues::F64(mass) = tree.read_branch(&h, "mass")? {
         println!("  mass per entry: {mass:?}");

@@ -2,7 +2,7 @@
 //! measurement as a `TGraphErrors` (symmetric y errors), an asymmetric-error
 //! variant, a 2-D parameter scan as a `TGraph2D`, and two datasets drawn
 //! together as a `TMultiGraph` — write them all into ONE ROOT file with the
-//! `RootFile` builder, then read one graph back point-by-point
+//! `FileWriter`, then read one graph back point-by-point
 //! (`TGraph::read_root`). The file is readable by official ROOT and uproot.
 //! (Fitting a graph is shown in `fit.rs`; this is about the objects themselves.)
 //!
@@ -101,11 +101,11 @@ fn main() -> oxiroot::Result<()> {
         comparison.graphs().len(),
     );
 
-    // --- Write every graph into ONE file with the RootFile builder. -----------
+    // --- Write every graph into ONE file with FileWriter. -----------------------
     // `add` takes anything that is `WriteRoot`, so graphs of all four kinds go
     // into the same file next to each other — the one way to write more than a
     // single object.
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&xsec)
         .add(&xsec_asym)
         .add(&scan)
@@ -114,7 +114,7 @@ fn main() -> oxiroot::Result<()> {
     println!("\nwrote 4 graphs -> {}", path.display());
 
     // --- Read one graph back and print its points (idiomatic TGraph::read_root).
-    let f = RFile::open(&path)?;
+    let f = FileReader::open(&path)?;
     let back = TGraph::read_root(&f, "xsec")?;
     println!("read back `{}` ({} points):", back.name, back.len());
     // The error arrays live in the `errors` enum; pull the y errors out for the

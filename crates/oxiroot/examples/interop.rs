@@ -12,9 +12,9 @@
 //!     fixed array, ts = string, tj = jagged double (auto count ntj),
 //!     tw = std::vector<double> (TBranchElement), th = split std::vector<Hit>
 //!     (Hit = {float x; float y; int id;}) read back as th.x/th.y/th.id.
-//!   - rust_multi.root (RootFile builder, Rust → oracle): top-level TH1D "mh"
+//!   - rust_multi.root (FileWriter, Rust → oracle): top-level TH1D "mh"
 //!     = [5,6,7] plus a subdirectory "sub" holding TH1D "sh" = [8,9].
-//!   - rust_append.root (RootFile create then open/append, Rust → oracle):
+//!   - rust_append.root (FileWriter create then open/append, Rust → oracle):
 //!     TH1D "bh" = [3,1] written first, TH1D "ah" = [4] appended afterwards.
 //!   - oracle_dirs.root (oracle → Rust, read via read_root + read_root_in):
 //!     top-level TH1D "dh" = [2,4] plus a subdirectory "region" holding "rh"
@@ -63,10 +63,10 @@ const OTREE_OI: [i32; 3] = [10, 11, 12];
 const OTREE_OJ: [&[f64]; 3] = [&[1.0, 2.0], &[], &[3.0]];
 const OTREE_OS: [&str; 3] = ["x", "yy", "zzz"];
 const OTREE_OV: [&[f64]; 3] = [&[1.0], &[2.0, 3.0], &[]];
-/// `rust_multi.root` (RootFile builder): top-level `mh` + subdirectory `sub/sh`.
+/// `rust_multi.root` (FileWriter): top-level `mh` + subdirectory `sub/sh`.
 const MULTI_MH: [f64; 3] = [5.0, 6.0, 7.0];
 const MULTI_SH: [f64; 2] = [8.0, 9.0];
-/// `rust_append.root`: base `bh`, then `ah` appended via `RootFile::open`.
+/// `rust_append.root`: base `bh`, then `ah` appended via `FileWriter::open`.
 const APPEND_BH: [f64; 2] = [3.0, 1.0];
 const APPEND_AH: [f64; 1] = [4.0];
 /// Oracle-written `oracle_dirs.root`: top-level `dh` + subdirectory `region/rh`.
@@ -139,22 +139,22 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         Compression::None,
     )?;
 
-    // rust_multi.root — the RootFile builder: a top-level hist plus a
+    // rust_multi.root — FileWriter: a top-level hist plus a
     // subdirectory (`sub`) holding its own hist.
     let mh = hist("mh", &MULTI_MH);
     let sh = hist("sh", &MULTI_SH);
-    RootFile::create(dir.join("rust_multi.root"))
+    FileWriter::create(dir.join("rust_multi.root"))
         .add(&mh)
         .dir("sub", |d| d.add(&sh))
         .write(Compression::None)?;
 
-    // rust_append.root — write one hist, then append a second via RootFile::open
+    // rust_append.root — write one hist, then append a second via FileWriter::open
     // (the existing key is preserved and the new one added).
     let append_path = dir.join("rust_append.root");
-    RootFile::create(&append_path)
+    FileWriter::create(&append_path)
         .add(&hist("bh", &APPEND_BH))
         .write(Compression::None)?;
-    RootFile::open(&append_path)?
+    FileWriter::open(&append_path)?
         .add(&hist("ah", &APPEND_AH))
         .write(Compression::None)?;
 
@@ -168,7 +168,7 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
 
 fn read(dir: &Path) -> oxiroot::Result<()> {
     // Histogram written by the ROOT oracle.
-    let f = RFile::open(dir.join("oracle_hist.root"))?;
+    let f = FileReader::open(dir.join("oracle_hist.root"))?;
     let h = TH1::read_root(&f, "h")?;
     assert_close("hist bin contents", h.values(), &HIST_BINS);
     println!("read oracle_hist.root — bin contents match");
@@ -179,7 +179,7 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
     // Directory file written by the oracle: a top-level hist (`dh`, via
     // read_root) and a hist inside subdirectory `region` (`rh`, via
     // read_root_in). Both ROOT C++ and uproot produce it.
-    let f = RFile::open(dir.join("oracle_dirs.root"))?;
+    let f = FileReader::open(dir.join("oracle_dirs.root"))?;
     assert_close("dirs dh", TH1::read_root(&f, "dh")?.values(), &DIRS_DH);
     assert_close(
         "dirs region/rh",
@@ -196,8 +196,8 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
         println!("oracle_ntuple.root absent — skipping RNTuple read check");
         return Ok(());
     }
-    let f = RFile::open(ntuple_path)?;
-    let ntpl = RNTuple::open(&f, "ntpl")?;
+    let f = FileReader::open(ntuple_path)?;
+    let ntpl = NtupleReader::open(&f, "ntpl")?;
     match ntpl.read_field(&f, "x")? {
         FieldValues::I32(v) => assert_eq_or_die("ntuple x", &v, &NTPL_X),
         other => die(&format!("ntuple x: expected I32, got {other:?}")),
@@ -211,8 +211,8 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
 }
 
 fn read_oracle_tree(dir: &Path) -> oxiroot::Result<()> {
-    let f = RFile::open(dir.join("oracle_tree.root"))?;
-    let t = TTree::open(&f, "otree")?;
+    let f = FileReader::open(dir.join("oracle_tree.root"))?;
+    let t = TreeReader::open(&f, "otree")?;
     match t.read_branch(&f, "oi")? {
         BranchValues::I32(v) => assert_eq_or_die("otree oi", &v, &OTREE_OI),
         other => die(&format!("otree oi: expected I32, got {other:?}")),

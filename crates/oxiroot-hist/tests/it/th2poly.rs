@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{ReadRoot, TH2Poly, WriteRoot};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -18,7 +18,7 @@ fn reads_root_written_th2poly() {
     // Fixture `hp`: TH2Poly("hp","poly",0,2,0,2) with two unit-square bins,
     // AddBin(0,0,1,1) filled once (content 1) and AddBin(1,1,2,2) filled with
     // weight 3 (content 3).
-    let f = RFile::open(fixture("th2poly.root")).expect("open");
+    let f = FileReader::open(fixture("th2poly.root")).expect("open");
     let h = TH2Poly::read_root(&f, "hp").expect("read");
 
     assert_eq!(h.name, "hp");
@@ -46,7 +46,7 @@ fn reads_honeycomb_th2poly() {
     // grid cells and again in `fBins`, so this exercises ROOT's object-reference
     // map heavily: every bin must be read in full exactly once. Cross-checked
     // bit-for-bit against compiled ROOT C++ (`GetBins()` / `GetPolygon()`).
-    let f = RFile::open(fixture("th2poly_honeycomb.root")).expect("open");
+    let f = FileReader::open(fixture("th2poly_honeycomb.root")).expect("open");
     let h = TH2Poly::read_root(&f, "hc").expect("read");
 
     assert_eq!(h.title, "honeycomb");
@@ -75,10 +75,10 @@ fn reads_honeycomb_th2poly() {
 #[test]
 fn th2poly_round_trips() {
     for (file, name) in [("th2poly.root", "hp"), ("th2poly_honeycomb.root", "hc")] {
-        let h = TH2Poly::read_root(&RFile::open(fixture(file)).unwrap(), name).unwrap();
+        let h = TH2Poly::read_root(&FileReader::open(fixture(file)).unwrap(), name).unwrap();
         let out = std::env::temp_dir().join(format!("oxiroot_{name}.root"));
         h.write_root(&out, Compression::None).expect("write");
-        let back = TH2Poly::read_root(&RFile::open(&out).unwrap(), name).unwrap();
+        let back = TH2Poly::read_root(&FileReader::open(&out).unwrap(), name).unwrap();
         assert_eq!(back.bins, h.bins, "{name} bins changed across round-trip");
         assert_eq!(back.name, h.name);
         assert_eq!(back.title, h.title);
@@ -105,7 +105,7 @@ fn th2poly_build_from_scratch() {
 
     let out = std::env::temp_dir().join("oxiroot_th2poly_scratch.root");
     h.write_root(&out, Compression::Zstd(5)).expect("write");
-    let back = TH2Poly::read_root(&RFile::open(&out).unwrap(), "scratch").unwrap();
+    let back = TH2Poly::read_root(&FileReader::open(&out).unwrap(), "scratch").unwrap();
 
     assert_eq!(back.nbins(), 3);
     assert_eq!(back.bin(1).unwrap().content, 1.0);

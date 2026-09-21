@@ -1,4 +1,4 @@
-//! [`ByteSource`] — a random-access byte provider behind [`RFile`].
+//! [`ByteSource`] — a random-access byte provider behind [`FileReader`].
 //!
 //! A ROOT file is read by seeking to absolute offsets (a key's `fSeekKey`, an
 //! RNTuple page locator, a TBasket seek) and pulling out a contiguous range.
@@ -57,8 +57,8 @@ fn checked_range(offset: u64, len: usize, total: u64) -> Result<(usize, usize)> 
 }
 
 /// The whole file resident in memory as [`Bytes`]; `read_at` is a zero-copy
-/// slice. Backs [`RFile::from_bytes`](super::rfile::RFile::from_bytes) and the
-/// default [`RFile::open`](super::rfile::RFile::open).
+/// slice. Backs [`FileReader::from_bytes`](super::reader::FileReader::from_bytes) and the
+/// default [`FileReader::open`](super::reader::FileReader::open).
 #[derive(Debug)]
 pub struct BytesSource(Bytes);
 
@@ -81,7 +81,7 @@ impl ByteSource for BytesSource {
 }
 
 /// A memory-mapped file; `read_at` copies the requested range out of the map.
-/// Backs [`RFile::open_mmap`](super::rfile::RFile::open_mmap).
+/// Backs [`FileReader::open_mmap`](super::reader::FileReader::open_mmap).
 #[cfg(feature = "mmap")]
 #[derive(Debug)]
 pub struct MmapSource(memmap2::Mmap);
@@ -108,7 +108,7 @@ impl ByteSource for MmapSource {
 
 /// A local file read with positioned reads (`pread`/`seek_read`) — every
 /// `read_at` touches only its range, so a large file is never slurped whole.
-/// Backs [`RFile::open_ranged`](super::rfile::RFile::open_ranged).
+/// Backs [`FileReader::open_ranged`](super::reader::FileReader::open_ranged).
 #[derive(Debug)]
 pub struct FileSource {
     file: std::fs::File,

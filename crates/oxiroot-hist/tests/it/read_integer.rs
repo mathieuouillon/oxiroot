@@ -4,13 +4,13 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{ReadRoot, TH1};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
-fn open(name: &str) -> RFile {
+fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures")
         .join(name);
-    RFile::open(path).expect("open fixture")
+    FileReader::open(path).expect("open fixture")
 }
 
 #[test]

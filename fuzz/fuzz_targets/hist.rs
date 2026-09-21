@@ -8,11 +8,11 @@ use oxiroot_hist::{
     TH2, TH3,
 };
 use oxiroot_hist_func::{TF1, TF2, TF3};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 /// Try every typed reader on `name`; each checks the key's class first, so the
 /// matching one does the real parsing.
-fn read_all(f: &RFile, name: &str) {
+fn read_all(f: &FileReader, name: &str) {
     macro_rules! try_read {
         ($($t:ty),+ $(,)?) => {$( let _ = <$t>::read_root(f, name); )+};
     }
@@ -24,7 +24,7 @@ fn read_all(f: &RFile, name: &str) {
 }
 
 fuzz_target!(|data: &[u8]| {
-    let Ok(f) = RFile::from_bytes(data.to_vec()) else {
+    let Ok(f) = FileReader::from_bytes(data.to_vec()) else {
         return;
     };
     let keys: Vec<(String, String)> = f

@@ -11,7 +11,7 @@ use oxiroot_hist::{
     ReadRoot, TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TH1, TH2,
     TH3,
 };
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 /// Fixtures spanning every histogram/graph/function layout, with one key name
 /// each.
@@ -39,7 +39,7 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 /// Try every reader; the point is that none panics regardless of the bytes.
-fn poke_hist(f: &RFile, name: &str) {
+fn poke_hist(f: &FileReader, name: &str) {
     let _ = TH1::read_root(f, name);
     let _ = TH2::read_root(f, name);
     let _ = TH3::read_root(f, name);
@@ -66,7 +66,7 @@ fn histogram_byte_flips_never_panic() {
             for v in [0x00u8, 0xff] {
                 let mut c = data.clone();
                 c[i] = v;
-                if let Ok(f) = RFile::from_bytes(c) {
+                if let Ok(f) = FileReader::from_bytes(c) {
                     poke_hist(&f, key);
                 }
             }
@@ -80,7 +80,7 @@ fn histogram_truncations_never_panic() {
         let data = fixture(fix);
         let step = stride(data.len(), 2000);
         for len in (0..=data.len()).step_by(step) {
-            if let Ok(f) = RFile::from_bytes(data[..len].to_vec()) {
+            if let Ok(f) = FileReader::from_bytes(data[..len].to_vec()) {
                 poke_hist(&f, key);
             }
         }

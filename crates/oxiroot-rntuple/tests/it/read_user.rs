@@ -1,11 +1,11 @@
 //! A user-defined class written by official ROOT (with a rootcling dictionary).
 //! ROOT splits a class with a dictionary into a Record of named sub-fields, so
 //! it reads back through the existing recursive Record/Collection path.
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{FieldValues, RNTuple};
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::{FieldValues, NtupleReader};
 use std::path::PathBuf;
-fn open(name: &str) -> RFile {
-    RFile::open(
+fn open(name: &str) -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join(name),
@@ -15,7 +15,7 @@ fn open(name: &str) -> RFile {
 #[test]
 fn reads_user_class() {
     let file = open("rntuple_user_uncompressed.root");
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     // Top-level struct -> Record of named sub-fields.
     assert_eq!(
         ntpl.read_field(&file, "hit").expect("hit"),

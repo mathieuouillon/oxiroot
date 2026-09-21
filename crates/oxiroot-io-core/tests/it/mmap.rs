@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,12 +15,13 @@ fn fixture(name: &str) -> PathBuf {
 #[test]
 fn open_mmap_matches_open() {
     let path = fixture("th1d_uncompressed.root");
-    let owned = RFile::open(&path).expect("open");
-    let mapped = RFile::open_mmap(&path).expect("open_mmap");
+    let owned = FileReader::open(&path).expect("open");
+    let mapped = FileReader::open_mmap(&path).expect("open_mmap");
 
     assert_eq!(mapped.size(), owned.size(), "same length");
-    let whole = |f: &RFile| f.read_at(0, f.size() as usize).expect("read whole");
+    let whole = |f: &FileReader| f.read_at(0, f.size() as usize).expect("read whole");
     assert_eq!(whole(&mapped), whole(&owned), "same bytes");
-    let names = |f: &RFile| -> Vec<String> { f.keys().iter().map(|k| k.name.clone()).collect() };
+    let names =
+        |f: &FileReader| -> Vec<String> { f.keys().iter().map(|k| k.name.clone()).collect() };
     assert_eq!(names(&mapped), names(&owned), "same keys");
 }

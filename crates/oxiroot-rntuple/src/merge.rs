@@ -1,27 +1,27 @@
 //! Concatenating RNTuples — the `RNTuple` half of a `hadd`-style file merge.
 //!
-//! [`concat_ntuples`] reads the same fields from several [`RNTuple`]s and
+//! [`concat_ntuples`] reads the same fields from several [`NtupleReader`]s and
 //! appends their entries into one writable [`Ntuple`]. Unlike a `TTree` branch,
 //! an RNTuple field's type is fully determined by its [`FieldValues`] variant,
 //! so the mapping back to a [`Field`] is direct. [`append_ntuples`] streams the
-//! same merge into an [`RNTupleWriter`], one cluster per input; the `oxiroot`
+//! same merge into an [`NtupleWriter`], one cluster per input; the `oxiroot`
 //! facade's file merger uses it for RNTuple keys.
 
 use std::io::{Seek, Write};
 
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::field::FieldValues;
-use crate::reader::RNTuple;
-use crate::writer::{Field, Ntuple, RNTupleWriter};
+use crate::reader::NtupleReader;
+use crate::writer::{Field, Ntuple, NtupleWriter};
 
 /// Concatenate several `RNTuple`s entry-wise into one writable [`Ntuple`] named
 /// `name`.
 ///
 /// Every input must hold the same fields — same names and types — as the first
 /// RNTuple; their entries are appended in the given order (as ROOT's `hadd`
-/// does). Each `(file, ntuple)` pair is an RNTuple together with the [`RFile`]
+/// does). Each `(file, ntuple)` pair is an RNTuple together with the [`FileReader`]
 /// it was opened from, since pages are read on demand.
 ///
 /// # Errors
@@ -32,7 +32,7 @@ use crate::writer::{Field, Ntuple, RNTupleWriter};
 /// `std::vector<MyStruct>`), an `std::variant`, an optional / `unique_ptr`, or a
 /// `std::vector<uint32_t>` / `std::vector<uint64_t>` (which the writer does not
 /// encode).
-pub fn concat_ntuples(name: &str, inputs: &[(&RFile, &RNTuple)]) -> Result<Ntuple> {
+pub fn concat_ntuples(name: &str, inputs: &[(&FileReader, &NtupleReader)]) -> Result<Ntuple> {
     let &(first_file, first) = inputs
         .first()
         .ok_or_else(|| Error::Format("concat_ntuples: no input RNTuples".into()))?;
@@ -67,10 +67,10 @@ pub fn concat_ntuples(name: &str, inputs: &[(&RFile, &RNTuple)]) -> Result<Ntupl
 ///
 /// # Errors
 ///
-/// As [`concat_ntuples`], plus any error from [`RNTupleWriter::write_batch`].
+/// As [`concat_ntuples`], plus any error from [`NtupleWriter::write_batch`].
 pub fn append_ntuples<W: Write + Seek>(
-    writer: &mut RNTupleWriter<W>,
-    inputs: &[(&RFile, &RNTuple)],
+    writer: &mut NtupleWriter<W>,
+    inputs: &[(&FileReader, &NtupleReader)],
 ) -> Result<u64> {
     let &(_, first) = inputs
         .first()

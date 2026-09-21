@@ -105,7 +105,7 @@ fn main() -> oxiroot::Result<()> {
     hs.write_root(&path, Compression::Zstd(5))?; // WriteRoot trait
     println!("\nwrote THnSparse -> {}", path.display());
 
-    let f = RFile::open(&path)?;
+    let f = FileReader::open(&path)?;
     let back = THnSparse::read_root(&f, "cutspace")?; // ReadRoot trait
     println!(
         "read back `cutspace`: {} dims, {} entries, {} filled cells",

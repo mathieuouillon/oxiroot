@@ -1,7 +1,7 @@
 //! Write a tree with several baskets per branch (B8), then read it back.
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_tree::{write_tree_file_baskets, Branch, BranchValues, TTree};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_tree::{write_tree_file_baskets, Branch, BranchValues, TreeReader};
 
 #[test]
 fn multi_basket_round_trips() {
@@ -24,8 +24,8 @@ fn multi_basket_round_trips() {
     // 7 entries, 3 per basket -> 3 baskets per branch ([0,3), [3,6), [6,7)).
     write_tree_file_baskets(&out, "T", &branches, Compression::None, 3).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 7);
 
     // Full read concatenates the three baskets back into the original column.

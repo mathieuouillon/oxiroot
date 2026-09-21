@@ -1,4 +1,4 @@
-//! [`RFile`] — the high-level entry point for reading a ROOT file.
+//! [`FileReader`] — the high-level entry point for reading a ROOT file.
 //!
 //! Mirrors the spirit of `ROOT::Experimental::RFile`: a small Open/Get/List
 //! surface over the TFile container. M1 provides reading and key enumeration;
@@ -31,16 +31,19 @@ const HEADER_PROBE: u64 = 512;
 ///
 /// The header, root directory, and key list are parsed at open (a few small
 /// ranged reads); object, page, and basket bytes are fetched on demand.
-pub struct RFile {
+///
+/// [`FileWriter`](crate::FileWriter) writes files.
+#[doc(alias = "RFile", alias = "TFile")]
+pub struct FileReader {
     source: Box<dyn ByteSource>,
     size: u64,
     header: FileHeader,
     root_dir: Directory,
 }
 
-impl std::fmt::Debug for RFile {
+impl std::fmt::Debug for FileReader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RFile")
+        f.debug_struct("FileReader")
             .field("bytes", &self.size)
             .field("version", &self.header.version)
             .field("keys", &self.root_dir.keys.len())
@@ -48,9 +51,9 @@ impl std::fmt::Debug for RFile {
     }
 }
 
-impl RFile {
+impl FileReader {
     /// Open and parse a ROOT file from disk (read fully into memory).
-    pub fn open(path: impl AsRef<Path>) -> Result<RFile> {
+    pub fn open(path: impl AsRef<Path>) -> Result<FileReader> {
         Self::from_bytes(std::fs::read(path)?)
     }
 
@@ -58,7 +61,7 @@ impl RFile {
     /// ranges each object touches instead of reading the whole file up front —
     /// the local analog of [`open_url`](Self::open_url), useful for large files
     /// where only some objects are read.
-    pub fn open_ranged(path: impl AsRef<Path>) -> Result<RFile> {
+    pub fn open_ranged(path: impl AsRef<Path>) -> Result<FileReader> {
         Self::from_source(Box::new(FileSource::open(path)?))
     }
 
@@ -67,9 +70,9 @@ impl RFile {
     ///
     /// Requires the `mmap` feature. The map is read-only; as with any `mmap`,
     /// the caller must ensure the file is not modified or truncated by another
-    /// process while the [`RFile`] is alive (which would be undefined behavior).
+    /// process while the [`FileReader`] is alive (which would be undefined behavior).
     #[cfg(feature = "mmap")]
-    pub fn open_mmap(path: impl AsRef<Path>) -> Result<RFile> {
+    pub fn open_mmap(path: impl AsRef<Path>) -> Result<FileReader> {
         let file = std::fs::File::open(path)?;
         // SAFETY: see the read-only / no-concurrent-modification contract above.
         // This is the sole `unsafe` in the workspace (the `unsafe_code` lint is
@@ -90,7 +93,7 @@ impl RFile {
     ///
     /// Requires the matching feature for the URL's scheme.
     #[cfg(any(feature = "http", feature = "xrootd"))]
-    pub fn open_url(url: &str) -> Result<RFile> {
+    pub fn open_url(url: &str) -> Result<FileReader> {
         #[cfg(feature = "xrootd")]
         if url.starts_with("root://") || url.starts_with("roots://") {
             return Self::from_source(Box::new(super::xrootd::XrootdSource::open(url)?));
@@ -105,13 +108,13 @@ impl RFile {
     }
 
     /// Parse a ROOT file already held in memory.
-    pub fn from_bytes(data: Vec<u8>) -> Result<RFile> {
+    pub fn from_bytes(data: Vec<u8>) -> Result<FileReader> {
         Self::from_source(Box::new(BytesSource::new(data)))
     }
 
     /// Parse a ROOT file from an arbitrary [`ByteSource`]. The header, root
     /// directory, and key list are read at open; everything else is on demand.
-    pub fn from_source(source: Box<dyn ByteSource>) -> Result<RFile> {
+    pub fn from_source(source: Box<dyn ByteSource>) -> Result<FileReader> {
         let size = source.len();
         let head = source.read_at(0, HEADER_PROBE.min(size) as usize)?;
         let header = {
@@ -119,7 +122,7 @@ impl RFile {
             FileHeader::read(&mut r)?
         };
         let root_dir = Directory::read_root(&*source, &header)?;
-        Ok(RFile {
+        Ok(FileReader {
             source,
             size,
             header,
@@ -288,10 +291,10 @@ impl RFile {
     }
 }
 
-/// An [`RFile`] is itself a byte source (delegating to its backing), so page and
+/// A [`FileReader`] is itself a byte source (delegating to its backing), so page and
 /// basket decoders can take a `&dyn ByteSource` and be unit-tested against a
 /// bare in-memory buffer without a full file.
-impl ByteSource for RFile {
+impl ByteSource for FileReader {
     fn len(&self) -> u64 {
         self.size
     }

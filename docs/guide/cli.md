@@ -83,7 +83,7 @@ TF1 "myfunc"
 `--json` emits the same tree as nested JSON. A member the reader can't decode
 (memberwise STL, a class the file doesn't describe) is marked `<unsupported …>`
 rather than aborting the dump. The same decode is available in code via
-`RFile::get_value`.
+`FileReader::get_value`.
 
 ## `stat` — file summary
 
@@ -136,4 +136,4 @@ dependency-free, so `--json` adds no crates.
 `oxroot` reads what the library reads: classes it cannot decode are reported
 rather than guessed. `dump -n N` reads only the data it shows — a `TTree` decodes
 just the first `N` entries' baskets, and an RNTuple decodes only the clusters
-covering the first `N` entries (`RNTuple::read_field_prefix`).
+covering the first `N` entries (`NtupleReader::read_field_prefix`).

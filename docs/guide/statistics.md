@@ -197,7 +197,7 @@ use oxiroot::prelude::*;
 use oxiroot::stat;
 
 fn correlate(path: &str) -> oxiroot::Result<f64> {
-    let file = RFile::open(path)?;          // oxiroot::Error
+    let file = FileReader::open(path)?;          // oxiroot::Error
     let h = TH1::read_root(&file, "h")?;
     let x: Vec<f64> = (1..=h.xaxis.nbins as usize).map(|i| h.bin_center(i)).collect();
     let y = &h.contents[1..=x.len()];

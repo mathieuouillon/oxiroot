@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH1};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 #[test]
 fn weighted_sumw2_round_trips() {
@@ -26,7 +26,7 @@ fn weighted_sumw2_round_trips() {
     let out = PathBuf::from("/tmp/rootrs_weighted.root");
     h.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let h2 = TH1::read_root(&f, "hw").expect("read back");
     assert_eq!(h2, h, "weighted histogram (incl. Sumw2) must round-trip");
     assert_eq!(h2.sumw2[1], 13.0, "Sumw2 survived write->read");
@@ -50,7 +50,7 @@ fn variable_bins_round_trip() {
     let out = PathBuf::from("/tmp/rootrs_varbins.root");
     h.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let h2 = TH1::read_root(&f, "hv").expect("read back");
     assert_eq!(h2, h, "variable-bin histogram must round-trip");
     assert_eq!(h2.edges(), edges, "edges survived write->read");

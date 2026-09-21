@@ -6,11 +6,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, RootFile, TMap, TObjString, TParameter, TH1};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_hist::{FileWriter, Hist, ReadRoot, TMap, TObjString, TParameter, TH1};
+use oxiroot_io_core::{Compression, FileReader};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tmap.root"))
+fn fixture() -> FileReader {
+    FileReader::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tmap.root"))
         .expect("open fixture")
 }
 
@@ -50,12 +50,12 @@ fn round_trips_map_through_oxiroot() {
         .insert("hist", &h);
 
     let out = std::env::temp_dir().join("oxiroot_tmap_rt.root");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&map)
         .write(Compression::None)
         .unwrap();
 
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     let m = TMap::read_root(&f, "meta").unwrap();
     assert_eq!(m.len(), 3);
     assert_eq!(m.string_keys(), ["version", "lumi", "hist"]);

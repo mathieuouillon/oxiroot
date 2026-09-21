@@ -55,8 +55,8 @@ fn main() -> oxiroot::Result<()> {
     println!("wrote {path}");
 
     // Read it back through oxiroot.
-    let file = RFile::open(&path)?;
-    let ntpl = RNTuple::open(&file, "events")?;
+    let file = FileReader::open(&path)?;
+    let ntpl = NtupleReader::open(&file, "events")?;
     println!(
         "{} entries, fields: {:?}",
         ntpl.num_entries(),

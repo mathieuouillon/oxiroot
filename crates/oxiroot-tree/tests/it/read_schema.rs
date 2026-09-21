@@ -1,18 +1,18 @@
-//! Streamer-info-driven schema validation + exposure (B10): TTree::open reads the
+//! Streamer-info-driven schema validation + exposure (B10): TreeReader::open reads the
 //! file's TStreamerInfo, validates the classes it parses, and exposes them.
-use oxiroot_io_core::RFile;
-use oxiroot_tree::TTree;
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::TreeReader;
 use std::path::PathBuf;
 
 #[test]
 fn exposes_and_validates_the_file_schema() {
-    let f = RFile::open(
+    let f = FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join("tree_flat.root"),
     )
     .expect("open");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
 
     let classes: std::collections::HashMap<&str, i32> = t.streamer_classes().into_iter().collect();
     // The core classes the reader parses, at the versions it targets.

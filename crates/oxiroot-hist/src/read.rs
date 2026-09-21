@@ -1,7 +1,7 @@
 //! [`ReadRoot`] — read a ROOT object from a file with an associated function.
 
 use oxiroot_io_core::error::Result;
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::collections::{THStack, TMultiGraph};
 use crate::graph::TGraph;
@@ -25,10 +25,10 @@ pub use oxiroot_io_core::ReadRoot;
 macro_rules! impl_read_root {
     ($ty:ty, $read:path, $read_in:path) => {
         impl ReadRoot for $ty {
-            fn read_root(file: &RFile, name: &str) -> Result<Self> {
+            fn read_root(file: &FileReader, name: &str) -> Result<Self> {
                 $read(file, name)
             }
-            fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+            fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
                 $read_in(file, dir, name)
             }
         }

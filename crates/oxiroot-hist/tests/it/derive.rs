@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH1, TH2, TH3};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
 fn rebin_sums_groups_and_keeps_moments() {
@@ -67,7 +67,7 @@ fn projection_x_sums_y_and_keeps_x_moments() {
     // The projection is an ordinary TH1D — round-trips through ROOT's format.
     let out = PathBuf::from("/tmp/oxiroot_projx.root");
     px.write_root(&out, Compression::None).expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(
         TH1::read_root(&f, "px").unwrap(),
         px,
@@ -134,7 +134,7 @@ fn rebin3d_sums_blocks() {
     // The rebinned TH3 has variable axes — confirm that round-trips on disk.
     let out = std::path::PathBuf::from("/tmp/oxiroot_rebin3d.root");
     r.write_root(&out, Compression::None).expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(
         TH3::read_root(&f, "h").unwrap(),
         r,

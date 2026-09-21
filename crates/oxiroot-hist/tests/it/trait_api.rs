@@ -3,9 +3,9 @@
 //! and round-trip through a real file.
 
 use oxiroot_hist::{
-    BinContentType, Compression, Hist, ReadRoot, RootFile, TProfile, WriteRoot, TH1, TH2,
+    BinContentType, Compression, FileWriter, Hist, ReadRoot, TProfile, WriteRoot, TH1, TH2,
 };
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn sample() -> TH1 {
     let mut h = Hist::reg(10, 0.0, 10.0).double().named("h").titled("title");
@@ -37,7 +37,7 @@ fn write_root_then_read_root_round_trips() {
     h.write_root(&path, Compression::Zstd(3))
         .expect("write_root");
 
-    let f = RFile::open(&path).expect("open");
+    let f = FileReader::open(&path).expect("open");
     let back = TH1::read_root(&f, "h").expect("read_root");
     assert_eq!(back.values(), h.values());
     assert_eq!(back.name, "h");
@@ -49,7 +49,7 @@ fn float_precision_round_trips_as_th1f() {
     let h = sample().with_bin_content_type(BinContentType::F32);
     let path = std::env::temp_dir().join("oxiroot_traitapi_hf.root");
     h.write_root(&path, Compression::None).expect("write");
-    let f = RFile::open(&path).expect("open");
+    let f = FileReader::open(&path).expect("open");
     let back = TH1::read_root(&f, "h").expect("read");
     assert_eq!(back.class_name(), "TH1F"); // bin content type preserved on round-trip
 }
@@ -62,14 +62,14 @@ fn write_root_file_handles_heterogeneous_objects() {
     let h2 = Hist::reg(4, 0.0, 4.0).reg(4, 0.0, 4.0).double().named("h2");
     let p = Hist::reg(5, 0.0, 5.0).profile().named("p");
     let path = std::env::temp_dir().join("oxiroot_traitapi_multi.root");
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&h1)
         .add(&h2)
         .add(&p)
         .write(Compression::None)
         .expect("write multi-object file");
 
-    let f = RFile::open(&path).expect("open");
+    let f = FileReader::open(&path).expect("open");
     assert!(TH1::read_root(&f, "h1").is_ok());
     assert!(TH2::read_root(&f, "h2").is_ok());
     assert!(TProfile::read_root(&f, "p").is_ok());

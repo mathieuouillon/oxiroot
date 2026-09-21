@@ -1,8 +1,8 @@
 //! Naming is optional at construction and a write-time/file-key concern — and
 //! same-name collisions are a loud error, not ROOT's silent shadow-on-read.
 
-use oxiroot_hist::{Compression, Hist, ReadRoot, RootFile, WriteRoot, TH1};
-use oxiroot_io_core::{Error, RFile};
+use oxiroot_hist::{Compression, FileWriter, Hist, ReadRoot, WriteRoot, TH1};
+use oxiroot_io_core::{Error, FileReader};
 
 fn filled(name: &str) -> TH1 {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named(name);
@@ -39,7 +39,7 @@ fn writing_an_unnamed_object_is_a_clear_error() {
 #[test]
 fn duplicate_key_in_one_directory_is_rejected() {
     let path = std::env::temp_dir().join("oxiroot_naming_dup.root");
-    let err = RootFile::create(&path)
+    let err = FileWriter::create(&path)
         .add(&filled("h"))
         .add(&filled("h")) // same key in the top directory
         .write(Compression::None);
@@ -56,13 +56,13 @@ fn duplicate_key_in_one_directory_is_rejected() {
 fn same_name_in_different_directories_is_fine() {
     // A top-level "h" and a "h" inside a subdirectory are distinct keys.
     let path = std::env::temp_dir().join("oxiroot_naming_dirs.root");
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&filled("h"))
         .dir("sub", |d| d.add(&filled("h")))
         .write(Compression::None)
         .expect("distinct namespaces — no collision");
 
-    let f = RFile::open(&path).expect("open");
+    let f = FileReader::open(&path).expect("open");
     assert_eq!(TH1::read_root(&f, "h").unwrap().entries, 4.0);
     assert_eq!(TH1::read_root_in(&f, "sub", "h").unwrap().entries, 4.0);
 }
@@ -70,7 +70,7 @@ fn same_name_in_different_directories_is_fine() {
 #[test]
 fn duplicate_within_a_subdirectory_is_rejected() {
     let path = std::env::temp_dir().join("oxiroot_naming_subdup.root");
-    let err = RootFile::create(&path)
+    let err = FileWriter::create(&path)
         .dir("sub", |d| d.add(&filled("h")).add(&filled("h")))
         .write(Compression::None);
     assert!(
@@ -83,7 +83,7 @@ fn duplicate_within_a_subdirectory_is_rejected() {
 fn a_subdirectory_named_like_an_object_is_rejected() {
     // A key and a subdirectory share their parent's namespace.
     let path = std::env::temp_dir().join("oxiroot_naming_dir_clash.root");
-    let err = RootFile::create(&path)
+    let err = FileWriter::create(&path)
         .add(&filled("region"))
         .dir("region", |d| d.add(&filled("h")))
         .write(Compression::None);
@@ -96,7 +96,7 @@ fn a_subdirectory_named_like_an_object_is_rejected() {
 #[test]
 fn two_subdirectories_with_one_name_are_rejected() {
     let path = std::env::temp_dir().join("oxiroot_naming_dir_twice.root");
-    let err = RootFile::create(&path)
+    let err = FileWriter::create(&path)
         .dir("sub", |d| d.add(&filled("a")))
         .dir("sub", |d| d.add(&filled("b")))
         .write(Compression::None);
@@ -109,7 +109,7 @@ fn two_subdirectories_with_one_name_are_rejected() {
 #[test]
 fn an_unnamed_subdirectory_is_rejected() {
     let path = std::env::temp_dir().join("oxiroot_naming_dir_empty.root");
-    let err = RootFile::create(&path)
+    let err = FileWriter::create(&path)
         .dir("", |d| d.add(&filled("a")))
         .write(Compression::None);
     assert!(matches!(err, Err(Error::Format(_))), "got {err:?}");
@@ -122,12 +122,12 @@ fn names_longer_than_255_bytes_round_trip() {
     let name = "h".repeat(300);
     let dir = "d".repeat(256);
     let path = std::env::temp_dir().join("oxiroot_naming_long.root");
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&filled(&name))
         .dir(dir.as_str(), |d| d.add(&filled(&name)))
         .write(Compression::Zstd(3))
         .expect("write");
-    let f = RFile::open(&path).expect("open");
+    let f = FileReader::open(&path).expect("open");
     assert_eq!(TH1::read_root(&f, &name).unwrap(), filled(&name));
     assert_eq!(TH1::read_root_in(&f, &dir, &name).unwrap(), filled(&name));
 }

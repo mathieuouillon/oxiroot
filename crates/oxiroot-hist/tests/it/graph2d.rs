@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{Compression, ReadRoot, TGraph2D, WriteRoot};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn reads_root_written_graph2d() {
-    let f = RFile::open(fixture("graph2d.root")).expect("open");
+    let f = FileReader::open(fixture("graph2d.root")).expect("open");
     let g = TGraph2D::read_root(&f, "g2d").expect("read g2d");
     assert_eq!(g.name, "g2d");
     assert_eq!(g.title, "surface fixture");
@@ -26,11 +26,11 @@ fn reads_root_written_graph2d() {
 
 #[test]
 fn graph2d_round_trip_from_fixture() {
-    let f = RFile::open(fixture("graph2d.root")).expect("open");
+    let f = FileReader::open(fixture("graph2d.root")).expect("open");
     let g = TGraph2D::read_root(&f, "g2d").unwrap();
     let out = std::env::temp_dir().join("oxiroot_g2d_rt.root");
     g.write_root(&out, Compression::None).expect("write");
-    let back = TGraph2D::read_root(&RFile::open(&out).unwrap(), "g2d").unwrap();
+    let back = TGraph2D::read_root(&FileReader::open(&out).unwrap(), "g2d").unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
@@ -47,7 +47,7 @@ fn graph2d_build_from_scratch() {
     .titled("built in Rust");
     let out = std::env::temp_dir().join("oxiroot_g2d_scratch.root");
     g.write_root(&out, Compression::Zstd(3)).expect("write");
-    let back = TGraph2D::read_root(&RFile::open(&out).unwrap(), "scratch").unwrap();
+    let back = TGraph2D::read_root(&FileReader::open(&out).unwrap(), "scratch").unwrap();
     assert_eq!(back, g);
     assert_eq!(back.len(), 3);
     let _ = std::fs::remove_file(&out);
@@ -61,7 +61,7 @@ fn empty_graph2d_round_trip() {
     assert!(g.is_empty());
     let out = std::env::temp_dir().join("oxiroot_g2d_empty.root");
     g.write_root(&out, Compression::None).expect("write");
-    let back = TGraph2D::read_root(&RFile::open(&out).unwrap(), "empty").unwrap();
+    let back = TGraph2D::read_root(&FileReader::open(&out).unwrap(), "empty").unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }

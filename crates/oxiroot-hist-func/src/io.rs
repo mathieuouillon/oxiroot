@@ -8,7 +8,7 @@ use oxiroot_hist::{hist_streamer_blob, GraphFunction};
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer_gen::{any, base, basic, objanyptr, objptr, stl, strf, Cls};
-use oxiroot_io_core::{object_bytes_any, RFile, ReadRoot, WriteRoot};
+use oxiroot_io_core::{object_bytes_any, FileReader, ReadRoot, WriteRoot};
 
 use crate::tf::{FuncCore, TF1, TF2, TF3};
 
@@ -265,33 +265,33 @@ fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> {
 }
 
 impl ReadRoot for TF1 {
-    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tf1(name, &class, &object)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
         let (class, object) = file.object_in(dir, name)?;
         decode_tf1(name, &class, &object)
     }
 }
 
 impl ReadRoot for TF2 {
-    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tf2(name, &class, &object)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
         let (class, object) = file.object_in(dir, name)?;
         decode_tf2(name, &class, &object)
     }
 }
 
 impl ReadRoot for TF3 {
-    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tf3(name, &class, &object)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
         let (class, object) = file.object_in(dir, name)?;
         decode_tf3(name, &class, &object)
     }

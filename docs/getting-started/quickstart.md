@@ -22,22 +22,22 @@ h.sumw2();                                  // per-bin (weighted) errors
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;        // any single writable object
 
-let same = TH1::read_root(&RFile::open("hist.root")?, "pt")?;  // any readable object
+let same = TH1::read_root(&FileReader::open("hist.root")?, "pt")?;  // any readable object
 ```
 
 ## Several objects, subdirectories, appending
 
 For more than one object, a `TDirectory`, or appending to an existing file, use
-the `RootFile` builder — the single entry point for file composition.
+`FileWriter` — the single entry point for file composition.
 
 ```rust
 let prof = Hist::reg(5, 0.0, 5.0).profile().named("prof").titled("<pt> per region");
-RootFile::create("out.root")
+FileWriter::create("out.root")
     .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
     .write(Compression::Zstd(5))?;
 
-let g = RFile::open("out.root")?;
+let g = FileReader::open("out.root")?;
 let p = TProfile::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
 ```
 
@@ -50,8 +50,8 @@ let branches = vec![
 ];
 Tree::new("Events", branches).write_root("tree.root", Compression::None)?;
 
-let f = RFile::open("tree.root")?;
-let t = TTree::open(&f, "Events")?;
+let f = FileReader::open("tree.root")?;
+let t = TreeReader::open(&f, "Events")?;
 let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
 ```
 
@@ -61,7 +61,7 @@ let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
 let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
 Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
 
-let n = RNTuple::open(&RFile::open("data.root")?, "events")?.num_entries();
+let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.num_entries();
 ```
 
 ## Run the worked example

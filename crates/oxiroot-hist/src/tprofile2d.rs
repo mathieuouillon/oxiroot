@@ -6,7 +6,7 @@
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::axis::TAxis;
 use crate::base::{
@@ -297,12 +297,16 @@ impl TProfile2D {
 }
 
 /// Read a `TProfile2D` named `name` from `file`.
-pub(crate) fn read_tprofile2d(file: &RFile, name: &str) -> Result<TProfile2D> {
+pub(crate) fn read_tprofile2d(file: &FileReader, name: &str) -> Result<TProfile2D> {
     TProfile2D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile2D")?))
 }
 
 /// Read a `TProfile2D` from subdirectory `subdir`.
-pub(crate) fn read_tprofile2d_in(file: &RFile, subdir: &str, name: &str) -> Result<TProfile2D> {
+pub(crate) fn read_tprofile2d_in(
+    file: &FileReader,
+    subdir: &str,
+    name: &str,
+) -> Result<TProfile2D> {
     TProfile2D::read(&mut RBuffer::new(&object_bytes_in(
         file,
         subdir,

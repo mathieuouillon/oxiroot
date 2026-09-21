@@ -10,7 +10,7 @@
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::base::{check_len, object_bytes_any};
 
@@ -99,13 +99,13 @@ fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<TGraph2D> {
 }
 
 /// Read a `TGraph2D` named `name`.
-pub(crate) fn read_tgraph2d(file: &RFile, name: &str) -> Result<TGraph2D> {
+pub(crate) fn read_tgraph2d(file: &FileReader, name: &str) -> Result<TGraph2D> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tgraph2d(name, &class, &object)
 }
 
 /// Read a `TGraph2D` from subdirectory `subdir`.
-pub(crate) fn read_tgraph2d_in(file: &RFile, subdir: &str, name: &str) -> Result<TGraph2D> {
+pub(crate) fn read_tgraph2d_in(file: &FileReader, subdir: &str, name: &str) -> Result<TGraph2D> {
     let (class, object) = file.object_in(subdir, name)?;
     decode_tgraph2d(name, &class, &object)
 }

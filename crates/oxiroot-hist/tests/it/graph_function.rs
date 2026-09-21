@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{GraphFunction, ReadRoot, TGraph, WriteRoot};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -18,7 +18,7 @@ fn fixture(name: &str) -> PathBuf {
 /// (`[0]+[1]*x`, params `1, 2`) attached. We parse the `TF1`/`TFormula` faithfully.
 #[test]
 fn reads_root_graph_function() {
-    let f = RFile::open(fixture("graph_function.root")).expect("open");
+    let f = FileReader::open(fixture("graph_function.root")).expect("open");
     let g = TGraph::read_root(&f, "gfit").expect("read gfit");
     assert_eq!(g.title, "fitted");
     assert_eq!(g.x, vec![0.0, 1.0, 2.0, 3.0, 4.0]);
@@ -37,7 +37,7 @@ fn reads_root_graph_function() {
     assert_eq!(fun.ndf, 0);
 
     // The plain graphs in graphs.root carry no functions.
-    let g0 = TGraph::read_root(&RFile::open(fixture("graphs.root")).unwrap(), "g").unwrap();
+    let g0 = TGraph::read_root(&FileReader::open(fixture("graphs.root")).unwrap(), "g").unwrap();
     assert!(g0.functions.is_empty());
 }
 
@@ -45,11 +45,11 @@ fn reads_root_graph_function() {
 /// that re-reading yields the identical struct.
 #[test]
 fn graph_function_round_trips_from_root() {
-    let f = RFile::open(fixture("graph_function.root")).expect("open");
+    let f = FileReader::open(fixture("graph_function.root")).expect("open");
     let g = TGraph::read_root(&f, "gfit").expect("read");
     let out = std::env::temp_dir().join("oxiroot_graph_function_rt.root");
     g.write_root(&out, Compression::None).expect("write");
-    let back = TGraph::read_root(&RFile::open(&out).unwrap(), "gfit").unwrap();
+    let back = TGraph::read_root(&FileReader::open(&out).unwrap(), "gfit").unwrap();
     assert_eq!(back, g, "round-trip changed the graph/function");
     let _ = std::fs::remove_file(&out);
 }
@@ -76,7 +76,7 @@ fn graph_function_built_from_scratch() {
 
     let out = std::env::temp_dir().join("oxiroot_graph_function_scratch.root");
     g.write_root(&out, Compression::Zstd(3)).expect("write");
-    let back = TGraph::read_root(&RFile::open(&out).unwrap(), "gfit").unwrap();
+    let back = TGraph::read_root(&FileReader::open(&out).unwrap(), "gfit").unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
@@ -98,7 +98,7 @@ fn multiple_functions_round_trip() {
 
     let out = std::env::temp_dir().join("oxiroot_graph_multifn.root");
     g.write_root(&out, Compression::None).expect("write");
-    let back = TGraph::read_root(&RFile::open(&out).unwrap(), "g").unwrap();
+    let back = TGraph::read_root(&FileReader::open(&out).unwrap(), "g").unwrap();
     assert_eq!(back.functions.len(), 2);
     assert_eq!(back.functions[0].name, "lin");
     assert_eq!(back.functions[1].name, "sq");

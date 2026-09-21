@@ -14,7 +14,7 @@
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::base::{bin_content_type_of, check_len, object_bytes_any, BinContentType};
 use crate::th1::TH1;
@@ -407,13 +407,13 @@ fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
 }
 
 /// Read a `TGraph`, `TGraphErrors`, or `TGraphAsymmErrors` named `name`.
-pub(crate) fn read_tgraph(file: &RFile, name: &str) -> Result<TGraph> {
+pub(crate) fn read_tgraph(file: &FileReader, name: &str) -> Result<TGraph> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tgraph(name, &class, &object)
 }
 
 /// Read a graph from subdirectory `subdir`.
-pub(crate) fn read_tgraph_in(file: &RFile, subdir: &str, name: &str) -> Result<TGraph> {
+pub(crate) fn read_tgraph_in(file: &FileReader, subdir: &str, name: &str) -> Result<TGraph> {
     let (class, object) = file.object_in(subdir, name)?;
     decode_tgraph(name, &class, &object)
 }

@@ -1,6 +1,6 @@
 //! Write a flat tree, read it back through our own reader.
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_tree::{write_tree_file, Branch, BranchValues, TTree};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_tree::{write_tree_file, Branch, BranchValues, TreeReader};
 
 #[test]
 fn write_then_read_roundtrips() {
@@ -13,8 +13,8 @@ fn write_then_read_roundtrips() {
     ];
     write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.num_entries(), 5);
     assert_eq!(t.branch_names(), ["i4", "f8", "b1", "u4"]);
     assert_eq!(
@@ -56,8 +56,8 @@ fn write_then_read_arrays_and_strings() {
     ];
     write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     assert_eq!(t.branch_names(), ["x", "s", "n"]);
     assert_eq!(t.read_branch(&f, "x").unwrap(), BranchValues::VecF64(xs));
@@ -77,8 +77,8 @@ fn write_then_read_jagged() {
     ];
     write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.num_entries(), 4);
     // The writer inserts the count branch (ny / nn) before each jagged branch.
     assert_eq!(t.branch_names(), ["e", "ny", "y", "nn", "n"]);
@@ -108,8 +108,8 @@ fn write_then_read_zstd() {
     ];
     write_tree_file(&out, "Events", &branches, Compression::Zstd(5)).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     assert_eq!(
         t.read_branch(&f, "a").unwrap(),
@@ -135,8 +135,8 @@ fn write_then_read_std_vector() {
     ];
     write_tree_file(&out, "T", &branches, Compression::None).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 4);
     assert_eq!(t.branch_names(), ["n", "vf", "vi"]);
     assert_eq!(
@@ -164,8 +164,8 @@ fn write_then_read_empty_tree() {
     let branches = vec![Branch::i32("i4", vec![]), Branch::f64("f8", vec![])];
     write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.num_entries(), 0);
     assert_eq!(t.branch_names(), ["i4", "f8"]);
     assert_eq!(t.read_branch(&f, "i4").unwrap(), BranchValues::I32(vec![]));
@@ -174,7 +174,7 @@ fn write_then_read_empty_tree() {
 
 #[test]
 fn branches_with_different_entry_counts_are_rejected() {
-    use oxiroot_io_core::{Error, RootFile};
+    use oxiroot_io_core::{Error, FileWriter};
     use oxiroot_tree::Tree;
     let branches = || {
         vec![
@@ -192,8 +192,8 @@ fn branches_with_different_entry_counts_are_rejected() {
             found: 2
         }
     );
-    // The builder path (`RootFile::put`) goes through the same check.
-    let err = RootFile::create(&out)
+    // The builder path (`FileWriter::put`) goes through the same check.
+    let err = FileWriter::create(&out)
         .put(Tree::new("T", branches()))
         .to_bytes(Compression::None)
         .unwrap_err();

@@ -39,10 +39,10 @@ TREE_TH_ID = [[1], [], [2, 3], [4], [5, 6, 7]]
 OTREE_OI = [10, 11, 12]
 OTREE_OJ = [[1.0, 2.0], [], [3.0]]
 OTREE_OS = ["x", "yy", "zzz"]
-# rust_multi.root (RootFile builder): top-level mh + subdirectory sub/sh.
+# rust_multi.root (FileWriter): top-level mh + subdirectory sub/sh.
 MULTI_MH = [5.0, 6.0, 7.0]
 MULTI_SH = [8.0, 9.0]
-# rust_append.root: base bh, then ah appended via RootFile::open.
+# rust_append.root: base bh, then ah appended via FileWriter::open.
 APPEND_BH = [3.0, 1.0]
 APPEND_AH = [4.0]
 # oracle_dirs.root (uproot -> Rust): top-level dh + subdirectory region/rh.
@@ -109,7 +109,7 @@ def read(d: str) -> None:
     if thid != TREE_TH_ID:
         _fail(f"rust tree th.id: got {thid}, want {TREE_TH_ID}")
 
-    # rust_multi.root — RootFile builder: top-level `mh` + subdirectory `sub/sh`.
+    # rust_multi.root — FileWriter: top-level `mh` + subdirectory `sub/sh`.
     mf = uproot.open(os.path.join(d, "rust_multi.root"))
     mh = list(mf["mh"].values())
     if mh != MULTI_MH:
@@ -118,7 +118,7 @@ def read(d: str) -> None:
     if sh != MULTI_SH:
         _fail(f"rust multi sub/sh: got {sh}, want {MULTI_SH}")
 
-    # rust_append.root — base `bh` plus the appended `ah` (RootFile::open).
+    # rust_append.root — base `bh` plus the appended `ah` (FileWriter::open).
     af = uproot.open(os.path.join(d, "rust_append.root"))
     bh = list(af["bh"].values())
     if bh != APPEND_BH:

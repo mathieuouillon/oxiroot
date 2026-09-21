@@ -3,7 +3,7 @@
 //! in the interop job.
 
 use oxiroot_hist::{BinContentType, Hist, ReadRoot, WriteRoot, TH1, TH2, TH3};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
 fn th1f_write_read_round_trips() {
@@ -19,7 +19,7 @@ fn th1f_write_read_round_trips() {
         .write_root(&out, Compression::None)
         .expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(f.key("h1").expect("key").class_name, "TH1F");
     let back = TH1::read_root(&f, "h1").expect("read TH1F");
     assert_eq!(back.values(), h.values());
@@ -41,7 +41,7 @@ fn th2f_write_read_round_trips() {
         .write_root(&out, Compression::None)
         .expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(f.key("h2").expect("key").class_name, "TH2F");
     let back = TH2::read_root(&f, "h2").expect("read TH2F");
     assert_eq!(back.values(), h.values());
@@ -63,7 +63,7 @@ fn th3f_write_read_round_trips() {
         .write_root(&out, Compression::None)
         .expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(f.key("h3").expect("key").class_name, "TH3F");
     let back = TH3::read_root(&f, "h3").expect("read TH3F");
     assert_eq!(back.values(), h.values());

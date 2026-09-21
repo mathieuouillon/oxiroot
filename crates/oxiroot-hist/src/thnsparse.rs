@@ -11,7 +11,7 @@
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::Result;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::axis::TAxis;
 use crate::base::{check_len, object_bytes, object_bytes_in, read_tarray, BinContentType};
@@ -259,7 +259,7 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
 }
 
 /// Read a `THnSparse` named `name` from `file`.
-pub(crate) fn read_thnsparse(file: &RFile, name: &str) -> Result<THnSparse> {
+pub(crate) fn read_thnsparse(file: &FileReader, name: &str) -> Result<THnSparse> {
     THnSparse::read(&mut RBuffer::new(&object_bytes(
         file,
         name,
@@ -268,7 +268,7 @@ pub(crate) fn read_thnsparse(file: &RFile, name: &str) -> Result<THnSparse> {
 }
 
 /// Read a `THnSparseT<TArrayD>` from subdirectory `subdir`.
-pub(crate) fn read_thnsparse_in(file: &RFile, subdir: &str, name: &str) -> Result<THnSparse> {
+pub(crate) fn read_thnsparse_in(file: &FileReader, subdir: &str, name: &str) -> Result<THnSparse> {
     THnSparse::read(&mut RBuffer::new(&object_bytes_in(
         file,
         subdir,

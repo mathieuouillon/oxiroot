@@ -5,12 +5,14 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ParamValue, ReadRoot, RootFile, TObjString, TParameter};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_hist::{FileWriter, ParamValue, ReadRoot, TObjString, TParameter};
+use oxiroot_io_core::{Compression, FileReader};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/persist_objs.root"))
-        .expect("open fixture")
+fn fixture() -> FileReader {
+    FileReader::open(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/persist_objs.root"),
+    )
+    .expect("open fixture")
 }
 
 #[test]
@@ -37,7 +39,7 @@ fn reads_root_written_objects() {
 #[test]
 fn round_trips_objects_through_oxiroot() {
     let out = std::env::temp_dir().join("oxiroot_persist_rt.root");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&TObjString::new("hello world").named("label"))
         .add(&TParameter::f64("lumi", 137.5))
         .add(&TParameter::i32("nevents", 42))
@@ -45,7 +47,7 @@ fn round_trips_objects_through_oxiroot() {
         .write(Compression::None)
         .unwrap();
 
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     assert_eq!(
         TObjString::read_root(&f, "label").unwrap().value(),
         "hello world"

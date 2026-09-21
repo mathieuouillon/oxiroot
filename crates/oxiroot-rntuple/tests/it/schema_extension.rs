@@ -6,18 +6,20 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{FieldValues, RNTuple};
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::{FieldValues, NtupleReader};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rntuple_ext.root"))
-        .expect("open fixture")
+fn fixture() -> FileReader {
+    FileReader::open(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rntuple_ext.root"),
+    )
+    .expect("open fixture")
 }
 
 #[test]
 fn reads_late_added_field() {
     let f = fixture();
-    let nt = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let nt = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     // The late field "y" (in the footer schema-extension record) is visible.
     assert_eq!(nt.field_names(), vec!["x", "y"]);
     assert_eq!(nt.num_entries(), 4);
@@ -51,8 +53,8 @@ fn writes_a_schema_extended_rntuple() {
         )
         .unwrap();
 
-    let f = RFile::open(path).unwrap();
-    let nt = RNTuple::open(&f, "ntpl").unwrap();
+    let f = FileReader::open(path).unwrap();
+    let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(nt.field_names(), vec!["x", "y"]);
     assert_eq!(
         nt.read_field(&f, "x").unwrap(),

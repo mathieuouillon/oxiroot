@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, ReadRoot, TProfile, WriteRoot};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 // ---------------------------------------------------------------- histograms
 
@@ -152,7 +152,7 @@ fn weighted_tprofile_round_trips_its_squared_weights() {
         std::process::id()
     ));
     p.write_root(&out, Compression::None).expect("write");
-    let back = TProfile::read_root(&RFile::open(&out).expect("open"), "wp").expect("read");
+    let back = TProfile::read_root(&FileReader::open(&out).expect("open"), "wp").expect("read");
     let _ = std::fs::remove_file(&out);
 
     assert_eq!(back.bin_sumw2, p.bin_sumw2);
@@ -165,7 +165,7 @@ fn weighted_tprofile_round_trips_its_squared_weights() {
 #[test]
 fn unit_weight_root_fixture_still_has_no_squared_weights() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tprofile2d.root");
-    let f = RFile::open(path).expect("open fixture");
+    let f = FileReader::open(path).expect("open fixture");
     let p = oxiroot_hist::TProfile2D::read_root(&f, "p2").expect("read");
     assert!(p.bin_sumw2.is_empty());
 }

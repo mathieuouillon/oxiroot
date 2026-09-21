@@ -5,9 +5,9 @@ use oxiroot::hist::{
     Histogram, ParamValue, ReadRoot, TGraph, TObjString, TParameter, TProfile, TF1, TF2, TF3, TH1,
     TH2, TH3,
 };
-use oxiroot::ntuple::{FieldValues, RNTuple};
-use oxiroot::tree::{BranchValues, TTree};
-use oxiroot::{RFile, Value};
+use oxiroot::ntuple::{FieldValues, NtupleReader};
+use oxiroot::tree::{BranchValues, TreeReader};
+use oxiroot::{FileReader, Value};
 
 use crate::json::Json;
 use crate::util::{classify, locate_class, parse_spec, split_obj, CmdResult, Kind, Table};
@@ -68,7 +68,7 @@ pub fn run(args: Args, json: bool) -> CmdResult {
 }
 
 /// Dump an arbitrary object via the generic, streamer-info-driven reader.
-fn dump_generic(file: &RFile, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
+fn dump_generic(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
     let value = match subdir {
         Some(dir) => file.get_value_in(dir, name)?,
         None => file.get_value(name)?,
@@ -129,7 +129,7 @@ fn value_to_json(v: &Value) -> Json {
 
 /// A `TF1`/`TF2`/`TF3`: its formula, parameters, and (for `TF1`) its range.
 fn dump_function(
-    file: &RFile,
+    file: &FileReader,
     subdir: Option<&str>,
     name: &str,
     class: &str,
@@ -186,7 +186,11 @@ fn dump_function(
 }
 
 /// Read a `ReadRoot` object from the top directory or a subdirectory.
-fn read_obj<T: ReadRoot>(file: &RFile, subdir: Option<&str>, name: &str) -> oxiroot::Result<T> {
+fn read_obj<T: ReadRoot>(
+    file: &FileReader,
+    subdir: Option<&str>,
+    name: &str,
+) -> oxiroot::Result<T> {
     match subdir {
         None => T::read_root(file, name),
         Some(dir) => T::read_root_in(file, dir, name),
@@ -214,10 +218,16 @@ fn param_value(value: ParamValue) -> (Json, String) {
 }
 
 /// The first `n` entries of a `TTree`.
-fn dump_tree(file: &RFile, subdir: Option<&str>, name: &str, args: &Args, json: bool) -> CmdResult {
+fn dump_tree(
+    file: &FileReader,
+    subdir: Option<&str>,
+    name: &str,
+    args: &Args,
+    json: bool,
+) -> CmdResult {
     let tree = match subdir {
-        None => TTree::open(file, name)?,
-        Some(dir) => TTree::open_in(file, dir, name)?,
+        None => TreeReader::open(file, name)?,
+        Some(dir) => TreeReader::open_in(file, dir, name)?,
     };
     let n = args.entries.min(tree.num_entries() as usize);
     let selected = select(&args.branches, tree.branch_names());
@@ -252,15 +262,15 @@ fn dump_tree(file: &RFile, subdir: Option<&str>, name: &str, args: &Args, json: 
 
 /// The first `n` entries of an RNTuple.
 fn dump_rntuple(
-    file: &RFile,
+    file: &FileReader,
     subdir: Option<&str>,
     name: &str,
     args: &Args,
     json: bool,
 ) -> CmdResult {
     let ntuple = match subdir {
-        None => RNTuple::open(file, name)?,
-        Some(dir) => RNTuple::open_in(file, dir, name)?,
+        None => NtupleReader::open(file, name)?,
+        Some(dir) => NtupleReader::open_in(file, dir, name)?,
     };
     let n = args.entries.min(ntuple.num_entries() as usize);
     let selected = select(&args.branches, ntuple.field_names());

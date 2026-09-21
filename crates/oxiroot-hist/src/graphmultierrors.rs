@@ -15,7 +15,7 @@
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::base::{check_len, object_bytes_any};
 
@@ -173,14 +173,14 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<TG
 }
 
 /// Read a `TGraphMultiErrors` named `name`.
-pub(crate) fn read_tgraphmultierrors(file: &RFile, name: &str) -> Result<TGraphMultiErrors> {
+pub(crate) fn read_tgraphmultierrors(file: &FileReader, name: &str) -> Result<TGraphMultiErrors> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tgraphmultierrors(name, &class, &object)
 }
 
 /// Read a `TGraphMultiErrors` from subdirectory `subdir`.
 pub(crate) fn read_tgraphmultierrors_in(
-    file: &RFile,
+    file: &FileReader,
     subdir: &str,
     name: &str,
 ) -> Result<TGraphMultiErrors> {

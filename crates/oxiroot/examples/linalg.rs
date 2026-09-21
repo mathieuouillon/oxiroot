@@ -1,7 +1,7 @@
 //! ROOT linear-algebra objects from `oxiroot::linalg`: a `TVectorD` (vector of
 //! doubles), a `TMatrixD` (dense matrix), and a `TMatrixDSym` (symmetric matrix —
 //! the shape a fit covariance takes). We build the three, write them into ONE
-//! ROOT file with the `RootFile` builder, read them back, and assert the
+//! ROOT file with `FileWriter`, read them back, and assert the
 //! round-trip is byte-exact. Official ROOT and uproot read this file too — the
 //! serialized bytes match ROOT's key-for-key.
 //!
@@ -53,10 +53,10 @@ fn main() -> oxiroot::Result<()> {
     );
     println!("  cov       : TMatrixDSym {n}x{n}", n = cov.dim());
 
-    // --- Write all three into one file with the `RootFile` builder. ------------
+    // --- Write all three into one file with `FileWriter`. ------------------------
     // `.add` takes anything `WriteRoot`; each object is stored under its `named`
     // key. This is the one way to write more than a single object per file.
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&residuals)
         .add(&design)
         .add(&cov)
@@ -64,7 +64,7 @@ fn main() -> oxiroot::Result<()> {
     println!("wrote 3 objects -> {}", path.display());
 
     // --- Read them back (idiomatic `ReadRoot::read_root`, keyed by name). ------
-    let f = RFile::open(&path)?;
+    let f = FileReader::open(&path)?;
     let v = TVectorD::read_root(&f, "residuals")?;
     let m = TMatrixD::read_root(&f, "design")?;
     let s = TMatrixDSym::read_root(&f, "cov")?;

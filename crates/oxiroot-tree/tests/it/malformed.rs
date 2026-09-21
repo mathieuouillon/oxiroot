@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{concat_trees, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{concat_trees, TreeReader};
 
 /// Fixtures spanning the supported branch layouts, with their tree name.
 const FIXTURES: &[(&str, &str)] = &[
@@ -29,8 +29,8 @@ fn fixture(name: &str) -> Vec<u8> {
 /// Open the tree (if it parses), read every branch, and run it through the
 /// `hadd`-style [`concat_trees`] merge. The point is that none of this panics
 /// regardless of the bytes.
-fn poke_tree(f: &RFile, tree: &str) {
-    if let Ok(t) = TTree::open(f, tree) {
+fn poke_tree(f: &FileReader, tree: &str) {
+    if let Ok(t) = TreeReader::open(f, tree) {
         let names: Vec<String> = t.branch_names().iter().map(|s| s.to_string()).collect();
         for b in &names {
             let _ = t.read_branch(f, b);
@@ -55,7 +55,7 @@ fn tree_byte_flips_never_panic() {
             for v in [0x00u8, 0xff] {
                 let mut c = data.clone();
                 c[i] = v;
-                if let Ok(f) = RFile::from_bytes(c) {
+                if let Ok(f) = FileReader::from_bytes(c) {
                     poke_tree(&f, tree);
                 }
             }
@@ -69,7 +69,7 @@ fn tree_truncations_never_panic() {
         let data = fixture(fix);
         let step = stride(data.len(), 2000);
         for len in (0..=data.len()).step_by(step) {
-            if let Ok(f) = RFile::from_bytes(data[..len].to_vec()) {
+            if let Ok(f) = FileReader::from_bytes(data[..len].to_vec()) {
                 poke_tree(&f, tree);
             }
         }

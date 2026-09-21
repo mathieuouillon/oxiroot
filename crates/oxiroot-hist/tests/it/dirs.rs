@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, RootFile, TH1};
-use oxiroot_io_core::RFile;
+use oxiroot_hist::{FileWriter, Hist, ReadRoot, TH1};
+use oxiroot_io_core::FileReader;
 
 #[test]
 fn writes_histograms_into_subdirectories() {
@@ -27,14 +27,14 @@ fn writes_histograms_into_subdirectories() {
     cr.fill(0.5);
 
     let out = PathBuf::from("/tmp/rootrs_dirs.root");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&top)
         .dir("signal", |d| d.add(&sr))
         .dir("control", |d| d.add(&cr))
         .write(oxiroot_io_core::Compression::None)
         .expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
 
     // The root directory lists the top histogram and the two subdirectories.
     let root_keys: Vec<(&str, &str)> = f

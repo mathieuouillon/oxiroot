@@ -79,7 +79,7 @@ pub enum Error {
     },
     /// A file written in the 32-bit ("small") container form grew past the
     /// ~2 GiB it can address. Write it in the 64-bit form instead (e.g.
-    /// `TTreeWriter::create_large`); nothing it wrote is usable.
+    /// `TreeWriter::create_large`); nothing it wrote is usable.
     FileTooLarge {
         /// The size the file reached, in bytes.
         size: u64,

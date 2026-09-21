@@ -1,42 +1,44 @@
-//! [`TChain`] — read a branch across several files' trees as one concatenated
+//! [`ChainReader`] — read a branch across several files' trees as one concatenated
 //! column, the way ROOT's `TChain` spans a dataset split over many files.
 
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
-use crate::reader::TTree;
+use crate::reader::TreeReader;
 use crate::value::BranchValues;
 
-/// A chain of same-schema `TTree`s across several open files. Reading a branch
-/// concatenates that branch's values from every tree in add order.
+/// Reads a chain of same-schema `TTree`s across several open files, like ROOT's
+/// `TChain`. Reading a branch concatenates that branch's values from every tree
+/// in add order.
 ///
 /// The files are borrowed, so keep them alive for the chain's lifetime:
 /// ```no_run
-/// # use oxiroot_io_core::RFile;
-/// # use oxiroot_tree::TChain;
-/// let f1 = RFile::open("a.root")?;
-/// let f2 = RFile::open("b.root")?;
-/// let mut chain = TChain::new();
+/// # use oxiroot_io_core::FileReader;
+/// # use oxiroot_tree::ChainReader;
+/// let f1 = FileReader::open("a.root")?;
+/// let f2 = FileReader::open("b.root")?;
+/// let mut chain = ChainReader::new();
 /// chain.add(&f1, "Events")?;
 /// chain.add(&f2, "Events")?;
 /// let all = chain.read_branch("pt")?; // values from both files
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
+#[doc(alias = "TChain")]
 #[derive(Default)]
-pub struct TChain<'a> {
-    trees: Vec<(&'a RFile, TTree)>,
+pub struct ChainReader<'a> {
+    trees: Vec<(&'a FileReader, TreeReader)>,
 }
 
-impl<'a> TChain<'a> {
+impl<'a> ChainReader<'a> {
     /// An empty chain.
     #[must_use]
-    pub fn new() -> TChain<'a> {
-        TChain { trees: Vec::new() }
+    pub fn new() -> ChainReader<'a> {
+        ChainReader { trees: Vec::new() }
     }
 
     /// Open the tree named `tree_name` in `file` and append it to the chain.
-    pub fn add(&mut self, file: &'a RFile, tree_name: &str) -> Result<()> {
-        let tree = TTree::open(file, tree_name)?;
+    pub fn add(&mut self, file: &'a FileReader, tree_name: &str) -> Result<()> {
+        let tree = TreeReader::open(file, tree_name)?;
         self.trees.push((file, tree));
         Ok(())
     }

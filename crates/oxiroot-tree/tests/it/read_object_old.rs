@@ -7,11 +7,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
-fn fixture() -> RFile {
-    RFile::open(
+fn fixture() -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_object_old.root"),
     )
     .expect("open fixture")
@@ -20,7 +20,7 @@ fn fixture() -> RFile {
 #[test]
 fn reads_tbranchobject_members() {
     let f = fixture();
-    let t = TTree::open(&f, "t").expect("open tree");
+    let t = TreeReader::open(&f, "t").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     // Each TBranchObject expands into one column per (basic/string) member.
     assert_eq!(
@@ -64,7 +64,7 @@ fn reads_tbranchobject_members() {
 #[test]
 fn object_member_introspection_and_range() {
     let f = fixture();
-    let t = TTree::open(&f, "t").expect("open tree");
+    let t = TreeReader::open(&f, "t").expect("open tree");
     // Introspection works on the synthesized columns.
     assert_eq!(t.branch_type("pd.fVal"), Some(oxiroot_tree::LeafType::F64));
     assert_eq!(t.branch_type("nm.fName"), Some(oxiroot_tree::LeafType::Str));

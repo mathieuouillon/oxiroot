@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH1};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -17,7 +17,7 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn serializes_th1d_byte_identical_to_root() {
-    let f = RFile::open(fixture("th1d_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("th1d_uncompressed.root")).expect("open fixture");
     let key = f.key("h1").expect("h1 key");
     assert!(key.is_uncompressed());
     let expected: Vec<u8> = f.key_payload(key).expect("payload").to_vec();
@@ -34,7 +34,7 @@ fn serializes_th1d_byte_identical_to_root() {
 
 #[test]
 fn writes_a_root_file_that_round_trips() {
-    let f = RFile::open(fixture("th1d_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("th1d_uncompressed.root")).expect("open fixture");
     let h = TH1::read_root(&f, "h1").expect("read TH1D");
 
     // Write a complete .root file, then read it back with our own reader.
@@ -42,7 +42,7 @@ fn writes_a_root_file_that_round_trips() {
     h.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write file");
 
-    let f2 = RFile::open(&out).expect("reopen written file");
+    let f2 = FileReader::open(&out).expect("reopen written file");
     let keys: Vec<(&str, &str)> = f2
         .keys()
         .iter()
@@ -82,7 +82,7 @@ fn create_fill_save_round_trips() {
     let out = std::path::PathBuf::from("/tmp/rootrs_filled_th1d.root");
     h.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let h2 = TH1::read_root(&f, "h").expect("read back");
     assert_eq!(h2, h, "filled histogram must round-trip");
 }
@@ -97,7 +97,7 @@ fn written_file_embeds_self_describing_streamer_info() {
     h.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let reg = f.streamer_registry().expect("parse embedded streamer info");
     let classes = reg.class_names();
     for expected in ["TH1D", "TH2D", "TH3D", "TProfile", "TH1", "TAxis", "TNamed"] {
@@ -115,7 +115,7 @@ fn written_file_embeds_self_describing_streamer_info() {
 
 #[test]
 fn writes_a_zstd_compressed_th1d() {
-    let f = RFile::open(fixture("th1d_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("th1d_uncompressed.root")).expect("open fixture");
     let h = TH1::read_root(&f, "h1").expect("read TH1D");
 
     // Write the same histogram Zstd-compressed (505 = Zstd level 5).
@@ -123,7 +123,7 @@ fn writes_a_zstd_compressed_th1d() {
     h.write_root(&out, oxiroot_io_core::Compression::Zstd(5))
         .expect("write compressed file");
 
-    let f2 = RFile::open(&out).expect("reopen");
+    let f2 = FileReader::open(&out).expect("reopen");
     let key = f2.key("h1").expect("h1 key");
     assert!(!key.is_uncompressed(), "object should be stored compressed");
     let h2 = TH1::read_root(&f2, "h1").expect("read back compressed TH1D");
@@ -140,7 +140,7 @@ fn empty_th1d_round_trips() {
         .titled("never filled");
     let out = std::path::PathBuf::from("/tmp/oxiroot_empty_th1d.root");
     h.write_root(&out, Compression::None).expect("write");
-    let back = TH1::read_root(&RFile::open(&out).unwrap(), "empty").expect("read");
+    let back = TH1::read_root(&FileReader::open(&out).unwrap(), "empty").expect("read");
     assert_eq!(back.contents.len(), 12); // nbins + 2 flow cells
     assert!(back.contents.iter().all(|&c| c == 0.0));
     assert_eq!(back.entries, 0.0);

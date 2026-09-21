@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{ReadRoot, TH1};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -27,7 +27,7 @@ const CASES: &[(&str, u32)] = &[
 #[test]
 fn decodes_every_compressed_block_format() {
     for &(name, setting) in CASES {
-        let f = RFile::open(fixture(name)).unwrap_or_else(|e| panic!("open {name}: {e}"));
+        let f = FileReader::open(fixture(name)).unwrap_or_else(|e| panic!("open {name}: {e}"));
 
         // Guard: confirm the fixture really uses this algorithm, so a regeneration
         // that stored it differently fails loudly instead of silently skipping

@@ -7,18 +7,20 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_ntuple.root"))
-        .expect("open fixture")
+fn fixture() -> FileReader {
+    FileReader::open(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_ntuple.root"),
+    )
+    .expect("open fixture")
 }
 
 #[test]
 fn reads_tntuple_float() {
     let f = fixture();
-    let t = TTree::open(&f, "nt").expect("open TNtuple");
+    let t = TreeReader::open(&f, "nt").expect("open TNtuple");
     assert_eq!(t.num_entries(), 4);
     assert_eq!(t.branch_names(), vec!["x", "y", "z"]);
     assert_eq!(
@@ -34,7 +36,7 @@ fn reads_tntuple_float() {
 #[test]
 fn reads_tntupled_double() {
     let f = fixture();
-    let t = TTree::open(&f, "ntd").expect("open TNtupleD");
+    let t = TreeReader::open(&f, "ntd").expect("open TNtupleD");
     assert_eq!(t.num_entries(), 3);
     assert_eq!(t.branch_names(), vec!["a", "b"]);
     assert_eq!(

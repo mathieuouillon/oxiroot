@@ -1,4 +1,4 @@
-//! [`RootFile`]: composing a ROOT file from several objects, optionally in
+//! [`FileWriter`]: composing a ROOT file from several objects, optionally in
 //! subdirectories, or appending them to an existing file.
 
 use std::io::Cursor;
@@ -105,23 +105,24 @@ impl Entries {
     }
 }
 
-/// Builder for composing a ROOT file from several objects — optionally organised
-/// into subdirectories, or appended to an existing file.
+/// Composes a ROOT file from several objects — optionally organised into
+/// subdirectories, or appended to an existing file — and writes it with
+/// [`write`](FileWriter::write). [`FileReader`](crate::FileReader) reads files.
 ///
 /// For the common case of a single object, prefer the
-/// [`WriteRoot::write_root`] shorthand. Reach for `RootFile` when a file holds
+/// [`WriteRoot::write_root`] shorthand. Reach for `FileWriter` when a file holds
 /// several objects, uses subdirectories, or is being appended to. Any mix of
-/// writable types can go in one file: [`add`](RootFile::add) takes objects
+/// writable types can go in one file: [`add`](FileWriter::add) takes objects
 /// stored under a single key (histograms, matrices, parameters, …), and
-/// [`put`](RootFile::put) takes ones stored as several records (a `TTree`, an
+/// [`put`](FileWriter::put) takes ones stored as several records (a `TTree`, an
 /// RNTuple):
 ///
 /// ```no_run
-/// use oxiroot_io_core::{Compression, RootFile, TObjString, TParameter};
+/// use oxiroot_io_core::{Compression, FileWriter, TObjString, TParameter};
 /// let lumi = TParameter::f64("lumi", 137.5);
 /// let label = TObjString::new("2024 run").named("label");
 /// let cut = TParameter::f32("pt_min", 25.0);
-/// RootFile::create("out.root")
+/// FileWriter::create("out.root")
 ///     .add(&lumi)
 ///     .add(&label)
 ///     .dir("cuts", |d| d.add(&cut)) // a TDirectory holding `pt_min`
@@ -129,16 +130,17 @@ impl Entries {
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 ///
-/// Append to an existing file with [`open`](RootFile::open):
+/// Append to an existing file with [`open`](FileWriter::open):
 ///
 /// ```no_run
-/// # use oxiroot_io_core::{Compression, RootFile, TParameter};
+/// # use oxiroot_io_core::{Compression, FileWriter, TParameter};
 /// # let extra = TParameter::i32("extra", 3);
-/// RootFile::open("out.root")?.add(&extra).write(Compression::None)?;
+/// FileWriter::open("out.root")?.add(&extra).write(Compression::None)?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
-#[must_use = "a RootFile builder does nothing until `.write(...)` is called"]
-pub struct RootFile {
+#[doc(alias = "RootFile", alias = "TFile")]
+#[must_use = "a FileWriter does nothing until `.write(...)` is called"]
+pub struct FileWriter {
     path: std::path::PathBuf,
     /// `Some` in append mode (the existing file bytes); `None` for a fresh file.
     existing: Option<Vec<u8>>,
@@ -146,11 +148,11 @@ pub struct RootFile {
     dirs: Vec<(String, Entries)>,
 }
 
-impl RootFile {
+impl FileWriter {
     /// Start a fresh ROOT file at `path` (any existing file is overwritten on
-    /// [`write`](RootFile::write)).
-    pub fn create(path: impl AsRef<Path>) -> RootFile {
-        RootFile {
+    /// [`write`](FileWriter::write)).
+    pub fn create(path: impl AsRef<Path>) -> FileWriter {
+        FileWriter {
             path: path.as_ref().to_path_buf(),
             existing: None,
             top: Entries::default(),
@@ -165,10 +167,10 @@ impl RootFile {
     /// Files that contain subdirectories or an RNTuple are preserved — only
     /// *adding* new subdirectories in this mode is unsupported. See
     /// [`ContainerWriter::append`].
-    pub fn open(path: impl AsRef<Path>) -> Result<RootFile> {
+    pub fn open(path: impl AsRef<Path>) -> Result<FileWriter> {
         let path = path.as_ref().to_path_buf();
         let existing = std::fs::read(&path)?;
-        Ok(RootFile {
+        Ok(FileWriter {
             path,
             existing: Some(existing),
             top: Entries::default(),
@@ -180,7 +182,7 @@ impl RootFile {
     /// only needs to be borrowed.
     // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
     #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> RootFile {
+    pub fn add(mut self, object: &dyn WriteRoot) -> FileWriter {
         self.top.add(object);
         self
     }
@@ -188,20 +190,20 @@ impl RootFile {
     /// Put a multi-record object (a `TTree`, an RNTuple) in the file's top
     /// directory. It is laid out when the file is written, so the builder takes
     /// it over.
-    pub fn put(mut self, object: impl WriteInto + 'static) -> RootFile {
+    pub fn put(mut self, object: impl WriteInto + 'static) -> FileWriter {
         self.top.put(object);
         self
     }
 
     /// Add a `TDirectory` named `name` holding the objects added inside `build`
     /// (e.g. one directory per analysis region). Only meaningful when creating a
-    /// file; see [`open`](RootFile::open).
+    /// file; see [`open`](FileWriter::open).
     pub fn dir(
         mut self,
         name: impl Into<String>,
-        build: impl FnOnce(SubdirBuilder) -> SubdirBuilder,
-    ) -> RootFile {
-        let dir = build(SubdirBuilder {
+        build: impl FnOnce(SubdirWriter) -> SubdirWriter,
+    ) -> FileWriter {
+        let dir = build(SubdirWriter {
             entries: Entries::default(),
         });
         self.dirs.push((name.into(), dir.entries));
@@ -209,14 +211,14 @@ impl RootFile {
     }
 
     /// Build the file bytes and write them to the path. A fresh builder writes a
-    /// new file; one from [`open`](RootFile::open) rewrites the file with its
+    /// new file; one from [`open`](FileWriter::open) rewrites the file with its
     /// existing contents plus the additions. A file that grows past ~2 GiB is
     /// written in ROOT's 64-bit ("big") container form automatically.
     pub fn write(self, compression: Compression) -> Result<()> {
         self.write_threshold(compression, KSTART_BIG_FILE)
     }
 
-    /// Like [`write`](RootFile::write), but switch to the 64-bit container form
+    /// Like [`write`](FileWriter::write), but switch to the 64-bit container form
     /// once the file would exceed `threshold` bytes rather than ROOT's ~2 GiB
     /// ([`KSTART_BIG_FILE`]). A threshold of 0 always writes the 64-bit form,
     /// which is useful for testing readers against it.
@@ -226,7 +228,7 @@ impl RootFile {
         Ok(())
     }
 
-    /// The bytes [`write`](RootFile::write) would write, without writing them.
+    /// The bytes [`write`](FileWriter::write) would write, without writing them.
     pub fn to_bytes(&self, compression: Compression) -> Result<Vec<u8>> {
         self.build(compression, KSTART_BIG_FILE)
     }
@@ -275,25 +277,30 @@ impl RootFile {
     }
 }
 
-/// A subdirectory (a `TDirectory`) being built inside a [`RootFile`]; see
-/// [`RootFile::dir`]. The methods take and return `self`, so return the builder
-/// from the `dir` closure.
-#[doc(alias = "Dir", alias = "TDirectory", alias = "mkdir")]
-#[must_use = "SubdirBuilder methods consume self; return it from the closure"]
-pub struct SubdirBuilder {
+/// A subdirectory (a `TDirectory`) being composed inside a [`FileWriter`]; see
+/// [`FileWriter::dir`]. The methods take and return `self`, so return the
+/// `SubdirWriter` from the `dir` closure.
+#[doc(
+    alias = "SubdirBuilder",
+    alias = "Dir",
+    alias = "TDirectory",
+    alias = "mkdir"
+)]
+#[must_use = "SubdirWriter methods consume self; return it from the closure"]
+pub struct SubdirWriter {
     entries: Entries,
 }
 
-impl SubdirBuilder {
+impl SubdirWriter {
     /// Add an object to this subdirectory.
     #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> SubdirBuilder {
+    pub fn add(mut self, object: &dyn WriteRoot) -> SubdirWriter {
         self.entries.add(object);
         self
     }
 
     /// Put a multi-record object (a `TTree`, an RNTuple) in this subdirectory.
-    pub fn put(mut self, object: impl WriteInto + 'static) -> SubdirBuilder {
+    pub fn put(mut self, object: impl WriteInto + 'static) -> SubdirWriter {
         self.entries.put(object);
         self
     }

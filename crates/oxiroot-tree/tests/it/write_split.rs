@@ -4,8 +4,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_tree::{write_tree_file, Branch, BranchValues, SplitMember, TTree};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_tree::{write_tree_file, Branch, BranchValues, SplitMember, TreeReader};
 
 fn split_branch() -> Branch {
     // Mirrors `fixtures/tree_split.root`: Hit = {float x; float y; int id;}.
@@ -23,8 +23,8 @@ fn split_branch() -> Branch {
     )
 }
 
-fn assert_hits_roundtrip(f: &RFile) {
-    let t = TTree::open(f, "T").expect("open tree");
+fn assert_hits_roundtrip(f: &FileReader) {
+    let t = TreeReader::open(f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     assert_eq!(t.branch_names(), ["hits.x", "hits.y", "hits.id"]);
     assert_eq!(
@@ -43,7 +43,7 @@ fn writes_split_vector_zstd() {
     // payloads round-trip when Zstd-compressed. (/tmp file also checked by ROOT.)
     let out = PathBuf::from("/tmp/oxiroot_tree_split_zstd.root");
     write_tree_file(&out, "T", &[split_branch()], Compression::Zstd(5)).expect("write");
-    assert_hits_roundtrip(&RFile::open(&out).expect("reopen"));
+    assert_hits_roundtrip(&FileReader::open(&out).expect("reopen"));
 }
 
 #[test]
@@ -51,8 +51,8 @@ fn writes_split_vector_of_struct() {
     let out = PathBuf::from("/tmp/oxiroot_tree_split.root");
     write_tree_file(&out, "T", &[split_branch()], Compression::None).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     assert_eq!(t.branch_names(), ["hits.x", "hits.y", "hits.id"]);
 
@@ -115,8 +115,8 @@ fn writes_split_vector_general_struct() {
     let out = PathBuf::from("/tmp/oxiroot_tree_split_particle.root");
     write_tree_file(&out, "T", &[branch], Compression::None).expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 5);
     assert_eq!(
         t.read_branch(&f, "parts.px").unwrap(),

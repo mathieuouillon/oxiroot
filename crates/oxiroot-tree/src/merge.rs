@@ -1,27 +1,27 @@
 //! Concatenating trees — the `TTree` half of a `hadd`-style file merge.
 //!
-//! [`concat_trees`] reads the same branches from several [`TTree`]s and appends
+//! [`concat_trees`] reads the same branches from several [`TreeReader`]s and appends
 //! their entries into one writable [`Tree`], reconstructing each branch's kind
 //! (scalar, fixed array, jagged, `std::vector`, or string) so the result writes
 //! back the way it was read. [`append_trees`] streams the same merge into a
-//! [`TTreeWriter`], holding one input's entries at a time; the `oxiroot`
+//! [`TreeWriter`], holding one input's entries at a time; the `oxiroot`
 //! facade's file merger uses it for tree keys.
 
 use std::io::{Seek, Write};
 
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
-use crate::reader::{BranchMetaLite, TTree};
+use crate::reader::{BranchMetaLite, TreeReader};
 use crate::value::BranchValues;
-use crate::writer::{Branch, TTreeWriter, Tree};
+use crate::writer::{Branch, Tree, TreeWriter};
 
 /// Concatenate several `TTree`s entry-wise into one writable [`Tree`].
 ///
 /// Every input must hold the same branches — same names, element types, and
 /// kinds — as the first tree; their entries are appended in the given order
 /// (as ROOT's `hadd` does). Each `(file, tree)` pair is a tree together with the
-/// [`RFile`] it was opened from, since baskets are read on demand. The output
+/// [`FileReader`] it was opened from, since baskets are read on demand. The output
 /// tree's name is taken from the first input.
 ///
 /// # Errors
@@ -32,9 +32,9 @@ use crate::writer::{Branch, TTreeWriter, Tree};
 /// `std::vector<std::vector<T>>`, a `std::vector<bool>`, a multi-leaf
 /// "leaflist" branch, or a split-object member column); or if a tree has
 /// branches that could not be read at all (see
-/// [`TTree::unsupported_branches`]) — in which case the merge would silently
+/// [`TreeReader::unsupported_branches`]) — in which case the merge would silently
 /// drop data, so it is refused.
-pub fn concat_trees(inputs: &[(&RFile, &TTree)]) -> Result<Tree> {
+pub fn concat_trees(inputs: &[(&FileReader, &TreeReader)]) -> Result<Tree> {
     let &(first_file, first) = inputs
         .first()
         .ok_or_else(|| Error::Format("concat_trees: no input trees".into()))?;
@@ -88,10 +88,10 @@ pub fn concat_trees(inputs: &[(&RFile, &TTree)]) -> Result<Tree> {
 ///
 /// # Errors
 ///
-/// As [`concat_trees`], plus any error from [`TTreeWriter::write_batch`].
+/// As [`concat_trees`], plus any error from [`TreeWriter::write_batch`].
 pub fn append_trees<W: Write + Seek>(
-    writer: &mut TTreeWriter<W>,
-    inputs: &[(&RFile, &TTree)],
+    writer: &mut TreeWriter<W>,
+    inputs: &[(&FileReader, &TreeReader)],
 ) -> Result<u64> {
     let &(_, first) = inputs
         .first()

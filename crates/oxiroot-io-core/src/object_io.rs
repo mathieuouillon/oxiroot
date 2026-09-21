@@ -17,22 +17,22 @@ use std::io::Cursor;
 use crate::error::{decompress_payload, Error, Result};
 use crate::file::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use crate::streamer_gen::Cls;
-use crate::{Compression, RFile};
+use crate::{Compression, FileReader};
 
 /// Read a ROOT object of this type from an open file by key name, auto-detecting
 /// the on-disk precision where one applies (`TH1D`/`F`/`I`/`S`/`C`/`L` all read
 /// into a `TH1`). This is the way to read any single object:
 ///
 /// ```ignore
-/// let f = RFile::open("in.root")?;
+/// let f = FileReader::open("in.root")?;
 /// let h = TH1::read_root(&f, "h")?;               // any of TH1D/F/I/S/C/L
 /// let s = TH1::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
 /// ```
 pub trait ReadRoot: Sized {
     /// Read the object stored under key `name` in the file's top directory.
-    fn read_root(file: &RFile, name: &str) -> Result<Self>;
+    fn read_root(file: &FileReader, name: &str) -> Result<Self>;
     /// Read the object stored under key `name` inside subdirectory `dir`.
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self>;
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self>;
 }
 
 /// A ROOT object this workspace can serialize. Implementors provide the class
@@ -105,7 +105,7 @@ pub trait WriteRoot {
 /// An object stored as several records rather than under a single key: data
 /// blocks placed anywhere in the file, then the key that locates them. A `TTree`
 /// (its baskets, then the tree) and an RNTuple (its envelopes and pages, then
-/// the anchor) are written this way. [`RootFile::put`](crate::RootFile::put)
+/// the anchor) are written this way. [`FileWriter::put`](crate::FileWriter::put)
 /// stores one in a file, next to any other objects.
 pub trait WriteInto {
     /// The class of the key that locates the object (e.g. `"TTree"`).
@@ -244,7 +244,7 @@ fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Result<Vec<u8
 
 /// Return a key's class name together with its decompressed object bytes,
 /// without checking the class.
-pub fn object_bytes_any(file: &RFile, name: &str) -> Result<(String, Vec<u8>)> {
+pub fn object_bytes_any(file: &FileReader, name: &str) -> Result<(String, Vec<u8>)> {
     let key = file
         .key(name)
         .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
@@ -257,7 +257,7 @@ pub fn object_bytes_any(file: &RFile, name: &str) -> Result<(String, Vec<u8>)> {
 /// the object-reference map ([`crate::object::TagReader`]) to resolve the class
 /// back-references inside a collection (a `THStack`'s `TList` of histograms, a
 /// `TMultiGraph`'s `TList` of graphs).
-pub fn object_bytes_any_keyed(file: &RFile, name: &str) -> Result<(String, Vec<u8>, usize)> {
+pub fn object_bytes_any_keyed(file: &FileReader, name: &str) -> Result<(String, Vec<u8>, usize)> {
     let key = file
         .key(name)
         .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;

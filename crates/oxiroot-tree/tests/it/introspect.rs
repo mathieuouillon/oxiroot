@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{LeafType, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{LeafType, TreeReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -14,8 +14,8 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn introspects_branches_without_reading() {
-    let f = RFile::open(fixture("tree_flat.root")).expect("open");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let f = FileReader::open(fixture("tree_flat.root")).expect("open");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
 
     // Element type + shape are available without reading the data.
     assert_eq!(t.branch_type("i4"), Some(LeafType::I32));
@@ -31,8 +31,8 @@ fn introspects_branches_without_reading() {
 
 #[test]
 fn branch_values_helpers() {
-    let f = RFile::open(fixture("tree_flat.root")).expect("open");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let f = FileReader::open(fixture("tree_flat.root")).expect("open");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
 
     let i4 = t.read_branch(&f, "i4").expect("read i4");
     assert_eq!(i4.len(), 5);

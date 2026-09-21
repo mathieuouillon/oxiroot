@@ -5,18 +5,20 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_friend.root"))
-        .expect("open fixture")
+fn fixture() -> FileReader {
+    FileReader::open(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_friend.root"),
+    )
+    .expect("open fixture")
 }
 
 #[test]
 fn reads_persisted_friend_list() {
     let f = fixture();
-    let t = TTree::open(&f, "t").expect("open main tree");
+    let t = TreeReader::open(&f, "t").expect("open main tree");
     let friends = t.friends();
     assert_eq!(friends.len(), 1);
     let fr = &friends[0];
@@ -30,10 +32,10 @@ fn reads_persisted_friend_list() {
 #[test]
 fn friend_branch_aligns_by_entry() {
     let f = fixture();
-    let t = TTree::open(&f, "t").expect("open main tree");
+    let t = TreeReader::open(&f, "t").expect("open main tree");
     let fr = &t.friends()[0];
     // The friend lives in the same file here, so reuse `f`.
-    let friend = TTree::open(&f, fr.tree_name()).expect("open friend tree");
+    let friend = TreeReader::open(&f, fr.tree_name()).expect("open friend tree");
 
     let x = t.read_branch(&f, "x").unwrap();
     let y = friend.read_branch(&f, "y").unwrap();
@@ -50,10 +52,10 @@ fn friend_branch_aligns_by_entry() {
 #[test]
 fn a_tree_without_friends_has_an_empty_list() {
     // A plain tree's fFriends pointer is null; it reads back as no friends.
-    let f = RFile::open(
+    let f = FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_flat.root"),
     )
     .expect("open flat fixture");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert!(t.friends().is_empty());
 }

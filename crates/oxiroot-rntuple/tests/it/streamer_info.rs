@@ -4,13 +4,13 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{Compression, RFile, RootFile, StreamerRegistry};
-use oxiroot_rntuple::{Column, Field, Ntuple, RNTupleWriter};
+use oxiroot_io_core::{Compression, FileReader, FileWriter, StreamerRegistry};
+use oxiroot_rntuple::{Column, Field, Ntuple, NtupleWriter};
 
 fn root_written() -> StreamerRegistry {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/rntuple_user_uncompressed.root");
-    RFile::open(path).unwrap().streamer_registry().unwrap()
+    FileReader::open(path).unwrap().streamer_registry().unwrap()
 }
 
 fn hit(ids: Vec<i32>) -> Column {
@@ -25,7 +25,7 @@ fn hit(ids: Vec<i32>) -> Column {
 }
 
 fn registry(bytes: Vec<u8>) -> StreamerRegistry {
-    RFile::from_bytes(bytes)
+    FileReader::from_bytes(bytes)
         .unwrap()
         .streamer_registry()
         .unwrap()
@@ -58,13 +58,16 @@ fn one_shot_file_describes_the_anchor_and_user_classes_like_root() {
 #[test]
 fn streamed_file_describes_the_anchor_and_user_classes() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_stream_streamers.root");
-    let mut w = RNTupleWriter::create(&path, "ntpl", Compression::None).unwrap();
+    let mut w = NtupleWriter::create(&path, "ntpl", Compression::None).unwrap();
     for k in 0..2 {
         w.write_batch(&[Field::new("hit", hit(vec![k, k + 1]))])
             .unwrap();
     }
     w.finish().unwrap();
-    let ours = RFile::open(&path).unwrap().streamer_registry().unwrap();
+    let ours = FileReader::open(&path)
+        .unwrap()
+        .streamer_registry()
+        .unwrap();
     let root = root_written();
     assert_eq!(ours.class_names(), ["ROOT::RNTuple", "Hit"]);
     assert_eq!(ours.get("Hit"), root.get("Hit"));
@@ -81,7 +84,7 @@ fn classes_with_other_members_are_not_described() {
             ("label".into(), Column::Str(vec!["a".into()])),
         ],
     };
-    let bytes = RootFile::create("t.root")
+    let bytes = FileWriter::create("t.root")
         .put(Ntuple::new("a", vec![Field::new("t", tagged)]))
         .dir("d", |d| {
             d.put(Ntuple::new("b", vec![Field::new("hit", hit(vec![3]))]))
@@ -101,6 +104,9 @@ fn schema_extended_files_are_described_too() {
             Compression::None,
         )
         .unwrap();
-    let ours = RFile::open(&path).unwrap().streamer_registry().unwrap();
+    let ours = FileReader::open(&path)
+        .unwrap()
+        .streamer_registry()
+        .unwrap();
     assert_eq!(ours.class_names(), ["ROOT::RNTuple", "Hit"]);
 }

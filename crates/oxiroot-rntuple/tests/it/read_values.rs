@@ -4,19 +4,19 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{ColumnValues, RNTuple};
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::{ColumnValues, NtupleReader};
 
-fn open(name: &str) -> RFile {
+fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures")
         .join(name);
-    RFile::open(path).expect("open fixture")
+    FileReader::open(path).expect("open fixture")
 }
 
 fn check_fixture(name: &str) {
     let file = open(name);
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open RNTuple");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.num_entries(), 5, "{name}");
 
     let col = |i| ntpl.read_column(&file, i).expect("read column");

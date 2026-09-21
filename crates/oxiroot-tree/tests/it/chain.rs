@@ -1,12 +1,12 @@
-//! Multi-branch read and TChain (B12).
+//! Multi-branch read and ChainReader (B12).
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TChain, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, ChainReader, TreeReader};
 
-fn open() -> RFile {
-    RFile::open(
+fn open() -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join("tree_flat.root"),
@@ -17,7 +17,7 @@ fn open() -> RFile {
 #[test]
 fn reads_several_branches_at_once() {
     let f = open();
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     let cols: Vec<BranchValues> = ["i4", "b1"]
         .iter()
         .map(|&n| t.read_branch(&f, n).expect("read"))
@@ -35,7 +35,7 @@ fn chain_concatenates_across_files() {
     // Chain the same file twice — a stand-in for a dataset split across files.
     let f1 = open();
     let f2 = open();
-    let mut chain = TChain::new();
+    let mut chain = ChainReader::new();
     chain.add(&f1, "Events").expect("add 1");
     chain.add(&f2, "Events").expect("add 2");
 

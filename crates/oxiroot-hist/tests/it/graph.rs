@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{GraphErrors, Hist, ReadRoot, TGraph, WriteRoot};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -16,7 +16,7 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn reads_root_written_graphs() {
-    let f = RFile::open(fixture("graphs.root")).expect("open");
+    let f = FileReader::open(fixture("graphs.root")).expect("open");
 
     let g = TGraph::read_root(&f, "g").expect("read g");
     assert_eq!(g.class_name(), "TGraph");
@@ -50,12 +50,12 @@ fn reads_root_written_graphs() {
 
 #[test]
 fn graphs_round_trip() {
-    let f = RFile::open(fixture("graphs.root")).expect("open");
+    let f = FileReader::open(fixture("graphs.root")).expect("open");
     for name in ["g", "ge", "gae"] {
         let g = TGraph::read_root(&f, name).unwrap();
         let out = std::env::temp_dir().join(format!("oxiroot_graph_{name}.root"));
         g.write_root(&out, Compression::None).expect("write");
-        let back = TGraph::read_root(&RFile::open(&out).unwrap(), name).unwrap();
+        let back = TGraph::read_root(&FileReader::open(&out).unwrap(), name).unwrap();
         assert_eq!(back, g, "{name} changed across round-trip");
     }
 }
@@ -90,7 +90,7 @@ fn graphs_build_from_scratch() {
     for g in [&plain, &sym, &asym] {
         let out = std::env::temp_dir().join(format!("oxiroot_graph_scratch_{}.root", g.name));
         g.write_root(&out, Compression::Zstd(3)).expect("write");
-        let back = TGraph::read_root(&RFile::open(&out).unwrap(), &g.name).unwrap();
+        let back = TGraph::read_root(&FileReader::open(&out).unwrap(), &g.name).unwrap();
         assert_eq!(back, *g);
     }
 
@@ -116,7 +116,7 @@ fn empty_graphs_round_trip() {
         assert!(g.is_empty());
         let out = std::env::temp_dir().join(format!("oxiroot_graph_empty_{}.root", g.name));
         g.write_root(&out, Compression::None).expect("write");
-        let back = TGraph::read_root(&RFile::open(&out).unwrap(), &g.name).unwrap();
+        let back = TGraph::read_root(&FileReader::open(&out).unwrap(), &g.name).unwrap();
         assert_eq!(back, *g);
     }
 }
@@ -125,7 +125,7 @@ fn empty_graphs_round_trip() {
 /// we read it back as a `TH1F` (previously this member was skipped).
 #[test]
 fn reads_root_graph_histogram() {
-    let f = RFile::open(fixture("graph_hist.root")).expect("open");
+    let f = FileReader::open(fixture("graph_hist.root")).expect("open");
     let g = TGraph::read_root(&f, "g").expect("read g");
     let h = g
         .histogram
@@ -133,7 +133,7 @@ fn reads_root_graph_histogram() {
     assert_eq!(h.class_name(), "TH1F"); // ROOT's fHistogram is a TH1F
     assert_eq!(h.xaxis.nbins, 100); // ROOT's default frame binning
                                     // The plain graphs in graphs.root were never drawn, so they have no frame.
-    let g0 = TGraph::read_root(&RFile::open(fixture("graphs.root")).unwrap(), "g").unwrap();
+    let g0 = TGraph::read_root(&FileReader::open(fixture("graphs.root")).unwrap(), "g").unwrap();
     assert!(g0.histogram.is_none());
 }
 
@@ -158,7 +158,7 @@ fn graph_histogram_round_trips() {
 
     let out = std::env::temp_dir().join("oxiroot_graph_hist_rt.root");
     g.write_root(&out, Compression::Zstd(3)).expect("write");
-    let back = TGraph::read_root(&RFile::open(&out).unwrap(), "g").unwrap();
+    let back = TGraph::read_root(&FileReader::open(&out).unwrap(), "g").unwrap();
     assert_eq!(back, g); // exact round-trip, including the TH1F frame
     assert_eq!(back.histogram.unwrap().xaxis.nbins, 20);
     let _ = std::fs::remove_file(&out);

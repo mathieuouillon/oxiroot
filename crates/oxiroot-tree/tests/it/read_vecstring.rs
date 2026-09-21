@@ -1,16 +1,16 @@
 //! Read a std::vector<std::string> TTree branch (B11).
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 use std::path::PathBuf;
 #[test]
 fn reads_vector_of_strings() {
-    let f = RFile::open(
+    let f = FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join("tree_vecstring.root"),
     )
     .expect("open");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     assert_eq!(
         t.read_branch(&f, "vs").expect("vs"),

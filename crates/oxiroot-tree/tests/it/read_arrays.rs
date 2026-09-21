@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -13,8 +13,8 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn reads_arrays_and_strings() {
-    let f = RFile::open(fixture("tree_arrays.root")).expect("open");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let f = FileReader::open(fixture("tree_arrays.root")).expect("open");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     let read = |n| t.read_branch(&f, n).expect("read branch");
 
     // Fixed-size array x[3].

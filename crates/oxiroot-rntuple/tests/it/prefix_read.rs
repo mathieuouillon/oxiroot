@@ -1,11 +1,11 @@
-//! `RNTuple::read_field_prefix(m)` must equal `read_field()` truncated to `m`,
+//! `NtupleReader::read_field_prefix(m)` must equal `read_field()` truncated to `m`,
 //! for every field of every fixture and a spread of `m` (including 0, past the
 //! end, and — for the multi-cluster fixture — values that fall mid-file).
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::RNTuple;
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::NtupleReader;
 
 fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(
@@ -37,8 +37,8 @@ const FIXTURES: &[&str] = &[
 #[test]
 fn prefix_read_equals_truncated_full_read() {
     for &fx in FIXTURES {
-        let file = RFile::from_bytes(fixture(fx)).expect("parse file");
-        let ntpl = RNTuple::open(&file, "ntpl").expect("open ntpl");
+        let file = FileReader::from_bytes(fixture(fx)).expect("parse file");
+        let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
         let total = ntpl.num_entries() as usize;
 
         // 0, a few, mid-file (splits the multi-cluster file across clusters),

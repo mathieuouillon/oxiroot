@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::object_io::{object_bytes_any, ReadRoot, WriteRoot};
 use crate::streamer::{read_tobject, write_tobject};
 use crate::streamer_gen::{base, basic, strf, Cls};
-use crate::RFile;
+use crate::FileReader;
 
 /// `fBits` ROOT writes for a `TParameter`'s embedded `TObject` (`TObjString`'s is
 /// `0`). Cosmetic, but matched so written files equal ROOT's byte-for-byte.
@@ -286,40 +286,48 @@ pub(crate) fn member_classes(class: &str) -> Vec<Cls<'static>> {
     }
 }
 
-pub(crate) fn read_tobjstring(file: &RFile, name: &str) -> Result<TObjString> {
+pub(crate) fn read_tobjstring(file: &FileReader, name: &str) -> Result<TObjString> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tobjstring(name, &class, &object)
 }
 
-pub(crate) fn read_tobjstring_in(file: &RFile, subdir: &str, name: &str) -> Result<TObjString> {
+pub(crate) fn read_tobjstring_in(
+    file: &FileReader,
+    subdir: &str,
+    name: &str,
+) -> Result<TObjString> {
     let (class, object) = file.object_in(subdir, name)?;
     decode_tobjstring(name, &class, &object)
 }
 
-pub(crate) fn read_tparameter(file: &RFile, name: &str) -> Result<TParameter> {
+pub(crate) fn read_tparameter(file: &FileReader, name: &str) -> Result<TParameter> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tparameter(name, &class, &object)
 }
 
-pub(crate) fn read_tparameter_in(file: &RFile, subdir: &str, name: &str) -> Result<TParameter> {
+pub(crate) fn read_tparameter_in(
+    file: &FileReader,
+    subdir: &str,
+    name: &str,
+) -> Result<TParameter> {
     let (class, object) = file.object_in(subdir, name)?;
     decode_tparameter(name, &class, &object)
 }
 
 impl ReadRoot for TObjString {
-    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         read_tobjstring(file, name)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
         read_tobjstring_in(file, dir, name)
     }
 }
 
 impl ReadRoot for TParameter {
-    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         read_tparameter(file, name)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
         read_tparameter_in(file, dir, name)
     }
 }

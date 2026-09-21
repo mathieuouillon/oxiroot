@@ -2,16 +2,16 @@
 //! Fuzz the TTree read path (tree object → branches → baskets → values):
 //! arbitrary bytes must never panic.
 use libfuzzer_sys::fuzz_target;
-use oxiroot_io_core::RFile;
-use oxiroot_tree::TTree;
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::TreeReader;
 
 fuzz_target!(|data: &[u8]| {
-    let Ok(f) = RFile::from_bytes(data.to_vec()) else {
+    let Ok(f) = FileReader::from_bytes(data.to_vec()) else {
         return;
     };
     let names: Vec<String> = f.keys().iter().take(4).map(|k| k.name.clone()).collect();
     for name in &names {
-        let Ok(t) = TTree::open(&f, name) else {
+        let Ok(t) = TreeReader::open(&f, name) else {
             continue;
         };
         let _ = t.num_entries();

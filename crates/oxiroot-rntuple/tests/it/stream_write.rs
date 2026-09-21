@@ -4,14 +4,14 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{Column, Field, FieldValues, RNTuple, RNTupleWriter};
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader, NtupleWriter};
 
 #[test]
 fn streams_multiple_clusters() {
     let out = PathBuf::from("/tmp/rootrs_stream_ntuple.root");
     let mut w =
-        RNTupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::None).expect("create");
+        NtupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::None).expect("create");
 
     // Three clusters of 4 entries each (12 total), pushed one batch at a time.
     let mut expect_x = Vec::new();
@@ -35,8 +35,8 @@ fn streams_multiple_clusters() {
     }
     w.finish().expect("finish");
 
-    let f = RFile::open(&out).expect("reopen");
-    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let f = FileReader::open(&out).expect("reopen");
+    let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.num_entries(), 12, "all entries across clusters");
     assert_eq!(
         ntpl.read_field(&f, "x").unwrap(),
@@ -55,7 +55,7 @@ fn streams_collections_and_strings_across_clusters() {
     // each cluster's index offsets to reconstruct the values across clusters.
     let out = PathBuf::from("/tmp/rootrs_stream_coll.root");
     let mut w =
-        RNTupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::Zstd(5)).expect("create");
+        NtupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::Zstd(5)).expect("create");
 
     let v0 = vec![vec![], vec![1.0f32], vec![2.0, 2.0]];
     let s0 = vec!["a".to_string(), "bb".to_string(), "ccc".to_string()];
@@ -86,8 +86,8 @@ fn streams_collections_and_strings_across_clusters() {
     .expect("batch 1");
     w.finish().expect("finish");
 
-    let f = RFile::open(&out).expect("reopen");
-    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let f = FileReader::open(&out).expect("reopen");
+    let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.num_entries(), 5);
 
     let mut expect_v = v0;
@@ -108,7 +108,7 @@ fn streams_collections_and_strings_across_clusters() {
 fn write_batch_rejects_changed_schema() {
     let out = PathBuf::from("/tmp/rootrs_stream_schema_change.root");
     let mut w =
-        RNTupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::None).expect("create");
+        NtupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::None).expect("create");
 
     w.write_batch(&[Field::i32("x", vec![1, 2, 3])])
         .expect("first batch fixes the schema");
@@ -133,7 +133,7 @@ fn write_batch_rejects_changed_schema() {
 #[test]
 fn streaming_large_writes_big_format() {
     let out = PathBuf::from("/tmp/rootrs_stream_large.root");
-    let mut w = RNTupleWriter::create_large(&out, "ntpl", oxiroot_io_core::Compression::None)
+    let mut w = NtupleWriter::create_large(&out, "ntpl", oxiroot_io_core::Compression::None)
         .expect("create_large");
     w.write_batch(&[
         Field::i32("x", vec![1, 2, 3]),
@@ -146,12 +146,12 @@ fn streaming_large_writes_big_format() {
 
     // The 64-bit container round-trips through the reader with all entries in
     // order across both clusters.
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(
         f.header().is_big(),
         "create_large writes the 64-bit container"
     );
-    let ntpl = RNTuple::open(&f, "ntpl").expect("open");
+    let ntpl = NtupleReader::open(&f, "ntpl").expect("open");
     assert_eq!(ntpl.num_entries(), 5);
     assert_eq!(
         ntpl.read_field(&f, "x").unwrap(),

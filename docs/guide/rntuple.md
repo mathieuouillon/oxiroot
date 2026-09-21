@@ -30,7 +30,7 @@ Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
 !!! note
     Every field must have the same number of entries (the first field defines
     the entry count). The entry count is a 32-bit field on disk, so a single
-    write is capped at `u32::MAX` entries — use [`RNTupleWriter`](#streaming-writes)
+    write is capped at `u32::MAX` entries — use [`NtupleWriter`](#streaming-writes)
     to split a larger dataset across clusters.
 
 ### Scalar field constructors
@@ -205,7 +205,7 @@ the file would exceed 2 GiB.
 
 ## Streaming writes
 
-`RNTupleWriter` writes one *cluster* per call, so a large dataset is never held
+`NtupleWriter` writes one *cluster* per call, so a large dataset is never held
 in memory all at once. Each `write_batch` flushes a cluster; the first batch
 fixes the schema (and writes the header); `finish` writes the page list, footer,
 and anchor.
@@ -213,7 +213,7 @@ and anchor.
 ```rust
 use oxiroot::prelude::*;
 
-let mut w = RNTupleWriter::create("big.root", "events", Compression::Zstd(5))?;
+let mut w = NtupleWriter::create("big.root", "events", Compression::Zstd(5))?;
 
 for chunk in 0..3 {
     let base = chunk * 1000;
@@ -226,10 +226,10 @@ w.finish()?;
 
 | Constructor | Container | Use when |
 | --- | --- | --- |
-| `RNTupleWriter::create(path, name, compression)` | 32-bit | total file `<= 2 GiB` |
-| `RNTupleWriter::create_large(path, name, compression)` | 64-bit | file may exceed 2 GiB |
-| `RNTupleWriter::new(sink, file_name, name, compression)` | 32-bit | any `Write + Seek` sink |
-| `RNTupleWriter::new_large(sink, file_name, name, compression)` | 64-bit | large file into a custom sink |
+| `NtupleWriter::create(path, name, compression)` | 32-bit | total file `<= 2 GiB` |
+| `NtupleWriter::create_large(path, name, compression)` | 64-bit | file may exceed 2 GiB |
+| `NtupleWriter::new(sink, file_name, name, compression)` | 32-bit | any `Write + Seek` sink |
+| `NtupleWriter::new_large(sink, file_name, name, compression)` | 64-bit | large file into a custom sink |
 
 !!! warning
     Every batch must share the same field schema (field names, types, and
@@ -239,15 +239,15 @@ w.finish()?;
 
 ## Reading
 
-[`RNTuple::open`](#reading) reads the anchor, parses the schema, and indexes the
+[`NtupleReader::open`](#reading) reads the anchor, parses the schema, and indexes the
 clusters; column data is decoded on demand. Read a top-level field by name with
 `read_field`, which returns a `FieldValues`.
 
 ```rust
 use oxiroot::prelude::*;
 
-let file = RFile::open("data.root")?;
-let ntpl = RNTuple::open(&file, "events")?;
+let file = FileReader::open("data.root")?;
+let ntpl = NtupleReader::open(&file, "events")?;
 
 println!("{} entries", ntpl.num_entries());
 println!("fields: {:?}", ntpl.field_names());
@@ -294,8 +294,8 @@ slice the flattened sub-field arrays into per-entry groups:
 ```rust
 use oxiroot::prelude::*;
 
-let file = RFile::open("data.root")?;
-let ntpl = RNTuple::open(&file, "events")?;
+let file = FileReader::open("data.root")?;
+let ntpl = NtupleReader::open(&file, "events")?;
 
 if let FieldValues::Nested { offsets, items } = ntpl.read_field(&file, "clusters")? {
     if let FieldValues::Record(fields) = *items {

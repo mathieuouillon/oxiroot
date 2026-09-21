@@ -31,7 +31,7 @@ fn main() -> oxiroot::Result<()> {
         for x in fills {
             h.fill(x);
         }
-        RootFile::create(path(file))
+        FileWriter::create(path(file))
             .add(&h)
             .add(&TObjString::new("skim v2").named("provenance"))
             .write(Compression::Zstd(5))?;

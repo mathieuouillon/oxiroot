@@ -3,11 +3,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
-fn open(name: &str) -> RFile {
-    RFile::open(
+fn open(name: &str) -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join(name),
@@ -18,7 +18,7 @@ fn open(name: &str) -> RFile {
 #[test]
 fn reads_entry_ranges() {
     let f = open("tree_multibasket.root");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.num_entries(), 5);
 
     // Full range equals read_branch.

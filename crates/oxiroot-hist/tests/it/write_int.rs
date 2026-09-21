@@ -3,7 +3,7 @@
 //! uproot/ROOT C++ when run by hand.
 
 use oxiroot_hist::{BinContentType, Hist, ReadRoot, WriteRoot, TH1, TH2, TH3};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 fn filled_th1() -> TH1 {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("int");
@@ -16,7 +16,7 @@ fn filled_th1() -> TH1 {
 }
 
 fn check_th1(out: &str, cls: &str, h: &TH1) {
-    let f = RFile::open(out).expect("reopen");
+    let f = FileReader::open(out).expect("reopen");
     assert_eq!(f.key("h").expect("key").class_name, cls);
     assert_eq!(
         TH1::read_root(&f, "h").expect("read back").values(),
@@ -63,7 +63,7 @@ fn th2i_th3i_round_trip() {
         .with_bin_content_type(BinContentType::I32)
         .write_root(&out, Compression::None)
         .expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(f.key("h2").expect("key").class_name, "TH2I");
     assert_eq!(TH2::read_root(&f, "h2").unwrap().values(), h2.values());
 
@@ -79,7 +79,7 @@ fn th2i_th3i_round_trip() {
         .with_bin_content_type(BinContentType::I32)
         .write_root(&out, Compression::None)
         .expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(f.key("h3").expect("key").class_name, "TH3I");
     assert_eq!(TH3::read_root(&f, "h3").unwrap().values(), h3.values());
 }

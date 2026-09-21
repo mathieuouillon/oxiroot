@@ -29,7 +29,7 @@ use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tobject, skip_versioned};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::axis::TAxis;
 use crate::base::{check_len, object_bytes_keyed, read_th1_base};
@@ -404,13 +404,13 @@ fn read_poly_graph(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Vec<f64>, V
 }
 
 /// Read a `TH2Poly` named `name` from `file`.
-pub(crate) fn read_th2poly(file: &RFile, name: &str) -> Result<TH2Poly> {
+pub(crate) fn read_th2poly(file: &FileReader, name: &str) -> Result<TH2Poly> {
     let (object, keylen) = object_bytes_keyed(file, name, "TH2Poly")?;
     decode_th2poly(name, &object, keylen)
 }
 
 /// Read a `TH2Poly` from subdirectory `subdir`.
-pub(crate) fn read_th2poly_in(file: &RFile, subdir: &str, name: &str) -> Result<TH2Poly> {
+pub(crate) fn read_th2poly_in(file: &FileReader, subdir: &str, name: &str) -> Result<TH2Poly> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     if class != "TH2Poly" {
         return Err(Error::Format(format!(

@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{Column, Field, FieldValues, RNTuple};
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
 
 #[test]
 fn writes_a_rich_rntuple_that_round_trips() {
@@ -54,8 +54,8 @@ fn writes_a_rich_rntuple_that_round_trips() {
     oxiroot_rntuple::write_rntuple_file(&out, "ntpl", &fields, oxiroot_io_core::Compression::None)
         .expect("write rntuple");
 
-    let f = RFile::open(&out).expect("reopen");
-    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let f = FileReader::open(&out).expect("reopen");
+    let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.num_entries(), 5);
 
     let field = |n| ntpl.read_field(&f, n).expect("read field");
@@ -119,8 +119,8 @@ fn writes_unsigned_and_more_vector_types() {
     oxiroot_rntuple::write_rntuple_file(&out, "ntpl", &fields, oxiroot_io_core::Compression::None)
         .expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
-    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let f = FileReader::open(&out).expect("reopen");
+    let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     let field = |n| ntpl.read_field(&f, n).expect("read field");
     // u32 round-trips with its 32-bit identity intact (not widened to u64).
     assert_eq!(field("u32"), FieldValues::U32(vec![1, 2, 3_000_000_000]));
@@ -168,8 +168,8 @@ fn writes_a_zstd_compressed_rntuple_that_round_trips() {
         "expected compressed file, got {file_len} bytes"
     );
 
-    let f = RFile::open(&out).expect("reopen");
-    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let f = FileReader::open(&out).expect("reopen");
+    let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.num_entries(), n as u64);
     assert_eq!(ntpl.read_field(&f, "x").expect("x"), FieldValues::I32(x));
     assert_eq!(ntpl.read_field(&f, "y").expect("y"), FieldValues::F64(y));

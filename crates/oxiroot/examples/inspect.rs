@@ -1,7 +1,7 @@
 //! A programmatic mini `oxroot ls`: open arbitrary ROOT files we did *not* write
 //! (bundled fixtures) and walk their key lists — printing each top-level object's
 //! class, on-disk size, cycle and name, then descending one level into any
-//! `TDirectory` — using only the `RFile` introspection surface (`keys()`,
+//! `TDirectory` — using only the `FileReader` introspection surface (`keys()`,
 //! `subdir()`, and the `TKey` fields). Reads fixtures; writes nothing.
 //!
 //! ```sh
@@ -56,7 +56,7 @@ fn print_key(key: &TKey, depth: usize) {
 
 /// Walk one file like `oxroot ls`, descending one level into any `TDirectory`,
 /// and return `(object_count, total_on_disk_bytes)`.
-fn walk(file: &RFile) -> (usize, u64) {
+fn walk(file: &FileReader) -> (usize, u64) {
     let (mut count, mut bytes) = (0usize, 0u64);
     // `keys()` yields the raw `TKey` records of the root directory; a negative
     // byte count marks freed space, so skip those, exactly as the CLI does.
@@ -90,7 +90,7 @@ fn walk(file: &RFile) -> (usize, u64) {
 fn inspect(name: &str, path: &str) -> oxiroot::Result<()> {
     // Opening only parses the file header and the root directory's key list;
     // object bodies are read lazily, on demand.
-    let file = RFile::open(path)?;
+    let file = FileReader::open(path)?;
     let header = file.header();
     println!("{name}");
     println!(
@@ -123,16 +123,16 @@ fn main() -> oxiroot::Result<()> {
     )?;
 
     // Beyond listing, the high-level accessors make targeted look-ups trivial.
-    // `key()` returns the newest cycle of a name; `TTree::open_in` resolves an
+    // `key()` returns the newest cycle of a name; `TreeReader::open_in` resolves an
     // object several directories deep — the sort of thing `oxroot ls -l` reports.
-    let file = RFile::open(nested_path)?;
+    let file = FileReader::open(nested_path)?;
     if let Some(top) = file.key("cal") {
         println!(
             "newest cycle of top-level `{}` is cycle {} ({})",
             top.name, top.cycle, top.class_name,
         );
     }
-    let events = TTree::open_in(&file, "cal/run2", "Events")?;
+    let events = TreeReader::open_in(&file, "cal/run2", "Events")?;
     println!(
         "resolved deeply-nested TTree `cal/run2/Events`: {} entries",
         events.num_entries(),
@@ -143,7 +143,7 @@ fn main() -> oxiroot::Result<()> {
     // `TStreamerInfo` — no typed model (TH1/TGraph/…) required. This is what lets
     // oxiroot inspect arbitrary classes (rootprint-style); an undecodable member
     // becomes `Value::Unsupported` instead of failing.
-    let file = RFile::open(concat!(
+    let file = FileReader::open(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../fixtures/analysis.root"
     ))?;

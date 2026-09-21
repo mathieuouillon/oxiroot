@@ -7,11 +7,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{object_bytes_any, Compression, RFile, ReadRoot, WriteRoot};
+use oxiroot_io_core::{object_bytes_any, Compression, FileReader, ReadRoot, WriteRoot};
 use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/linalg.root"))
+fn fixture() -> FileReader {
+    FileReader::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/linalg.root"))
         .expect("open fixture")
 }
 
@@ -72,7 +72,7 @@ fn single_object_write_root_round_trips() {
         .write_root(&out, Compression::None)
         .unwrap();
 
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     let s = TMatrixDSym::read_root(&f, "cov").unwrap();
     assert_eq!(s.dim(), 3);
     assert_eq!(s.get(0, 1), 0.5);

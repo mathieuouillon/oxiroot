@@ -14,7 +14,7 @@ fn sums_histograms_and_copies_other_objects() {
         for x in xs {
             h.fill(x);
         }
-        RootFile::create(tmp(tag))
+        FileWriter::create(tmp(tag))
             .add(&h)
             .add(&TObjString::new("provenance").named("meta"))
             .write(Compression::None)
@@ -30,7 +30,7 @@ fn sums_histograms_and_copies_other_objects() {
     assert!(report.skipped.is_empty(), "{report}");
 
     // The merged histogram is the bin-by-bin sum: 4 in-range entries total.
-    let fo = RFile::open(&out).unwrap();
+    let fo = FileReader::open(&out).unwrap();
     let h = TH1::read_root(&fo, "h").unwrap();
     assert_eq!(h.integral(), 4.0);
     // The non-summable object was carried over verbatim.
@@ -57,8 +57,8 @@ fn concatenates_tree_files() {
     assert_eq!(report.kind, MergeKind::Tree("Events".into()));
     assert_eq!(report.entries, Some(5));
 
-    let fo = RFile::open(&out).unwrap();
-    let t = TTree::open(&fo, "Events").unwrap();
+    let fo = FileReader::open(&out).unwrap();
+    let t = TreeReader::open(&fo, "Events").unwrap();
     assert_eq!(t.num_entries(), 5);
     assert_eq!(
         t.read_branch(&fo, "i").unwrap(),
@@ -78,11 +78,11 @@ fn concatenates_rntuple_files() {
     let out = tmp("rn_out");
     let report = merge_files(&out, &[tmp("rn_a"), tmp("rn_b")], Compression::None).unwrap();
 
-    assert_eq!(report.kind, MergeKind::RNTuple("ntpl".into()));
+    assert_eq!(report.kind, MergeKind::Ntuple("ntpl".into()));
     assert_eq!(report.entries, Some(5));
 
-    let fo = RFile::open(&out).unwrap();
-    let nt = RNTuple::open(&fo, "ntpl").unwrap();
+    let fo = FileReader::open(&out).unwrap();
+    let nt = NtupleReader::open(&fo, "ntpl").unwrap();
     assert_eq!(nt.num_entries(), 5);
     assert_eq!(
         nt.read_field(&fo, "x").unwrap(),
@@ -134,8 +134,8 @@ fn a_tree_merge_streams_one_batch_per_input() {
     let report = merge_files(&out, &inputs, Compression::Zstd(3)).unwrap();
     assert_eq!(report.entries, Some(6));
 
-    let fo = RFile::open(&out).unwrap();
-    let t = TTree::open(&fo, "Events").unwrap();
+    let fo = FileReader::open(&out).unwrap();
+    let t = TreeReader::open(&fo, "Events").unwrap();
     assert_eq!(
         t.read_branch(&fo, "i").unwrap(),
         BranchValues::I32(vec![0, 10, 11, 20, 21, 22])
@@ -193,8 +193,8 @@ fn an_rntuple_merge_streams_one_cluster_per_input() {
     let out = tmp("stream_rn_out");
     merge_files(&out, &inputs, Compression::Zstd(1)).unwrap();
 
-    let fo = RFile::open(&out).unwrap();
-    let nt = RNTuple::open(&fo, "ntpl").unwrap();
+    let fo = FileReader::open(&out).unwrap();
+    let nt = NtupleReader::open(&fo, "ntpl").unwrap();
     assert_eq!(nt.footer().cluster_groups[0].num_clusters, 3);
     assert_eq!(
         nt.read_field(&fo, "id").unwrap(),
@@ -225,8 +225,8 @@ fn empty_inputs_merge_to_an_empty_tree() {
     )
     .unwrap();
     assert_eq!(report.entries, Some(0));
-    let fo = RFile::open(&out).unwrap();
-    assert_eq!(TTree::open(&fo, "T").unwrap().num_entries(), 0);
+    let fo = FileReader::open(&out).unwrap();
+    assert_eq!(TreeReader::open(&fo, "T").unwrap().num_entries(), 0);
 }
 
 #[test]
@@ -238,6 +238,6 @@ fn the_output_cannot_be_an_input() {
     let err = merge_files(&path, &[&path], Compression::None).unwrap_err();
     assert!(err.to_string().contains("also an input"), "{err}");
     // The input is untouched.
-    let f = RFile::open(&path).unwrap();
-    assert_eq!(TTree::open(&f, "T").unwrap().num_entries(), 1);
+    let f = FileReader::open(&path).unwrap();
+    assert_eq!(TreeReader::open(&f, "T").unwrap().num_entries(), 1);
 }

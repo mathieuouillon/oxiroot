@@ -5,7 +5,7 @@ use std::error::Error;
 use std::path::Path;
 
 use oxiroot::tree::LeafType;
-use oxiroot::RFile;
+use oxiroot::FileReader;
 
 /// Every command returns this: `Ok(())` on success, else a boxed error printed
 /// by `main`.
@@ -22,11 +22,11 @@ pub fn is_url(target: &str) -> bool {
 /// Open a ROOT file from a local path or a remote URL — `http(s)://` (the `http`
 /// feature) or `root://` XRootD (the `xrootd` feature) — read lazily via
 /// byte-range requests.
-pub fn open_root(target: &str) -> Result<RFile, Box<dyn Error>> {
+pub fn open_root(target: &str) -> Result<FileReader, Box<dyn Error>> {
     if is_url(target) {
         #[cfg(any(feature = "http", feature = "xrootd"))]
         {
-            return Ok(RFile::open_url(target)?);
+            return Ok(FileReader::open_url(target)?);
         }
         #[cfg(not(any(feature = "http", feature = "xrootd")))]
         {
@@ -37,7 +37,7 @@ pub fn open_root(target: &str) -> Result<RFile, Box<dyn Error>> {
             .into());
         }
     }
-    Ok(RFile::open(target)?)
+    Ok(FileReader::open(target)?)
 }
 
 /// Split a `file.root:dir/object` spec into the file path and an optional
@@ -82,7 +82,7 @@ pub fn split_obj(obj: &str) -> (Option<&str>, &str) {
 /// The class name of the object at `(subdir, name)`, or an error if there is no
 /// such key.
 pub fn locate_class(
-    file: &RFile,
+    file: &FileReader,
     subdir: Option<&str>,
     name: &str,
 ) -> Result<String, Box<dyn Error>> {

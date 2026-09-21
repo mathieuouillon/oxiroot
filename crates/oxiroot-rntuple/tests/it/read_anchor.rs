@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{ColumnType, RNTuple, StructRole};
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::{ColumnType, NtupleReader, StructRole};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -14,13 +14,13 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn parses_anchor_and_envelopes() {
-    let f = RFile::open(fixture("rntuple_scalars_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("rntuple_scalars_uncompressed.root")).expect("open fixture");
 
     // The key is the RNTuple anchor.
     assert_eq!(f.key("ntpl").unwrap().class_name, "ROOT::RNTuple");
 
     // open() parses + checksum-verifies the anchor and both envelopes.
-    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     let a = ntpl.anchor();
 
     // Anchor field values decoded earlier from the raw bytes.
@@ -39,8 +39,8 @@ fn parses_anchor_and_envelopes() {
 
 #[test]
 fn parses_schema() {
-    let f = RFile::open(fixture("rntuple_scalars_uncompressed.root")).expect("open fixture");
-    let ntpl = RNTuple::open(&f, "ntpl").expect("open RNTuple");
+    let f = FileReader::open(fixture("rntuple_scalars_uncompressed.root")).expect("open fixture");
+    let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     let h = ntpl.header();
 
     // Seven fields, including the `_0` float child of the `vf` collection.

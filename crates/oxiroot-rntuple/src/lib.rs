@@ -23,7 +23,7 @@ mod writer;
 pub use oxiroot_io_core::Compression;
 
 // The format modules are private: the spec is still moving (the writer already
-// emits 1.0.1.0 frames). Reading and writing go through `RNTuple` and the
+// emits 1.0.1.0 frames). Reading and writing go through `NtupleReader` and the
 // writer types; the anchor, header and footer types stay public for schema
 // introspection.
 pub use anchor::{RNTupleAnchor, ANCHOR_CLASS};
@@ -34,5 +34,5 @@ pub use footer::{ClusterGroup, Footer};
 pub use header::{ColumnDescriptor, FieldDescriptor, Header, StructRole};
 pub use merge::{append_ntuples, concat_ntuples};
 pub use page::ColumnValues;
-pub use reader::RNTuple;
-pub use writer::{rntuple_file_bytes, write_rntuple_file, Column, Field, Ntuple, RNTupleWriter};
+pub use reader::NtupleReader;
+pub use writer::{rntuple_file_bytes, write_rntuple_file, Column, Field, Ntuple, NtupleWriter};

@@ -128,7 +128,7 @@ write_tree_file("tree.root", "Events", &branches, Compression::None)?;
 
 ## Streaming writes
 
-For trees too large to hold in memory, `TTreeWriter` appends entries in
+For trees too large to hold in memory, `TreeWriter` appends entries in
 batches. Each `write_batch` call emits one basket per branch straight to the
 sink, so only the current batch is resident — the way ROOT's `TTree::Fill`
 flushes baskets as they fill. `finish` writes the small `TTree` metadata, the
@@ -137,7 +137,7 @@ streamer info, and the key list, then patches the file header.
 ```rust
 use oxiroot::prelude::*;
 
-let mut w = TTreeWriter::create("big.root", "Events", Compression::Zstd(5))?;
+let mut w = TreeWriter::create("big.root", "Events", Compression::Zstd(5))?;
 for batch in 0..1_000 {
     let base = batch * 10_000;
     let x: Vec<f64> = (0..10_000).map(|i| (base + i) as f64).collect();
@@ -147,7 +147,7 @@ let entries = w.num_entries();
 w.finish()?; // commit metadata + header
 ```
 
-`TTreeWriter::new` takes any `Write + Seek` sink if you do not want a file path.
+`TreeWriter::new` takes any `Write + Seek` sink if you do not want a file path.
 Every batch must share the first batch's schema: branch names, element types,
 the jagged / `std::vector` flags, and fixed-array widths — a mismatch is an
 error. Split `std::vector<Struct>` branches are not supported here; use
@@ -155,13 +155,13 @@ error. Split `std::vector<Struct>` branches are not supported here; use
 
 ## Reading a tree
 
-Open a `TTree` by name from an `RFile`, then read branches by name.
+Open a `TTree` by name from a `FileReader`, then read branches by name.
 
 ```rust
 use oxiroot::prelude::*;
 
-let file = RFile::open("tree.root")?;
-let t = TTree::open(&file, "Events")?;
+let file = FileReader::open("tree.root")?;
+let t = TreeReader::open(&file, "Events")?;
 
 println!("{} entries: {:?}", t.num_entries(), t.branch_names());
 
@@ -271,19 +271,19 @@ for (name, why) in t.unsupported_branches() {
     `unsupported_branches`) rather than parsed at a guessed offset.
     `streamer_classes()` exposes the schema the file was written against.
 
-## Spanning files with `TChain`
+## Spanning files with `ChainReader`
 
-`TChain` reads a branch across several same-schema trees as one concatenated
-column, the way ROOT's `TChain` spans a dataset split over many files. The files
-are borrowed, so keep them alive for the chain's lifetime.
+`ChainReader` reads a branch across several same-schema trees as one
+concatenated column, the way ROOT's `TChain` spans a dataset split over many
+files. The files are borrowed, so keep them alive for the chain's lifetime.
 
 ```rust
 use oxiroot::prelude::*;
 
-let f1 = RFile::open("part1.root")?;
-let f2 = RFile::open("part2.root")?;
+let f1 = FileReader::open("part1.root")?;
+let f2 = FileReader::open("part2.root")?;
 
-let mut chain = TChain::new();
+let mut chain = ChainReader::new();
 chain.add(&f1, "Events")?;
 chain.add(&f2, "Events")?;
 

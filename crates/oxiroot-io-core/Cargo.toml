@@ -16,13 +16,13 @@ oxiroot-stat = { workspace = true, optional = true }
 oxiroot-formula = { workspace = true, optional = true }
 
 [features]
-# Opt-in memory-mapped read path (`RFile::open_mmap`). Off by default so the
+# Opt-in memory-mapped read path (`FileReader::open_mmap`). Off by default so the
 # default build stays pure safe Rust with no extra dependencies.
 mmap = ["dep:memmap2"]
-# Opt-in remote reads over HTTP(S) byte-range requests (`RFile::open_url`). Off
+# Opt-in remote reads over HTTP(S) byte-range requests (`FileReader::open_url`). Off
 # by default so the default build pulls no networking/TLS stack.
 http = ["dep:ureq"]
-# Opt-in remote reads over the XRootD `root://` protocol (`RFile::open_url`).
+# Opt-in remote reads over the XRootD `root://` protocol (`FileReader::open_url`).
 # Pure `std::net` (unix auth, no crypto) — adds no dependencies.
 xrootd = []
 # `From` conversions into `Error` from the statistics and formula error types,

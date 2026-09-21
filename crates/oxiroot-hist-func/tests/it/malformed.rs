@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use oxiroot_hist::ReadRoot;
 use oxiroot_hist_func::{TF1, TF2, TF3};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 /// Fixtures spanning the function layouts plus a few other classes, with one
 /// key name each.
@@ -28,7 +28,7 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 /// Try every reader; the point is that none panics regardless of the bytes.
-fn poke(f: &RFile, name: &str) {
+fn poke(f: &FileReader, name: &str) {
     let _ = TF1::read_root(f, name);
     let _ = TF2::read_root(f, name);
     let _ = TF3::read_root(f, name);
@@ -49,7 +49,7 @@ fn function_byte_flips_never_panic() {
             for v in [0x00u8, 0xff] {
                 let mut c = data.clone();
                 c[i] = v;
-                if let Ok(f) = RFile::from_bytes(c) {
+                if let Ok(f) = FileReader::from_bytes(c) {
                     poke(&f, key);
                 }
             }
@@ -63,7 +63,7 @@ fn function_truncations_never_panic() {
         let data = fixture(fix);
         let step = stride(data.len(), 2000);
         for len in (0..=data.len()).step_by(step) {
-            if let Ok(f) = RFile::from_bytes(data[..len].to_vec()) {
+            if let Ok(f) = FileReader::from_bytes(data[..len].to_vec()) {
                 poke(&f, key);
             }
         }
