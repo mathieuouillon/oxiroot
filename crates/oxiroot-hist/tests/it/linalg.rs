@@ -14,8 +14,16 @@ fn root_file_writes_linalg_objects() {
     let out = std::env::temp_dir().join("oxiroot_hist_linalg_rt.root");
     FileWriter::create(&out)
         .add(&TVectorD::new(vec![1.5, 2.5, 3.5]).named("v"))
-        .add(&TMatrixD::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).named("m"))
-        .add(&TMatrixDSym::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0]).named("s"))
+        .add(
+            &TMatrixD::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+                .unwrap()
+                .named("m"),
+        )
+        .add(
+            &TMatrixDSym::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0])
+                .unwrap()
+                .named("s"),
+        )
         .write(Compression::None)
         .unwrap();
 

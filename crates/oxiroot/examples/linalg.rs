@@ -28,7 +28,7 @@ fn main() -> oxiroot::Result<()> {
             1.0, 1.0, 1.0, // ∂/∂intercept at each point
             1.0, 2.0, 3.0, // ∂/∂slope at each point
         ],
-    )
+    )?
     .named("design");
 
     // A symmetric 3x3 covariance matrix — the full n*n given row-major (only the
@@ -41,7 +41,7 @@ fn main() -> oxiroot::Result<()> {
             0.010, 0.090, 0.020, //
             0.000, 0.020, 0.160, //
         ],
-    )
+    )?
     .named("cov");
 
     println!("built:");

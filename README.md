@@ -449,13 +449,15 @@ assert_eq!(TMultiGraph::read_root(&f, "mg")?.graphs()[0].name, "obs");
 matrix — the shape a fit's covariance takes) read and write byte-for-byte as
 ROOT's `TVectorT<double>` / `TMatrixT<double>` / `TMatrixTSym<double>`. The
 symmetric matrix is stored as the full matrix in memory but, like ROOT, written
-as just its upper triangle.
+as just its upper triangle; its constructor mirrors the upper triangle into the
+lower one, so the matrix reads back exactly as built. The constructors return
+`Error::LengthMismatch` if the number of elements does not match the shape.
 
 ```rust
 use oxiroot::prelude::*;
 FileWriter::create("fit.root")
     .add(&TVectorD::new(vec![91.2, 2.1]).named("pars"))
-    .add(&TMatrixDSym::new(2, vec![0.04, 0.01, 0.01, 0.09]).named("cov")) // covariance
+    .add(&TMatrixDSym::new(2, vec![0.04, 0.01, 0.01, 0.09])?.named("cov")) // covariance
     .write(Compression::None)?;
 
 let f = FileReader::open("fit.root")?;
