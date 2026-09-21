@@ -3,6 +3,7 @@
 
 mod assoc;
 mod concat;
+mod length_checks;
 mod malformed;
 mod mixed_file;
 mod multi_ntuple;

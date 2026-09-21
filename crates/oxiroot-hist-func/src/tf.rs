@@ -212,8 +212,9 @@ impl TF1 {
     /// let f = TF1::new("line", "[0]+[1]*x", 0.0, 2.0)
     ///     .unwrap()
     ///     .with_params(vec![1.0, 2.0]);
-    /// let g = TGraph::new(vec![0.0, 1.0], vec![1.0, 3.0]).with_function(f.to_graph_function());
+    /// let g = TGraph::new(vec![0.0, 1.0], vec![1.0, 3.0])?.with_function(f.to_graph_function());
     /// assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
+    /// # Ok::<(), oxiroot_io_core::Error>(())
     /// ```
     #[must_use]
     pub fn to_graph_function(&self) -> GraphFunction {

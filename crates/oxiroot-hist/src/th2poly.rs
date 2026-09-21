@@ -32,7 +32,7 @@ use oxiroot_io_core::streamer::{read_tobject, skip_versioned};
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{object_bytes_keyed, read_th1_base};
+use crate::base::{check_len, object_bytes_keyed, read_th1_base};
 
 /// One polygon bin of a [`TH2Poly`] (ROOT `TH2PolyBin`).
 #[derive(Debug, Clone, PartialEq)]
@@ -146,7 +146,16 @@ impl TH2Poly {
     /// Add a polygon bin from its vertices (`x[i]`, `y[i]`); returns the new
     /// bin's ROOT `number` (1-based, in insertion order). The bounding box is
     /// derived from the vertices.
-    pub fn add_bin(&mut self, x: &[f64], y: &[f64]) -> i32 {
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `y` is not as long as `x`; no bin is added.
+    pub fn add_bin(&mut self, x: &[f64], y: &[f64]) -> Result<i32> {
+        check_len("TH2Poly bin y", x.len(), y.len())?;
+        Ok(self.push_bin(x, y))
+    }
+
+    /// Add a polygon bin from vertex slices of equal length.
+    fn push_bin(&mut self, x: &[f64], y: &[f64]) -> i32 {
         let number = self.bins.len() as i32 + 1;
         let xmin = x.iter().copied().fold(f64::INFINITY, f64::min);
         let xmax = x.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -169,7 +178,7 @@ impl TH2Poly {
     /// Add a rectangular bin spanning `[xmin, xmax] × [ymin, ymax]`; returns its
     /// `number`. Convenience for ROOT's `AddBin(xmin, ymin, xmax, ymax)`.
     pub fn add_bin_rect(&mut self, xmin: f64, ymin: f64, xmax: f64, ymax: f64) -> i32 {
-        self.add_bin(
+        self.push_bin(
             &[xmin, xmin, xmax, xmax, xmin],
             &[ymin, ymax, ymax, ymin, ymin],
         )

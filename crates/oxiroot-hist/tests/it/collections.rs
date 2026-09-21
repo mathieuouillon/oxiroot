@@ -52,8 +52,16 @@ fn round_trips_collections_through_oxiroot() {
     let multi = TMultiGraph::new()
         .named("mg")
         .titled("my multigraph")
-        .add(TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 2.0, 3.0]).named("g1"))
-        .add(TGraph::new(vec![0.0, 1.0, 2.0], vec![3.0, 2.0, 1.0]).named("g2"));
+        .add(
+            TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 2.0, 3.0])
+                .unwrap()
+                .named("g1"),
+        )
+        .add(
+            TGraph::new(vec![0.0, 1.0, 2.0], vec![3.0, 2.0, 1.0])
+                .unwrap()
+                .named("g2"),
+        );
 
     let out = std::env::temp_dir().join("oxiroot_collections_rt.root");
     RootFile::create(&out)

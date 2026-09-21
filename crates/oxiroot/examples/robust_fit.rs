@@ -73,7 +73,7 @@ fn main() {
 
     // The model: a straight line `a + b·x`, seeded at (0, 0).
     let line = || Model::new("line", &["a", "b"], vec![0.0, 0.0], |x, p| p[0] + p[1] * x);
-    let data = Points::new(&xs, &ys, &sigmas);
+    let data = Points::new(&xs, &ys, &sigmas).expect("x, y and their errors have the same length");
 
     // --- 1. Ordinary least squares (Loss::Linear). ----------------------------
     // The default cost: every squared residual counts in full, so the four

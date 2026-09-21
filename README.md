@@ -322,11 +322,11 @@ let sig_bkg = Model::new(
 let r = h.fit(&sig_bkg);
 
 // The SAME `Model` + `.fit()` works on a TGraph …
-let graph = TGraph::with_errors(x.clone(), y.clone(), ex, ey).named("g");
+let graph = TGraph::with_errors(x.clone(), y.clone(), ex, ey)?.named("g");
 let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
 
 // … and on raw points (a `Vec`/slice of `Point`, or your own `FitData` impl).
-let data = Points::new(&x, &y, &sigma);
+let data = Points::new(&x, &y, &sigma)?;
 let peak = data.fit(&Model::gaussian("g").estimate_from(&data));
 ```
 
@@ -350,7 +350,7 @@ use oxiroot::prelude::*;
 let g = TGraph::with_errors(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],    // ex, ey
-).named("res").titled("resolution");
+)?.named("res").titled("resolution");
 g.write_root("graph.root", Compression::None)?;             // WriteRoot, like any object
 let same = TGraph::read_root(&RFile::open("graph.root")?, "res")?;
 ```
@@ -361,7 +361,7 @@ functions ROOT stores in `fFunctions` — read back as `GraphFunction`s (faithfu
 
 ```rust
 use oxiroot::prelude::*;
-let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])
+let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
     .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
 g.write_root("gfit.root", Compression::None)?;
@@ -429,8 +429,8 @@ let stack = THStack::new().named("hs").titled("backgrounds")
     .add(Hist::reg(50, 0.0, 100.0).double().named("zjets"))
     .add(Hist::reg(50, 0.0, 100.0).double().named("ttbar"));
 let graphs = TMultiGraph::new().named("mg")
-    .add(TGraph::new(vec![0.0, 1.0], vec![1.0, 2.0]).named("obs"))
-    .add(TGraph::new(vec![0.0, 1.0], vec![2.0, 1.0]).named("exp"));
+    .add(TGraph::new(vec![0.0, 1.0], vec![1.0, 2.0])?.named("obs"))
+    .add(TGraph::new(vec![0.0, 1.0], vec![2.0, 1.0])?.named("exp"));
 RootFile::create("plots.root").add(&stack).add(&graphs).write(Compression::None)?;
 
 let f = RFile::open("plots.root")?;

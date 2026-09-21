@@ -1,6 +1,8 @@
 //! [`FitData`] — the data abstraction every fit consumes — and [`FitExt`], the
 //! blanket trait that gives every dataset the `.fit(...)` methods.
 
+use oxiroot_stat::StatError;
+
 use crate::engine::run_fit;
 use crate::model::Model;
 use crate::result::{FitOptions, FitResult};
@@ -45,29 +47,36 @@ pub struct Points {
 }
 
 impl Points {
-    /// Build from parallel `x`, `y`, and `sigma` slices (truncated to the
-    /// shortest).
-    #[must_use]
-    pub fn new(x: &[f64], y: &[f64], sigma: &[f64]) -> Points {
+    /// Build from parallel `x`, `y`, and `sigma` slices.
+    ///
+    /// # Errors
+    /// [`StatError::LengthMismatch`] if `y` or `sigma` is not as long as `x`
+    /// (`left` is the length of `x`).
+    pub fn new(x: &[f64], y: &[f64], sigma: &[f64]) -> Result<Points, StatError> {
+        paired(x.len(), y.len())?;
+        paired(x.len(), sigma.len())?;
         let points = x
             .iter()
             .zip(y)
             .zip(sigma)
             .map(|((&x, &y), &s)| Point::new(x, y, s))
             .collect();
-        Points { points }
+        Ok(Points { points })
     }
 
     /// Build from `x`/`y` with unit (unweighted) errors — an ordinary
     /// least-squares fit.
-    #[must_use]
-    pub fn unweighted(x: &[f64], y: &[f64]) -> Points {
+    ///
+    /// # Errors
+    /// [`StatError::LengthMismatch`] if `y` is not as long as `x`.
+    pub fn unweighted(x: &[f64], y: &[f64]) -> Result<Points, StatError> {
+        paired(x.len(), y.len())?;
         let points = x
             .iter()
             .zip(y)
             .map(|(&x, &y)| Point::new(x, y, 1.0))
             .collect();
-        Points { points }
+        Ok(Points { points })
     }
 
     /// Build directly from [`Point`]s.
@@ -133,3 +142,12 @@ pub trait FitExt: FitData {
 }
 
 impl<T: FitData + ?Sized> FitExt for T {}
+
+/// Reject paired inputs whose lengths differ.
+fn paired(left: usize, right: usize) -> Result<(), StatError> {
+    if left == right {
+        Ok(())
+    } else {
+        Err(StatError::LengthMismatch { left, right })
+    }
+}

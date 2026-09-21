@@ -40,7 +40,7 @@ fn writes_and_reads_a_mixed_object_file() {
         .unwrap()
         .with_params(vec![2.0, 1.5]);
 
-    let mut g = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]);
+    let mut g = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
     g.name = "g".into();
 
     RootFile::create(tmp("mixed"))

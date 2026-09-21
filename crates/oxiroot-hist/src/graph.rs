@@ -16,7 +16,7 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
 use oxiroot_io_core::RFile;
 
-use crate::base::{bin_content_type_of, object_bytes_any, BinContentType};
+use crate::base::{bin_content_type_of, check_len, object_bytes_any, BinContentType};
 use crate::th1::TH1;
 
 /// Error bars attached to a graph's points.
@@ -163,10 +163,13 @@ pub struct TGraph {
 }
 
 impl TGraph {
-    /// Create a plain `TGraph` from paired `x`/`y` points (truncated to the
-    /// shorter length).
-    pub fn new(x: Vec<f64>, y: Vec<f64>) -> TGraph {
-        TGraph {
+    /// Create a plain `TGraph` from paired `x`/`y` points.
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `y` is not as long as `x`.
+    pub fn new(x: Vec<f64>, y: Vec<f64>) -> Result<TGraph> {
+        check_len("TGraph y", x.len(), y.len())?;
+        Ok(TGraph {
             name: String::new(),
             title: String::new(),
             x,
@@ -174,12 +177,19 @@ impl TGraph {
             errors: GraphErrors::None,
             histogram: None,
             functions: Vec::new(),
-        }
+        })
     }
 
     /// Create a `TGraphErrors` with symmetric x/y errors.
-    pub fn with_errors(x: Vec<f64>, y: Vec<f64>, ex: Vec<f64>, ey: Vec<f64>) -> TGraph {
-        TGraph {
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `y`, `ex` or `ey` is not as long as `x`.
+    pub fn with_errors(x: Vec<f64>, y: Vec<f64>, ex: Vec<f64>, ey: Vec<f64>) -> Result<TGraph> {
+        let n = x.len();
+        check_len("TGraphErrors y", n, y.len())?;
+        check_len("TGraphErrors ex", n, ex.len())?;
+        check_len("TGraphErrors ey", n, ey.len())?;
+        Ok(TGraph {
             name: String::new(),
             title: String::new(),
             x,
@@ -187,10 +197,13 @@ impl TGraph {
             errors: GraphErrors::Symmetric { ex, ey },
             histogram: None,
             functions: Vec::new(),
-        }
+        })
     }
 
     /// Create a `TGraphAsymmErrors` with independent low/high errors per axis.
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `y` or an error vector is not as long as `x`.
     #[allow(clippy::too_many_arguments)]
     pub fn with_asymm_errors(
         x: Vec<f64>,
@@ -199,8 +212,14 @@ impl TGraph {
         ex_high: Vec<f64>,
         ey_low: Vec<f64>,
         ey_high: Vec<f64>,
-    ) -> TGraph {
-        TGraph {
+    ) -> Result<TGraph> {
+        let n = x.len();
+        check_len("TGraphAsymmErrors y", n, y.len())?;
+        check_len("TGraphAsymmErrors ex_low", n, ex_low.len())?;
+        check_len("TGraphAsymmErrors ex_high", n, ex_high.len())?;
+        check_len("TGraphAsymmErrors ey_low", n, ey_low.len())?;
+        check_len("TGraphAsymmErrors ey_high", n, ey_high.len())?;
+        Ok(TGraph {
             name: String::new(),
             title: String::new(),
             x,
@@ -213,7 +232,7 @@ impl TGraph {
             },
             histogram: None,
             functions: Vec::new(),
-        }
+        })
     }
 
     /// Attach a display frame (`fHistogram`) — the axis-frame ROOT would build on

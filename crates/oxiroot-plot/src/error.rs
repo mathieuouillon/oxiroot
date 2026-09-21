@@ -16,6 +16,16 @@ pub enum Error {
     BadSize(String),
     /// A custom font could not be parsed.
     Font(String),
+    /// Inputs that must have the same length do not (e.g. `plot`'s `ys` and
+    /// `xs`); nothing was drawn.
+    LengthMismatch {
+        /// What has the wrong length, e.g. `plot ys`.
+        what: &'static str,
+        /// The length it must have (that of the input it is paired with).
+        expected: usize,
+        /// Its actual length.
+        found: usize,
+    },
     /// The output needs a crate feature this build does not enable.
     MissingFeature {
         /// The output that was asked for (e.g. `"PNG"`).
@@ -38,6 +48,14 @@ impl fmt::Display for Error {
             }
             Error::BadSize(m) => write!(f, "invalid figure size: {m}"),
             Error::Font(m) => write!(f, "font error: {m}"),
+            Error::LengthMismatch {
+                what,
+                expected,
+                found,
+            } => write!(
+                f,
+                "length mismatch: {what} has length {found}, expected {expected}"
+            ),
             Error::MissingFeature { output, feature } => write!(
                 f,
                 "{output} output needs the `{feature}` feature of oxiroot-plot"
@@ -57,13 +75,23 @@ impl From<std::io::Error> for Error {
 /// With the `hist` feature, plotting errors convert into the error the rest of
 /// oxiroot uses, so `?` works in a function returning `oxiroot::Result` that both
 /// reads files and saves figures. I/O errors keep their kind
-/// ([`oxiroot_io_core::Error::Io`]); the others become
+/// ([`oxiroot_io_core::Error::Io`]) and length mismatches stay
+/// [`oxiroot_io_core::Error::LengthMismatch`]; the others become
 /// [`oxiroot_io_core::Error::Plot`] with this error's message.
 #[cfg(feature = "hist")]
 impl From<Error> for oxiroot_io_core::Error {
     fn from(e: Error) -> Self {
         match e {
             Error::Io(e) => oxiroot_io_core::Error::from(e),
+            Error::LengthMismatch {
+                what,
+                expected,
+                found,
+            } => oxiroot_io_core::Error::LengthMismatch {
+                what: what.to_string(),
+                expected,
+                found,
+            },
             other => oxiroot_io_core::Error::Plot(other.to_string()),
         }
     }

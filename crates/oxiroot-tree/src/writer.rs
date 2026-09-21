@@ -1119,14 +1119,8 @@ impl<W: Write + Seek> TTreeWriter<W> {
         }
 
         // All branches in a batch must carry the same number of entries.
+        check_entry_counts(branches)?;
         let batch_entries = branches.first().map_or(0, Branch::n_entries);
-        if let Some(b) = branches.iter().find(|b| b.n_entries() != batch_entries) {
-            return Err(Error::Format(format!(
-                "branch {:?} has {} entries but the batch's first branch has {batch_entries}",
-                b.name,
-                b.n_entries()
-            )));
-        }
         if batch_entries == 0 {
             return Ok(());
         }
@@ -1291,9 +1285,25 @@ fn tree_bytes(
     })
 }
 
-/// Reject branches the writer cannot lay out: a fixed-array branch with rows
-/// of differing length, and a split branch whose members disagree.
+/// Reject branches whose entry counts differ from the first branch's: the tree
+/// has one entry count, so the others would be cut or read past.
+fn check_entry_counts(branches: &[Branch]) -> Result<()> {
+    let expected = branches.first().map_or(0, Branch::n_entries);
+    match branches.iter().find(|b| b.n_entries() != expected) {
+        Some(b) => Err(Error::LengthMismatch {
+            what: format!("branch {:?} entries", b.name),
+            expected: expected as usize,
+            found: b.n_entries() as usize,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Reject branches the writer cannot lay out: branches with different entry
+/// counts, a fixed-array branch with rows of differing length, and a split
+/// branch whose members disagree.
 fn check_branches(branches: &[Branch]) -> Result<()> {
+    check_entry_counts(branches)?;
     for b in branches {
         if !b.jagged() && !b.stl_vector() && b.is_jagged() {
             return Err(Error::Format(format!(

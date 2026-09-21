@@ -17,7 +17,7 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::RFile;
 
-use crate::base::object_bytes_any;
+use crate::base::{check_len, object_bytes_any};
 
 /// An (x, y) graph with asymmetric x errors and one or more layers of asymmetric
 /// y errors (ROOT `TGraphMultiErrors`).
@@ -47,6 +47,9 @@ pub struct TGraphMultiErrors {
 impl TGraphMultiErrors {
     /// Create a `TGraphMultiErrors` with x errors and a first y-error layer.
     /// Add further y-error layers with [`add_y_error`](Self::add_y_error).
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `y` or an error vector is not as long as `x`.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         x: Vec<f64>,
@@ -55,8 +58,14 @@ impl TGraphMultiErrors {
         ex_high: Vec<f64>,
         ey_low: Vec<f64>,
         ey_high: Vec<f64>,
-    ) -> TGraphMultiErrors {
-        TGraphMultiErrors {
+    ) -> Result<TGraphMultiErrors> {
+        let n = x.len();
+        check_len("TGraphMultiErrors y", n, y.len())?;
+        check_len("TGraphMultiErrors ex_low", n, ex_low.len())?;
+        check_len("TGraphMultiErrors ex_high", n, ex_high.len())?;
+        check_len("TGraphMultiErrors ey_low", n, ey_low.len())?;
+        check_len("TGraphMultiErrors ey_high", n, ey_high.len())?;
+        Ok(TGraphMultiErrors {
             name: String::new(),
             title: String::new(),
             x,
@@ -66,15 +75,19 @@ impl TGraphMultiErrors {
             ey_low: vec![ey_low],
             ey_high: vec![ey_high],
             sum_errors_mode: 0,
-        }
+        })
     }
 
     /// Add another independent layer of asymmetric y errors. Chainable.
-    #[must_use]
-    pub fn add_y_error(mut self, ey_low: Vec<f64>, ey_high: Vec<f64>) -> Self {
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `ey_low` or `ey_high` is not as long as `x`.
+    pub fn add_y_error(mut self, ey_low: Vec<f64>, ey_high: Vec<f64>) -> Result<Self> {
+        check_len("TGraphMultiErrors ey_low", self.x.len(), ey_low.len())?;
+        check_len("TGraphMultiErrors ey_high", self.x.len(), ey_high.len())?;
         self.ey_low.push(ey_low);
         self.ey_high.push(ey_high);
-        self
+        Ok(self)
     }
 
     /// Number of points (`fNpoints`).

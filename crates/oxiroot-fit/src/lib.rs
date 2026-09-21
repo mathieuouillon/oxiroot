@@ -9,12 +9,13 @@
 //! use oxiroot_fit::{FitExt, Model, Points};
 //!
 //! // Raw (x, y, σ) measurements; the same API works for a TH1 or a TGraph.
-//! let data = Points::new(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 5.0, 7.0], &[0.1; 4]);
+//! let data = Points::new(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 5.0, 7.0], &[0.1; 4])?;
 //! let line = Model::polynomial("line", 1).with_params(vec![0.0, 1.0]);
 //! let fit = data.fit(&line); // χ² by default
 //! assert!(fit.valid);
 //! assert!((fit.params[0] - 1.0).abs() < 1e-6); // intercept ≈ 1
 //! assert!((fit.params[1] - 2.0).abs() < 1e-6); // slope ≈ 2
+//! # Ok::<(), oxiroot_fit::StatError>(())
 //! ```
 //!
 //! The minimizer is the pure-Rust [Minuit2](https://crates.io/crates/minuit2)
@@ -39,4 +40,7 @@ mod result;
 
 pub use data::{FitData, FitExt, Point, Points};
 pub use model::Model;
+/// The error [`Points::new`] and [`Points::unweighted`] return for inputs of
+/// different lengths (from `oxiroot-stat`).
+pub use oxiroot_stat::StatError;
 pub use result::{FitMethod, FitOptions, FitResult, Loss, Minimizer};

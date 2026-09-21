@@ -96,7 +96,7 @@ fn th2poly_build_from_scratch() {
         .titled("built");
     assert_eq!(h.add_bin_rect(0.0, 0.0, 1.0, 1.0), 1);
     assert_eq!(h.add_bin_rect(1.0, 1.0, 2.0, 2.0), 2);
-    assert_eq!(h.add_bin(&[2.0, 3.0, 2.5], &[2.0, 2.0, 3.0]), 3); // a triangle
+    assert_eq!(h.add_bin(&[2.0, 3.0, 2.5], &[2.0, 2.0, 3.0]).unwrap(), 3); // a triangle
     assert_eq!(h.fill(0.5, 0.5), 1);
     assert_eq!(h.fill_weight(1.5, 1.5, 4.0), 2);
     assert_eq!(h.fill(2.5, 2.3), 3); // inside the triangle

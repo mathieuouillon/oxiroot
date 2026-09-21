@@ -50,7 +50,7 @@ fn main() -> oxiroot::Result<()> {
         .map(|x| 2000.0 * (-0.5 * ((x - 91.0) / 7.5).powi(2)).exp())
         .collect();
     let dey: Vec<f64> = dy.iter().map(|y| y.sqrt().max(15.0)).collect();
-    let data = TGraph::with_errors(dx.clone(), dy.clone(), vec![5.0; dx.len()], dey).named("data");
+    let data = TGraph::with_errors(dx.clone(), dy.clone(), vec![5.0; dx.len()], dey)?.named("data");
 
     // --- 1. Filled MC + data overlay, default matplotlib look. ---
     let mut ax = Axes::new();
@@ -154,7 +154,8 @@ fn main() -> oxiroot::Result<()> {
             }
         })
         .collect();
-    let rgraph = TGraph::with_errors(dx.clone(), ratio_y, vec![0.0; dx.len()], ratio_ey).named("r");
+    let rgraph =
+        TGraph::with_errors(dx.clone(), ratio_y, vec![0.0; dx.len()], ratio_ey)?.named("r");
 
     let (fig, mut main, mut ratio) = ratio_subplots();
     main.hist_with(
@@ -191,7 +192,7 @@ fn main() -> oxiroot::Result<()> {
     axs[1].hist_with(&mc, HistOpts::new().histtype(HistType::Fill));
     axs[2].errorbar(&data);
     axs[2].ylabel("Events");
-    axs[3].plot(&dx, &dy);
+    axs[3].plot(&dx, &dy)?;
     let gfig = gfig
         .sharex()
         .sharey()

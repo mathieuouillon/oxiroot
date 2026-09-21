@@ -23,7 +23,7 @@ is detected automatically on read.
 ```rust
 use oxiroot::prelude::*;
 
-let g = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]);
+let g = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?;
 assert_eq!(g.class_name(), "TGraph");
 assert_eq!(g.len(), 3);
 ```
@@ -35,7 +35,8 @@ read.
 ## Constructing graphs
 
 Each kind has a dedicated constructor. The coordinate and error vectors are
-paired by index; a plain graph truncates `x`/`y` to the shorter length.
+paired by index, so they must all have the same length; a constructor returns
+`Error::LengthMismatch` otherwise.
 
 ```rust
 use oxiroot::prelude::*;
@@ -44,7 +45,7 @@ use oxiroot::prelude::*;
 let plain = TGraph::new(
     vec![1.0, 2.0, 3.0],
     vec![10.0, 20.0, 30.0],
-);
+)?;
 
 // TGraphErrors: symmetric x and y error bars.
 let sym = TGraph::with_errors(
@@ -52,7 +53,7 @@ let sym = TGraph::with_errors(
     vec![10.0, 20.0, 30.0], // y
     vec![0.1, 0.1, 0.1],    // ex
     vec![1.0, 2.0, 1.5],    // ey
-);
+)?;
 
 // TGraphAsymmErrors: independent low/high errors on each axis.
 let asym = TGraph::with_asymm_errors(
@@ -62,7 +63,7 @@ let asym = TGraph::with_asymm_errors(
     vec![0.2, 0.2, 0.2],     // ex_high
     vec![1.0, 2.0, 1.5],     // ey_low
     vec![1.5, 2.5, 2.0],     // ey_high
-);
+)?;
 ```
 
 ## Naming and titling
@@ -77,7 +78,7 @@ use oxiroot::prelude::*;
 let g = TGraph::with_errors(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
-)
+)?
 .named("resolution")
 .titled("Detector resolution vs. p_{T}");
 ```
@@ -100,7 +101,7 @@ use oxiroot::prelude::*;
 let g = TGraph::with_errors(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
-)
+)?
 .named("resolution")
 .titled("Detector resolution");
 
@@ -114,7 +115,7 @@ to use subdirectories, use the [`RootFile`](../api/oxiroot/index.html) builder.
 ```rust
 use oxiroot::prelude::*;
 
-let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0]).named("g");
+let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("g");
 let h = Hist::reg(10, 0.0, 1.0).double().named("h");
 
 RootFile::create("out.root")
@@ -177,7 +178,7 @@ use oxiroot::prelude::*;
 let graph = TGraph::with_errors(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
-)
+)?
 .named("g");
 
 let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
@@ -218,7 +219,7 @@ it is stored in ROOT's `[pN]` form.
 ```rust
 use oxiroot::prelude::*;
 
-let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])
+let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
     .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
 
@@ -247,7 +248,7 @@ let g = TGraph2D::new(
     vec![1.0, 2.0, 3.0],       // x
     vec![10.0, 20.0, 30.0],    // y
     vec![100.0, 200.0, 300.0], // z
-)
+)?
 .named("surface")
 .titled("a 3-D scatter");
 
@@ -276,8 +277,8 @@ let g = TGraphMultiErrors::new(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
     vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5],    // x errors (low, high)
     vec![1.0, 2.0, 3.0], vec![1.0, 2.0, 3.0],    // statistical y error (low, high)
-)
-.add_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5]) // systematic layer
+)?
+.add_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5])? // systematic layer
 .named("spectrum");
 
 assert_eq!(g.n_y_errors(), 2);

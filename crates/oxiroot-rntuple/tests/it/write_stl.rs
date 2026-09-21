@@ -20,10 +20,7 @@ fn write_and_reopen(tag: &str, fields: Vec<Field>) -> (RFile, RNTuple) {
 fn array_field_round_trips() {
     let (file, ntpl) = write_and_reopen(
         "array",
-        vec![Field::array_i32(
-            "arr",
-            vec![vec![10, 20, 30], vec![40, 50, 60]],
-        )],
+        vec![Field::array_i32("arr", vec![vec![10, 20, 30], vec![40, 50, 60]]).unwrap()],
     );
     assert_eq!(ntpl.num_entries(), 2);
     assert_eq!(
@@ -42,7 +39,7 @@ fn bitset_field_round_trips() {
     let row1 = vec![false, true, false, true, false, false, false, false];
     let (file, ntpl) = write_and_reopen(
         "bitset",
-        vec![Field::bitset("bits", vec![row0.clone(), row1.clone()])],
+        vec![Field::bitset("bits", vec![row0.clone(), row1.clone()]).unwrap()],
     );
     assert_eq!(
         ntpl.read_field(&file, "bits").unwrap(),
@@ -81,8 +78,8 @@ fn all_three_in_one_ntuple() {
     let (file, ntpl) = write_and_reopen(
         "all",
         vec![
-            Field::array_f64("xyz", vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]),
-            Field::bitset("flags", vec![vec![true, true], vec![false, true]]),
+            Field::array_f64("xyz", vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]).unwrap(),
+            Field::bitset("flags", vec![vec![true, true], vec![false, true]]).unwrap(),
             Field::object(
                 "hit",
                 "Hit",

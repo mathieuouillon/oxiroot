@@ -35,6 +35,7 @@ fn conversion_round_trips_in_memory() {
 fn attached_function_evaluates_after_a_file_round_trip() {
     let f = fitted();
     let g = TGraph::new(vec![0.0, 1.0, 2.0, 3.0], vec![1.3, 4.1, 3.2, 1.0])
+        .unwrap()
         .named("g")
         .with_function(f.to_graph_function());
     let path = std::env::temp_dir().join("oxiroot_hist_func_graph_function.root");

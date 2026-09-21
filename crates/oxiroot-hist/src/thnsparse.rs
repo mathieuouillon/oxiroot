@@ -14,7 +14,7 @@ use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
 use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
-use crate::base::{object_bytes, object_bytes_in, read_tarray, BinContentType};
+use crate::base::{check_len, object_bytes, object_bytes_in, read_tarray, BinContentType};
 
 /// A filled cell: one (per-axis, flow-inclusive) bin index per dimension, and its
 /// content.
@@ -78,7 +78,13 @@ impl THnSparse {
 
     /// Fill the cell containing `coords` (one value per dimension) with unit
     /// weight, accumulating into an existing filled cell or creating a new one.
-    pub fn fill(&mut self, coords: &[f64]) {
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`](oxiroot_io_core::Error::LengthMismatch) if
+    /// `coords` does not hold exactly [`ndim`](Self::ndim) values; nothing is
+    /// filled.
+    pub fn fill(&mut self, coords: &[f64]) -> Result<()> {
+        check_len("THnSparse fill coordinates", self.ndim(), coords.len())?;
         let bins: Vec<i32> = self
             .axes
             .iter()
@@ -94,6 +100,7 @@ impl THnSparse {
                 content: 1.0,
             });
         }
+        Ok(())
     }
 
     /// Per-axis bit widths used to pack a compact coordinate

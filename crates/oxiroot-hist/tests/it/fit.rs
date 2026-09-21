@@ -340,7 +340,10 @@ fn fit_a_tgraph_with_errors() {
     let y: Vec<f64> = x.iter().map(|&x| 2.0 * x + 3.0).collect();
     let ex = vec![0.0; x.len()];
     let ey = vec![0.1; x.len()];
-    let g = TGraph::with_errors(x, y, ex, ey).named("g").titled("line");
+    let g = TGraph::with_errors(x, y, ex, ey)
+        .unwrap()
+        .named("g")
+        .titled("line");
 
     let fit = g.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     assert!(fit.valid);

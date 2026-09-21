@@ -27,7 +27,7 @@ fn main() -> oxiroot::Result<()> {
         sigma.clone(),
         vec![0.0; energy.len()], // ex: energy is exact
         sigma_err.clone(),       // ey: statistical error on sigma
-    )
+    )?
     .named("xsec")
     .titled("cross-section vs energy");
     // `class_name` reflects the error variant we chose: no errors -> "TGraph",
@@ -51,7 +51,7 @@ fn main() -> oxiroot::Result<()> {
         vec![0.0; energy.len()], // exh
         ey_low,
         ey_high,
-    )
+    )?
     .named("xsec_asym")
     .titled("cross-section (asymmetric errors)");
     println!(
@@ -73,7 +73,7 @@ fn main() -> oxiroot::Result<()> {
             sz.push((m - 91.0).powi(2) + 4.0 * (w - 2.5).powi(2));
         }
     }
-    let scan = TGraph2D::new(sx, sy, sz)
+    let scan = TGraph2D::new(sx, sy, sz)?
         .named("scan")
         .titled("-lnL scan over (mass, width)");
     println!("scan: TGraph2D with {} grid points", scan.len());
@@ -81,7 +81,7 @@ fn main() -> oxiroot::Result<()> {
     // --- 4. Two datasets drawn in one frame, as a TMultiGraph. -----------------
     // A multigraph just holds several TGraphs so they share a frame/legend when
     // drawn. Give the members their own names so a reader can tell them apart.
-    let data = TGraph::new(energy.clone(), sigma.clone()).named("data");
+    let data = TGraph::new(energy.clone(), sigma.clone())?.named("data");
     let theory = TGraph::new(
         energy.clone(),
         // A smooth "prediction" curve to overlay on the points.
@@ -89,7 +89,7 @@ fn main() -> oxiroot::Result<()> {
             .iter()
             .map(|&e| 25.0 * (-((e - 3.5) / 2.5).powi(2)).exp())
             .collect(),
-    )
+    )?
     .named("theory");
     let comparison = TMultiGraph::new()
         .named("comparison")

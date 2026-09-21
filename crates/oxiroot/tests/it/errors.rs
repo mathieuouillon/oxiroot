@@ -43,7 +43,7 @@ fn formula_errors_convert() {
 fn plotting_errors_convert() {
     fn save(path: &std::path::Path) -> oxiroot::Result<()> {
         let mut ax = oxiroot::plot::Axes::new();
-        ax.plot(&[0.0, 1.0], &[0.0, 1.0]);
+        ax.plot(&[0.0, 1.0], &[0.0, 1.0])?;
         ax.save(path)?;
         Ok(())
     }
@@ -67,4 +67,18 @@ fn plotting_errors_convert() {
         "{err:?}"
     );
     assert!(save(&dir.join("oxiroot_errors_test.svg")).is_ok());
+
+    // A plot length mismatch keeps its structure.
+    fn line() -> oxiroot::Result<()> {
+        oxiroot::plot::Axes::new().plot(&[0.0, 1.0], &[0.0])?;
+        Ok(())
+    }
+    assert_eq!(
+        line().unwrap_err(),
+        oxiroot::Error::LengthMismatch {
+            what: "plot ys".into(),
+            expected: 2,
+            found: 1
+        }
+    );
 }

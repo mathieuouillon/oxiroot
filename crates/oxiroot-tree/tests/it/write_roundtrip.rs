@@ -171,3 +171,31 @@ fn write_then_read_empty_tree() {
     assert_eq!(t.read_branch(&f, "i4").unwrap(), BranchValues::I32(vec![]));
     assert_eq!(t.read_branch(&f, "f8").unwrap(), BranchValues::F64(vec![]));
 }
+
+#[test]
+fn branches_with_different_entry_counts_are_rejected() {
+    use oxiroot_io_core::{Error, RootFile};
+    use oxiroot_tree::Tree;
+    let branches = || {
+        vec![
+            Branch::i32("x", vec![1, 2, 3]),
+            Branch::f64("y", vec![1.0, 2.0]),
+        ]
+    };
+    let out = std::env::temp_dir().join("oxiroot_tree_uneven_branches.root");
+    let err = write_tree_file(&out, "T", &branches(), Compression::None).unwrap_err();
+    assert_eq!(
+        err,
+        Error::LengthMismatch {
+            what: "branch \"y\" entries".into(),
+            expected: 3,
+            found: 2
+        }
+    );
+    // The builder path (`RootFile::put`) goes through the same check.
+    let err = RootFile::create(&out)
+        .put(Tree::new("T", branches()))
+        .to_bytes(Compression::None)
+        .unwrap_err();
+    assert!(matches!(err, Error::LengthMismatch { .. }), "{err:?}");
+}

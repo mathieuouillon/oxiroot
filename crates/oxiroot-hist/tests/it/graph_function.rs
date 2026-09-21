@@ -59,6 +59,7 @@ fn graph_function_round_trips_from_root() {
 #[test]
 fn graph_function_built_from_scratch() {
     let g = TGraph::new(vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![1.0, 3.0, 5.0, 7.0, 9.0])
+        .unwrap()
         .named("gfit")
         .titled("fitted")
         .with_function(GraphFunction::new(
@@ -84,6 +85,7 @@ fn graph_function_built_from_scratch() {
 #[test]
 fn multiple_functions_round_trip() {
     let g = TGraph::new(vec![0.0, 1.0], vec![0.0, 1.0])
+        .unwrap()
         .named("g")
         .with_function(GraphFunction::new(
             "lin",
