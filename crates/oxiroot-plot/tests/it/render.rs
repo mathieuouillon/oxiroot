@@ -48,7 +48,9 @@ fn graph() -> TGraph {
         .map(|v| 1000.0 * (-0.5 * ((v - 90.0) / 9.0).powi(2)).exp())
         .collect();
     let e: Vec<f64> = y.iter().map(|v| v.sqrt().max(5.0)).collect();
-    TGraph::with_errors(x.clone(), y, vec![5.0; x.len()], e).named("data")
+    TGraph::with_errors(x.clone(), y, vec![5.0; x.len()], e)
+        .unwrap()
+        .named("data")
 }
 
 fn th2() -> TH2 {
@@ -126,7 +128,7 @@ fn save_picks_format_from_extension() {
 fn unknown_extension_is_an_error_that_mentions_the_formats() {
     let dir = scratch("badext");
     let mut ax = Axes::new();
-    ax.plot(&[0.0, 1.0], &[0.0, 1.0]);
+    ax.plot(&[0.0, 1.0], &[0.0, 1.0]).unwrap();
     let err = ax.save(dir.join("p.jpg")).unwrap_err();
     assert!(matches!(err, Error::UnknownFormat(_)));
     let msg = err.to_string();
@@ -352,6 +354,7 @@ fn graph_profile_plot_and_function_render() {
         vec![0.3, 0.1, 0.2],
         vec![0.1, 0.3, 0.2],
     )
+    .unwrap()
     .named("asym");
     for g in [&sym, &asym] {
         let mut ax = Axes::new();
@@ -369,7 +372,7 @@ fn graph_profile_plot_and_function_render() {
     let xs: Vec<f64> = (0..50).map(|i| i as f64 * 0.2).collect();
     let ys: Vec<f64> = xs.iter().map(|x| x.sin()).collect();
     let mut ax = Axes::new();
-    ax.plot(&xs, &ys);
+    ax.plot(&xs, &ys).unwrap();
     ax.function(|x| (x / 2.0).cos(), 0.0..10.0);
     let svg = ax.to_svg_string();
     assert!(
@@ -464,7 +467,7 @@ fn figure_grid_renders_all_panels() {
     axs[0].hist(&h);
     axs[1].errorbar(&graph());
     axs[2].hist2d(&th2());
-    axs[3].plot(&[0.0, 1.0, 2.0], &[0.0, 1.0, 0.5]);
+    axs[3].plot(&[0.0, 1.0, 2.0], &[0.0, 1.0, 0.5]).unwrap();
     let png = fig.with_axes(axs).to_png_bytes(SaveOpts::new()).unwrap();
     let (w, hgt) = png_dims(&png);
     assert!(w >= 600 && hgt >= 400);
@@ -632,7 +635,7 @@ fn fit_stats_box_renders() {
         .collect();
     let sig: Vec<f64> = ys.iter().map(|&y| y.sqrt().max(1.0)).collect();
     let model = Model::gaussian("gaus").with_params(vec![1000.0, 90.0, 8.0]);
-    let r = Points::new(&xs, &ys, &sig).fit(&model);
+    let r = Points::new(&xs, &ys, &sig).unwrap().fit(&model);
     let fitted = model.with_params(r.params.clone());
 
     let render = |stats: Option<StatBox>| {
@@ -784,4 +787,32 @@ fn symlog_norm_handles_data_straddling_zero() {
     );
     let png = ax.to_png_bytes(SaveOpts::new()).unwrap();
     assert!(png.starts_with(b"\x89PNG"));
+}
+
+#[test]
+fn plot_rejects_xs_and_ys_of_different_lengths() {
+    let mut ax = Axes::new();
+    let before = ax.to_svg_string();
+    let Err(err) = ax.plot(&[0.0, 1.0, 2.0], &[0.0, 1.0]) else {
+        panic!("mismatched xs and ys must be rejected");
+    };
+    assert!(
+        matches!(
+            err,
+            Error::LengthMismatch {
+                what: "plot ys",
+                expected: 3,
+                found: 2
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "length mismatch: plot ys has length 2, expected 3"
+    );
+    // Nothing was drawn, and the color cycle did not advance.
+    assert_eq!(ax.to_svg_string(), before);
+    ax.plot(&[0.0, 1.0], &[0.0, 1.0]).unwrap();
+    assert_ne!(ax.to_svg_string(), before);
 }

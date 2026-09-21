@@ -49,7 +49,9 @@ fn graphmultierrors_build_from_scratch() {
         vec![1.0, 2.0, 3.0], // statistical y error
         vec![1.0, 2.0, 3.0],
     )
-    .add_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5]) // systematic layer
+    .unwrap()
+    .add_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5])
+    .unwrap() // systematic layer
     .named("multi")
     .titled("two error sources");
     assert_eq!(g.n_y_errors(), 2);
@@ -63,7 +65,9 @@ fn graphmultierrors_build_from_scratch() {
 
 #[test]
 fn empty_graphmultierrors_round_trip() {
-    let g = TGraphMultiErrors::new(vec![], vec![], vec![], vec![], vec![], vec![]).named("empty");
+    let g = TGraphMultiErrors::new(vec![], vec![], vec![], vec![], vec![], vec![])
+        .unwrap()
+        .named("empty");
     assert!(g.is_empty());
     let out = std::env::temp_dir().join("oxiroot_gme_empty.root");
     g.write_root(&out, Compression::None).expect("write");

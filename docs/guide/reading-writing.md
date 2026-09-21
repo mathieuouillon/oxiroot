@@ -121,7 +121,7 @@ a chosen compression.
 
 ```rust
 let prof = Hist::reg(5, 0.0, 5.0).profile().named("prof").titled("<pt> per region");
-let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0]).named("res");
+let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("res");
 
 RootFile::create("out.root")
     .add(&h)                               // any &dyn WriteRoot: hist, profile, graph…

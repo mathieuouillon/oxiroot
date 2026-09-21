@@ -244,7 +244,7 @@ let (fig, mut axs) = subplots_grid(2, 2);
 axs[0].hist(&h);
 axs[1].errorbar(&g);
 axs[2].hist2d(&h2);
-axs[3].plot(&x, &y);
+axs[3].plot(&x, &y)?;
 fig.sharex()                           // common x range, x labels on the bottom row only
     .sharey()                          // common y range, y labels on the left column only
     .suptitle("$Z \\to \\mu\\mu$")     // a figure-level title (LaTeX)

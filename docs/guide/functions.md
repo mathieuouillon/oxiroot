@@ -108,7 +108,7 @@ can evaluate:
 ```rust
 use oxiroot::prelude::*;
 let f = TF1::new("line", "[0]+[1]*x", 0.0, 2.0)?.with_params(vec![1.0, 2.0]);
-let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.1, 2.9, 5.2])
+let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.1, 2.9, 5.2])?
     .named("g")
     .with_function(f.to_graph_function());
 let attached = TF1::from_graph_function(g.functions[0].clone())?;

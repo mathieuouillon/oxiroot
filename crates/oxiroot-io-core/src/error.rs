@@ -60,6 +60,17 @@ pub enum Error {
         /// Human-readable description of the mismatch.
         detail: String,
     },
+    /// Inputs that must have the same length do not: a graph's `x` and `y`, a
+    /// fill's values and weights, a tree's branches, an RNTuple's fields, …
+    /// Nothing was changed or written.
+    LengthMismatch {
+        /// What has the wrong length, e.g. `TGraph y` or `branch "pt"`.
+        what: String,
+        /// The length it must have (that of the input it is paired with).
+        expected: usize,
+        /// Its actual length.
+        found: usize,
+    },
     /// A streaming writer received entries whose schema differs from the
     /// schema already committed to the file.
     SchemaChanged {
@@ -129,6 +140,14 @@ impl fmt::Display for Error {
                 write!(f, "decompressing {context}: {source}")
             }
             Error::BinningMismatch { detail } => write!(f, "binning mismatch: {detail}"),
+            Error::LengthMismatch {
+                what,
+                expected,
+                found,
+            } => write!(
+                f,
+                "length mismatch: {what} has length {found}, expected {expected}"
+            ),
             Error::SchemaChanged { detail } => write!(f, "schema changed: {detail}"),
             Error::FileTooLarge { size } => write!(
                 f,

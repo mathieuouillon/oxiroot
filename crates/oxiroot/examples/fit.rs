@@ -129,6 +129,7 @@ fn main() {
         vec![0.0; thr.len()],
         vec![0.03; thr.len()],
     )
+    .expect("x, y and their errors have the same length")
     .named("resp")
     .titled("response vs threshold");
     let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
@@ -144,7 +145,8 @@ fn main() {
         .iter()
         .map(|&x| 8.0 * (-0.5 * ((x - 0.3) / 0.6).powi(2)).exp() + rng.gauss(0.0, 0.05))
         .collect();
-    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()]);
+    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()])
+        .expect("x, y and their errors have the same length");
     let g = data.fit(
         &Model::gaussian("g")
             .estimate_from(&data)

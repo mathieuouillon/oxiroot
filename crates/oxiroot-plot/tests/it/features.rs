@@ -73,7 +73,7 @@ fn any_data_implementing_the_traits_plots() {
 #[cfg(not(feature = "png"))]
 fn png_output_without_the_png_feature_is_a_clear_error() {
     let mut ax = Axes::new();
-    ax.plot(&[0.0, 1.0], &[0.0, 1.0]);
+    ax.plot(&[0.0, 1.0], &[0.0, 1.0]).unwrap();
     let err = ax.to_png_bytes(SaveOpts::new()).unwrap_err();
     assert!(err.to_string().contains("`png` feature"), "{err}");
     let dir = std::env::temp_dir();
@@ -87,7 +87,7 @@ fn png_output_without_the_png_feature_is_a_clear_error() {
 #[cfg(feature = "png")]
 fn png_output_with_the_png_feature_works() {
     let mut ax = Axes::new();
-    ax.plot(&[0.0, 1.0], &[0.0, 1.0]);
+    ax.plot(&[0.0, 1.0], &[0.0, 1.0]).unwrap();
     let png = ax.to_png_bytes(SaveOpts::new()).unwrap();
     assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
 }

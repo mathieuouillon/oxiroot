@@ -12,7 +12,7 @@ use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
 use oxiroot_io_core::RFile;
 
-use crate::base::object_bytes_any;
+use crate::base::{check_len, object_bytes_any};
 
 /// An (x, y, z) graph (ROOT `TGraph2D`).
 #[derive(Debug, Clone, PartialEq)]
@@ -30,16 +30,20 @@ pub struct TGraph2D {
 }
 
 impl TGraph2D {
-    /// Create a `TGraph2D` from paired `x`/`y`/`z` points (truncated to the
-    /// shortest length).
-    pub fn new(x: Vec<f64>, y: Vec<f64>, z: Vec<f64>) -> TGraph2D {
-        TGraph2D {
+    /// Create a `TGraph2D` from paired `x`/`y`/`z` points.
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `y` or `z` is not as long as `x`.
+    pub fn new(x: Vec<f64>, y: Vec<f64>, z: Vec<f64>) -> Result<TGraph2D> {
+        check_len("TGraph2D y", x.len(), y.len())?;
+        check_len("TGraph2D z", x.len(), z.len())?;
+        Ok(TGraph2D {
             name: String::new(),
             title: String::new(),
             x,
             y,
             z,
-        }
+        })
     }
 
     /// Number of points (`fNpoints`).

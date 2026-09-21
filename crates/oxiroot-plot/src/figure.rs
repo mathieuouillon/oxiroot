@@ -271,7 +271,7 @@ impl Default for Figure {
 /// let mut pdf = PdfPages::new();
 /// for k in 0..3 {
 ///     let (fig, mut ax) = subplots();
-///     ax.plot(&[0.0, 1.0], &[0.0, k as f64]);
+///     ax.plot(&[0.0, 1.0], &[0.0, k as f64]).unwrap();
 ///     pdf.add(&fig);
 /// }
 /// pdf.save("report.pdf").unwrap(); // one PDF, three pages

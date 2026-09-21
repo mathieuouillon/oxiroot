@@ -11,7 +11,7 @@ fn weighted_line_fit_recovers_slope_and_intercept() {
     // y = 3 + 2x exactly, tight errors.
     let x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
     let y: Vec<f64> = x.iter().map(|&x| 3.0 + 2.0 * x).collect();
-    let data = Points::new(&x, &y, &[0.05; 6]);
+    let data = Points::new(&x, &y, &[0.05; 6]).unwrap();
 
     let fit = data.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     assert!(fit.valid);
@@ -47,6 +47,7 @@ fn unweighted_matches_a_slice_of_points() {
         .to_vec()
         .fit(&Model::polynomial("l", 1).with_params(vec![0.0, 0.0]));
     let via_points = Points::unweighted(&[0.0, 1.0, 2.0], &[1.0, 3.0, 5.0])
+        .unwrap()
         .fit(&Model::polynomial("l", 1).with_params(vec![0.0, 0.0]));
     assert_eq!(via_slice.params, via_points.params);
     assert_eq!(via_vec.params, via_points.params);
@@ -61,7 +62,7 @@ fn gaussian_estimate_from_custom_points() {
         .iter()
         .map(|&x| 5.0 * (-0.5 * ((x - 1.0) / 0.8).powi(2)).exp())
         .collect();
-    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()]);
+    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()]).unwrap();
 
     let model = Model::gaussian("g")
         .estimate_from(&data)
@@ -82,7 +83,7 @@ fn gaussian_estimate_from_custom_points() {
 
 #[test]
 fn too_few_points_is_reported_invalid() {
-    let data = Points::new(&[0.0], &[1.0], &[0.1]); // 1 point, 2 free params
+    let data = Points::new(&[0.0], &[1.0], &[0.1]).unwrap(); // 1 point, 2 free params
     let fit = data.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     assert!(!fit.valid);
     assert_eq!(fit.ndf, 0);
@@ -127,7 +128,7 @@ fn crystal_ball_recovers_its_peak() {
     let truth = Model::crystal_ball("cb").with_params(vec![c0, m0, s0, a0, n0]);
     let xs: Vec<f64> = (-40..=120).map(|i| i as f64 * 0.05).collect(); // [-2, 6]
     let ys: Vec<f64> = xs.iter().map(|&x| truth.eval(x)).collect();
-    let data = Points::new(&xs, &ys, &vec![0.02; xs.len()]);
+    let data = Points::new(&xs, &ys, &vec![0.02; xs.len()]).unwrap();
 
     // estimate_from seeds the (constant, mean, sigma) core, leaving (alpha, n).
     let seeded = Model::crystal_ball("cb").estimate_from(&data);
@@ -163,7 +164,7 @@ fn voigtian_model_is_a_valid_fit() {
     let truth = Model::voigtian("v").with_params(vec![8.0, 1.0, 0.6, 0.4]);
     let xs: Vec<f64> = (-60..=80).map(|i| i as f64 * 0.05).collect();
     let ys: Vec<f64> = xs.iter().map(|&x| truth.eval(x)).collect();
-    let data = Points::new(&xs, &ys, &vec![0.02; xs.len()]);
+    let data = Points::new(&xs, &ys, &vec![0.02; xs.len()]).unwrap();
     let fit = data.fit(
         &Model::voigtian("v")
             .with_params(vec![8.0, 1.0, 0.6, 0.4])
@@ -187,7 +188,7 @@ fn robust_loss_matches_scipy_least_squares() {
     let mut y: Vec<f64> = x.iter().map(|&x| 1.0 + 2.0 * x).collect();
     y[7] += 50.0;
     let sigma = vec![1.0; x.len()];
-    let data = Points::new(&x, &y, &sigma);
+    let data = Points::new(&x, &y, &sigma).unwrap();
     // Seed at the truth so the aggressive losses start inside their basin.
     let line = || Model::new("line", &["a", "b"], vec![1.0, 2.0], |x, p| p[0] + p[1] * x);
 
@@ -223,7 +224,7 @@ fn nelder_mead_recovers_a_line() {
     use oxiroot_fit::Minimizer;
     let x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
     let y: Vec<f64> = x.iter().map(|&x| 3.0 + 2.0 * x).collect();
-    let data = Points::new(&x, &y, &[0.05; 6]);
+    let data = Points::new(&x, &y, &[0.05; 6]).unwrap();
     let opts = FitOptions::new().minimizer(Minimizer::NelderMead);
     let fit = data.fit_opts(
         &Model::polynomial("l", 1).with_params(vec![0.0, 0.0]),
@@ -253,7 +254,7 @@ fn nelder_mead_agrees_with_minuit2_on_a_gaussian() {
         .iter()
         .map(|&x| 7.0 * (-0.5 * ((x - 0.5) / 0.9).powi(2)).exp())
         .collect();
-    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()]);
+    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()]).unwrap();
     let model = || {
         Model::gaussian("g")
             .estimate_from(&data)
@@ -300,7 +301,7 @@ fn nelder_mead_respects_fixed_parameters() {
         .iter()
         .map(|&x| 5.0 * (-0.5 * ((x - 0.0) / 0.8).powi(2)).exp())
         .collect();
-    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()]);
+    let data = Points::new(&xs, &ys, &vec![0.05; xs.len()]).unwrap();
     let model = Model::gaussian("g")
         .with_params(vec![5.0, 0.0, 0.8])
         .fix("mean");
@@ -308,4 +309,28 @@ fn nelder_mead_respects_fixed_parameters() {
     assert!(fit.valid);
     assert_eq!(fit.params[1], 0.0, "fixed mean stays put");
     assert_eq!(fit.errors[1], 0.0, "fixed parameter has no error");
+}
+
+#[test]
+fn points_reject_inputs_of_different_lengths() {
+    use oxiroot_fit::StatError;
+    assert_eq!(
+        Points::new(&[1.0, 2.0], &[1.0], &[0.1, 0.1]).unwrap_err(),
+        StatError::LengthMismatch { left: 2, right: 1 }
+    );
+    assert_eq!(
+        Points::new(&[1.0, 2.0], &[1.0, 2.0], &[0.1]).unwrap_err(),
+        StatError::LengthMismatch { left: 2, right: 1 }
+    );
+    assert_eq!(
+        Points::unweighted(&[1.0], &[1.0, 2.0]).unwrap_err(),
+        StatError::LengthMismatch { left: 1, right: 2 }
+    );
+    assert_eq!(
+        Points::unweighted(&[1.0, 2.0], &[3.0, 4.0])
+            .unwrap()
+            .points()
+            .len(),
+        2
+    );
 }

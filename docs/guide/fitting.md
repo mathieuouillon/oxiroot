@@ -75,7 +75,7 @@ use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
 // Raw (x, y, sigma) measurements.
-let data = Points::new(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 5.0, 7.0], &[0.1; 4]);
+let data = Points::new(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 5.0, 7.0], &[0.1; 4])?;
 let line = Model::polynomial("line", 1).with_params(vec![0.0, 1.0]);
 let fit = data.fit(&line);
 assert!(fit.valid);

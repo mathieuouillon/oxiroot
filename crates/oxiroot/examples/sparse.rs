@@ -56,7 +56,7 @@ fn main() -> oxiroot::Result<()> {
         // Better isolated (small iso) as pt grows.
         let iso = (rng.uniform() * (0.4 - 0.3 * (pt / 200.0))).clamp(0.0, 0.99);
         let mass = rng.gauss(91.2, 4.0).clamp(60.0, 119.9);
-        hs.fill(&[pt, eta, iso, mass]);
+        hs.fill(&[pt, eta, iso, mass])?;
     }
 
     // --- The memory win: occupied cells vs the dense grid. ---------------------

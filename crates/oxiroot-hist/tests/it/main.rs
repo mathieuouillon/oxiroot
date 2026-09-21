@@ -11,6 +11,7 @@ mod graph2d;
 mod graph_function;
 mod graphmultierrors;
 mod labels;
+mod length_mismatch;
 mod linalg;
 mod malformed;
 mod naming;

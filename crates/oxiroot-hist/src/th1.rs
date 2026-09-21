@@ -9,7 +9,7 @@ use oxiroot_io_core::RFile;
 
 use crate::axis::TAxis;
 use crate::base::{
-    bin_content_type_of, cell_count, check_cells, histogram_object, histogram_object_in,
+    bin_content_type_of, cell_count, check_cells, check_len, histogram_object, histogram_object_in,
     read_th1_object, BinContentType,
 };
 
@@ -199,13 +199,17 @@ impl TH1 {
         }
     }
 
-    /// Fill many `(x, weight)` pairs at once (`hist`'s `h.fill(array, weight=…)`);
-    /// `xs` and `weights` are zipped, so extra entries in the longer slice are
-    /// ignored.
-    pub fn fill_many_weighted(&mut self, xs: &[f64], weights: &[f64]) {
+    /// Fill many `(x, weight)` pairs at once (`hist`'s `h.fill(array, weight=…)`).
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`](oxiroot_io_core::Error::LengthMismatch) if
+    /// `weights` is not as long as `xs`; nothing is filled.
+    pub fn fill_many_weighted(&mut self, xs: &[f64], weights: &[f64]) -> Result<()> {
+        check_len("fill weights", xs.len(), weights.len())?;
         for (&x, &w) in xs.iter().zip(weights) {
             self.fill_weight(x, w);
         }
+        Ok(())
     }
 
     /// Mean of the in-range fills (`fTsumwx / fTsumw`), or 0 if empty.

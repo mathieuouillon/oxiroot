@@ -40,10 +40,10 @@ fn reads_root_written_thnsparse() {
 #[test]
 fn thnsparse_round_trips() {
     let mut h = THnSparse::new(&[(2, 0.0, 2.0), (2, 0.0, 2.0)]).named("hs");
-    h.fill(&[0.5, 0.5]);
-    h.fill(&[1.5, 1.5]);
-    h.fill(&[1.5, 1.5]);
-    h.fill(&[1.5, 1.5]);
+    h.fill(&[0.5, 0.5]).unwrap();
+    h.fill(&[1.5, 1.5]).unwrap();
+    h.fill(&[1.5, 1.5]).unwrap();
+    h.fill(&[1.5, 1.5]).unwrap();
     let out = PathBuf::from("/tmp/oxiroot_thnsparse.root");
     h.write_root(&out, Compression::None).expect("write");
     let f = RFile::open(&out).expect("reopen");

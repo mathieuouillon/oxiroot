@@ -53,7 +53,7 @@
 //! for x in [40.0, 48.0, 50.0, 52.0, 60.0] {
 //!     mc.fill(x);
 //! }
-//! let data = TGraph::with_errors(vec![50.0], vec![3.0], vec![0.0], vec![1.7]).named("d");
+//! let data = TGraph::with_errors(vec![50.0], vec![3.0], vec![0.0], vec![1.7]).unwrap().named("d");
 //!
 //! let mut ax = Axes::new();
 //! ax.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
@@ -72,7 +72,7 @@
 //! use oxiroot_hist::{Hist, TGraph};
 //!
 //! let mc = Hist::reg(50, 0.0, 100.0).double().named("mc");
-//! let ratio_points = TGraph::with_errors(vec![50.0], vec![1.0], vec![0.0], vec![0.1]).named("r");
+//! let ratio_points = TGraph::with_errors(vec![50.0], vec![1.0], vec![0.0], vec![0.1]).unwrap().named("r");
 //!
 //! let (fig, mut main, mut ratio) = ratio_subplots();
 //! main.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
@@ -208,7 +208,7 @@ mod tests {
         let xs: Vec<f64> = (0..=100).map(|i| i as f64 * 0.1).collect();
         let ys: Vec<f64> = xs.iter().map(|x| x.sin()).collect();
         let mut ax = Axes::new();
-        ax.plot(&xs, &ys);
+        ax.plot(&xs, &ys).unwrap();
         ax.xlabel("$x$ [rad]");
         let (w, h) = ax.style.figsize_px();
         assert_renders(&ax.render(w, h), w, h);
@@ -237,7 +237,9 @@ mod tests {
             .map(|x| 1500.0 * (-0.5 * ((x - 90.0) / 9.0).powi(2)).exp())
             .collect();
         let e: Vec<f64> = y.iter().map(|v| v.sqrt().max(10.0)).collect();
-        let g = TGraph::with_errors(x.clone(), y, vec![6.0; x.len()], e).named("g");
+        let g = TGraph::with_errors(x.clone(), y, vec![6.0; x.len()], e)
+            .unwrap()
+            .named("g");
         let mut ax = Axes::new();
         ax.errorbar_with(&g, ErrorbarOpts::new().color(Color::BLACK).label("data"));
         ax.legend();
@@ -389,7 +391,8 @@ mod tests {
     #[test]
     fn pdf_output_is_structurally_valid() {
         let mut ax = Axes::new();
-        ax.plot(&[0.0, 1.0, 2.0, 3.0], &[0.0, 1.0, 0.4, 0.8]);
+        ax.plot(&[0.0, 1.0, 2.0, 3.0], &[0.0, 1.0, 0.4, 0.8])
+            .unwrap();
         ax.xlabel("x");
         let dir = std::env::temp_dir();
         let path = dir.join("oxiroot_plot_test.pdf");
@@ -412,7 +415,7 @@ mod tests {
     #[test]
     fn dpi_scales_the_raster() {
         let mut ax = Axes::new();
-        ax.plot(&[0.0, 1.0], &[0.0, 1.0]);
+        ax.plot(&[0.0, 1.0], &[0.0, 1.0]).unwrap();
         let (w1, _) = ax.style.figsize_px();
         let g = ax.render(w1, ax.style.figsize_px().1);
         let _ = g;
@@ -444,10 +447,12 @@ mod tests {
         // A 2×2 grid.
         let (fig, mut axs) = subplots_grid(2, 2);
         axs[0].hist(&h);
-        axs[1].plot(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 2.0, 4.0]);
+        axs[1]
+            .plot(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 2.0, 4.0])
+            .unwrap();
         axs[2].hist(&h);
         axs[2].grid();
-        axs[3].plot(&[0.0, 1.0, 2.0], &[2.0, 1.0, 3.0]);
+        axs[3].plot(&[0.0, 1.0, 2.0], &[2.0, 1.0, 3.0]).unwrap();
         fig.with_axes(axs)
             .save(format!("{dir}/grid2x2.png"))
             .unwrap();
@@ -468,6 +473,7 @@ mod tests {
             vec![0.0; centers.len()],
             vec![0.08; centers.len()],
         )
+        .unwrap()
         .named("r");
         ratio.errorbar_with(&r, ErrorbarOpts::new().color(Color::BLACK));
         ratio.ylim(0.5..1.5);
@@ -483,7 +489,9 @@ mod tests {
         for ax in &mut axs {
             ax.hist(&h);
         }
-        axs[1].plot(&[55.0, 90.0, 125.0], &[500.0, 1500.0, 400.0]);
+        axs[1]
+            .plot(&[55.0, 90.0, 125.0], &[500.0, 1500.0, 400.0])
+            .unwrap();
         fig.sharex()
             .sharey()
             .suptitle("$Z\\to\\mu\\mu$ — shared grid")

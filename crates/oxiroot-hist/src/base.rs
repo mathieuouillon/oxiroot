@@ -80,6 +80,20 @@ pub(crate) fn bin_content_type_of(class: &str) -> Result<BinContentType> {
     }
 }
 
+/// Check that an input has the length of the input it is paired with, so a
+/// constructor or fill never silently truncates or pads.
+pub(crate) fn check_len(what: &str, expected: usize, found: usize) -> Result<()> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(Error::LengthMismatch {
+            what: what.to_string(),
+            expected,
+            found,
+        })
+    }
+}
+
 /// The members shared by every `TH1`-derived histogram.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TH1Core {

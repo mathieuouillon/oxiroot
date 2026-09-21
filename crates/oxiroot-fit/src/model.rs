@@ -288,10 +288,11 @@ impl Model {
     ///
     /// ```
     /// # use oxiroot_fit::{FitExt, Model, Points};
-    /// let data = Points::new(&[-1.0, 0.0, 1.0], &[1.0, 4.0, 1.0], &[0.2; 3]);
+    /// let data = Points::new(&[-1.0, 0.0, 1.0], &[1.0, 4.0, 1.0], &[0.2; 3])?;
     /// let model = Model::gaussian("g").estimate_from(&data); // no manual seed
     /// let fit = data.fit(&model);
     /// # assert!(fit.params[2] > 0.0);
+    /// # Ok::<(), oxiroot_fit::StatError>(())
     /// ```
     #[must_use]
     pub fn estimate_from(mut self, data: &impl FitData) -> Model {

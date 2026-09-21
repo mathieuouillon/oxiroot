@@ -42,6 +42,7 @@ fn graph2d_build_from_scratch() {
         vec![-1.0, 0.0, 1.0],
         vec![3.0, 6.0, 9.0],
     )
+    .unwrap()
     .named("scratch")
     .titled("built in Rust");
     let out = std::env::temp_dir().join("oxiroot_g2d_scratch.root");
@@ -54,7 +55,9 @@ fn graph2d_build_from_scratch() {
 
 #[test]
 fn empty_graph2d_round_trip() {
-    let g = TGraph2D::new(vec![], vec![], vec![]).named("empty");
+    let g = TGraph2D::new(vec![], vec![], vec![])
+        .unwrap()
+        .named("empty");
     assert!(g.is_empty());
     let out = std::env::temp_dir().join("oxiroot_g2d_empty.root");
     g.write_root(&out, Compression::None).expect("write");

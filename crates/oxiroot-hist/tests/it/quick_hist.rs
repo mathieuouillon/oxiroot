@@ -82,7 +82,7 @@ fn batch_fill_and_uhi_slicing() {
     assert_eq!(h.values()[0], 2.0);
     let mut hw = Hist::reg(4, 0.0, 4.0).double();
     hw.sumw2();
-    hw.fill_many_weighted(&[0.5, 1.5], &[2.0, 3.0]);
+    hw.fill_many_weighted(&[0.5, 1.5], &[2.0, 3.0]).unwrap();
     assert_eq!(hw.variances(), vec![4.0, 9.0, 0.0, 0.0]);
 
     // UHI: the integral over a coordinate range (h[a:b:sum]) and a sub-range copy

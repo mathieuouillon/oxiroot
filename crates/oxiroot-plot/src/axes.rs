@@ -359,7 +359,8 @@ impl Axes {
     /// ```no_run
     /// use oxiroot_plot::Axes;
     /// use oxiroot_hist::TGraph;
-    /// let g = TGraph::with_errors(vec![1.0, 2.0], vec![3.0, 4.0], vec![0.1, 0.1], vec![0.2, 0.3]);
+    /// let g = TGraph::with_errors(vec![1.0, 2.0], vec![3.0, 4.0], vec![0.1, 0.1], vec![0.2, 0.3])
+    ///     .unwrap();
     /// let mut ax = Axes::new();
     /// ax.errorbar(&g);
     /// ax.save("g.png").unwrap();
@@ -512,7 +513,18 @@ impl Axes {
     }
 
     /// Plot a connected line through `(x, y)` points (matplotlib `plot`).
-    pub fn plot(&mut self, xs: &[f64], ys: &[f64]) -> &mut Self {
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`](crate::Error::LengthMismatch) if `ys` is not as
+    /// long as `xs` (matplotlib raises a `ValueError`); nothing is drawn.
+    pub fn plot(&mut self, xs: &[f64], ys: &[f64]) -> crate::Result<&mut Self> {
+        if ys.len() != xs.len() {
+            return Err(crate::Error::LengthMismatch {
+                what: "plot ys",
+                expected: xs.len(),
+                found: ys.len(),
+            });
+        }
         let color = self.next_color();
         self.add_artist(Artist::Line(LineArtist {
             xs: xs.to_vec(),
@@ -524,7 +536,7 @@ impl Axes {
             marker_size_pt: self.style.marker_size_pt,
             label: None,
         }));
-        self
+        Ok(self)
     }
 
     /// Plot a function `f` sampled over `range` as a smooth curve — e.g. to

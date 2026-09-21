@@ -729,7 +729,7 @@ mod tests {
     fn dump_graph_survives_mismatched_x_y_lengths() {
         // A corrupt graph with more x than y coordinates: dumping (either format)
         // must clamp to the shorter length instead of panicking.
-        let mut graph = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]);
+        let mut graph = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
         graph.y.truncate(1);
         assert!(dump_graph(&graph, "g", 10, false).is_ok());
         assert!(dump_graph(&graph, "g", 10, true).is_ok());
