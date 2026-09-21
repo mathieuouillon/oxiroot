@@ -23,7 +23,7 @@ fn main() {
 }
 
 #[cfg(feature = "plot")]
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> oxiroot::Result<()> {
     use oxiroot::plot::{
         ratio_subplots, Axes, Color, ErrorbarOpts, Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
     };
@@ -238,11 +238,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(feature = "plot")]
-fn save_both(
-    ax: &oxiroot::plot::Axes,
-    dir: &std::path::Path,
-    stem: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn save_both(ax: &oxiroot::plot::Axes, dir: &std::path::Path, stem: &str) -> oxiroot::Result<()> {
     for ext in ["png", "svg", "pdf"] {
         let path = dir.join(format!("{stem}.{ext}"));
         ax.save(&path)?;

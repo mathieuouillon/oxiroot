@@ -8,7 +8,9 @@ repository.workspace = true
 description = "Pure-Rust IO for the CERN ROOT file format (RNTuple + classic histograms)"
 
 [dependencies]
-oxiroot-io-core = { workspace = true }
+# `stat` and `formula`: statistics and formula errors convert into
+# `oxiroot::Error`, so `?` works across the whole API.
+oxiroot-io-core = { workspace = true, features = ["stat", "formula"] }
 oxiroot-compress = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }

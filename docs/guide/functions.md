@@ -135,5 +135,5 @@ let model = Model::from_formula("peak", "gaus(0) + pol1(3)")?
     .with_params(vec![100.0, 91.0, 2.5, 10.0, 0.0]);
 let result = h.fit(&model);
 println!("chi2/ndf = {:.2}", result.chi2_per_ndf());
-# Ok::<(), Box<dyn std::error::Error>>(())
+# Ok::<(), oxiroot::Error>(())
 ```

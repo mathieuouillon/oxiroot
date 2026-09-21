@@ -189,23 +189,25 @@ as with `scipy`'s default `nan_policy`. The incomplete-gamma functions,
 Mann–Whitney and Wilcoxon tests all return `NaN` for `NaN` input; other functions
 do not yet treat `NaN` consistently.
 
-`StatError` implements `std::error::Error`, so it combines with file IO through a
-boxed error. The prelude's `Result` alias takes an optional error type, so this
-works after `use oxiroot::prelude::*`:
+`StatError` converts into `oxiroot::Error` (as `Error::Stat`), so it combines
+with file IO in a function that returns `oxiroot::Result`:
 
 ```rust
 use oxiroot::prelude::*;
 use oxiroot::stat;
 
-fn correlate(path: &str) -> Result<f64, Box<dyn std::error::Error>> {
+fn correlate(path: &str) -> oxiroot::Result<f64> {
     let file = RFile::open(path)?;          // oxiroot::Error
     let h = TH1::read_root(&file, "h")?;
     let x: Vec<f64> = (1..=h.xaxis.nbins as usize).map(|i| h.bin_center(i)).collect();
     let y = &h.contents[1..=x.len()];
-    let (r, _) = stat::pearsonr(&x, y)?;    // StatError
+    let (r, _) = stat::pearsonr(&x, y)?;    // StatError, converted
     Ok(r)
 }
 ```
+
+Depending on `oxiroot-stat` and `oxiroot-io-core` directly instead of the
+facade, turn on io-core's `stat` feature for this conversion.
 
 ## Hypothesis tests
 
