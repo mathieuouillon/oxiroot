@@ -16,6 +16,8 @@ use oxiroot_rex::font::common::GlyphId;
 #[cfg(feature = "math")]
 use oxiroot_rex::layout::engine::LayoutBuilder;
 #[cfg(feature = "math")]
+use oxiroot_rex::layout::Style;
+#[cfg(feature = "math")]
 use oxiroot_rex::parser::parse;
 #[cfg(feature = "math")]
 use oxiroot_rex::render::{Backend, Cursor, FontBackend, GraphicsBackend, Renderer, RGBA};
@@ -239,9 +241,12 @@ fn render_math(
     let font = TtfMathFont::new(face).ok()?;
     // ReX takes the font size in points and converts it to its pixel units at
     // 96 px/in; `size_px` is already the em size in pixels (as for plain text),
-    // so hand it over in points.
+    // so hand it over in points. A `$…$` span is inline math, so it is set in
+    // text style (smaller fractions and operators) as in LaTeX and matplotlib,
+    // not in ReX's default display style.
     let engine = LayoutBuilder::new(&font)
         .font_size(f64::from(size_px) * PT_PER_PX)
+        .style(Style::Text)
         .build();
     let nodes = parse(tex).ok()?;
     let layout = engine.layout(&nodes).ok()?;

@@ -426,6 +426,38 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "math")]
+    fn inline_math_is_set_in_text_style() {
+        // A `$…$` span is inline math: TeX's text style, which sets a
+        // fraction's numerator and denominator smaller than display style does
+        // (`\\displaystyle` switches back to display style).
+        let fonts = FontSet::stix();
+        let height = |label: &str| {
+            let mut g = draw::DrawGroup::new(None);
+            mathtext::layout_label(
+                &mut g,
+                &fonts,
+                label,
+                0.0,
+                0.0,
+                100.0,
+                Color::BLACK,
+                text::HAlign::Left,
+                text::VAlign::Baseline,
+                0.0,
+            );
+            let (top, bottom) = ink_y_extent(&g);
+            bottom - top
+        };
+        let inline = height("$\\frac{a}{b}$");
+        let display = height("$\\displaystyle\\frac{a}{b}$");
+        assert!(
+            inline < 0.9 * display,
+            "inline fraction {inline:.1} px vs display {display:.1} px"
+        );
+    }
+
+    #[test]
     #[cfg(not(feature = "math"))]
     fn math_label_without_the_math_feature_is_plain_text() {
         use draw::{DrawCommand, DrawGroup};
