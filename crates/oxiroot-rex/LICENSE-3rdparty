@@ -39,10 +39,22 @@ The fork's README.md ("License" section) says, verbatim:
 
     *Note (Keny C):* The license files were not provided in the original repository. The problem was raised [here](https://github.com/ReTeX/ReX/issues/39). Given lack of reply, I'm not sure which parts of the original code were licensed by what.
 
-The "primarily distributed under the terms of both the MIT license and the
-Apache License (Version 2.0), with portions covered by various BSD-like
-licenses" sentence is the Rust project's standard dual-licence notice. Of the
-two licences offered for the original ReX code, oxiroot-rex takes MIT.
+That statement comes from the original author. Christopher Breeden added it to
+the original repository's README (https://github.com/ReTeX/ReX, commit
+ed07d57, 2016-12-17, "add license to README"), naming LICENSE-MIT and
+LICENSE-APACHE files that were never committed. It is the Rust project's
+standard dual-licence wording. Of the two licences it offers, oxiroot-rex takes
+MIT, whose terms are reproduced above, and applies them to the original code
+under this notice:
+
+    Copyright (c) 2016-2017 Christopher Breeden
+    Copyright (c) 2017-2022 Sebastian Köln and the other contributors to the
+    original ReX
+
+The sentence does not say which "portions [are] covered by various BSD-like
+licenses", and no file in the source carries a licence or copyright header of
+its own. Contributions made to the fork (2023 onwards) are MIT, per the fork's
+README above.
 
 The `min!`/`max!` macros in src/macros.rs were borrowed, per the upstream
 source comment, from the min_max_macros crate
