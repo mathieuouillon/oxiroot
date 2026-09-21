@@ -310,12 +310,14 @@ impl Axes {
     ///
     /// # Examples
     /// ```no_run
+    /// # #[cfg(feature = "hist")] {
     /// use oxiroot_plot::{Axes, HistOpts, HistType};
     /// use oxiroot_hist::Hist;
     /// let h = Hist::reg(20, 0.0, 10.0).double().named("h");
     /// let mut ax = Axes::new();
     /// ax.hist_with(&h, HistOpts::new().histtype(HistType::Step).yerr().label("MC"));
     /// ax.save("h.svg").unwrap();
+    /// # }
     /// ```
     pub fn hist_with(&mut self, h: &impl Hist1dData, opts: HistOpts) -> &mut Self {
         let edges = h.edges();
@@ -357,12 +359,14 @@ impl Axes {
     ///
     /// # Examples
     /// ```no_run
+    /// # #[cfg(feature = "hist")] {
     /// use oxiroot_plot::Axes;
     /// use oxiroot_hist::TGraph;
     /// let g = TGraph::with_errors(vec![1.0, 2.0], vec![3.0, 4.0], vec![0.1, 0.1], vec![0.2, 0.3]);
     /// let mut ax = Axes::new();
     /// ax.errorbar(&g);
     /// ax.save("g.png").unwrap();
+    /// # }
     /// ```
     pub fn errorbar(&mut self, g: &impl PointData) -> &mut Self {
         self.errorbar_with(g, ErrorbarOpts::default())
@@ -397,12 +401,14 @@ impl Axes {
     ///
     /// # Examples
     /// ```no_run
+    /// # #[cfg(feature = "hist")] {
     /// use oxiroot_plot::Axes;
     /// use oxiroot_hist::Hist;
     /// let tp = Hist::reg(10, 0.0, 10.0).profile().named("p");
     /// let mut ax = Axes::new();
     /// ax.profile(&tp);
     /// ax.save("profile.png").unwrap();
+    /// # }
     /// ```
     pub fn profile(&mut self, tp: &impl Hist1dData) -> &mut Self {
         let edges = tp.edges();
@@ -441,12 +447,14 @@ impl Axes {
     ///
     /// # Examples
     /// ```no_run
+    /// # #[cfg(feature = "hist")] {
     /// use oxiroot_plot::{Axes, Colormap, Hist2dOpts};
     /// use oxiroot_hist::Hist;
     /// let h = Hist::reg(10, 0.0, 1.0).reg(10, 0.0, 1.0).double().named("h2");
     /// let mut ax = Axes::new();
     /// ax.hist2d_with(&h, Hist2dOpts::new().cmap(Colormap::Viridis).label("entries"));
     /// ax.save("h2.png").unwrap();
+    /// # }
     /// ```
     pub fn hist2d_with(&mut self, h: &impl Hist2dData, opts: Hist2dOpts) -> &mut Self {
         let xedges = h.x_edges();

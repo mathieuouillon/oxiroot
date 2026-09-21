@@ -86,6 +86,12 @@ jobs:
       - name: Test the facade with no default features
         run: cargo test -p oxiroot --no-default-features
 
+      - name: oxiroot-plot doc examples with no default features
+        # Examples that draw oxiroot-hist types are gated on the `hist` feature
+        # (`# #[cfg(feature = "hist")] { … # }`); this keeps the rest compiling
+        # and running in an SVG/PDF-only build.
+        run: cargo test -p oxiroot-plot --no-default-features --doc
+
       - name: Histogram-only builds do not compile the formula engine
         # TF1/TF2/TF3 live in oxiroot-hist-func so that oxiroot-hist (and
         # oxiroot-plot without `fit`) stay free of oxiroot-formula.
