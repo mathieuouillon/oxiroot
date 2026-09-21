@@ -61,8 +61,8 @@ the statistical moment sums accumulate only for in-range fills.
 use oxiroot::prelude::*;
 
 let mut pt = Hist::var(&[0.0, 10.0, 20.0, 40.0, 80.0, 160.0]).double().named("pt");
-pt.sumw2(); // track per-bin errors before filling (see below)
 
+// The first weight other than 1 turns on per-bin error tracking (see below).
 for &(x, w) in &[(5.0, 1.2), (15.0, 0.8), (35.0, 1.5)] {
     pt.fill_weight(x, w);
 }
@@ -73,10 +73,16 @@ for &(x, w) in &[(5.0, 1.2), (15.0, 0.8), (35.0, 1.5)] {
 
 ### Per-bin errors with `sumw2`
 
-`sumw2()` enables ROOT's `Sumw2` error tracking: it allocates the `fSumw2` array,
-seeds it from the current contents, and from then on every fill also accumulates
-`weight²`. Call it *before* filling for correct weighted errors. It returns
-`&mut Self`, so it chains:
+ROOT's `Sumw2` error tracking keeps the per-bin sum of squared weights in the
+`fSumw2` array, so that `bin_error` is `√Σw²` rather than `√content`. As in ROOT,
+it switches on by itself: at the first `fill_weight` with a weight other than 1
+(seeded from the contents so far, which were unit-weight fills), and when you
+`scale` a histogram. Derived histograms (`rebin`, `slice`, `cumulative`,
+projections and profiles) carry it along.
+
+`sumw2()` turns it on explicitly — useful for a histogram filled only with unit
+weights that you want to write with an `fSumw2` array. It returns `&mut Self`, so
+it chains:
 
 ```rust
 let mut h = Hist::reg(100, 0.0, 1.0).double();
@@ -172,7 +178,10 @@ stay inherent and fallible; the infallible `scale` is also exposed as `*`/`*=`.
 
 `add`, `multiply`, and `divide` return `Error::BinningMismatch` and make no
 change if the binnings differ. `add` is implemented for `TH1`/`TH2`/`TH3` and
-`TProfile` (which merges its per-bin weight sums correctly).
+for `TProfile`/`TProfile2D`/`TProfile3D`, which merge their per-bin weight sums
+correctly. For a profile, as in ROOT, a negative `c` flips the profiled values
+but keeps the weights non-negative, so `p.add(&q, -1.0)` subtracts `q`'s
+values.
 
 ```rust
 use oxiroot::prelude::*;

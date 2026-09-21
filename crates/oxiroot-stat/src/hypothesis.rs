@@ -2,6 +2,23 @@
 
 use crate::descriptive::{kurtosis, mean, rankdata, skew, std_dev};
 use crate::distributions::{ChiSquared, Normal, StudentT};
+use crate::error::{check_paired, StatError};
+
+/// Cap a two-sided p-value at 1 without hiding `NaN`: `f64::min` would turn a
+/// `NaN` into 1, a confident answer computed from nothing.
+fn cap_p(p: f64) -> f64 {
+    if p > 1.0 {
+        1.0
+    } else {
+        p
+    }
+}
+
+/// Whether a sample holds a `NaN`, which the rank and KS tests propagate as a
+/// `NaN` result (`scipy`'s default `nan_policy='propagate'`).
+fn has_nan(data: &[f64]) -> bool {
+    data.iter().any(|v| v.is_nan())
+}
 
 /// One-sample t-test of the sample mean against `popmean` —
 /// `scipy.stats.ttest_1samp`. Two-sided p-value.
@@ -39,25 +56,44 @@ pub fn normaltest(data: &[f64]) -> (f64, f64) {
 /// Pearson's chi-square goodness-of-fit test of observed vs expected counts —
 /// `scipy.stats.chisquare`. Returns `(χ², p)` with `k − 1` degrees of freedom
 /// (`p` from the χ² survival). The observed and expected totals should agree.
-#[must_use]
-pub fn chisquare(f_obs: &[f64], f_exp: &[f64]) -> (f64, f64) {
+///
+/// # Errors
+///
+/// [`StatError::LengthMismatch`] if `f_obs` and `f_exp` differ in length, and
+/// [`StatError::TooFewObservations`] for fewer than two categories, where the
+/// test has no degrees of freedom. (`scipy` returns `p = NaN` there; this crate
+/// used to report `p = 0`, rejecting even a perfect one-bin fit.)
+pub fn chisquare(f_obs: &[f64], f_exp: &[f64]) -> Result<(f64, f64), StatError> {
+    check_paired(f_obs.len(), f_exp.len())?;
+    if f_obs.len() < 2 {
+        return Err(StatError::TooFewObservations {
+            needed: 2,
+            got: f_obs.len(),
+        });
+    }
     let chi2: f64 = f_obs
         .iter()
         .zip(f_exp)
         .map(|(&o, &e)| (o - e) * (o - e) / e)
         .sum();
-    (
+    Ok((
         chi2,
         crate::chi_square_prob(chi2, f_obs.len().saturating_sub(1)),
-    )
+    ))
 }
 
 /// Two-sample Kolmogorov–Smirnov test — `scipy.stats.ks_2samp`. Returns `(D, p)`
 /// where `D = max|F̂ₐ − F̂_b|`; `p` is the **asymptotic** Kolmogorov survival of
 /// `√(nₐn_b/(nₐ+n_b))·D` (like ROOT's `KolmogorovTest`), which differs from
 /// scipy's exact small-sample p-value.
+///
+/// Returns `(NaN, NaN)` if either sample is empty or holds a `NaN`.
 #[must_use]
 pub fn ks_2samp(a: &[f64], b: &[f64]) -> (f64, f64) {
+    // A NaN compares false both ways, so the merge below would never advance.
+    if a.is_empty() || b.is_empty() || has_nan(a) || has_nan(b) {
+        return (f64::NAN, f64::NAN);
+    }
     let mut xa = a.to_vec();
     let mut xb = b.to_vec();
     xa.sort_by(f64::total_cmp);
@@ -81,14 +117,23 @@ pub fn ks_2samp(a: &[f64], b: &[f64]) -> (f64, f64) {
 /// One-sample Kolmogorov–Smirnov test against a reference CDF — `scipy.stats.ks_1samp`.
 /// Returns `(D, p)` where `D = maxᵢ max(F̂(xᵢ)−cdf(xᵢ), cdf(xᵢ)−F̂(xᵢ₋₁))`; `p` is
 /// the asymptotic Kolmogorov survival of `√n·D`.
+///
+/// Returns `(NaN, NaN)` if `data` is empty, holds a `NaN`, or `cdf` returns
+/// `NaN` for one of its values (`f64::max` would otherwise drop it silently).
 #[must_use]
 pub fn ks_1samp(data: &[f64], cdf: impl Fn(f64) -> f64) -> (f64, f64) {
+    if data.is_empty() || has_nan(data) {
+        return (f64::NAN, f64::NAN);
+    }
     let mut x = data.to_vec();
     x.sort_by(f64::total_cmp);
     let n = x.len();
     let mut d = 0.0f64;
     for (i, &xi) in x.iter().enumerate() {
         let f = cdf(xi);
+        if f.is_nan() {
+            return (f64::NAN, f64::NAN);
+        }
         let d_plus = (i + 1) as f64 / n as f64 - f;
         let d_minus = f - i as f64 / n as f64;
         d = d.max(d_plus).max(d_minus);
@@ -100,8 +145,13 @@ pub fn ks_1samp(data: &[f64], cdf: impl Fn(f64) -> f64) -> (f64, f64) {
 /// `method='asymptotic'`. Returns `(U₁, p)` where `U₁` is the statistic for the
 /// first sample and `p` is the normal approximation with continuity and tie
 /// corrections.
+///
+/// Returns `(NaN, NaN)` if either sample is empty or holds a `NaN`.
 #[must_use]
 pub fn mannwhitneyu(x: &[f64], y: &[f64]) -> (f64, f64) {
+    if x.is_empty() || y.is_empty() || has_nan(x) || has_nan(y) {
+        return (f64::NAN, f64::NAN);
+    }
     let (n1, n2) = (x.len(), y.len());
     let mut all = x.to_vec();
     all.extend_from_slice(y);
@@ -117,15 +167,30 @@ pub fn mannwhitneyu(x: &[f64], y: &[f64]) -> (f64, f64) {
     let mut num = u1 - mu;
     num -= num.signum() * 0.5; // continuity correction
     let z = num / sigma;
-    (u1, (2.0 * Normal::standard().sf(z.abs())).min(1.0))
+    (u1, cap_p(2.0 * Normal::standard().sf(z.abs())))
 }
 
 /// Wilcoxon signed-rank test for paired samples — `scipy.stats.wilcoxon` with
 /// `method='approx'`. Zero differences are dropped; returns `(min(W⁺, W⁻), p)`
 /// with the normal approximation (tie-corrected, no continuity correction, to
 /// match scipy's default).
-#[must_use]
-pub fn wilcoxon(x: &[f64], y: &[f64]) -> (f64, f64) {
+///
+/// A `NaN` in either sample gives `Ok((NaN, NaN))`. When no pair differs the
+/// normal approximation is undefined and the p-value is `NaN`, as in `scipy`.
+///
+/// # Errors
+///
+/// [`StatError::LengthMismatch`] if `x` and `y` differ in length, and
+/// [`StatError::TooFewObservations`] if they are empty (`scipy` returns
+/// `(NaN, NaN)` there).
+pub fn wilcoxon(x: &[f64], y: &[f64]) -> Result<(f64, f64), StatError> {
+    check_paired(x.len(), y.len())?;
+    if x.is_empty() {
+        return Err(StatError::TooFewObservations { needed: 1, got: 0 });
+    }
+    if has_nan(x) || has_nan(y) {
+        return Ok((f64::NAN, f64::NAN));
+    }
     let diffs: Vec<f64> = x
         .iter()
         .zip(y)
@@ -149,7 +214,7 @@ pub fn wilcoxon(x: &[f64], y: &[f64]) -> (f64, f64) {
     let tie = tie_correction(&abs);
     let se = ((nf * (nf + 1.0) * (2.0 * nf + 1.0) - 0.5 * tie) / 24.0).sqrt();
     let z = (t - mean_t) / se;
-    (t, (2.0 * Normal::standard().sf(z.abs())).min(1.0))
+    Ok((t, cap_p(2.0 * Normal::standard().sf(z.abs()))))
 }
 
 /// `Σ(tᵢ³ − tᵢ)` over the groups of tied values — the tie correction shared by

@@ -61,8 +61,9 @@ pub struct TH3 {
     pub tsumwyz: f64,
     /// Bin contents including flow (length `ncells`, x fastest then y then z).
     pub contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty unless enabled via
-    /// [`TH3::sumw2`].
+    /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
+    /// turned on by [`TH3::sumw2`], [`TH3::scale`], or a weighted fill (see
+    /// [`TH1::fill_weight`](crate::TH1::fill_weight)).
     pub sumw2: Vec<f64>,
 }
 
@@ -253,6 +254,10 @@ impl TH3 {
     /// counts toward `fEntries`, the cell (including flow) is incremented, and
     /// the moment sums accumulate only when all three coordinates are in range.
     pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, w: f64) {
+        // Before the contents change; see `TH1::fill_weight`.
+        if w != 1.0 && self.sumw2.is_empty() {
+            self.sumw2();
+        }
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let binx = self.xaxis.find_bin(x);
         let biny = self.yaxis.find_bin(y);

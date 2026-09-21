@@ -179,9 +179,10 @@ cargo run -p oxiroot --example analysis
   is no `gROOT`/`gDirectory`, so any number of same-named histograms coexist in
   memory; and writing two objects under the same key name in one directory is a
   loud `DuplicateName` error, never ROOT's silent shadow-on-read.
-- Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics; `sumw2()`
-  (chains: `h.sumw2().fill(x)`) enables weighted per-bin errors (`bin_error`) on
-  a histogram not already built with `.weight()`.
+- Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics, including its
+  automatic `Sumw2`: the first weight other than 1 turns on weighted per-bin
+  errors (`bin_error`). `sumw2()` (chains: `h.sumw2().fill(x)`) turns them on
+  explicitly for a unit-weight histogram.
 - **The one way to build a histogram is the scikit-hep
   [`hist`](https://github.com/scikit-hep/hist)-style `Hist` builder**, mapped
   onto ROOT so the result is an ordinary `TH1`/`TH2`/`TH3`.
@@ -712,9 +713,9 @@ ax2.save("heatmap.svg")?;
 - **A pure-Rust [`hadd`](https://root.cern/doc/master/classTFileMerger.html)** —
   `merge_files("all.root", &["run1.root", "run2.root"], Compression::Zstd(5))?`
   combines several ROOT files the way ROOT's most-used command-line tool does:
-  **`TH1`/`TH2`/`TH3`/`TProfile` summed** bin-by-bin (the exact `add` reduction —
-  contents, `Sumw2`, entries, moments), and **`TTree` / RNTuple entries
-  concatenated**. Other supported objects (graphs, 2D/3D profiles, efficiencies,
+  **`TH1`/`TH2`/`TH3` and the 1-, 2- and 3-D profiles summed** bin-by-bin (the
+  exact `add` reduction — contents, `Sumw2`, entries, moments), and **`TTree` /
+  RNTuple entries concatenated**. Other supported objects (graphs, efficiencies,
   functions, strings, matrices, …) are copied from the first file; unknown
   classes are **skipped and listed in the report**, never silently dropped.
 - Each concatenated branch keeps its original kind (scalar, `x[N]`, jagged `x[n]`,

@@ -144,15 +144,32 @@ impl TProfile3D {
         self.zaxis.nbins.max(0) as usize
     }
 
+    /// Turn on per-cell `Σw²` tracking (ROOT's `TProfile3D::Sumw2`), seeding each
+    /// cell from its weight sum — exact for the unit-weight fills made so far.
+    /// A no-op once tracking is on. Call before the current fill touches
+    /// `bin_entries`.
+    pub(crate) fn track_bin_sumw2(&mut self) {
+        if self.bin_sumw2.is_empty() {
+            self.bin_sumw2 = self.bin_entries.clone();
+        }
+    }
+
     /// Profile a point `(x, y, z, t)` with unit weight.
     pub fn fill(&mut self, x: f64, y: f64, z: f64, t: f64) {
         self.fill_weight(x, y, z, t, 1.0);
     }
 
     /// Profile a point `(x, y, z, t)` with weight `w`, matching `TProfile3D::Fill`.
+    ///
+    /// The first fill with `w != 1` turns on per-cell tracking of `Σw²`
+    /// (`fBinSumw2`), as ROOT's `Fill` does; without it the effective entry count,
+    /// and so every bin error, would assume unit weights.
     pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, t: f64, w: f64) {
         if self.tmin != self.tmax && (t < self.tmin || t > self.tmax || t.is_nan()) {
             return;
+        }
+        if w != 1.0 {
+            self.track_bin_sumw2();
         }
         let (sx, sy) = (self.nx() + 2, self.ny() + 2);
         let (bx, by, bz) = (
@@ -169,6 +186,9 @@ impl TProfile3D {
         }
         if let Some(e) = self.bin_entries.get_mut(cell) {
             *e += w;
+        }
+        if let Some(s) = self.bin_sumw2.get_mut(cell) {
+            *s += w * w;
         }
         self.entries += 1.0;
 
