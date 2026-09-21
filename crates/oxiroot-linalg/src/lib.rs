@@ -412,7 +412,7 @@ pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMat
 /// ROOT C++ uses its own compiled streamers). Returns an empty vector for a
 /// non-matrix class. `oxiroot-hist`'s central streamer collector delegates the
 /// matrix class names here.
-pub fn streamer_classes(class: &str) -> Vec<Cls> {
+pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
     // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
     let matrix_base = || Cls {
         name: "TMatrixTBase<double>",

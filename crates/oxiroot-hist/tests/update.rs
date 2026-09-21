@@ -150,3 +150,41 @@ fn adding_a_new_subdir_during_append_is_rejected() {
         .unwrap_err();
     assert!(format!("{err}").contains("new subdirectories"), "{err}");
 }
+
+#[test]
+fn appending_adds_the_streamer_info_the_file_lacks() {
+    // A histogram-only file describes the histogram classes; appending a
+    // parameter adds its class to that list and keeps every existing entry.
+    let out = std::env::temp_dir().join("oxiroot_update_streamers.root");
+    let mut h = Hist::reg(2, 0.0, 2.0).double().named("h");
+    h.fill(0.5);
+    h.write_root(&out, Compression::None)
+        .expect("initial write");
+    let before = RFile::open(&out).unwrap().streamer_registry().unwrap();
+    assert!(before.get("TParameter<double>").is_none());
+
+    RootFile::open(&out)
+        .expect("open")
+        .add(&oxiroot_hist::TParameter::f64("lumi", 12.5))
+        .write(Compression::None)
+        .expect("append");
+
+    let f = RFile::open(&out).unwrap();
+    let after = f.streamer_registry().expect("merged streamer info parses");
+    assert!(after.get("TParameter<double>").is_some());
+    assert_eq!(
+        &after.infos()[..before.infos().len()],
+        before.infos(),
+        "existing entries are kept, in order"
+    );
+    assert_eq!(TH1::read_root(&f, "h").unwrap(), h);
+
+    // Appending again with nothing new leaves the record where it is.
+    let seek_info = f.header().seek_info;
+    RootFile::open(&out)
+        .expect("open")
+        .add(&oxiroot_hist::TParameter::f64("lumi2", 1.0))
+        .write(Compression::None)
+        .expect("append again");
+    assert_eq!(RFile::open(&out).unwrap().header().seek_info, seek_info);
+}
