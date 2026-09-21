@@ -1,14 +1,14 @@
 //! Concatenating RNTuples with [`concat_ntuples`] — the `hadd` building block.
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_rntuple::{concat_ntuples, Field, FieldValues, Ntuple, RNTuple};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_rntuple::{concat_ntuples, Field, FieldValues, Ntuple, NtupleReader};
 
 /// Write `fields` as RNTuple `ntpl` to a fresh temp file and reopen it.
-fn write_open(tag: &str, fields: Vec<Field>) -> RFile {
+fn write_open(tag: &str, fields: Vec<Field>) -> FileReader {
     let path = std::env::temp_dir().join(format!("oxiroot_rnconcat_{tag}.root"));
     Ntuple::new("ntpl", fields)
         .write_root(&path, Compression::None)
         .expect("write");
-    RFile::open(&path).expect("reopen")
+    FileReader::open(&path).expect("reopen")
 }
 
 #[test]
@@ -31,16 +31,16 @@ fn concatenates_scalar_vector_and_string_fields() {
             Field::vec_i32("v", vec![vec![4, 5], vec![6]]),
         ],
     );
-    let na = RNTuple::open(&fa, "ntpl").unwrap();
-    let nb = RNTuple::open(&fb, "ntpl").unwrap();
+    let na = NtupleReader::open(&fa, "ntpl").unwrap();
+    let nb = NtupleReader::open(&fb, "ntpl").unwrap();
 
     let merged = concat_ntuples("ntpl", &[(&fa, &na), (&fb, &nb)]).expect("concat");
     let path = std::env::temp_dir().join("oxiroot_rnconcat_out.root");
     merged
         .write_root(&path, Compression::None)
         .expect("write merged");
-    let fo = RFile::open(&path).unwrap();
-    let no = RNTuple::open(&fo, "ntpl").unwrap();
+    let fo = FileReader::open(&path).unwrap();
+    let no = NtupleReader::open(&fo, "ntpl").unwrap();
 
     assert_eq!(no.num_entries(), 5);
     assert_eq!(
@@ -71,8 +71,8 @@ fn concatenates_scalar_vector_and_string_fields() {
 fn rejects_a_type_mismatch() {
     let fa = write_open("ty_a", vec![Field::i32("v", vec![1, 2])]);
     let fb = write_open("ty_b", vec![Field::f64("v", vec![3.0])]);
-    let na = RNTuple::open(&fa, "ntpl").unwrap();
-    let nb = RNTuple::open(&fb, "ntpl").unwrap();
+    let na = NtupleReader::open(&fa, "ntpl").unwrap();
+    let nb = NtupleReader::open(&fb, "ntpl").unwrap();
 
     let Err(err) = concat_ntuples("ntpl", &[(&fa, &na), (&fb, &nb)]) else {
         panic!("expected an error for a type mismatch");

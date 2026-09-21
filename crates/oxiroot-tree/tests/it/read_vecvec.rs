@@ -5,11 +5,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
-fn fixture(name: &str) -> RFile {
-    RFile::open(
+fn fixture(name: &str) -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join(name),
@@ -20,7 +20,7 @@ fn fixture(name: &str) -> RFile {
 #[test]
 fn reads_vector_of_vector_int() {
     let f = fixture("tree_vecvec.root");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     assert_eq!(t.branch_names(), vec!["vi", "vd"]);
     assert!(t.unsupported_branches().is_empty());
@@ -47,7 +47,7 @@ fn reads_vector_of_vector_int() {
 #[test]
 fn reads_vector_of_vector_double() {
     let f = fixture("tree_vecvec.root");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     // vd = [[[0.0]], [[1.0], [1.1, 1.11]], [[2.0], [2.1, 2.11], [2.2, 2.21, 2.22]]]
     assert_eq!(
         t.read_branch(&f, "vd").unwrap(),
@@ -70,7 +70,7 @@ fn reads_vector_of_vector_double() {
 #[test]
 fn nested_offsets_partition_entries() {
     let f = fixture("tree_vecvec.root");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     let BranchValues::Nested { offsets, items } = t.read_branch(&f, "vi").unwrap() else {
         panic!("expected a nested branch");
     };

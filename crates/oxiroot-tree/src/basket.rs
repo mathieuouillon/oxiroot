@@ -10,7 +10,7 @@
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{decompress_payload, Error, Result};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 /// Key version at or above which a `TKey` uses 64-bit seek pointers.
 const KEY_BIG_VERSION: u16 = 1000;
@@ -45,7 +45,7 @@ impl Basket {
     /// on-disk size (`fBasketBytes`) when the branch recorded it — then the whole
     /// basket is fetched in one exact request; otherwise the key header is probed
     /// to discover the size.
-    pub fn read(file: &RFile, seek: u64, nbytes: Option<usize>) -> Result<Basket> {
+    pub fn read(file: &FileReader, seek: u64, nbytes: Option<usize>) -> Result<Basket> {
         // With the exact size known, fetch the whole record at once; otherwise
         // probe a bounded window to parse the key header (which reveals `fNbytes`).
         let avail = file.size().saturating_sub(seek);

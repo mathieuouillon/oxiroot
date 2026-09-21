@@ -2,13 +2,13 @@
 //! `std::vector<std::vector<T>>`, a vector of records, and a top-level record —
 //! then read them back through our own reader.
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_rntuple::{Column, Field, FieldValues, RNTuple};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
 
-fn round_trip(fields: &[Field], tag: &str) -> RFile {
+fn round_trip(fields: &[Field], tag: &str) -> FileReader {
     let out = std::env::temp_dir().join(format!("oxiroot_write_nested_{tag}.root"));
     oxiroot_rntuple::write_rntuple_file(&out, "ntpl", fields, Compression::None).expect("write");
-    RFile::open(&out).expect("reopen")
+    FileReader::open(&out).expect("reopen")
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn writes_vector_of_strings() {
     ];
     let fields = vec![Field::vec_str("vs", vs.clone())];
     let file = round_trip(&fields, "vs");
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(
         ntpl.read_field(&file, "vs").expect("vs"),
         FieldValues::VecStr(vs)
@@ -32,7 +32,7 @@ fn writes_vector_of_vectors() {
     let vvi = vec![vec![], vec![vec![1]], vec![vec![2], vec![3, 3]]];
     let fields = vec![Field::vec_vec_i32("vvi", vvi)];
     let file = round_trip(&fields, "vvi");
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(
         ntpl.read_field(&file, "vvi").expect("vvi"),
         FieldValues::Nested {
@@ -54,7 +54,7 @@ fn writes_vector_of_records() {
     };
     let fields = vec![Field::new("vp", vp)];
     let file = round_trip(&fields, "vp");
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(
         ntpl.read_field(&file, "vp").expect("vp"),
         FieldValues::Nested {
@@ -76,7 +76,7 @@ fn writes_a_top_level_record() {
     ]);
     let fields = vec![Field::new("p", rec)];
     let file = round_trip(&fields, "rec");
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(ntpl.num_entries(), 3);
     assert_eq!(
         ntpl.read_field(&file, "p").expect("p"),

@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::{RFile, TDatime, TKey};
+use oxiroot_io_core::{FileReader, TDatime, TKey};
 
 fn fixture(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,7 +15,7 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 /// Exercise every read path on an opened file (each must be panic-free).
-fn poke(f: &RFile) {
+fn poke(f: &FileReader) {
     for k in f.keys() {
         let _ = f.key_payload(k);
     }
@@ -37,7 +37,7 @@ fn from_bytes_never_panics_on_garbage() {
         vec![0xffu8; 4096],
     ];
     for c in cases {
-        if let Ok(f) = RFile::from_bytes(c) {
+        if let Ok(f) = FileReader::from_bytes(c) {
             poke(&f);
         }
     }
@@ -47,7 +47,7 @@ fn from_bytes_never_panics_on_garbage() {
 fn truncation_never_panics() {
     let data = fixture("th1d_uncompressed.root");
     for len in 0..=data.len() {
-        if let Ok(f) = RFile::from_bytes(data[..len].to_vec()) {
+        if let Ok(f) = FileReader::from_bytes(data[..len].to_vec()) {
             poke(&f);
         }
     }
@@ -61,7 +61,7 @@ fn single_byte_flips_never_panic() {
         for v in [0x00u8, 0xff] {
             let mut c = data.clone();
             c[i] = v;
-            if let Ok(f) = RFile::from_bytes(c) {
+            if let Ok(f) = FileReader::from_bytes(c) {
                 poke(&f);
             }
         }
@@ -143,7 +143,7 @@ fn key_header(w: &mut WBuffer, class: &str, name: &str, seek_key: u64, big: bool
 
 /// A minimal, parseable TFile whose root directory holds a single big-format
 /// (version 1004, 64-bit seeks) `TDirectory` key named "d" with `fSeekKey` near
-/// `u64::MAX`. `RFile::from_bytes` accepts it; navigating into "d" must reject
+/// `u64::MAX`. `FileReader::from_bytes` accepts it; navigating into "d" must reject
 /// the offset rather than overflow.
 fn file_with_hostile_big_directory_key() -> Vec<u8> {
     let mut w = WBuffer::new();
@@ -193,7 +193,7 @@ fn file_with_hostile_big_directory_key() -> Vec<u8> {
 
 #[test]
 fn subdir_rejects_overflowing_big_directory_key() {
-    let f = RFile::from_bytes(file_with_hostile_big_directory_key())
+    let f = FileReader::from_bytes(file_with_hostile_big_directory_key())
         .expect("the crafted container parses");
 
     // Sanity: the key we parse back really is the hostile big-format one.
@@ -206,7 +206,7 @@ fn subdir_rejects_overflowing_big_directory_key() {
     assert!(k.seek_key > u64::MAX - 16, "fSeekKey near u64::MAX");
 
     // Navigating into it must Err — not overflow-panic (debug) or wrap to a
-    // bogus small offset (release) in RFile::subdir -> TKey::payload_start.
+    // bogus small offset (release) in FileReader::subdir -> TKey::payload_start.
     assert!(
         f.subdir("d").is_err(),
         "subdir must reject the overflowing directory key"

@@ -1,26 +1,26 @@
 //! `ContainerWriter`: the TFile layout every oxiroot writer goes through. Each
-//! file is read back with `RFile`, in both the 32-bit and 64-bit forms.
+//! file is read back with `FileReader`, in both the 32-bit and 64-bit forms.
 
 use std::io::Cursor;
 
 use oxiroot_io_core::streamer_gen::{basic, streamer_info_list, Cls};
-use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, RFile, TKey};
+use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, FileReader, TKey};
 
 /// Build a file in the small form (`big = false`) or the big form.
 fn build(
     big: bool,
     layout: impl FnMut(&mut ContainerWriter<Cursor<Vec<u8>>>) -> oxiroot_io_core::Result<()>,
-) -> RFile {
+) -> FileReader {
     let threshold = if big { 0 } else { u64::MAX };
     let bytes =
         ContainerWriter::build("t.root", Compression::None, threshold, layout).expect("build");
-    let f = RFile::from_bytes(bytes).expect("parse");
+    let f = FileReader::from_bytes(bytes).expect("parse");
     assert_eq!(f.header().is_big(), big);
     f
 }
 
 /// The payload stored under `name` in `dir` ("" for the top directory).
-fn payload(f: &RFile, dir: &str, name: &str) -> Vec<u8> {
+fn payload(f: &FileReader, dir: &str, name: &str) -> Vec<u8> {
     if dir.is_empty() {
         let key = f.key(name).expect("key");
         f.key_payload(key).expect("payload").to_vec()
@@ -130,7 +130,7 @@ fn blobs_land_at_the_returned_offset() {
     );
     assert_eq!(&bytes[offsets[0] as usize..][..10], b"first blob");
     assert_eq!(&bytes[offsets[2] as usize..][..6], b"second");
-    let f = RFile::from_bytes(bytes).unwrap();
+    let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(f.keys().len(), 1, "blobs are not directory entries");
 }
 
@@ -141,7 +141,10 @@ fn threshold_picks_the_form_from_the_finished_size() {
             .map(drop)
     };
     let small = ContainerWriter::build("t.root", Compression::None, u64::MAX, layout).unwrap();
-    assert!(!RFile::from_bytes(small.clone()).unwrap().header().is_big());
+    assert!(!FileReader::from_bytes(small.clone())
+        .unwrap()
+        .header()
+        .is_big());
     let at_size =
         ContainerWriter::build("t.root", Compression::None, small.len() as u64, layout).unwrap();
     assert_eq!(
@@ -150,7 +153,7 @@ fn threshold_picks_the_form_from_the_finished_size() {
     );
     let over = ContainerWriter::build("t.root", Compression::None, small.len() as u64 - 1, layout)
         .unwrap();
-    assert!(RFile::from_bytes(over).unwrap().header().is_big());
+    assert!(FileReader::from_bytes(over).unwrap().header().is_big());
 }
 
 /// A one-member class, for streamer-info lists.
@@ -164,7 +167,7 @@ fn class(name: &str) -> Cls<'_> {
 }
 
 /// The class names in a file's streamer info.
-fn described(f: &RFile) -> Vec<String> {
+fn described(f: &FileReader) -> Vec<String> {
     let registry = f.streamer_registry().unwrap();
     registry
         .class_names()
@@ -174,7 +177,7 @@ fn described(f: &RFile) -> Vec<String> {
 }
 
 /// The `KeyLen` of a file's streamer-info record.
-fn streamer_key_len(f: &RFile) -> u16 {
+fn streamer_key_len(f: &FileReader) -> u16 {
     let h = f.header();
     let record = f.read_at(h.seek_info, h.nbytes_info as usize).unwrap();
     TKey::read(&mut oxiroot_io_core::buffer::RBuffer::new(&record))
@@ -203,7 +206,7 @@ fn streamer_info_is_compressed_with_the_file() {
         c.place_streamer_info(&[0u8; 400], &[])
     })
     .unwrap();
-    let f = RFile::from_bytes(bytes).unwrap();
+    let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(f.header().compress, 505);
     assert!(f.header().nbytes_info < 400);
     assert_eq!(f.streamer_info_object().unwrap().unwrap(), vec![0u8; 400]);
@@ -305,17 +308,20 @@ fn append_keeps_existing_bytes_and_adds_keys() {
             },
         )
         .unwrap();
-        let end = RFile::from_bytes(existing.clone()).unwrap().header().end as usize;
+        let end = FileReader::from_bytes(existing.clone())
+            .unwrap()
+            .header()
+            .end as usize;
         if !big {
             // Everything but the patched header and top record is untouched.
             let record = 100
-                + RFile::from_bytes(existing.clone())
+                + FileReader::from_bytes(existing.clone())
                     .unwrap()
                     .header()
                     .nbytes_name as usize;
             assert_eq!(bytes[record + 60..end], existing[record + 60..end]);
         }
-        let f = RFile::from_bytes(bytes).unwrap();
+        let f = FileReader::from_bytes(bytes).unwrap();
         assert_eq!(f.header().is_big(), big);
         let keys: Vec<(&str, u16)> = f
             .keys()
@@ -335,7 +341,7 @@ fn append_keeps_existing_bytes_and_adds_keys() {
 fn append_keeps_complete_or_unreadable_streamer_info_as_is() {
     // Nothing missing: the original record stays in place.
     let existing = existing_file();
-    let before = RFile::from_bytes(existing.clone())
+    let before = FileReader::from_bytes(existing.clone())
         .unwrap()
         .header()
         .seek_info;
@@ -344,7 +350,10 @@ fn append_keeps_complete_or_unreadable_streamer_info_as_is() {
             c.place_streamer_info(&[], &[class("A")])
         })
         .unwrap();
-    assert_eq!(RFile::from_bytes(bytes).unwrap().header().seek_info, before);
+    assert_eq!(
+        FileReader::from_bytes(bytes).unwrap().header().seek_info,
+        before
+    );
 
     // A record that does not parse is kept rather than extended.
     let existing = existing_file_with(b"not a streamer info list");
@@ -353,7 +362,7 @@ fn append_keeps_complete_or_unreadable_streamer_info_as_is() {
             c.place_streamer_info(&[], &[class("B")])
         })
         .unwrap();
-    let f = RFile::from_bytes(bytes).unwrap();
+    let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(
         f.streamer_info_object().unwrap().unwrap(),
         b"not a streamer info list"
@@ -373,13 +382,13 @@ fn a_big_file_stays_big_when_appended() {
                 .map(drop)
         })
         .unwrap();
-    let f = RFile::from_bytes(appended).unwrap();
+    let f = FileReader::from_bytes(appended).unwrap();
     assert!(f.header().is_big());
     assert_eq!(payload(&f, "", "a"), b"alpha");
     assert_eq!(payload(&f, "", "b"), b"beta");
 
     // Continuing it in the small form is refused.
-    let file = RFile::from_bytes(big.clone()).unwrap();
+    let file = FileReader::from_bytes(big.clone()).unwrap();
     let mut sink = Cursor::new(big);
     sink.set_position(file.header().end);
     assert!(ContainerWriter::append(sink, &file, "b.root", Compression::None, false).is_err());

@@ -7,7 +7,7 @@
 //! Writes a scalar, a variable-length (jagged) array, and a string branch, then
 //! reads them back — showing branch introspection (`branch_type`/`branch_shape`),
 //! a whole-branch read, and an entry-range read that touches only the baskets it
-//! needs. Then streams a second tree in batches with [`TTreeWriter`] (bounded
+//! needs. Then streams a second tree in batches with [`TreeWriter`] (bounded
 //! memory, one basket per branch per batch). Pass an output path as the first
 //! argument to keep the one-shot file.
 
@@ -34,8 +34,8 @@ fn main() -> oxiroot::Result<()> {
     write_tree_file(&path, "Events", &branches, Compression::Zstd(5))?;
     println!("wrote {path}");
 
-    let file = RFile::open(&path)?;
-    let t = TTree::open(&file, "Events")?;
+    let file = FileReader::open(&path)?;
+    let t = TreeReader::open(&file, "Events")?;
     println!(
         "{} entries, branches: {:?}",
         t.num_entries(),
@@ -64,7 +64,7 @@ fn main() -> oxiroot::Result<()> {
         .join("oxiroot_tree_streamed.root")
         .display()
         .to_string();
-    let mut w = TTreeWriter::create(&stream_path, "Events", Compression::Zstd(5))?;
+    let mut w = TreeWriter::create(&stream_path, "Events", Compression::Zstd(5))?;
     for batch in 0..5 {
         let base = batch * 1_000;
         let x: Vec<f64> = (0..1_000).map(|i| (base + i) as f64).collect();
@@ -74,8 +74,8 @@ fn main() -> oxiroot::Result<()> {
     w.finish()?;
     println!("\nstreamed {entries} entries to {stream_path}");
 
-    let sf = RFile::open(&stream_path)?;
-    let st = TTree::open(&sf, "Events")?;
+    let sf = FileReader::open(&stream_path)?;
+    let st = TreeReader::open(&sf, "Events")?;
     let all = st.read_branch(&sf, "x")?;
     let xs = all.as_f64().unwrap();
     println!(

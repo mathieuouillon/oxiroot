@@ -361,7 +361,7 @@ the raw `Vec<String>`, `find_label` maps a label back to its bin, and
 
 ## Writing and reading
 
-The `WriteRoot` trait writes any single object; the `RootFile` builder composes
+The `WriteRoot` trait writes any single object; `FileWriter` composes
 several objects (and subdirectories) into one file. The `ReadRoot` trait reads
 one object back by key. Written files embed a `TStreamerInfo` list, so they are
 self-describing for ROOT and uproot.
@@ -380,7 +380,7 @@ let bytes = h.to_root_bytes(); // just the streamed object payload
 `write_root` requires a non-empty name; writing an unnamed object is an error.
 `to_root_bytes` returns the streamed payload (no file/key framing).
 
-### Several objects with `RootFile`
+### Several objects with `FileWriter`
 
 ```rust
 use oxiroot::prelude::*;
@@ -389,14 +389,14 @@ let pt = Hist::reg(10, 0.0, 1.0).double().named("pt");
 let prof = Hist::reg(10, 0.0, 1.0).profile().named("prof");
 let signal = Hist::reg(10, 0.0, 1.0).double().named("sig");
 
-RootFile::create("out.root")
+FileWriter::create("out.root")
     .add(&pt)                            // any &dyn WriteRoot: hist, profile, graph…
     .add(&prof)
     .dir("by_region", |d| d.add(&signal)) // a TDirectory holding `sig`
     .write(Compression::Zstd(5))?;
 ```
 
-Append to an existing file with `RootFile::open`. The append is *in place* —
+Append to an existing file with `FileWriter::open`. The append is *in place* —
 existing objects never move — so files that already contain subdirectories or an
 RNTuple are preserved (added objects land in the top directory; only *creating*
 new subdirectories while appending is unsupported):
@@ -404,7 +404,7 @@ new subdirectories while appending is unsupported):
 ```rust
 use oxiroot::prelude::*;
 
-RootFile::open("out.root")?
+FileWriter::open("out.root")?
     .add(&extra)
     .write(Compression::None)?;
 ```
@@ -420,7 +420,7 @@ RootFile::open("out.root")?
 ```rust
 use oxiroot::prelude::*;
 
-let f = RFile::open("out.root")?;
+let f = FileReader::open("out.root")?;
 let h = TH1::read_root(&f, "pt")?;            // any of TH1D/F/I/S/C/L
 let sig = TH1::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
 ```
@@ -428,7 +428,7 @@ let sig = TH1::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
 `read_root` auto-detects the on-disk precision (every `TH1D/F/I/S/C/L` reads into
 a `TH1`, with the exact class preserved in `class_name()`); contents are widened
 to `f64`. `read_root_in(file, dir, name)` reads from a subdirectory written via
-`RootFile::dir`.
+`FileWriter::dir`.
 
 See [Compression](compression.md) for the codec options and
 [ROOT / uproot interop](interop.md) for the cross-language read/write guarantee.

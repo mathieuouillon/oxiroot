@@ -5,7 +5,7 @@
 //! and uproot).
 
 use oxiroot::prelude::*;
-use oxiroot::RFile;
+use oxiroot::FileReader;
 
 #[test]
 fn appends_a_histogram_to_an_rntuple_file() {
@@ -25,13 +25,13 @@ fn appends_a_histogram_to_an_rntuple_file() {
         .titled("appended");
     h.fill(0.5);
     h.fill(2.5);
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open for append")
         .add(&h)
         .write(Compression::None)
         .expect("append");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let names: Vec<&str> = f.keys().iter().map(|k| k.name.as_str()).collect();
     assert!(
         names.contains(&"events") && names.contains(&"h"),
@@ -39,7 +39,7 @@ fn appends_a_histogram_to_an_rntuple_file() {
     );
 
     // The RNTuple still reads — its anchor/page offsets were not relocated.
-    let nt = RNTuple::open(&f, "events").expect("rntuple survived the append");
+    let nt = NtupleReader::open(&f, "events").expect("rntuple survived the append");
     assert_eq!(nt.num_entries(), 3);
     assert_eq!(
         nt.read_field(&f, "mass").unwrap(),

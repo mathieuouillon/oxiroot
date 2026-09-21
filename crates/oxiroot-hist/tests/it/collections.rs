@@ -6,12 +6,14 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, RootFile, TGraph, THStack, TMultiGraph};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_hist::{FileWriter, Hist, ReadRoot, TGraph, THStack, TMultiGraph};
+use oxiroot_io_core::{Compression, FileReader};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/collections.root"))
-        .expect("open fixture")
+fn fixture() -> FileReader {
+    FileReader::open(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/collections.root"),
+    )
+    .expect("open fixture")
 }
 
 #[test]
@@ -64,13 +66,13 @@ fn round_trips_collections_through_oxiroot() {
         );
 
     let out = std::env::temp_dir().join("oxiroot_collections_rt.root");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&stack)
         .add(&multi)
         .write(Compression::None)
         .unwrap();
 
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     let hs = THStack::read_root(&f, "hs").unwrap();
     assert_eq!(hs.hists().len(), 2);
     assert_eq!(hs.hists()[0].name(), "ha");

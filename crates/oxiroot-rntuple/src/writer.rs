@@ -3,7 +3,7 @@
 //! [`write_rntuple_file`] writes a whole RNTuple in one shot, supporting scalar
 //! (`bool`/`i32`/`i64`/`f32`/`f64`), `std::string`, and `std::vector<T>` fields
 //! in a single cluster, with non-split column encodings and optional page
-//! compression. [`RNTupleWriter`] writes those same field types one cluster per
+//! compression. [`NtupleWriter`] writes those same field types one cluster per
 //! batch, so a large dataset need not be held in memory at once. The header/page/
 //! page-list/footer envelopes are written as raw blobs at the offsets the anchor
 //! (and the page locators) point to; only the anchor is a `TKey`. Validated by
@@ -2144,7 +2144,7 @@ pub fn write_rntuple_file(
 
 /// An RNTuple to write: a name and its [`Field`]s. The method-based,
 /// write-side counterpart to the free [`write_rntuple_file`] function (and to
-/// the read-only [`RNTuple`](crate::RNTuple)) — build one, then call
+/// the read-only [`NtupleReader`](crate::NtupleReader)) — build one, then call
 /// [`write_root`](Ntuple::write_root), mirroring `hist.write_root`:
 ///
 /// ```no_run
@@ -2234,16 +2234,16 @@ impl Ntuple {
     }
 }
 
-/// An `Ntuple` goes into a [`RootFile`](oxiroot_io_core::RootFile) with
-/// [`put`](oxiroot_io_core::RootFile::put): several RNTuples in one file, inside
+/// An `Ntuple` goes into a [`FileWriter`](oxiroot_io_core::FileWriter) with
+/// [`put`](oxiroot_io_core::FileWriter::put): several RNTuples in one file, inside
 /// `TDirectory` subdirectories, or next to histograms and trees. ROOT and uproot
 /// navigate the result natively.
 ///
 /// ```no_run
-/// use oxiroot_io_core::{Compression, RootFile};
+/// use oxiroot_io_core::{Compression, FileWriter};
 /// use oxiroot_rntuple::{Field, Ntuple};
 ///
-/// RootFile::create("multi.root")
+/// FileWriter::create("multi.root")
 ///     .put(Ntuple::new("events", vec![Field::i32("x", vec![1, 2, 3])]))
 ///     .put(Ntuple::new("runs", vec![Field::i32("run", vec![7])]))
 ///     .dir("cal", |d| d.put(Ntuple::new("pedestals", vec![Field::f64("p", vec![0.5])])))
@@ -2316,15 +2316,16 @@ struct HeaderState {
     streamer_info: Vec<u8>,
 }
 
-/// A streaming RNTuple writer: each [`write_batch`](RNTupleWriter::write_batch)
+/// A streaming RNTuple writer: each [`write_batch`](NtupleWriter::write_batch)
 /// flushes one *cluster* to the sink, so a large dataset can be written one
 /// chunk at a time without ever holding it all in memory. Call
-/// [`finish`](RNTupleWriter::finish) to write the page list, footer, and anchor.
+/// [`finish`](NtupleWriter::finish) to write the page list, footer, and anchor.
 ///
 /// Handles the same field types as [`write_rntuple_file`] — scalars,
 /// `std::string`, and `std::vector<T>` — writing each batch's collection/string
 /// index offsets relative to its own cluster, as the format requires.
-pub struct RNTupleWriter<W: Write + Seek> {
+#[doc(alias = "RNTupleWriter")]
+pub struct NtupleWriter<W: Write + Seek> {
     file: ContainerWriter<W>,
     ntuple_name: String,
     // Set when the first batch defines the schema and writes the header.
@@ -2336,9 +2337,9 @@ pub struct RNTupleWriter<W: Write + Seek> {
     cluster_pages: Vec<Vec<PageRec>>,
 }
 
-impl RNTupleWriter<std::fs::File> {
+impl NtupleWriter<std::fs::File> {
     /// Create a streaming RNTuple file at `path` (32-bit container; supports up
-    /// to 2 GiB — [`finish`](RNTupleWriter::finish) errors if that is exceeded).
+    /// to 2 GiB — [`finish`](NtupleWriter::finish) errors if that is exceeded).
     pub fn create(
         path: impl AsRef<Path>,
         ntuple_name: &str,
@@ -2347,7 +2348,7 @@ impl RNTupleWriter<std::fs::File> {
         Self::create_fmt(path, ntuple_name, compression, false)
     }
 
-    /// Like [`create`](RNTupleWriter::create), but writes the 64-bit ("big")
+    /// Like [`create`](NtupleWriter::create), but writes the 64-bit ("big")
     /// container form so the file may exceed 2 GiB. Use this when the streamed
     /// dataset is expected to be large; small files are still valid, just stored
     /// in the wider form.
@@ -2372,14 +2373,14 @@ impl RNTupleWriter<std::fs::File> {
             .unwrap_or("file.root")
             .to_string();
         let file = std::fs::File::create(path)?;
-        RNTupleWriter::new_fmt(file, &file_name, ntuple_name, compression, big)
+        NtupleWriter::new_fmt(file, &file_name, ntuple_name, compression, big)
     }
 }
 
-impl<W: Write + Seek> RNTupleWriter<W> {
+impl<W: Write + Seek> NtupleWriter<W> {
     /// Begin writing into an arbitrary seekable sink (the TFile header and root
     /// directory are written immediately, with pointers to patch at the end).
-    /// Small (32-bit) container — see [`new_large`](RNTupleWriter::new_large) for
+    /// Small (32-bit) container — see [`new_large`](NtupleWriter::new_large) for
     /// the >2 GiB form.
     pub fn new(
         sink: W,
@@ -2390,7 +2391,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         Self::new_fmt(sink, file_name, ntuple_name, compression, false)
     }
 
-    /// Like [`new`](RNTupleWriter::new), but writes the 64-bit ("big") container
+    /// Like [`new`](NtupleWriter::new), but writes the 64-bit ("big") container
     /// form so the streamed file may exceed 2 GiB.
     pub fn new_large(
         sink: W,
@@ -2408,7 +2409,7 @@ impl<W: Write + Seek> RNTupleWriter<W> {
         compression: Compression,
         big: bool,
     ) -> Result<Self> {
-        Ok(RNTupleWriter {
+        Ok(NtupleWriter {
             file: ContainerWriter::new(sink, file_name, compression, big)?,
             ntuple_name: ntuple_name.to_string(),
             header: None,
@@ -2478,9 +2479,10 @@ impl<W: Write + Seek> RNTupleWriter<W> {
     /// Finish the file: write the page list (all clusters), footer, anchor key,
     /// and key list, then patch the header pointers.
     pub fn finish(mut self) -> Result<()> {
-        let header = self.header.take().ok_or_else(|| {
-            Error::Format("RNTuple writer finished with no batches written".into())
-        })?;
+        let header = self
+            .header
+            .take()
+            .ok_or_else(|| Error::Format("NtupleWriter finished with no batches written".into()))?;
         let num_clusters = self.summaries.len() as u32;
 
         let compression = self.file.compression_setting();
@@ -2579,8 +2581,8 @@ fn build_page_list_multi(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FieldValues, RNTuple};
-    use oxiroot_io_core::RFile;
+    use crate::{FieldValues, NtupleReader};
+    use oxiroot_io_core::FileReader;
 
     #[test]
     fn one_shot_writes_and_reads_big_format() {
@@ -2596,9 +2598,9 @@ mod tests {
         // Also drop it to a temp file so an external reader (uproot) can be run
         // against the one-shot big-format output out of band.
         let _ = std::fs::write("/tmp/rootrs_oneshot_big.root", &bytes);
-        let f = RFile::from_bytes(bytes).unwrap();
+        let f = FileReader::from_bytes(bytes).unwrap();
         assert!(f.header().is_big(), "forced into big-format container");
-        let ntpl = RNTuple::open(&f, "ntpl").unwrap();
+        let ntpl = NtupleReader::open(&f, "ntpl").unwrap();
         assert_eq!(ntpl.num_entries(), 4);
         assert_eq!(
             ntpl.read_field(&f, "x").unwrap(),
@@ -2611,9 +2613,9 @@ mod tests {
 
         // The same data under the real threshold stays in small (32-bit) form.
         let small = rntuple_file_bytes("t.root", "ntpl", &fields, Compression::None).unwrap();
-        let fs = RFile::from_bytes(small).unwrap();
+        let fs = FileReader::from_bytes(small).unwrap();
         assert!(!fs.header().is_big());
-        let ntpl = RNTuple::open(&fs, "ntpl").unwrap();
+        let ntpl = NtupleReader::open(&fs, "ntpl").unwrap();
         assert_eq!(
             ntpl.read_field(&fs, "x").unwrap(),
             FieldValues::I32(vec![1, 2, 3, 4])

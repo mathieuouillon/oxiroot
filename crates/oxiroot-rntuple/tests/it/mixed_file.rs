@@ -1,15 +1,15 @@
 //! An RNTuple next to other objects in one file, written without the histogram
 //! crate: this crate depends only on io-core (and, for this test, linalg).
 
-use oxiroot_io_core::{Compression, RFile, ReadRoot, RootFile, TParameter, WriteRoot};
+use oxiroot_io_core::{Compression, FileReader, FileWriter, ReadRoot, TParameter, WriteRoot};
 use oxiroot_linalg::TMatrixD;
-use oxiroot_rntuple::{Field, FieldValues, Ntuple, RNTuple};
+use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader};
 
 #[test]
 fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_mixed.root");
     let cov = TMatrixD::new(2, 2, vec![1.0, 0.5, 0.5, 2.0]).named("cov");
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&cov)
         .put(Ntuple::new("events", vec![Field::f64("x", vec![0.5, 1.5])]))
         .add(&TParameter::f64("lumi", 12.5))
@@ -19,7 +19,7 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
         .write(Compression::Zstd(3))
         .unwrap();
 
-    let f = RFile::open(&path).unwrap();
+    let f = FileReader::open(&path).unwrap();
     let names: Vec<&str> = f.keys().iter().map(|k| k.name.as_str()).collect();
     assert_eq!(names, ["cov", "events", "lumi", "aux"]);
     assert_eq!(TMatrixD::read_root(&f, "cov").unwrap(), cov);
@@ -28,14 +28,14 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
         12.5
     );
     assert_eq!(
-        RNTuple::open(&f, "events")
+        NtupleReader::open(&f, "events")
             .unwrap()
             .read_field(&f, "x")
             .unwrap(),
         FieldValues::F64(vec![0.5, 1.5])
     );
     assert_eq!(
-        RNTuple::open_in(&f, "aux", "runs")
+        NtupleReader::open_in(&f, "aux", "runs")
             .unwrap()
             .read_field(&f, "run")
             .unwrap(),
@@ -55,19 +55,19 @@ fn an_rntuple_can_be_appended_to_an_existing_file() {
     TParameter::i32("n", 3)
         .write_root(&path, Compression::None)
         .unwrap();
-    RootFile::open(&path)
+    FileWriter::open(&path)
         .unwrap()
         .put(Ntuple::new("late", vec![Field::i32("x", vec![4, 5])]))
         .write(Compression::None)
         .unwrap();
 
-    let f = RFile::open(&path).unwrap();
+    let f = FileReader::open(&path).unwrap();
     assert_eq!(
         TParameter::read_root(&f, "n").unwrap().value().as_f64(),
         3.0
     );
     assert_eq!(
-        RNTuple::open(&f, "late")
+        NtupleReader::open(&f, "late")
             .unwrap()
             .read_field(&f, "x")
             .unwrap(),
@@ -83,21 +83,24 @@ fn an_rntuple_can_be_appended_to_an_existing_file() {
 #[test]
 fn a_forced_64_bit_file_with_rntuples_reads_back() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_put_big.root");
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .put(Ntuple::new("a", vec![Field::f32("x", vec![1.0, 2.0])]))
         .dir("d", |d| {
             d.put(Ntuple::new("b", vec![Field::i64("y", vec![3])]))
         })
         .write_threshold(Compression::None, 0)
         .unwrap();
-    let f = RFile::open(&path).unwrap();
+    let f = FileReader::open(&path).unwrap();
     assert!(f.header().is_big());
     assert_eq!(
-        RNTuple::open(&f, "a").unwrap().read_field(&f, "x").unwrap(),
+        NtupleReader::open(&f, "a")
+            .unwrap()
+            .read_field(&f, "x")
+            .unwrap(),
         FieldValues::F32(vec![1.0, 2.0])
     );
     assert_eq!(
-        RNTuple::open_in(&f, "d", "b")
+        NtupleReader::open_in(&f, "d", "b")
             .unwrap()
             .read_field(&f, "y")
             .unwrap(),

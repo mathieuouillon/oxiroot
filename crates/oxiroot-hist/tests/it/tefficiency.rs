@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{ReadRoot, TEfficiency, WriteRoot};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -29,7 +29,7 @@ fn sample() -> TEfficiency {
 
 #[test]
 fn reads_root_written_tefficiency() {
-    let f = RFile::open(fixture("tefficiency.root")).expect("open");
+    let f = FileReader::open(fixture("tefficiency.root")).expect("open");
     assert_eq!(f.key("eff").unwrap().class_name, "TEfficiency");
     let e = TEfficiency::read_root(&f, "eff").expect("read");
     assert_eq!(e.efficiency(1), 0.5);
@@ -45,6 +45,6 @@ fn tefficiency_round_trips() {
     assert_eq!(e.efficiency(1), 0.5);
     let out = PathBuf::from("/tmp/oxiroot_tefficiency.root");
     e.write_root(&out, Compression::None).expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(TEfficiency::read_root(&f, "eff").unwrap(), e, "round-trips");
 }

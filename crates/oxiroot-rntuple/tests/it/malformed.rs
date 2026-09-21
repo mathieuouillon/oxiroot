@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{concat_ntuples, RNTuple};
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::{concat_ntuples, NtupleReader};
 
 fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(
@@ -15,8 +15,8 @@ fn fixture(name: &str) -> Vec<u8> {
     .expect("read fixture")
 }
 
-fn poke_rntuple(f: &RFile) {
-    if let Ok(ntpl) = RNTuple::open(f, "ntpl") {
+fn poke_rntuple(f: &FileReader) {
+    if let Ok(ntpl) = NtupleReader::open(f, "ntpl") {
         let names: Vec<String> = ntpl.field_names().iter().map(|s| s.to_string()).collect();
         for name in names {
             let _ = ntpl.read_field(f, &name);
@@ -42,7 +42,7 @@ fn rntuple_byte_flips_never_panic() {
             for v in [0x00u8, 0xff] {
                 let mut c = data.clone();
                 c[i] = v;
-                if let Ok(f) = RFile::from_bytes(c) {
+                if let Ok(f) = FileReader::from_bytes(c) {
                     poke_rntuple(&f);
                 }
             }
@@ -54,7 +54,7 @@ fn rntuple_byte_flips_never_panic() {
 fn rntuple_truncation_never_panics() {
     let data = fixture("rntuple_scalars_uncompressed.root");
     for len in 0..=data.len() {
-        if let Ok(f) = RFile::from_bytes(data[..len].to_vec()) {
+        if let Ok(f) = FileReader::from_bytes(data[..len].to_vec()) {
             poke_rntuple(&f);
         }
     }

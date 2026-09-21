@@ -4,15 +4,15 @@
 //! `Hit` class) and uproot, which both read the oxiroot-written file — ROOT's
 //! strict reader accepts the computed `Hit` class checksum.
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_rntuple::{Column, Field, FieldValues, Ntuple, RNTuple};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_rntuple::{Column, Field, FieldValues, Ntuple, NtupleReader};
 
-fn write_and_reopen(tag: &str, fields: Vec<Field>) -> (RFile, RNTuple) {
+fn write_and_reopen(tag: &str, fields: Vec<Field>) -> (FileReader, NtupleReader) {
     let nt = Ntuple::new("ntpl", fields);
     let out = std::env::temp_dir().join(format!("oxiroot_write_stl_{tag}.root"));
     nt.write_root(&out, Compression::Zstd(3)).expect("write");
-    let file = RFile::open(&out).expect("reopen");
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open ntpl");
+    let file = FileReader::open(&out).expect("reopen");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     (file, ntpl)
 }
 

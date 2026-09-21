@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use oxiroot::prelude::*;
-use oxiroot::tree::TTree;
+use oxiroot::tree::TreeReader;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -118,14 +118,14 @@ fn reads_a_ttree_over_xrootd() {
     let bytes = std::fs::read(fixture("tree_flat.root")).expect("read fixture");
 
     // Local reference.
-    let local = RFile::from_bytes(bytes.clone()).expect("local open");
+    let local = FileReader::from_bytes(bytes.clone()).expect("local open");
     let tkey = local
         .keys()
         .iter()
         .find(|k| k.class_name == "TTree")
         .expect("a TTree key");
     let tname = tkey.name.clone();
-    let ltree = TTree::open(&local, &tname).expect("local tree");
+    let ltree = TreeReader::open(&local, &tname).expect("local tree");
     let branch = ltree.branch_names()[0].to_string();
     let local_vals = format!(
         "{:?}",
@@ -134,13 +134,13 @@ fn reads_a_ttree_over_xrootd() {
 
     // Same file over the XRootD protocol.
     let url = serve(bytes.clone());
-    let remote = RFile::open_url(&url).expect("open_url root://");
+    let remote = FileReader::open_url(&url).expect("open_url root://");
     assert_eq!(remote.size(), bytes.len() as u64, "size via fstat");
     let rkeys: Vec<String> = remote.keys().iter().map(|k| k.name.clone()).collect();
     let lkeys: Vec<String> = local.keys().iter().map(|k| k.name.clone()).collect();
     assert_eq!(rkeys, lkeys, "same keys over root://");
 
-    let rtree = TTree::open(&remote, &tname).expect("remote tree");
+    let rtree = TreeReader::open(&remote, &tname).expect("remote tree");
     assert_eq!(rtree.num_entries(), ltree.num_entries());
     let remote_vals = format!(
         "{:?}",
@@ -157,7 +157,7 @@ fn reads_a_ttree_over_xrootd() {
 #[ignore]
 fn xrootd_live_eospublic() {
     let url = "root://eospublic.cern.ch//eos/root-eos/hsimple.root";
-    let f = RFile::open_url(url).expect("open eospublic");
+    let f = FileReader::open_url(url).expect("open eospublic");
     assert!(f.size() > 100_000, "hsimple.root is ~400 KiB");
     let names: Vec<String> = f.keys().iter().map(|k| k.name.clone()).collect();
     assert!(names.contains(&"hpx".to_string()), "keys: {names:?}");

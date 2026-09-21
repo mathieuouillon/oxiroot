@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, RootFile, TH1, TH2};
-use oxiroot_io_core::RFile;
+use oxiroot_hist::{FileWriter, Hist, ReadRoot, TH1, TH2};
+use oxiroot_io_core::FileReader;
 
 #[test]
 fn writes_multiple_histograms_into_one_file() {
@@ -22,13 +22,13 @@ fn writes_multiple_histograms_into_one_file() {
     h2.fill(1.5, 1.5);
 
     let out = PathBuf::from("/tmp/rootrs_multi_hist.root");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&h1)
         .add(&h2)
         .write(oxiroot_io_core::Compression::None)
         .expect("write");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let keys: Vec<(&str, &str)> = f
         .keys()
         .iter()

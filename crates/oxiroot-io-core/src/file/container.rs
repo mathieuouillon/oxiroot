@@ -23,7 +23,7 @@ use crate::Compression;
 
 use super::header::{TUuid, BIG_FILE_VERSION, MAGIC};
 use super::key::{TDatime, TKey};
-use super::rfile::RFile;
+use super::reader::FileReader;
 
 /// `fVersion` of a new small-form file (ROOT 6.24's format). The big form adds
 /// [`BIG_FILE_VERSION`].
@@ -129,7 +129,7 @@ struct DirState {
 /// [`build`](ContainerWriter::build).
 ///
 /// ```
-/// use oxiroot_io_core::{Compression, ContainerWriter, DirId, RFile};
+/// use oxiroot_io_core::{Compression, ContainerWriter, DirId, FileReader};
 ///
 /// let bytes = ContainerWriter::build("demo.root", Compression::None, u64::MAX, |c| {
 ///     c.place_key(DirId::TOP, "TObjString", "note", "", b"payload")?;
@@ -137,7 +137,7 @@ struct DirState {
 ///     c.place_key(sub, "TObjString", "inner", "", b"more")?;
 ///     c.close_dir(sub)
 /// })?;
-/// let f = RFile::from_bytes(bytes)?;
+/// let f = FileReader::from_bytes(bytes)?;
 /// assert_eq!(f.keys().len(), 2);
 /// assert_eq!(f.subdir("sub")?.keys.len(), 1);
 /// # Ok::<(), oxiroot_io_core::Error>(())
@@ -274,7 +274,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// already big must be continued with `big`.
     pub fn append(
         mut sink: W,
-        file: &RFile,
+        file: &FileReader,
         file_name: &str,
         compression: Compression,
         big: bool,
@@ -306,7 +306,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
                 return Err(Error::Format(format!(
                     "cannot append into the 64-bit form: this file's root directory record \
                      reserves {reserved} bytes, but the big form needs {}. Rewrite the file \
-                     with RootFile::create (which reserves the 64-bit width) first.",
+                     with FileWriter::create (which reserves the 64-bit width) first.",
                     dir_record_len(true)
                 )));
             }
@@ -841,7 +841,7 @@ impl ContainerWriter<Cursor<Vec<u8>>> {
         big_threshold: u64,
         mut layout: impl FnMut(&mut Self) -> Result<()>,
     ) -> Result<Vec<u8>> {
-        let file = RFile::from_bytes(existing.to_vec())?;
+        let file = FileReader::from_bytes(existing.to_vec())?;
         let end = usize::try_from(file.header().end).unwrap_or(usize::MAX);
         let prefix = existing.get(..end).ok_or_else(|| {
             Error::Format(format!(
@@ -885,7 +885,7 @@ fn described_classes(list: &[u8], key_len: u16) -> Vec<String> {
 }
 
 /// Read a continued file's streamer-info record.
-fn read_existing_info(file: &RFile) -> Result<ExistingInfo> {
+fn read_existing_info(file: &FileReader) -> Result<ExistingInfo> {
     let header = file.header();
     let record = file.read_at(header.seek_info, header.nbytes_info as usize)?;
     let key_len = TKey::read(&mut RBuffer::new(&record))?.key_len;

@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, ReadRoot, TProfile, WriteRoot};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -14,13 +14,13 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn round_trips_real_root_tprofile() {
-    let f = RFile::open(fixture("tprofile_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("tprofile_uncompressed.root")).expect("open fixture");
     let h = TProfile::read_root(&f, "p").expect("read TProfile");
 
     let out = PathBuf::from("/tmp/rootrs_roundtrip_tprofile.root");
     h.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write");
-    let f2 = RFile::open(&out).expect("reopen");
+    let f2 = FileReader::open(&out).expect("reopen");
     let h2 = TProfile::read_root(&f2, "p").expect("read back");
     assert_eq!(h2, h, "real ROOT TProfile must survive write→read");
 }
@@ -49,21 +49,21 @@ fn create_fill_save_round_trips() {
     let out = PathBuf::from("/tmp/rootrs_filled_tprofile.root");
     h.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let h2 = TProfile::read_root(&f, "p").expect("read back");
     assert_eq!(h2, h, "filled profile must round-trip");
 }
 
 #[test]
 fn writes_a_zstd_compressed_tprofile() {
-    let f = RFile::open(fixture("tprofile_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("tprofile_uncompressed.root")).expect("open fixture");
     let h = TProfile::read_root(&f, "p").expect("read TProfile");
 
     let out = PathBuf::from("/tmp/rootrs_written_tprofile_zstd.root");
     h.write_root(&out, oxiroot_io_core::Compression::Zstd(5))
         .expect("write compressed file");
 
-    let f2 = RFile::open(&out).expect("reopen");
+    let f2 = FileReader::open(&out).expect("reopen");
     let key = f2.key("p").expect("p key");
     assert!(!key.is_uncompressed(), "object should be stored compressed");
     let h2 = TProfile::read_root(&f2, "p").expect("read back compressed TProfile");

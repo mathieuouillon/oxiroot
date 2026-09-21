@@ -18,29 +18,31 @@ use oxiroot_io_core::file::TKey;
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
 use oxiroot_io_core::streamer_info::{StreamerElement, StreamerRegistry};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::basket::Basket;
 use crate::value::{BranchValues, Jagged, LeafType};
 
-/// A `TTree` read from a file: its name, entry count, and branches.
+/// Reads a `TTree` from a [`FileReader`]. Opening parses the tree's name, entry
+/// count, and branches; branch data is read on demand, one branch at a time.
+#[doc(alias = "TTree", alias = "TTreeReader")]
 #[derive(Debug, Clone)]
-pub struct TTree {
+pub struct TreeReader {
     name: String,
     entries: u64,
     branches: Vec<Branch>,
     /// Branches present in the file that this crate cannot (yet) read, as
-    /// `(name, reason)` — surfaced via [`TTree::unsupported_branches`].
+    /// `(name, reason)` — surfaced via [`TreeReader::unsupported_branches`].
     unsupported: Vec<(String, String)>,
     /// The classes (and versions) declared in the file's `TStreamerInfo` — the
     /// schema this tree was written against; surfaced via
-    /// [`TTree::streamer_classes`]. Empty if the file has no streamer info.
+    /// [`TreeReader::streamer_classes`]. Empty if the file has no streamer info.
     streamer_classes: Vec<(String, i32)>,
     /// Friend trees recorded by `TTree::AddFriend` (read from `fFriends`);
-    /// surfaced via [`TTree::friends`].
+    /// surfaced via [`TreeReader::friends`].
     friends: Vec<Friend>,
     /// `(alias, expression)` pairs set with `TTree::SetAlias` (read from
-    /// `fAliases`); surfaced via [`TTree::aliases`] / [`TTree::alias`].
+    /// `fAliases`); surfaced via [`TreeReader::aliases`] / [`TreeReader::alias`].
     aliases: Vec<(String, String)>,
 }
 
@@ -168,9 +170,9 @@ struct Leaf {
     offset: usize,
 }
 
-impl TTree {
+impl TreeReader {
     /// Open the `TTree` named `name` in `file`.
-    pub fn open(file: &RFile, name: &str) -> Result<TTree> {
+    pub fn open(file: &FileReader, name: &str) -> Result<TreeReader> {
         let key = file
             .key(name)
             .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
@@ -179,9 +181,9 @@ impl TTree {
 
     /// Open the `TTree` named `name` from the subdirectory `subdir` (a
     /// `/`-separated path descends through nested `TDirectory`s).
-    pub fn open_in(file: &RFile, subdir: &str, name: &str) -> Result<TTree> {
+    pub fn open_in(file: &FileReader, subdir: &str, name: &str) -> Result<TreeReader> {
         let dir = file.subdir(subdir)?;
-        // Pick the highest cycle, matching `RFile::key` / `object_in_keyed` and
+        // Pick the highest cycle, matching `FileReader::key` / `object_in_keyed` and
         // ROOT's rule that the newest cycle is current.
         let key = dir
             .keys
@@ -198,7 +200,7 @@ impl TTree {
     }
 
     /// Decode a `TTree` (or `TNtuple`/`TNtupleD`) from an already-located key.
-    fn open_from_key(file: &RFile, key: &TKey) -> Result<TTree> {
+    fn open_from_key(file: &FileReader, key: &TKey) -> Result<TreeReader> {
         // `TNtuple` / `TNtupleD` are `TTree` subclasses (a `TTree` base wrapped in
         // one extra header plus a trailing `Int_t fNvar`); read them as trees too.
         if !matches!(key.class_name.as_str(), "TTree" | "TNtuple" | "TNtupleD") {
@@ -241,7 +243,7 @@ impl TTree {
     /// The friend trees attached with `TTree::AddFriend` (persisted in the main
     /// tree's `fFriends`). A friend is read positionally — entry *i* of this tree
     /// pairs with entry *i* of the friend. Open a friend with
-    /// [`TTree::open`]`(file, friend.tree_name())` (the same `file` when
+    /// [`TreeReader::open`]`(file, friend.tree_name())` (the same `file` when
     /// [`Friend::is_same_file`]) and read its branches as usual; the columns line
     /// up by entry.
     pub fn friends(&self) -> &[Friend] {
@@ -341,18 +343,23 @@ impl TTree {
     ///
     /// Baskets are decompressed in order on the calling thread; see
     /// [`read_branch_par`](Self::read_branch_par) for the parallel variant.
-    pub fn read_branch(&self, file: &RFile, name: &str) -> Result<BranchValues> {
+    pub fn read_branch(&self, file: &FileReader, name: &str) -> Result<BranchValues> {
         self.read_branch_with(file, name, Decode::Serial)
     }
 
     /// [`read_branch`](Self::read_branch), decompressing the baskets in parallel
     /// on rayon's global thread pool. Requires the `rayon` feature.
     #[cfg(feature = "rayon")]
-    pub fn read_branch_par(&self, file: &RFile, name: &str) -> Result<BranchValues> {
+    pub fn read_branch_par(&self, file: &FileReader, name: &str) -> Result<BranchValues> {
         self.read_branch_with(file, name, Decode::Parallel)
     }
 
-    fn read_branch_with(&self, file: &RFile, name: &str, decode: Decode) -> Result<BranchValues> {
+    fn read_branch_with(
+        &self,
+        file: &FileReader,
+        name: &str,
+        decode: Decode,
+    ) -> Result<BranchValues> {
         let branch = self
             .branch(name)
             .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
@@ -370,7 +377,7 @@ impl TTree {
     /// variant.
     pub fn read_branch_range(
         &self,
-        file: &RFile,
+        file: &FileReader,
         name: &str,
         start: u64,
         stop: u64,
@@ -383,7 +390,7 @@ impl TTree {
     #[cfg(feature = "rayon")]
     pub fn read_branch_range_par(
         &self,
-        file: &RFile,
+        file: &FileReader,
         name: &str,
         start: u64,
         stop: u64,
@@ -393,7 +400,7 @@ impl TTree {
 
     fn read_branch_range_with(
         &self,
-        file: &RFile,
+        file: &FileReader,
         name: &str,
         start: u64,
         stop: u64,
@@ -448,18 +455,23 @@ impl TTree {
     /// Baskets are decompressed in order on the calling thread; see
     /// [`read_branch_flat_par`](Self::read_branch_flat_par) for the parallel
     /// variant.
-    pub fn read_branch_flat(&self, file: &RFile, name: &str) -> Result<Jagged> {
+    pub fn read_branch_flat(&self, file: &FileReader, name: &str) -> Result<Jagged> {
         self.read_branch_flat_with(file, name, Decode::Serial)
     }
 
     /// [`read_branch_flat`](Self::read_branch_flat), decompressing the baskets in
     /// parallel on rayon's global thread pool. Requires the `rayon` feature.
     #[cfg(feature = "rayon")]
-    pub fn read_branch_flat_par(&self, file: &RFile, name: &str) -> Result<Jagged> {
+    pub fn read_branch_flat_par(&self, file: &FileReader, name: &str) -> Result<Jagged> {
         self.read_branch_flat_with(file, name, Decode::Parallel)
     }
 
-    fn read_branch_flat_with(&self, file: &RFile, name: &str, decode: Decode) -> Result<Jagged> {
+    fn read_branch_flat_with(
+        &self,
+        file: &FileReader,
+        name: &str,
+        decode: Decode,
+    ) -> Result<Jagged> {
         let branch = self
             .branch(name)
             .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
@@ -494,7 +506,7 @@ impl TTree {
 }
 
 /// Per-entry byte regions of a numeric branch (the shared shape behind the
-/// jagged/array/scalar read paths), for the flat [`TTree::read_branch_flat`].
+/// jagged/array/scalar read paths), for the flat [`TreeReader::read_branch_flat`].
 fn entry_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Vec<&'a [u8]> {
     if let Some((offset, stride)) = branch.leaflist {
         if stride == 0 {
@@ -537,7 +549,7 @@ enum Decode {
 /// Read the requested baskets of `branch` (by index) and decompress them,
 /// returning them in index order either way.
 fn read_baskets(
-    file: &RFile,
+    file: &FileReader,
     branch: &Branch,
     indices: impl Iterator<Item = usize>,
     decode: Decode,
@@ -576,8 +588,8 @@ fn read_baskets(
 }
 
 /// Decode the given (contiguous, in-order) baskets of `branch` into per-entry
-/// [`BranchValues`] — the shared body of [`TTree::read_branch`] and
-/// [`TTree::read_branch_range`].
+/// [`BranchValues`] — the shared body of [`TreeReader::read_branch`] and
+/// [`TreeReader::read_branch_range`].
 fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<BranchValues> {
     // A synthesized `TBranchObject` member column: each entry is a whole object,
     // from which this member is extracted.
@@ -1013,7 +1025,7 @@ fn read_tree(
     keylen: usize,
     reg: &StreamerRegistry,
     class_name: &str,
-) -> Result<TTree> {
+) -> Result<TreeReader> {
     let info = reg.get("TTree").ok_or_else(|| {
         Error::Format("file has no TStreamerInfo for TTree; cannot parse the tree".to_string())
     })?;
@@ -1086,7 +1098,7 @@ fn read_tree(
         r.seek(end)?;
     }
 
-    Ok(TTree {
+    Ok(TreeReader {
         name: member_str(&out, "fName"),
         entries: member_int(&out, "fEntries").max(0) as u64,
         branches,

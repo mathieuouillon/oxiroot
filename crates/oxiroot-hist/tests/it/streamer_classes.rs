@@ -2,10 +2,10 @@
 //! (`WriteRoot::streamer_classes` / `streamer_blob`), and a file embeds exactly
 //! what its objects bring — for types defined outside this workspace too.
 
-use oxiroot_hist::{Hist, ObjList, ReadRoot, RootFile, TObjString, TParameter, WriteRoot};
+use oxiroot_hist::{FileWriter, Hist, ObjList, ReadRoot, TObjString, TParameter, WriteRoot};
 use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::streamer_gen::{base, basic, Cls};
-use oxiroot_io_core::{Compression, RFile, StreamerRegistry};
+use oxiroot_io_core::{Compression, FileReader, StreamerRegistry};
 
 /// A class this workspace knows nothing about: `struct Point : TObject { double x, y; }`.
 struct Point {
@@ -56,7 +56,7 @@ fn point(name: &str) -> Point {
 }
 
 fn registry(path: &std::path::Path) -> StreamerRegistry {
-    RFile::open(path).unwrap().streamer_registry().unwrap()
+    FileReader::open(path).unwrap().streamer_registry().unwrap()
 }
 
 #[test]
@@ -68,17 +68,17 @@ fn a_foreign_class_is_described_wherever_it_is_stored() {
     let top = dir.join("oxiroot_sc_top.root");
     let subdir = dir.join("oxiroot_sc_dir.root");
     let list = dir.join("oxiroot_sc_list.root");
-    RootFile::create(&top)
+    FileWriter::create(&top)
         .add(&h)
         .add(&point("p"))
         .write(Compression::None)
         .unwrap();
-    RootFile::create(&subdir)
+    FileWriter::create(&subdir)
         .add(&h)
         .dir("d", |d| d.add(&point("p")))
         .write(Compression::None)
         .unwrap();
-    RootFile::create(&list)
+    FileWriter::create(&list)
         .add(&ObjList::list().named("l").add(&point("p")))
         .write(Compression::None)
         .unwrap();
@@ -99,7 +99,7 @@ fn a_foreign_class_is_described_wherever_it_is_stored() {
 #[test]
 fn a_file_without_histograms_does_not_carry_their_streamer_info() {
     let path = std::env::temp_dir().join("oxiroot_sc_param.root");
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&TParameter::f64("lumi", 1.5))
         .add(&TObjString::new("hello").named("s"))
         .write(Compression::None)
@@ -128,7 +128,7 @@ fn a_file_without_histograms_does_not_carry_their_streamer_info() {
 fn a_collection_read_back_still_describes_its_members() {
     let dir = std::env::temp_dir();
     let first = dir.join("oxiroot_sc_list_a.root");
-    RootFile::create(&first)
+    FileWriter::create(&first)
         .add(
             &ObjList::list()
                 .named("l")
@@ -140,9 +140,9 @@ fn a_collection_read_back_still_describes_its_members() {
 
     // A list read from a file keeps only its members' bytes; writing it again
     // still describes the parameter class by name.
-    let list = ObjList::read_root(&RFile::open(&first).unwrap(), "l").unwrap();
+    let list = ObjList::read_root(&FileReader::open(&first).unwrap(), "l").unwrap();
     let second = dir.join("oxiroot_sc_list_b.root");
-    RootFile::create(&second)
+    FileWriter::create(&second)
         .add(&list)
         .write(Compression::None)
         .unwrap();

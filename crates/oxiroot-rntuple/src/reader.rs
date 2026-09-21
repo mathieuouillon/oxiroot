@@ -2,7 +2,7 @@
 //! page-list envelopes → on-demand column decoding.
 
 use oxiroot_io_core::error::{decompress_payload, Error, Result};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::anchor::{RNTupleAnchor, ANCHOR_CLASS};
 use crate::envelope::{read_envelope, ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST};
@@ -12,9 +12,11 @@ use crate::header::{Header, StructRole};
 use crate::page::{read_column, ColumnValues};
 use crate::pagelist::{ClusterPages, ClusterSummary, PageInfo, PageList};
 
-/// An opened RNTuple: verified anchor, parsed schema, cluster summaries, and
-/// per-cluster page locations. Column data is decoded on demand.
-pub struct RNTuple {
+/// Reads an RNTuple from a [`FileReader`]. Opening verifies the anchor and
+/// parses the schema, cluster summaries, and per-cluster page locations; column
+/// data is decoded on demand.
+#[doc(alias = "RNTuple", alias = "RNTupleReader")]
+pub struct NtupleReader {
     anchor: RNTupleAnchor,
     header: Header,
     footer: Footer,
@@ -24,9 +26,9 @@ pub struct RNTuple {
     footer_bytes: Vec<u8>,
 }
 
-impl RNTuple {
+impl NtupleReader {
     /// Open the RNTuple named `name` from the file's top directory.
-    pub fn open(file: &RFile, name: &str) -> Result<RNTuple> {
+    pub fn open(file: &FileReader, name: &str) -> Result<NtupleReader> {
         let key = file
             .key(name)
             .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
@@ -36,9 +38,9 @@ impl RNTuple {
     /// Open the RNTuple named `name` from the subdirectory `subdir`. The anchor's
     /// blob offsets are absolute file positions, so reading is identical to a
     /// top-directory RNTuple once the anchor key is located.
-    pub fn open_in(file: &RFile, subdir: &str, name: &str) -> Result<RNTuple> {
+    pub fn open_in(file: &FileReader, subdir: &str, name: &str) -> Result<NtupleReader> {
         let dir = file.subdir(subdir)?;
-        // Pick the highest cycle, matching `RFile::key` / `object_in_keyed` and
+        // Pick the highest cycle, matching `FileReader::key` / `object_in_keyed` and
         // ROOT's rule that the newest cycle is current.
         let key = dir
             .keys
@@ -55,7 +57,7 @@ impl RNTuple {
     }
 
     /// Read an RNTuple given its already-located anchor `key`.
-    fn open_from_key(file: &RFile, key: &oxiroot_io_core::TKey) -> Result<RNTuple> {
+    fn open_from_key(file: &FileReader, key: &oxiroot_io_core::TKey) -> Result<NtupleReader> {
         if key.class_name != ANCHOR_CLASS {
             return Err(Error::Format(format!(
                 "key {:?} is a {}, not {ANCHOR_CLASS}",
@@ -129,7 +131,7 @@ impl RNTuple {
             page_clusters.extend(page_list.clusters);
         }
 
-        Ok(RNTuple {
+        Ok(NtupleReader {
             anchor,
             header,
             footer,
@@ -171,7 +173,7 @@ impl RNTuple {
     }
 
     /// Decode physical column `column_index` across all clusters.
-    pub fn read_column(&self, file: &RFile, column_index: usize) -> Result<ColumnValues> {
+    pub fn read_column(&self, file: &FileReader, column_index: usize) -> Result<ColumnValues> {
         let descriptor = self
             .header
             .columns
@@ -223,7 +225,7 @@ impl RNTuple {
     /// nested collections / records — `std::vector<std::string>`,
     /// `std::vector<std::vector<T>>`, and `std::vector<MyStruct>` — by walking
     /// the field tree (see [`FieldValues`]).
-    pub fn read_field(&self, file: &RFile, name: &str) -> Result<FieldValues> {
+    pub fn read_field(&self, file: &FileReader, name: &str) -> Result<FieldValues> {
         let idx = self
             .header
             .fields
@@ -258,7 +260,7 @@ impl RNTuple {
     /// collection offsets and their child columns stay aligned.
     pub fn read_field_prefix(
         &self,
-        file: &RFile,
+        file: &FileReader,
         name: &str,
         max_entries: usize,
     ) -> Result<FieldValues> {
@@ -298,8 +300,8 @@ impl RNTuple {
     /// A lightweight view of this RNTuple limited to its first `kept` clusters:
     /// the same schema, but `num_entries` and every column read cover only those
     /// clusters. Cloning the schema is cheap next to decoding pages.
-    fn cluster_prefix(&self, kept: usize) -> RNTuple {
-        RNTuple {
+    fn cluster_prefix(&self, kept: usize) -> NtupleReader {
+        NtupleReader {
             anchor: self.anchor.clone(),
             header: self.header.clone(),
             footer: self.footer.clone(),
@@ -312,7 +314,7 @@ impl RNTuple {
 
     /// Recursively reconstruct the values of field `field_idx` (a leaf, string,
     /// collection, or record) as flattened-at-this-level [`FieldValues`].
-    fn read_field_tree(&self, file: &RFile, field_idx: usize) -> Result<FieldValues> {
+    fn read_field_tree(&self, file: &FileReader, field_idx: usize) -> Result<FieldValues> {
         let fld = self
             .header
             .fields
@@ -520,7 +522,7 @@ impl RNTuple {
     /// The decoded count is one offset per element of the *enclosing* level —
     /// the entry count for a top-level collection, but the parent-element count
     /// for a nested one — so it is validated by the caller, not here.
-    fn read_offsets(&self, file: &RFile, column_index: usize) -> Result<Vec<u64>> {
+    fn read_offsets(&self, file: &FileReader, column_index: usize) -> Result<Vec<u64>> {
         let descriptor = self
             .header
             .columns
@@ -595,7 +597,7 @@ fn backfill_leading(values: ColumnValues, k: usize) -> ColumnValues {
     }
 }
 
-fn read_blob(file: &RFile, seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
+fn read_blob(file: &FileReader, seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
     let win = file
         .read_at(seek, nbytes as usize)
         .map_err(|_| Error::Format(format!("{what} blob at {seek} runs past end of file")))?;

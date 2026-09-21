@@ -18,7 +18,7 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   handful of small pure-Rust crates (compression codecs and a hasher).
 - 🔄 **Two-way interop** — every reader and writer is validated against both
   official ROOT (C++) and uproot, in both directions.
-- 🔍 **Inspect any class** — `RFile::get_value` decodes *any* object from its
+- 🔍 **Inspect any class** — `FileReader::get_value` decodes *any* object from its
   `TStreamerInfo` into a dynamic `Value` tree (rootls / rootprint-style), even
   classes with no typed model — and `oxroot dump` prints it. Undecodable members
   degrade to `Unsupported`, never a crash.
@@ -65,17 +65,17 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   fields, compressed, multi-cluster via a streaming writer, **several RNTuples per
   file / inside a `TDirectory`**, and **schema late extensions** (read and write
   fields added via the footer's schema-extension record). A **bounded prefix
-  read** (`RNTuple::read_field_prefix(name, n)`) decodes only the clusters
+  read** (`NtupleReader::read_field_prefix(name, n)`) decodes only the clusters
   covering the first *n* entries, so previewing a huge file (`oxroot dump -n 10`)
   never touches the whole field.
 - 🗜 **Compression** — decode *and* encode Zstd / zlib / LZ4 / LZMA — all pure
   Rust, all read back by ROOT and uproot.
 - 🌐 **Remote reads** — open a file over HTTP(S) (`http` feature) or CERN's
-  XRootD `root://` (`xrootd` feature) with `RFile::open_url` and read only the
+  XRootD `root://` (`xrootd` feature) with `FileReader::open_url` and read only the
   byte ranges each object touches, never downloading the file whole — the way
   ROOT and uproot read remote data. Verified against real public data on
   `root://eospublic.cern.ch`. A large local file reads the same lazy way with
-  `RFile::open_ranged`.
+  `FileReader::open_ranged`.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
   `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
 - ➕ **`hadd`** — a pure-Rust file merger: histograms summed, `TTree` / RNTuple
@@ -122,15 +122,15 @@ use oxiroot::prelude::*;
 let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("p_{T}").weight();
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;            // any single writable object
-let same = TH1::read_root(&RFile::open("hist.root")?, "pt")?; // any readable object
+let same = TH1::read_root(&FileReader::open("hist.root")?, "pt")?; // any readable object
 
-// Several objects, subdirectories, or appending — the RootFile builder.
+// Several objects, subdirectories, or appending — FileWriter.
 let prof = Hist::reg(5, 0.0, 5.0).name("prof").title("<pt> per region").profile();
-RootFile::create("out.root")
+FileWriter::create("out.root")
     .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
     .write(Compression::Zstd(5))?;
-let g = RFile::open("out.root")?;
+let g = FileReader::open("out.root")?;
 let p = TProfile::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
 
 // Write a TTree, then read a branch back.
@@ -139,15 +139,20 @@ let branches = vec![
     Branch::f64("pt", vec![10.5, 20.1, 33.7]),
 ];
 Tree::new("Events", branches).write_root("tree.root", Compression::None)?;
-let f = RFile::open("tree.root")?;
-let t = TTree::open(&f, "Events")?;
+let f = FileReader::open("tree.root")?;
+let t = TreeReader::open(&f, "Events")?;
 let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
 
 // Write a columnar RNTuple, then read it back.
 let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
 Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
-let n = RNTuple::open(&RFile::open("data.root")?, "events")?.num_entries();
+let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.num_entries();
 ```
+
+Types that read a file end in `Reader` (`FileReader`, `TreeReader`,
+`NtupleReader`, `ChainReader`) and types that write one end in `Writer`
+(`FileWriter`, `TreeWriter`, `NtupleWriter`). ROOT's class names (`TFile`,
+`TTree`, `RNTuple`, `TChain`) are doc aliases for them.
 
 The [`analysis` example](crates/oxiroot/examples/analysis.rs) is an end-to-end
 mini analysis — weighted/variable-bin histograms → scale/merge/normalize →
@@ -248,15 +253,15 @@ cargo run -p oxiroot --example analysis
   `fill_par(&template, &data, |h, &x| h.fill(x))`. See
   [`examples/threaded.rs`](crates/oxiroot/examples/threaded.rs).
 - Write one object with `h.write_root(path, compression)`. For several objects,
-  subdirectories, or appending, use the `RootFile` builder — one entry point for
+  subdirectories, or appending, use `FileWriter` — one entry point for
   all file composition:
   ```rust
-  RootFile::create("out.root")
+  FileWriter::create("out.root")
       .add(&h)                            // any &dyn WriteRoot: hist, profile, graph…
       .add(&prof)
       .dir("by_region", |d| d.add(&sig))  // a TDirectory per region
       .write(Compression::Zstd(5))?;
-  RootFile::open("out.root")?.add(&extra).write(Compression::None)?; // append
+  FileWriter::open("out.root")?.add(&extra).write(Compression::None)?; // append
   ```
   Written files embed a `TStreamerInfo` list, so they are self-describing for any
   ROOT reader.
@@ -352,7 +357,7 @@ let g = TGraph::with_errors(
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],    // ex, ey
 )?.named("res").titled("resolution");
 g.write_root("graph.root", Compression::None)?;             // WriteRoot, like any object
-let same = TGraph::read_root(&RFile::open("graph.root")?, "res")?;
+let same = TGraph::read_root(&FileReader::open("graph.root")?, "res")?;
 ```
 
 A graph also round-trips ROOT's display frame (`fHistogram`) and the fitted
@@ -397,13 +402,13 @@ them, through the same `WriteRoot`/`ReadRoot` traits as everything else.
 
 ```rust
 use oxiroot::prelude::*;
-RootFile::create("meta.root")
+FileWriter::create("meta.root")
     .add(&TObjString::new("v2.1").named("version"))
     .add(&TParameter::f64("lumi", 137.5))      // TParameter<double>
     .add(&TParameter::i64("nevents", 9_000_000_000))  // <Long64_t>
     .write(Compression::None)?;
 
-let f = RFile::open("meta.root")?;
+let f = FileReader::open("meta.root")?;
 assert_eq!(TObjString::read_root(&f, "version")?.value(), "v2.1");
 assert_eq!(TParameter::read_root(&f, "lumi")?.value().as_f64(), 137.5);
 ```
@@ -431,9 +436,9 @@ let stack = THStack::new().named("hs").titled("backgrounds")
 let graphs = TMultiGraph::new().named("mg")
     .add(TGraph::new(vec![0.0, 1.0], vec![1.0, 2.0])?.named("obs"))
     .add(TGraph::new(vec![0.0, 1.0], vec![2.0, 1.0])?.named("exp"));
-RootFile::create("plots.root").add(&stack).add(&graphs).write(Compression::None)?;
+FileWriter::create("plots.root").add(&stack).add(&graphs).write(Compression::None)?;
 
-let f = RFile::open("plots.root")?;
+let f = FileReader::open("plots.root")?;
 assert_eq!(THStack::read_root(&f, "hs")?.hists().len(), 2);
 assert_eq!(TMultiGraph::read_root(&f, "mg")?.graphs()[0].name, "obs");
 ```
@@ -448,12 +453,12 @@ as just its upper triangle.
 
 ```rust
 use oxiroot::prelude::*;
-RootFile::create("fit.root")
+FileWriter::create("fit.root")
     .add(&TVectorD::new(vec![91.2, 2.1]).named("pars"))
     .add(&TMatrixDSym::new(2, vec![0.04, 0.01, 0.01, 0.09]).named("cov")) // covariance
     .write(Compression::None)?;
 
-let f = RFile::open("fit.root")?;
+let f = FileReader::open("fit.root")?;
 assert_eq!(TVectorD::read_root(&f, "pars")?.elements(), &[91.2, 2.1]);
 let cov = TMatrixDSym::read_root(&f, "cov")?;
 assert_eq!(cov.get(0, 1), cov.get(1, 0)); // symmetric
@@ -501,9 +506,9 @@ let list = ObjList::list().named("systematics")
     .add(&Hist::reg(50, 0.0, 100.0).double().named("nominal"))
     .add(&TObjString::new("2024-data").named("tag"))
     .add(&TParameter::f64("lumi", 137.5));
-RootFile::create("syst.root").add(&list).write(Compression::None)?;
+FileWriter::create("syst.root").add(&list).write(Compression::None)?;
 
-let f = RFile::open("syst.root")?;
+let f = FileReader::open("syst.root")?;
 let list = ObjList::read_root(&f, "systematics")?;
 assert_eq!(list.len(), 3);
 assert_eq!(list.items::<TH1>()?.len(), 1);
@@ -523,9 +528,9 @@ use oxiroot::prelude::*;
 let meta = TMap::new().named("meta")
     .insert("version", &TObjString::new("2.1"))
     .insert("lumi", &TParameter::f64("lumi", 137.5));
-RootFile::create("meta.root").add(&meta).write(Compression::None)?;
+FileWriter::create("meta.root").add(&meta).write(Compression::None)?;
 
-let meta = TMap::read_root(&RFile::open("meta.root")?, "meta")?;
+let meta = TMap::read_root(&FileReader::open("meta.root")?, "meta")?;
 assert_eq!(meta.get::<TParameter>("lumi").unwrap()?.value().as_f64(), 137.5);
 ```
 
@@ -637,15 +642,15 @@ ax2.save("heatmap.svg")?;
   (mirroring `hist.write_root`); `.write_root_baskets(…, entries_per_basket)`
   writes several baskets per branch, and `.to_root_bytes(…)` returns the file
   bytes. The free `write_tree_file`/`write_tree_file_baskets` functions remain.
-- `TTreeWriter` streams a tree in batches (`write_batch` emits one basket per
+- `TreeWriter` streams a tree in batches (`write_batch` emits one basket per
   branch straight to disk, then `finish`), so only the current batch is held in
   memory — the way ROOT's `TTree::Fill` flushes baskets. ROOT-C++- and
   uproot-verified across many baskets, compressed and not. Use
-  `TTreeWriter::create_large` for a tree that will exceed 2 GiB — it writes the
+  `TreeWriter::create_large` for a tree that will exceed 2 GiB — it writes the
   64-bit container form (again ROOT-C++/uproot-verified).
 - `read_branch` reads a whole branch,
   `read_branch_range(start, stop)` only the baskets covering a window, and
-  `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `TChain` spans many
+  `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `ChainReader` spans many
   files. With the `rayon` feature, `read_branch_par` (and the `_range_par` /
   `_flat_par` variants) decompress baskets in parallel. Introspect with
   `branch_type`/`branch_shape`/`branch_title`, and see what was skipped via
@@ -665,7 +670,7 @@ ax2.save("heatmap.svg")?;
   reads as `branch.fName` / `branch.fTitle`.
 - The reader is **streamer-info-driven**: it parses `TTree`/`TBranch`/
   `TBranchElement` by walking the member list in the file's own `TStreamerInfo`
-  (`TTree::streamer_classes` exposes it), so a schema change is absorbed instead
+  (`TreeReader::streamer_classes` exposes it), so a schema change is absorbed instead
   of misread; an unknown member type is reported, never parsed at a guessed offset.
 - The writer **generates** that `TStreamerInfo` from a declarative class table
   (the whole `TTree`/`TBranch`/`TLeaf*`/`TBranchElement` hierarchy, with ROOT's
@@ -703,13 +708,13 @@ ax2.save("heatmap.svg")?;
 - `Ntuple::new(name, fields).write_root(path, compression)` is the method form
   (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
   free `write_rntuple_file` remains.
-- `RootFile::put` writes **several RNTuples per file**, RNTuples **inside a
+- `FileWriter::put` writes **several RNTuples per file**, RNTuples **inside a
   `TDirectory`**, and RNTuples next to histograms and trees —
-  `RootFile::create(path).put(events).put(runs).dir("cal", |d|
+  `FileWriter::create(path).put(events).put(runs).dir("cal", |d|
   d.put(pedestals)).write(…)`. Read a nested one with
-  `RNTuple::open_in(file, "cal", "pedestals")`. ROOT and uproot navigate the
+  `NtupleReader::open_in(file, "cal", "pedestals")`. ROOT and uproot navigate the
   result natively.
-- `RNTupleWriter` streams one cluster per `write_batch`, so a large dataset is
+- `NtupleWriter` streams one cluster per `write_batch`, so a large dataset is
   never fully held in memory.
 
 ### Merging files — `hadd` (`oxiroot::hadd`)
@@ -779,11 +784,11 @@ integrity check, verified on read.
   truncation fuzz tests cover the container, RNTuple, `TTree`, and every
   histogram/graph reader.
 - 64-bit (`> 2 GiB`) files are supported on read **and write**. The one-shot
-  `TFile` object writers (`RootFile`) and the RNTuple writer auto-switch to
+  `TFile` object writers (`FileWriter`) and the RNTuple writer auto-switch to
   ROOT's big (64-bit) container form once a file would cross 2 GiB; the streaming
-  `TTreeWriter::create_large` / `RNTupleWriter::create_large` opt into it up front
+  `TreeWriter::create_large` / `NtupleWriter::create_large` opt into it up front
   (the plain `create` stays 32-bit and errors past 2 GiB rather than truncating
-  its seek pointers). **Appending** (`RootFile::open(...).add(...).write()`) also
+  its seek pointers). **Appending** (`FileWriter::open(...).add(...).write()`) also
   crosses into the 64-bit form: the existing bytes stay put — preserving
   subdirectories and any RNTuple at their original offsets — while the header and
   root directory record are widened in place (every oxiroot/ROOT file reserves the
@@ -824,7 +829,7 @@ on, so nothing extra is needed.
 | [`objects`](crates/oxiroot/examples/objects.rs) | Store run provenance (`TObjString` / `TParameter` / `TList`) next to your data |
 | [`linalg`](crates/oxiroot/examples/linalg.rs) | `TVectorD` / `TMatrixD` / `TMatrixDSym` round-trip (a fit-covariance shape) |
 | **I/O & formats** | |
-| [`tree`](crates/oxiroot/examples/tree.rs) | `TTree` write + read, introspection, entry ranges, streaming `TTreeWriter` |
+| [`tree`](crates/oxiroot/examples/tree.rs) | `TTree` write + read, introspection, entry ranges, streaming `TreeWriter` |
 | [`rntuple`](crates/oxiroot/examples/rntuple.rs) | A basic flat RNTuple write/read, plus several RNTuples in one file |
 | [`rntuple_nested`](crates/oxiroot/examples/rntuple_nested.rs) | Nested RNTuple fields: vector-of-string, vector-of-vector, vector-of-record |
 | [`compression`](crates/oxiroot/examples/compression.rs) | The `None` / `Zstd` / `Zlib` / `Lz4` size trade-off — every codec lossless |
@@ -861,13 +866,13 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 
 | Feature | Default | Effect |
 |---------|:---:|--------|
-| `mmap` | ✅ | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
-| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TTree::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
+| `mmap` | ✅ | Memory-mapped read path (`FileReader::open_mmap`) for large files; adds `memmap2`. |
+| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TreeReader::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 | `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `TH1`/`TH2`/`TGraph`/`TProfile`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
-| `http` | — | Remote reads over HTTP(S) byte-range requests (`RFile::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
-| `xrootd` | — | Remote reads over the XRootD `root://` protocol (`RFile::open_url`), with `unix` auth for public data (e.g. `root://eospublic.cern.ch`). Pure `std::net` — adds no dependencies. |
+| `http` | — | Remote reads over HTTP(S) byte-range requests (`FileReader::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
+| `xrootd` | — | Remote reads over the XRootD `root://` protocol (`FileReader::open_url`), with `unix` auth for public data (e.g. `root://eospublic.cern.ch`). Pure `std::net` — adds no dependencies. |
 
 The facade is batteries-included: everything marked ✅ is on by default. For a
 lean, pure-Rust format core with a minimal dependency set, opt out with
@@ -934,7 +939,7 @@ Grouped by the ROOT feature each fills.
   (`rootls` / `rootprint`-style), not only the typed hist/graph/tree/RNTuple
   models.
 - **Remote reads** — richer XRootD auth (**GSI / X.509** and **token / ZTN**) for
-  access-controlled data. The `root://` transport ships today (`RFile::open_url`,
+  access-controlled data. The `root://` transport ships today (`FileReader::open_url`,
   the `xrootd` feature) with `unix` auth for public data, alongside HTTP(S) range
   reads (the `http` feature).
 - **`TFile` container**

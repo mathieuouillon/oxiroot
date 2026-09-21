@@ -823,7 +823,7 @@ pub fn write_tree_file_baskets(
 
 /// A tree to write: a name and its [`Branch`]es. The method-based,
 /// write-side counterpart to the free [`write_tree_file`] function (and to the
-/// read-only [`TTree`](crate::TTree)) — build one, then call
+/// read-only [`TreeReader`](crate::TreeReader)) — build one, then call
 /// [`write_root`](Tree::write_root), mirroring `hist.write_root`:
 ///
 /// ```no_run
@@ -893,15 +893,15 @@ impl Tree {
     }
 }
 
-/// A `Tree` goes into a [`RootFile`](oxiroot_io_core::RootFile) with
-/// [`put`](oxiroot_io_core::RootFile::put), next to histograms or RNTuples, with
+/// A `Tree` goes into a [`FileWriter`](oxiroot_io_core::FileWriter) with
+/// [`put`](oxiroot_io_core::FileWriter::put), next to histograms or RNTuples, with
 /// one basket per branch:
 ///
 /// ```no_run
-/// use oxiroot_io_core::{Compression, RootFile, TParameter};
+/// use oxiroot_io_core::{Compression, FileWriter, TParameter};
 /// use oxiroot_tree::{Branch, Tree};
 ///
-/// RootFile::create("run.root")
+/// FileWriter::create("run.root")
 ///     .add(&TParameter::f64("lumi", 12.5))
 ///     .put(Tree::new("Events", vec![Branch::f64("energy", vec![10.5, 20.1])]))
 ///     .dir("cal", |d| d.put(Tree::new("Pedestals", vec![Branch::i32("adc", vec![3, 4])])))
@@ -976,10 +976,10 @@ struct StreamCol {
 }
 
 /// A streaming, bounded-memory `TTree` writer. Append entries in batches with
-/// [`write_batch`](TTreeWriter::write_batch); each call emits one basket per
+/// [`write_batch`](TreeWriter::write_batch); each call emits one basket per
 /// branch straight to the sink, so only the current batch's data is held in
 /// memory (the way ROOT's `TTree::Fill` flushes baskets as they fill).
-/// [`finish`](TTreeWriter::finish) writes the small `TTree` metadata, the
+/// [`finish`](TreeWriter::finish) writes the small `TTree` metadata, the
 /// streamer info, and the key list, then patches the file header.
 ///
 /// Every batch must share the first batch's schema: branch names, element
@@ -989,9 +989,9 @@ struct StreamCol {
 ///
 /// ```no_run
 /// use oxiroot_io_core::Compression;
-/// use oxiroot_tree::{Branch, TTreeWriter};
+/// use oxiroot_tree::{Branch, TreeWriter};
 ///
-/// let mut w = TTreeWriter::create("big.root", "T", Compression::None)?;
+/// let mut w = TreeWriter::create("big.root", "T", Compression::None)?;
 /// for batch in 0..1_000 {
 ///     let x: Vec<f64> = (0..10_000).map(|i| (batch * 10_000 + i) as f64).collect();
 ///     w.write_batch(&[Branch::f64("x", x)])?; // one basket, flushed now
@@ -999,7 +999,8 @@ struct StreamCol {
 /// w.finish()?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
-pub struct TTreeWriter<W: Write + Seek> {
+#[doc(alias = "TTreeWriter")]
+pub struct TreeWriter<W: Write + Seek> {
     file: ContainerWriter<W>,
     tree_name: String,
     /// Effective columns (count branches expanded inline); set by the first batch.
@@ -1009,11 +1010,11 @@ pub struct TTreeWriter<W: Write + Seek> {
     total_entries: i64,
 }
 
-impl TTreeWriter<std::fs::File> {
+impl TreeWriter<std::fs::File> {
     /// Create a streaming tree file at `path`. The tree is named `tree_name`;
     /// the file is the small (32-bit) container, so the total must stay under
-    /// 2 GiB ([`finish`](TTreeWriter::finish) errors otherwise). For a file that
-    /// may exceed 2 GiB, use [`create_large`](TTreeWriter::create_large).
+    /// 2 GiB ([`finish`](TreeWriter::finish) errors otherwise). For a file that
+    /// may exceed 2 GiB, use [`create_large`](TreeWriter::create_large).
     pub fn create(
         path: impl AsRef<Path>,
         tree_name: &str,
@@ -1022,7 +1023,7 @@ impl TTreeWriter<std::fs::File> {
         Self::create_fmt(path, tree_name, compression, false)
     }
 
-    /// Like [`create`](TTreeWriter::create), but writes the 64-bit ("big")
+    /// Like [`create`](TreeWriter::create), but writes the 64-bit ("big")
     /// container form so the tree may exceed 2 GiB. Use this when the streamed
     /// dataset is expected to be large; small files are still valid, just stored
     /// in the wider form (as ROOT does past `kStartBigFile`).
@@ -1047,15 +1048,15 @@ impl TTreeWriter<std::fs::File> {
             .unwrap_or("file.root")
             .to_string();
         let file = std::fs::File::create(path)?;
-        TTreeWriter::new_fmt(file, &file_name, tree_name, compression, big)
+        TreeWriter::new_fmt(file, &file_name, tree_name, compression, big)
     }
 }
 
-impl<W: Write + Seek> TTreeWriter<W> {
+impl<W: Write + Seek> TreeWriter<W> {
     /// Begin writing into an arbitrary seekable sink (small 32-bit container).
     /// The file header and root directory record are written immediately (with
     /// pointers patched at the end); `file_name` is the name stored in the
-    /// directory record. See [`new_large`](TTreeWriter::new_large) for the
+    /// directory record. See [`new_large`](TreeWriter::new_large) for the
     /// >2 GiB form.
     pub fn new(
         sink: W,
@@ -1066,7 +1067,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
         Self::new_fmt(sink, file_name, tree_name, compression, false)
     }
 
-    /// Like [`new`](TTreeWriter::new), but writes the 64-bit ("big") container
+    /// Like [`new`](TreeWriter::new), but writes the 64-bit ("big") container
     /// form so the streamed file may exceed 2 GiB.
     pub fn new_large(
         sink: W,
@@ -1084,7 +1085,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
         compression: Compression,
         big: bool,
     ) -> Result<Self> {
-        Ok(TTreeWriter {
+        Ok(TreeWriter {
             file: ContainerWriter::new(sink, file_name, compression, big)?,
             tree_name: tree_name.to_string(),
             columns: Vec::new(),
@@ -1105,7 +1106,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
         for b in branches {
             if b.split().is_some() {
                 return Err(Error::Format(format!(
-                    "branch {:?}: TTreeWriter does not support split std::vector<Struct> branches; \
+                    "branch {:?}: TreeWriter does not support split std::vector<Struct> branches; \
                      use write_tree_file for those",
                     b.name
                 )));
@@ -1231,7 +1232,7 @@ impl<W: Write + Seek> TTreeWriter<W> {
     pub fn finish(mut self) -> Result<W> {
         if self.schema.is_none() {
             return Err(Error::Format(
-                "TTreeWriter finished with no batches written".into(),
+                "TreeWriter finished with no batches written".into(),
             ));
         }
         let tot_bytes: i64 = self
@@ -2204,8 +2205,8 @@ fn write_leaf_minmax(w: &mut WBuffer, size: i32, max: i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TTree;
-    use oxiroot_io_core::RFile;
+    use crate::TreeReader;
+    use oxiroot_io_core::FileReader;
     use std::io::Cursor;
 
     fn branches() -> Vec<Branch> {
@@ -2227,7 +2228,7 @@ mod tests {
         let scalars = || vec![Branch::i32("x", vec![3; 3]), Branch::f64("y", vec![0.5; 3])];
         let one_shot = tree_bytes("t.root", "T", &scalars(), Compression::Zstd(3), 0, 0).unwrap();
         let mut w =
-            TTreeWriter::new_large(Cursor::new(Vec::new()), "t.root", "T", Compression::Zstd(3))
+            TreeWriter::new_large(Cursor::new(Vec::new()), "t.root", "T", Compression::Zstd(3))
                 .unwrap();
         w.write_batch(&scalars()).unwrap();
         assert_eq!(one_shot, w.finish().unwrap().into_inner());
@@ -2241,13 +2242,13 @@ mod tests {
             KSTART_BIG_FILE,
         )
         .unwrap();
-        assert!(!RFile::from_bytes(small).unwrap().header().is_big());
+        assert!(!FileReader::from_bytes(small).unwrap().header().is_big());
 
         // Every branch kind reads back from the big form.
         let bytes = tree_bytes("t.root", "T", &branches(), Compression::None, 2, 0).unwrap();
-        let f = RFile::from_bytes(bytes).unwrap();
+        let f = FileReader::from_bytes(bytes).unwrap();
         assert!(f.header().is_big());
-        let t = TTree::open(&f, "T").unwrap();
+        let t = TreeReader::open(&f, "T").unwrap();
         assert_eq!(
             t.read_branch(&f, "x").unwrap(),
             BranchValues::I32(vec![1, 2, 3, 4])
@@ -2274,8 +2275,8 @@ mod tests {
             KSTART_BIG_FILE,
         )
         .unwrap();
-        let f = RFile::from_bytes(bytes).unwrap();
-        let t = TTree::open(&f, "T").unwrap();
+        let f = FileReader::from_bytes(bytes).unwrap();
+        let t = TreeReader::open(&f, "T").unwrap();
         assert_eq!(
             t.read_branch(&f, &name).unwrap(),
             BranchValues::F64(vec![0.5, 1.5])

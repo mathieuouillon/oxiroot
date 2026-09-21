@@ -2,9 +2,9 @@
 
 use clap::Args as ClapArgs;
 use oxiroot::file::TKey;
-use oxiroot::ntuple::RNTuple;
-use oxiroot::tree::TTree;
-use oxiroot::RFile;
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::tree::TreeReader;
+use oxiroot::FileReader;
 
 use crate::json::Json;
 use crate::util::{classify, parse_spec, CmdResult, Kind, Table};
@@ -99,7 +99,7 @@ pub fn run(args: Args, json: bool) -> CmdResult {
 /// directory); with `recursive`, descend into every `TDirectory`, naming keys by
 /// their full `dir/sub/name` path.
 fn collect(
-    file: &RFile,
+    file: &FileReader,
     dir_path: &str,
     keys: &[TKey],
     want_entries: bool,
@@ -143,7 +143,7 @@ fn collect(
 
 /// The entry count of a `TTree`/RNTuple key named `leaf` inside `dir_path`
 /// (`""` for the root directory), or `None` for any other class.
-fn entry_count(file: &RFile, class: &str, leaf: &str, dir_path: &str) -> Option<u64> {
+fn entry_count(file: &FileReader, class: &str, leaf: &str, dir_path: &str) -> Option<u64> {
     match classify(class) {
         Kind::Tree => open_tree(file, dir_path, leaf).map(|t| t.num_entries()),
         Kind::RNtuple => open_ntuple(file, dir_path, leaf).map(|n| n.num_entries()),
@@ -152,21 +152,21 @@ fn entry_count(file: &RFile, class: &str, leaf: &str, dir_path: &str) -> Option<
 }
 
 /// Open a `TTree` from the root directory or a subdirectory (`Ok`s only).
-fn open_tree(file: &RFile, dir_path: &str, leaf: &str) -> Option<TTree> {
+fn open_tree(file: &FileReader, dir_path: &str, leaf: &str) -> Option<TreeReader> {
     if dir_path.is_empty() {
-        TTree::open(file, leaf)
+        TreeReader::open(file, leaf)
     } else {
-        TTree::open_in(file, dir_path, leaf)
+        TreeReader::open_in(file, dir_path, leaf)
     }
     .ok()
 }
 
 /// Open an RNTuple from the root directory or a subdirectory (`Ok`s only).
-fn open_ntuple(file: &RFile, dir_path: &str, leaf: &str) -> Option<RNTuple> {
+fn open_ntuple(file: &FileReader, dir_path: &str, leaf: &str) -> Option<NtupleReader> {
     if dir_path.is_empty() {
-        RNTuple::open(file, leaf)
+        NtupleReader::open(file, leaf)
     } else {
-        RNTuple::open_in(file, dir_path, leaf)
+        NtupleReader::open_in(file, dir_path, leaf)
     }
     .ok()
 }

@@ -86,7 +86,7 @@ let g = TGraph::with_errors(
 !!! warning
     Writing an unnamed graph is a loud error, as is writing two objects with the
     same name into one directory. Give every graph a non-empty, unique key name
-    before `write_root` / `RootFile::write`.
+    before `write_root` / `FileWriter::write`.
 
 ## Writing
 
@@ -109,7 +109,7 @@ g.write_root("graph.root", Compression::None)?;
 ```
 
 To put several objects (graphs, histograms, profiles — any mix) in one file, or
-to use subdirectories, use the [`RootFile`](../api/oxiroot/index.html) builder.
+to use subdirectories, use [`FileWriter`](../api/oxiroot/index.html).
 `add` takes any `&dyn WriteRoot`:
 
 ```rust
@@ -118,7 +118,7 @@ use oxiroot::prelude::*;
 let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("g");
 let h = Hist::reg(10, 0.0, 1.0).double().named("h");
 
-RootFile::create("out.root")
+FileWriter::create("out.root")
     .add(&g)
     .add(&h)
     .dir("by_region", |d| d.add(&g)) // a TDirectory holding `g`
@@ -126,7 +126,7 @@ RootFile::create("out.root")
 ```
 
 The resulting file reads back in ROOT, uproot, and oxiroot. See
-[Reading & writing files](reading-writing.md) for the full `RootFile` and append
+[Reading & writing files](reading-writing.md) for the full `FileWriter` and append
 workflow.
 
 ## Reading
@@ -137,9 +137,9 @@ the matching `errors` variant is filled in:
 
 ```rust
 use oxiroot::prelude::*;
-use oxiroot::RFile;
+use oxiroot::FileReader;
 
-let f = RFile::open("graph.root")?;
+let f = FileReader::open("graph.root")?;
 let g = TGraph::read_root(&f, "resolution")?;
 
 println!("{} points, class {}", g.len(), g.class_name());
@@ -158,9 +158,9 @@ Read a graph from inside a subdirectory with `read_root_in`:
 
 ```rust
 use oxiroot::prelude::*;
-use oxiroot::RFile;
+use oxiroot::FileReader;
 
-let f = RFile::open("out.root")?;
+let f = FileReader::open("out.root")?;
 let g = TGraph::read_root_in(&f, "by_region", "g")?;
 ```
 
@@ -199,9 +199,9 @@ re-evaluate the formula:
 
 ```rust
 use oxiroot::prelude::*;
-use oxiroot::RFile;
+use oxiroot::FileReader;
 
-let f = RFile::open("graph_function.root")?;
+let f = FileReader::open("graph_function.root")?;
 let g = TGraph::read_root(&f, "gfit")?;
 
 for fun in &g.functions {
@@ -242,7 +242,7 @@ surface. It is a separate Rust type with the same read/write traits:
 
 ```rust
 use oxiroot::prelude::*;
-use oxiroot::RFile;
+use oxiroot::FileReader;
 
 let g = TGraph2D::new(
     vec![1.0, 2.0, 3.0],       // x
@@ -254,7 +254,7 @@ let g = TGraph2D::new(
 
 g.write_root("g2d.root", Compression::Zstd(5))?;
 
-let back = TGraph2D::read_root(&RFile::open("g2d.root")?, "surface")?;
+let back = TGraph2D::read_root(&FileReader::open("g2d.root")?, "surface")?;
 assert_eq!(back.len(), 3);
 ```
 
@@ -271,7 +271,7 @@ same points. Start from the first y-error layer and chain `add_y_error`:
 
 ```rust
 use oxiroot::prelude::*;
-use oxiroot::RFile;
+use oxiroot::FileReader;
 
 let g = TGraphMultiErrors::new(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
@@ -283,7 +283,7 @@ let g = TGraphMultiErrors::new(
 
 assert_eq!(g.n_y_errors(), 2);
 g.write_root("multi.root", Compression::Zstd(5))?;
-let back = TGraphMultiErrors::read_root(&RFile::open("multi.root")?, "spectrum")?;
+let back = TGraphMultiErrors::read_root(&FileReader::open("multi.root")?, "spectrum")?;
 ```
 
 The `ey_low`/`ey_high` fields are `Vec<Vec<f64>>` (one inner `Vec` per layer).
@@ -298,7 +298,7 @@ are written at ROOT's defaults.
 
 ## See also
 
-- [Reading & writing files](reading-writing.md) — the `RootFile` builder, append mode, and `ReadRoot`.
+- [Reading & writing files](reading-writing.md) — `FileWriter`, append mode, and `ReadRoot`.
 - [Histograms](histograms.md) — the `TH1`/`TH2`/`TH3` family that shares the same write/read traits.
 - [Fitting](fitting.md) — fitting graphs, histograms, and raw points with a shared `Model`.
 - [Quickstart](../getting-started/quickstart.md) — a first end-to-end example.

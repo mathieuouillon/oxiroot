@@ -8,12 +8,12 @@
 //! `root://eospublic.cern.ch`). GSI/Kerberos/token security is out of scope.
 //!
 //! `kXR_read(handle, offset, length)` maps directly onto
-//! [`ByteSource::read_at`], so an [`XrootdSource`] plugs into [`RFile`] exactly
+//! [`ByteSource::read_at`], so an [`XrootdSource`] plugs into [`FileReader`] exactly
 //! like the HTTP source, and every reader fetches only the ranges it touches.
 //!
 //! The wire framing here was validated against `root://eospublic.cern.ch`.
 //!
-//! [`RFile`]: super::rfile::RFile
+//! [`FileReader`]: super::reader::FileReader
 
 use std::io::{Read, Write};
 use std::net::TcpStream;

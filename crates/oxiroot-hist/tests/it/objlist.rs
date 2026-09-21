@@ -6,11 +6,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ListKind, ObjList, ReadRoot, RootFile, TObjString, TParameter, TH1};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_hist::{FileWriter, Hist, ListKind, ObjList, ReadRoot, TObjString, TParameter, TH1};
+use oxiroot_io_core::{Compression, FileReader};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/objlist.root"))
+fn fixture() -> FileReader {
+    FileReader::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/objlist.root"))
         .expect("open fixture")
 }
 
@@ -52,13 +52,13 @@ fn round_trips_list_and_array_through_oxiroot() {
         .add(&Hist::reg(3, 0.0, 3.0).double().named("a1"));
 
     let out = std::env::temp_dir().join("oxiroot_objlist_rt.root");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&list)
         .add(&arr)
         .write(Compression::None)
         .unwrap();
 
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     let l = ObjList::read_root(&f, "mylist").unwrap();
     assert_eq!(l.len(), 3);
     assert_eq!(l.items::<TH1>().unwrap().len(), 1);

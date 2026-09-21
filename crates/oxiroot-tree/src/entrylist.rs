@@ -13,7 +13,7 @@ use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{decompress_payload, Error, Result};
 use oxiroot_io_core::object::TagReader;
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 /// Entries per `TEntryListBlock` window (ROOT's `TEntryListBlock::kBlockSize`).
 const K_BLOCK_SIZE: u64 = 64000;
@@ -30,7 +30,7 @@ pub struct TEntryList {
 
 impl TEntryList {
     /// Open the `TEntryList` named `name` in `file`.
-    pub fn open(file: &RFile, name: &str) -> Result<TEntryList> {
+    pub fn open(file: &FileReader, name: &str) -> Result<TEntryList> {
         let key = file
             .key(name)
             .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;

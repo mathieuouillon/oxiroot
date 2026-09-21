@@ -3,11 +3,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
-fn open() -> RFile {
-    RFile::open(
+fn open() -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join("tree_arrays.root"),
@@ -18,7 +18,7 @@ fn open() -> RFile {
 #[test]
 fn flat_view_matches_nested() {
     let f = open();
-    let t = TTree::open(&f, "T").expect("open tree");
+    let t = TreeReader::open(&f, "T").expect("open tree");
 
     // Jagged branch y = [[1,2], [], [3,4,5]].
     let j = t.read_branch_flat(&f, "y").expect("flat y");

@@ -5,11 +5,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
-fn fixture(name: &str) -> RFile {
-    RFile::open(
+fn fixture(name: &str) -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join(name),
@@ -20,7 +20,7 @@ fn fixture(name: &str) -> RFile {
 #[test]
 fn reads_nested_struct_subbranches() {
     let f = fixture("tree_nested.root");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     // The nested `Inner` member is flattened to `v.inner.a` / `v.inner.b`.
     assert_eq!(

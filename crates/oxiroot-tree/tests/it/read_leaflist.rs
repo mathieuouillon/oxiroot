@@ -4,16 +4,16 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
 #[test]
 fn reads_leaflist_branch() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures")
         .join("tree_leaflist.root");
-    let f = RFile::open(path).expect("open");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let f = FileReader::open(path).expect("open");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.num_entries(), 4);
     assert_eq!(t.branch_names(), ["s.a", "s.b", "s.c"]);
     assert!(t.unsupported_branches().is_empty());

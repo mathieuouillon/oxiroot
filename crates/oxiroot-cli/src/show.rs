@@ -1,9 +1,9 @@
 //! `oxroot show` — the structure of a `TTree` or RNTuple.
 
 use clap::Args as ClapArgs;
-use oxiroot::ntuple::RNTuple;
-use oxiroot::tree::{BranchValues, LeafType, TTree};
-use oxiroot::RFile;
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::tree::{BranchValues, LeafType, TreeReader};
+use oxiroot::FileReader;
 
 use crate::json::Json;
 use crate::util::{
@@ -42,10 +42,10 @@ pub fn run(args: Args, json: bool) -> CmdResult {
 }
 
 /// Show a `TTree`'s branches, their types, and any unreadable branches.
-fn show_tree(file: &RFile, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
+fn show_tree(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
     let tree = match subdir {
-        None => TTree::open(file, name)?,
-        Some(dir) => TTree::open_in(file, dir, name)?,
+        None => TreeReader::open(file, name)?,
+        Some(dir) => TreeReader::open_in(file, dir, name)?,
     };
     let mut branches = Vec::new();
     for b in tree.branch_names() {
@@ -99,10 +99,10 @@ fn show_tree(file: &RFile, subdir: Option<&str>, name: &str, json: bool) -> CmdR
 }
 
 /// Show an RNTuple's top-level fields and their C++ types.
-fn show_rntuple(file: &RFile, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
+fn show_rntuple(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
     let ntuple = match subdir {
-        None => RNTuple::open(file, name)?,
-        Some(dir) => RNTuple::open_in(file, dir, name)?,
+        None => NtupleReader::open(file, name)?,
+        Some(dir) => NtupleReader::open_in(file, dir, name)?,
     };
     let descriptors = &ntuple.header().fields;
     let mut fields = Vec::new();
@@ -157,7 +157,7 @@ fn named_type_array(items: &[(String, String)]) -> Json {
 /// The C++-ish type label of a branch: `double`, `double[3]` (fixed array),
 /// `double[]` (variable), `char*`, or a nested/vector form. Peeks at the first
 /// entry to tell a scalar from a collection when the title carries no shape.
-fn branch_type_label(tree: &TTree, file: &RFile, name: &str) -> String {
+fn branch_type_label(tree: &TreeReader, file: &FileReader, name: &str) -> String {
     let elem = leaf_type_name(tree.branch_type(name).unwrap_or(LeafType::Str));
 
     let shape = tree.branch_shape(name).unwrap_or(&[]);

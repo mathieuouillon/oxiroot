@@ -43,7 +43,7 @@ fn writes_and_reads_a_mixed_object_file() {
     let mut g = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
     g.name = "g".into();
 
-    RootFile::create(tmp("mixed"))
+    FileWriter::create(tmp("mixed"))
         .add(&h)
         .add(&hv)
         .add(&h2)
@@ -55,7 +55,7 @@ fn writes_and_reads_a_mixed_object_file() {
         .unwrap();
 
     // Every object reads back with its identity intact.
-    let file = RFile::open(tmp("mixed")).unwrap();
+    let file = FileReader::open(tmp("mixed")).unwrap();
     assert_eq!(TH1::read_root(&file, "pt").unwrap().integral(), 4.0);
     assert_eq!(
         TH1::read_root(&file, "hv").unwrap().edges(),
@@ -83,8 +83,8 @@ fn tree_round_trips_through_the_facade() {
     .write_root(tmp("tree"), Compression::Zstd(5))
     .unwrap();
 
-    let f = RFile::open(tmp("tree")).unwrap();
-    let t = TTree::open(&f, "Events").unwrap();
+    let f = FileReader::open(tmp("tree")).unwrap();
+    let t = TreeReader::open(&f, "Events").unwrap();
     assert_eq!(t.num_entries(), 3);
     assert_eq!(
         t.read_branch(&f, "i").unwrap(),
@@ -113,8 +113,8 @@ fn rntuple_round_trips_through_the_facade() {
     .write_root(tmp("rn"), Compression::Zstd(5))
     .unwrap();
 
-    let f = RFile::open(tmp("rn")).unwrap();
-    let nt = RNTuple::open(&f, "ntpl").unwrap();
+    let f = FileReader::open(tmp("rn")).unwrap();
+    let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(nt.num_entries(), 2);
     assert_eq!(
         nt.read_field(&f, "mass").unwrap(),
@@ -170,6 +170,6 @@ fn hadd_merges_histogram_files_end_to_end() {
     let report = merge_files(tmp("merged"), &[tmp("m1"), tmp("m2")], Compression::Zstd(5)).unwrap();
     assert_eq!(report.merged, vec!["h".to_string()]);
 
-    let file = RFile::open(tmp("merged")).unwrap();
+    let file = FileReader::open(tmp("merged")).unwrap();
     assert_eq!(TH1::read_root(&file, "h").unwrap().integral(), 4.0);
 }

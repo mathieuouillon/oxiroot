@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -13,7 +13,7 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn parses_streamer_registry() {
-    let f = RFile::open(fixture("th1d_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("th1d_uncompressed.root")).expect("open fixture");
     let reg = f.streamer_registry().expect("parse streamer info");
 
     // The exact set of classes uproot reports for this file.

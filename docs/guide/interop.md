@@ -67,8 +67,8 @@ bash scripts/interop_local.sh --keep          # keep the work dir + regenerated 
 
 | Phase | Check |
 |-------|-------|
-| Canonical round-trip | The lean smoke test: a `TH1D`, an RNTuple, and a `TTree` (with every branch kind) plus the multi-object / subdirectory / append files written by the `RootFile` builder, round-tripped both ways against ROOT C++ and uproot. |
-| Examples smoke | Runs the `analysis`, `tree`, and `rntuple_nested` examples (pure Rust) so a regression in the `RootFile` builder, `read_root_in`, or the `Tree`/`Ntuple` writers fails even with no oracle present. |
+| Canonical round-trip | The lean smoke test: a `TH1D`, an RNTuple, and a `TTree` (with every branch kind) plus the multi-object / subdirectory / append files written by `FileWriter`, round-tripped both ways against ROOT C++ and uproot. |
+| Examples smoke | Runs the `analysis`, `tree`, and `rntuple_nested` examples (pure Rust) so a regression in `FileWriter`, `read_root_in`, or the `Tree`/`Ntuple` writers fails even with no oracle present. |
 | Manifest-driven matrix | `interop_matrix` writes ~38 cases plus a `manifest.json`; the ROOT C++ and uproot oracles consume the manifest and assert their parse matches (Rust → oracle). |
 | `cargo test --workspace` | The pure-Rust read-compat suite against the committed fixtures. |
 | Fixture-regen drift check | Regenerates the committed fixtures from your *local* ROOT/uproot and re-tests, catching version drift. Skipped with `--no-fixtures`. |
@@ -79,7 +79,7 @@ The matrix is the broad write-compat coverage. Its cases span:
 - **Histograms** — every `TH1`/`TH2`/`TH3` precision (`D`/`F`/`I`/`S`/`C`/`L`)
   and dimension, `TProfile`, `Sumw2` per-bin errors, and variable bin edges.
 - **File composition** — multiple objects, subdirectories, and append (the
-  `RootFile` builder, plus `read_root` / `read_root_in` on the read side).
+  `FileWriter`, plus `read_root` / `read_root_in` on the read side).
 - **RNTuple** — every scalar and vector field type, across multiple clusters.
 - **`TTree`** — every branch kind and scalar width, including the split
   `std::vector<Struct>` (`TBranchElement`) branch.
@@ -122,8 +122,8 @@ let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("interop");
 h.fill(0.5);
 h.write_root("rust_hist.root", Compression::None)?;
 
-// Several objects and a subdirectory via the RootFile builder.
-RootFile::create("rust_multi.root")
+// Several objects and a subdirectory via FileWriter.
+FileWriter::create("rust_multi.root")
     .add(&h)
     .dir("sub", |d| d.add(&other))
     .write(Compression::None)?;
@@ -135,14 +135,14 @@ both from the top level and from a subdirectory:
 ```rust
 use oxiroot::prelude::*;
 
-let f = RFile::open("oracle_dirs.root")?;
+let f = FileReader::open("oracle_dirs.root")?;
 let dh = TH1::read_root(&f, "dh")?;                 // top-level key
 let rh = TH1::read_root_in(&f, "region", "rh")?;    // inside subdirectory "region"
 assert_eq!(dh.values(), &[2.0, 4.0]);
 ```
 
 The same `read_root` / `read_root_in` (the `ReadRoot` trait) and
-`write_root` / `RootFile` builder (the `WriteRoot` trait) are the only entry
+`write_root` / `FileWriter` (the `WriteRoot` trait) are the only entry
 points; there is one way per operation. See
 [Reading & writing](reading-writing.md) for the full surface.
 

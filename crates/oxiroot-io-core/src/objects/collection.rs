@@ -17,7 +17,7 @@ use crate::object::TagReader;
 use crate::object_io::{object_bytes_any_keyed, ReadRoot, StreamerSet, WriteRoot};
 use crate::streamer::{read_tobject, write_object_any, write_tobject};
 use crate::streamer_gen::Cls;
-use crate::RFile;
+use crate::FileReader;
 
 use super::scalars::{
     decode_tobjstring, decode_tparameter, member_classes, TObjString, TParameter,
@@ -251,12 +251,12 @@ fn decode_objlist(class: &str, object: &[u8], keylen: usize) -> Result<ObjList> 
     })
 }
 
-fn read_objlist(file: &RFile, name: &str) -> Result<ObjList> {
+fn read_objlist(file: &FileReader, name: &str) -> Result<ObjList> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
     decode_objlist(&class, &object, keylen)
 }
 
-fn read_objlist_in(file: &RFile, subdir: &str, name: &str) -> Result<ObjList> {
+fn read_objlist_in(file: &FileReader, subdir: &str, name: &str) -> Result<ObjList> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     decode_objlist(&class, &object, keylen)
 }
@@ -476,30 +476,30 @@ fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
     })
 }
 
-fn read_tmap(file: &RFile, name: &str) -> Result<TMap> {
+fn read_tmap(file: &FileReader, name: &str) -> Result<TMap> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
     decode_tmap(&class, &object, keylen)
 }
 
-fn read_tmap_in(file: &RFile, subdir: &str, name: &str) -> Result<TMap> {
+fn read_tmap_in(file: &FileReader, subdir: &str, name: &str) -> Result<TMap> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     decode_tmap(&class, &object, keylen)
 }
 
 impl ReadRoot for ObjList {
-    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         read_objlist(file, name)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
         read_objlist_in(file, dir, name)
     }
 }
 
 impl ReadRoot for TMap {
-    fn read_root(file: &RFile, name: &str) -> Result<Self> {
+    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         read_tmap(file, name)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<Self> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
         read_tmap_in(file, dir, name)
     }
 }

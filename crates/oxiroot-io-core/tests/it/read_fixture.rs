@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::buffer::{RBuffer, WBuffer};
-use oxiroot_io_core::{FileHeader, RFile};
+use oxiroot_io_core::{FileHeader, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -14,7 +14,7 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn reads_th1d_uncompressed_container() {
-    let f = RFile::open(fixture("th1d_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("th1d_uncompressed.root")).expect("open fixture");
 
     // Header: small (32-bit) form, first record at byte 100.
     let h = f.header();
@@ -44,7 +44,7 @@ fn reads_th1d_uncompressed_container() {
 
 #[test]
 fn free_list_is_consistent() {
-    let f = RFile::open(fixture("th1d_uncompressed.root")).expect("open fixture");
+    let f = FileReader::open(fixture("th1d_uncompressed.root")).expect("open fixture");
     let free = f.free_segments().expect("read free list");
     assert_eq!(free.len() as u32, f.header().nfree);
     for seg in &free {
@@ -87,8 +87,8 @@ fn parses_hand_crafted_big_header() {
 
 #[test]
 fn decompresses_zstd_object_matching_uncompressed() {
-    let unc = RFile::open(fixture("th1d_uncompressed.root")).expect("open uncompressed");
-    let zst = RFile::open(fixture("th1d_zstd.root")).expect("open zstd");
+    let unc = FileReader::open(fixture("th1d_uncompressed.root")).expect("open uncompressed");
+    let zst = FileReader::open(fixture("th1d_zstd.root")).expect("open zstd");
 
     let unc_key = unc.key("h1").expect("uncompressed h1");
     let zst_key = zst.key("h1").expect("zstd h1");
@@ -117,6 +117,6 @@ fn decompresses_zstd_object_matching_uncompressed() {
 
 #[test]
 fn rejects_non_root_magic() {
-    let err = RFile::from_bytes(b"NOPE....".to_vec()).unwrap_err();
+    let err = FileReader::from_bytes(b"NOPE....".to_vec()).unwrap_err();
     assert!(matches!(err, oxiroot_io_core::Error::BadMagic(_)));
 }

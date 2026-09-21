@@ -3,7 +3,7 @@
 //! and ROOT C++ reads the axis label — checked out of band).
 
 use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH1};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
 fn builder_maps_storage_to_root_classes() {
@@ -115,7 +115,7 @@ fn profile_finalizer_builds_a_tprofile() {
     // It is an ordinary TProfile and writes to ROOT.
     let out = std::env::temp_dir().join("oxiroot_quick_profile.root");
     p.write_root(&out, Compression::None).unwrap();
-    let back = TProfile::read_root(&RFile::open(&out).unwrap(), "prof").unwrap();
+    let back = TProfile::read_root(&FileReader::open(&out).unwrap(), "prof").unwrap();
     assert_eq!(back.values()[0], 15.0);
     let _ = std::fs::remove_file(&out);
 }
@@ -132,7 +132,7 @@ fn builder_output_round_trips_through_root() {
     let out = std::env::temp_dir().join("oxiroot_quick_hist.root");
     h.write_root(&out, Compression::None).unwrap();
 
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     let back = TH1::read_root(&f, "pt").unwrap();
     assert_eq!(back.x_label(), "$p_T$ [GeV]"); // axis label survives ROOT
     assert_eq!(back.values(), &[2.0, 3.0, 0.0, 0.0]);
@@ -157,7 +157,7 @@ fn variable_axis_takes_arbitrary_irregular_edges() {
     // The exact edges and contents round-trip through the writer.
     let out = std::env::temp_dir().join("oxiroot_quick_varbins.root");
     h.write_root(&out, Compression::None).unwrap();
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     let back = TH1::read_root(&f, "hv").unwrap();
     assert_eq!(back.edges(), edges);
     assert_eq!(back.values(), &[1.0, 1.0, 2.0, 1.0, 3.0]);

@@ -16,7 +16,7 @@
 #   (A) canonical round-trip   — crates/oxiroot/examples/interop.rs + the
 #       scripts/interop_{root.cpp,uproot.py} oracles (the lean smoke test).
 #       Covers single + multi-object + subdirectory + appended histograms
-#       (the RootFile builder) and subdirectory reads (read_root_in), both ways.
+#       (FileWriter) and subdirectory reads (read_root_in), both ways.
 #   (B) manifest-driven matrix — crates/oxiroot/examples/interop_matrix.rs writes
 #       ~38 cases + manifest.json; scripts/interop_matrix_{root.cpp,uproot.py}
 #       consume the manifest and assert (the broad write-compat coverage).
@@ -123,14 +123,14 @@ canonical_uproot() {
   || skip "canonical round-trip (uproot)" "no uproot venv"
 
 # Smoke-run the showcase examples (pure Rust): they drive the method-based API —
-# the RootFile builder (multi-object/subdirectory/append), read_root_in, and
+# FileWriter (multi-object/subdirectory/append), read_root_in, and
 # Tree/Ntuple::write_root — so a regression there fails even without an oracle.
 run_examples() {
   cargo run -q -p oxiroot --example analysis \
     && cargo run -q -p oxiroot --example tree \
     && cargo run -q -p oxiroot --example rntuple_nested
 }
-run "examples smoke (RootFile builder / read_root_in / Tree+Ntuple)" run_examples
+run "examples smoke (FileWriter / read_root_in / Tree+Ntuple)" run_examples
 
 # ===========================================================================
 # Phase 3 — manifest-driven matrix (mechanism B), Rust -> oracle

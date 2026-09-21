@@ -632,7 +632,7 @@ fn write(dir: &Path) {
         ]));
     }
 
-    // --- Multi-object file (RootFile builder). ---
+    // --- Multi-object file (FileWriter). -----------
     {
         let ha = th1_with(2, 0.0, 2.0, &[1.0, 2.0]);
         let hb = th2_with(2, 2, &[vec![3.0, 4.0], vec![5.0, 6.0]]);
@@ -642,7 +642,7 @@ fn write(dir: &Path) {
         let mut hb = hb;
         hb.name = "hb".into();
         let file = "m_multiobj.root".to_string();
-        RootFile::create(dir.join(&file))
+        FileWriter::create(dir.join(&file))
             .add(&ha)
             .add(&hb)
             .write(none)
@@ -675,7 +675,7 @@ fn write(dir: &Path) {
         ]));
     }
 
-    // --- Subdirectories (RootFile builder with dir). ---
+    // --- Subdirectories (FileWriter with dir). -----------
     {
         let mut htop = th1_with(1, 0.0, 1.0, &[7.0]);
         htop.name = "htop".into();
@@ -684,7 +684,7 @@ fn write(dir: &Path) {
         let mut hb = th1_with(1, 0.0, 1.0, &[4.0]);
         hb.name = "h".into();
         let file = "m_subdirs.root".to_string();
-        RootFile::create(dir.join(&file))
+        FileWriter::create(dir.join(&file))
             .add(&htop)
             .dir("regionA", |d| d.add(&ha))
             .dir("regionB", |d| d.add(&hb))
@@ -748,11 +748,11 @@ fn write(dir: &Path) {
         h2.name = "h2".into();
         let file = "m_append.root".to_string();
         let path = dir.join(&file);
-        RootFile::create(&path)
+        FileWriter::create(&path)
             .add(&h1)
             .write(none)
             .unwrap_or_else(|e| die(&format!("append base: {e}")));
-        RootFile::open(&path)
+        FileWriter::open(&path)
             .unwrap_or_else(|e| die(&format!("append open: {e}")))
             .add(&h2)
             .write(none)
@@ -948,9 +948,9 @@ fn rntuple_multicluster(id: &'static str, large: bool, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     let mut w = if large {
-        RNTupleWriter::create_large(&path, "ntpl", Compression::None)
+        NtupleWriter::create_large(&path, "ntpl", Compression::None)
     } else {
-        RNTupleWriter::create(&path, "ntpl", Compression::None)
+        NtupleWriter::create(&path, "ntpl", Compression::None)
     }
     .unwrap_or_else(|e| die(&format!("{id} create: {e}")));
     // Two batches → two clusters.
@@ -1244,11 +1244,11 @@ fn tree_split(id: &'static str, dir: &Path) -> J {
 // ---------------------------------------------------------------------------
 
 fn read_big(path: &Path) {
-    let f = RFile::open(path).unwrap_or_else(|e| die(&format!("open big: {e}")));
+    let f = FileReader::open(path).unwrap_or_else(|e| die(&format!("open big: {e}")));
     if !f.header().is_big() {
         die("big file did not parse as 64-bit format (fEND ≤ 2 GiB?)");
     }
-    let t = TTree::open(&f, "T").unwrap_or_else(|e| die(&format!("open tree: {e}")));
+    let t = TreeReader::open(&f, "T").unwrap_or_else(|e| die(&format!("open tree: {e}")));
     let n = t.num_entries();
     if n < 1 {
         die("big tree has no entries");

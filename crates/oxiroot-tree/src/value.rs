@@ -138,7 +138,7 @@ pub enum BranchValues {
 ///
 /// `offsets` has `num_entries + 1` values with `offsets[0] == 0`; entry `i`'s
 /// elements are `values[offsets[i] .. offsets[i+1]]`. Built by
-/// [`TTree::read_branch_flat`](crate::TTree::read_branch_flat). `values` is
+/// [`TreeReader::read_branch_flat`](crate::TreeReader::read_branch_flat). `values` is
 /// always a *scalar* variant (e.g. `F64`), never a `Vec*`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Jagged {

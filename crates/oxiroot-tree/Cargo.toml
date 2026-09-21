@@ -12,7 +12,7 @@ oxiroot-io-core = { workspace = true }
 rayon = { version = "1", optional = true }
 
 [features]
-# Add `TTree::read_branch_par` and friends, which decompress a branch's baskets
+# Add `TreeReader::read_branch_par` and friends, which decompress a branch's baskets
 # in parallel. The plain read methods stay serial either way.
 rayon = ["dep:rayon"]
 

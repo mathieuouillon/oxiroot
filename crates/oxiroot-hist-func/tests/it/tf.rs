@@ -8,12 +8,12 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, RootFile, WriteRoot};
+use oxiroot_hist::{FileWriter, ReadRoot, WriteRoot};
 use oxiroot_hist_func::{TF1, TF2, TF3};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
-fn fixture(name: &str) -> RFile {
-    RFile::open(
+fn fixture(name: &str) -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join(name),
@@ -89,14 +89,14 @@ fn round_trips_tf1_tf2_tf3_through_oxiroot() {
         .unwrap()
         .with_params(vec![0.25]);
 
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&f1)
         .add(&f2)
         .add(&f3)
         .write(Compression::None)
         .unwrap();
 
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     assert_eq!(TF1::read_root(&f, "f1").unwrap(), f1);
     assert_eq!(TF2::read_root(&f, "f2").unwrap(), f2);
     assert_eq!(TF3::read_root(&f, "f3").unwrap(), f3);

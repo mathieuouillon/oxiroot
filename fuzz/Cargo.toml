@@ -17,8 +17,8 @@ oxiroot-hist = { path = "../crates/oxiroot-hist" }
 oxiroot-hist-func = { path = "../crates/oxiroot-hist-func" }
 
 [[bin]]
-name = "rfile"
-path = "fuzz_targets/rfile.rs"
+name = "file"
+path = "fuzz_targets/file.rs"
 test = false
 doc = false
 bench = false

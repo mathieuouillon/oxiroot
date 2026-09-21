@@ -107,7 +107,7 @@ fn main() -> oxiroot::Result<()> {
     // --- Write all six to a ROOT file (ROOT C++ and uproot read these keys). ----
     // The file lives in the temp dir and is removed before we return — no litter.
     let out = std::env::temp_dir().join("oxiroot_ex_functions.root");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&damped)
         .add(&gauss)
         .add(&decay)
@@ -120,7 +120,7 @@ fn main() -> oxiroot::Result<()> {
     // --- Round-trip: read one TF1 back and confirm it evaluates identically. ---
     // `TF1::read_root` re-parses the embedded TFormula and its parameters, so the
     // decoded function reproduces `eval` to the bit at sampled points.
-    let g = TF1::read_root(&RFile::open(&out)?, "gauss")?;
+    let g = TF1::read_root(&FileReader::open(&out)?, "gauss")?;
     for &x in &[-2.0, -0.5, 0.5, 2.0] {
         assert!(
             (g.eval(x) - gauss.eval(x)).abs() < 1e-12,

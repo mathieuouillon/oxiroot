@@ -14,7 +14,7 @@ use oxiroot_io_core::buffer::{RBuffer, WBuffer};
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tobject, write_tobject};
 use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, Cls};
-use oxiroot_io_core::{object_bytes_any, FromMember, RFile, ReadRoot, WriteRoot};
+use oxiroot_io_core::{object_bytes_any, FileReader, FromMember, ReadRoot, WriteRoot};
 
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default
 /// `DBL_EPSILON`. Matched so written files equal ROOT's byte-for-byte.
@@ -123,11 +123,11 @@ impl WriteRoot for TVectorD {
 }
 
 impl ReadRoot for TVectorD {
-    fn read_root(file: &RFile, name: &str) -> Result<TVectorD> {
+    fn read_root(file: &FileReader, name: &str) -> Result<TVectorD> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tvectord(name, &class, &object)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<TVectorD> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<TVectorD> {
         let (class, object) = file.object_in(dir, name)?;
         decode_tvectord(name, &class, &object)
     }
@@ -244,11 +244,11 @@ impl WriteRoot for TMatrixD {
 }
 
 impl ReadRoot for TMatrixD {
-    fn read_root(file: &RFile, name: &str) -> Result<TMatrixD> {
+    fn read_root(file: &FileReader, name: &str) -> Result<TMatrixD> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tmatrixd(name, &class, &object)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<TMatrixD> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<TMatrixD> {
         let (class, object) = file.object_in(dir, name)?;
         decode_tmatrixd(name, &class, &object)
     }
@@ -366,11 +366,11 @@ impl WriteRoot for TMatrixDSym {
 }
 
 impl ReadRoot for TMatrixDSym {
-    fn read_root(file: &RFile, name: &str) -> Result<TMatrixDSym> {
+    fn read_root(file: &FileReader, name: &str) -> Result<TMatrixDSym> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tmatrixdsym(name, &class, &object)
     }
-    fn read_root_in(file: &RFile, dir: &str, name: &str) -> Result<TMatrixDSym> {
+    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<TMatrixDSym> {
         let (class, object) = file.object_in(dir, name)?;
         decode_tmatrixdsym(name, &class, &object)
     }

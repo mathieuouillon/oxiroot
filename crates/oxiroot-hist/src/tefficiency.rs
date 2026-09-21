@@ -7,7 +7,7 @@
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::Result;
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::base::{object_bytes, object_bytes_in, BinContentType};
 use crate::th1::TH1;
@@ -133,12 +133,16 @@ fn read_embedded_th1d(r: &mut RBuffer) -> Result<TH1> {
 }
 
 /// Read a `TEfficiency` named `name` from `file`.
-pub(crate) fn read_tefficiency(file: &RFile, name: &str) -> Result<TEfficiency> {
+pub(crate) fn read_tefficiency(file: &FileReader, name: &str) -> Result<TEfficiency> {
     TEfficiency::read(&mut RBuffer::new(&object_bytes(file, name, "TEfficiency")?))
 }
 
 /// Read a `TEfficiency` from subdirectory `subdir`.
-pub(crate) fn read_tefficiency_in(file: &RFile, subdir: &str, name: &str) -> Result<TEfficiency> {
+pub(crate) fn read_tefficiency_in(
+    file: &FileReader,
+    subdir: &str,
+    name: &str,
+) -> Result<TEfficiency> {
     TEfficiency::read(&mut RBuffer::new(&object_bytes_in(
         file,
         subdir,

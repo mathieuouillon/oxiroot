@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, ReadRoot, TProfile3D, WriteRoot};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -13,7 +13,7 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn reads_root_written_tprofile3d() {
-    let f = RFile::open(fixture("tprofile2d.root")).expect("open");
+    let f = FileReader::open(fixture("tprofile2d.root")).expect("open");
     assert_eq!(f.key("p3").unwrap().class_name, "TProfile3D");
     let p = TProfile3D::read_root(&f, "p3").expect("read TProfile3D");
     // cell(1,1,1) mean t = 15; cell(2,2,2) mean t = 7.
@@ -37,6 +37,6 @@ fn tprofile3d_round_trips() {
 
     let out = PathBuf::from("/tmp/oxiroot_tprofile3d.root");
     p.write_root(&out, Compression::None).expect("write");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert_eq!(TProfile3D::read_root(&f, "p3").unwrap(), p, "round-trips");
 }

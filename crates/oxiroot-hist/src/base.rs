@@ -7,7 +7,7 @@
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 // The generic object-byte readers now live in `oxiroot-io-core`; re-export them
 // here so the histogram modules keep addressing them as `crate::base::…`.
 pub(crate) use oxiroot_io_core::{object_bytes_any, object_bytes_any_keyed};
@@ -238,7 +238,7 @@ pub(crate) fn read_th1_object(
 }
 
 /// Check that key `name` exists and holds a `class`, before its payload is read.
-fn check_key_class(file: &RFile, name: &str, class: &str) -> Result<()> {
+fn check_key_class(file: &FileReader, name: &str, class: &str) -> Result<()> {
     let key = file
         .key(name)
         .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
@@ -252,7 +252,7 @@ fn check_key_class(file: &RFile, name: &str, class: &str) -> Result<()> {
 }
 
 /// Locate a key, verify its class, and return its decompressed object bytes.
-pub(crate) fn object_bytes(file: &RFile, name: &str, class: &str) -> Result<Vec<u8>> {
+pub(crate) fn object_bytes(file: &FileReader, name: &str, class: &str) -> Result<Vec<u8>> {
     check_key_class(file, name, class)?;
     Ok(object_bytes_any(file, name)?.1)
 }
@@ -263,7 +263,7 @@ pub(crate) fn object_bytes(file: &RFile, name: &str, class: &str) -> Result<Vec<
 /// [`oxiroot_io_core::object::TagReader`]) needs the key length to resolve the
 /// class/object back-references inside a streamed object (e.g. `TH2Poly`'s bins).
 pub(crate) fn object_bytes_keyed(
-    file: &RFile,
+    file: &FileReader,
     name: &str,
     class: &str,
 ) -> Result<(Vec<u8>, usize)> {
@@ -275,7 +275,7 @@ pub(crate) fn object_bytes_keyed(
 /// Fetch a histogram object, requiring a 4-character class with the given
 /// dimension prefix (e.g. `"TH1"`), so a `read_th1` cannot accept a `TH2`.
 pub(crate) fn histogram_object(
-    file: &RFile,
+    file: &FileReader,
     name: &str,
     dim_prefix: &str,
 ) -> Result<(String, Vec<u8>)> {
@@ -284,7 +284,7 @@ pub(crate) fn histogram_object(
 
 /// Like [`histogram_object`] but from subdirectory `subdir`.
 pub(crate) fn histogram_object_in(
-    file: &RFile,
+    file: &FileReader,
     subdir: &str,
     name: &str,
     dim_prefix: &str,
@@ -310,7 +310,7 @@ fn check_dim(
 
 /// Like [`object_bytes`] but from subdirectory `subdir` (validates the class).
 pub(crate) fn object_bytes_in(
-    file: &RFile,
+    file: &FileReader,
     subdir: &str,
     name: &str,
     class: &str,

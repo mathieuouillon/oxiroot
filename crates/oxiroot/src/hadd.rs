@@ -18,7 +18,7 @@
 //!
 //! One invocation writes **one** output file. The merger does not yet combine
 //! histograms with a `TTree` or RNTuple in one output (a
-//! [`RootFile`](oxiroot_io_core::RootFile) can hold all three, but the merger
+//! [`FileWriter`](oxiroot_io_core::FileWriter) can hold all three, but the merger
 //! concatenates each tree or RNTuple on its own path). So a fileset must be one
 //! of:
 //!
@@ -45,12 +45,12 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{Compression, RFile, KSTART_BIG_FILE};
+use oxiroot_io_core::{Compression, FileReader, KSTART_BIG_FILE};
 
 mod histograms;
 pub use histograms::{merge_histogram_files, HistMergeOutcome};
-use oxiroot_rntuple::{append_ntuples, concat_ntuples, RNTuple, RNTupleWriter, ANCHOR_CLASS};
-use oxiroot_tree::{append_trees, concat_trees, TTree, TTreeWriter};
+use oxiroot_rntuple::{append_ntuples, concat_ntuples, NtupleReader, NtupleWriter, ANCHOR_CLASS};
+use oxiroot_tree::{append_trees, concat_trees, TreeReader, TreeWriter};
 
 /// Inputs larger than this in total are merged straight into the 64-bit
 /// container form; smaller ones switch to it only if the output turns out not to
@@ -65,7 +65,7 @@ pub enum MergeKind {
     /// A single `TTree`, its entries concatenated. Holds the tree name.
     Tree(String),
     /// A single RNTuple, its entries concatenated. Holds the RNTuple name.
-    RNTuple(String),
+    Ntuple(String),
 }
 
 /// A summary of a [`merge_files`] run: what was written and how.
@@ -105,7 +105,7 @@ impl fmt::Display for MergeReport {
                     self.skipped.len()
                 )?;
             }
-            MergeKind::Tree(name) | MergeKind::RNTuple(name) => {
+            MergeKind::Tree(name) | MergeKind::Ntuple(name) => {
                 let what = if matches!(self.kind, MergeKind::Tree(_)) {
                     "TTree"
                 } else {
@@ -213,11 +213,11 @@ pub fn merge_files<P: AsRef<Path>>(
     }
     // Positioned reads: only the objects and data a merge touches are read, one
     // input's worth of tree or RNTuple entries at a time.
-    let files: Vec<RFile> = inputs
+    let files: Vec<FileReader> = inputs
         .iter()
-        .map(RFile::open_ranged)
+        .map(FileReader::open_ranged)
         .collect::<Result<Vec<_>>>()?;
-    let large = files.iter().map(RFile::size).sum::<u64>() > LARGE_INPUT_BYTES;
+    let large = files.iter().map(FileReader::size).sum::<u64>() > LARGE_INPUT_BYTES;
 
     // Union of top-level key names (first-seen order) with each key's class.
     let mut seen = std::collections::HashSet::new();
@@ -266,7 +266,7 @@ pub fn merge_files<P: AsRef<Path>>(
 
 fn merge_histograms(
     output: &Path,
-    files: &[RFile],
+    files: &[FileReader],
     inputs: usize,
     compression: Compression,
 ) -> Result<MergeReport> {
@@ -293,18 +293,18 @@ fn with_form_fallback(large: bool, mut write: impl FnMut(bool) -> Result<()>) ->
 
 fn merge_tree(
     output: &Path,
-    files: &[RFile],
+    files: &[FileReader],
     name: &str,
     inputs: usize,
     compression: Compression,
     large: bool,
 ) -> Result<MergeReport> {
-    let trees: Vec<TTree> = files
+    let trees: Vec<TreeReader> = files
         .iter()
-        .map(|f| TTree::open(f, name))
+        .map(|f| TreeReader::open(f, name))
         .collect::<Result<Vec<_>>>()?;
-    let entries = trees.iter().map(TTree::num_entries).sum();
-    let pairs: Vec<(&RFile, &TTree)> = files.iter().zip(&trees).collect();
+    let entries = trees.iter().map(TreeReader::num_entries).sum();
+    let pairs: Vec<(&FileReader, &TreeReader)> = files.iter().zip(&trees).collect();
 
     if entries == 0 {
         // The streaming writer needs at least one entry; an empty tree is small.
@@ -314,9 +314,9 @@ fn merge_tree(
         let tree_name = trees[0].name();
         with_form_fallback(large, |big| {
             let mut writer = if big {
-                TTreeWriter::create_large(output, tree_name, compression)?
+                TreeWriter::create_large(output, tree_name, compression)?
             } else {
-                TTreeWriter::create(output, tree_name, compression)?
+                TreeWriter::create(output, tree_name, compression)?
             };
             append_trees(&mut writer, &pairs)?;
             writer.finish().map(drop)
@@ -336,18 +336,18 @@ fn merge_tree(
 
 fn merge_rntuple(
     output: &Path,
-    files: &[RFile],
+    files: &[FileReader],
     name: &str,
     inputs: usize,
     compression: Compression,
     large: bool,
 ) -> Result<MergeReport> {
-    let ntuples: Vec<RNTuple> = files
+    let ntuples: Vec<NtupleReader> = files
         .iter()
-        .map(|f| RNTuple::open(f, name))
+        .map(|f| NtupleReader::open(f, name))
         .collect::<Result<Vec<_>>>()?;
-    let entries = ntuples.iter().map(RNTuple::num_entries).sum();
-    let pairs: Vec<(&RFile, &RNTuple)> = files.iter().zip(&ntuples).collect();
+    let entries = ntuples.iter().map(NtupleReader::num_entries).sum();
+    let pairs: Vec<(&FileReader, &NtupleReader)> = files.iter().zip(&ntuples).collect();
 
     if entries == 0 {
         // The streaming writer needs at least one entry; an empty RNTuple is small.
@@ -356,9 +356,9 @@ fn merge_rntuple(
         // Stream one input at a time: one cluster per input.
         with_form_fallback(large, |big| {
             let mut writer = if big {
-                RNTupleWriter::create_large(output, name, compression)?
+                NtupleWriter::create_large(output, name, compression)?
             } else {
-                RNTupleWriter::create(output, name, compression)?
+                NtupleWriter::create(output, name, compression)?
             };
             append_ntuples(&mut writer, &pairs)?;
             writer.finish()
@@ -368,7 +368,7 @@ fn merge_rntuple(
     Ok(MergeReport {
         output: output.to_path_buf(),
         inputs,
-        kind: MergeKind::RNTuple(name.to_string()),
+        kind: MergeKind::Ntuple(name.to_string()),
         merged: vec![name.to_string()],
         copied: Vec::new(),
         skipped: Vec::new(),

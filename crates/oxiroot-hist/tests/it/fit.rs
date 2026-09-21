@@ -4,12 +4,13 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{FitExt, Hist, Model, ReadRoot, TH1};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn read(name: &str) -> TH1 {
-    let f =
-        RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/analysis.root"))
-            .expect("open");
+    let f = FileReader::open(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/analysis.root"),
+    )
+    .expect("open");
     TH1::read_root(&f, name).expect("read")
 }
 

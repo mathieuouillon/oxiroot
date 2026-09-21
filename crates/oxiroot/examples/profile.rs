@@ -79,15 +79,15 @@ fn main() -> oxiroot::Result<()> {
     }
 
     // --- Write it to a ROOT file and read it straight back. --------------------
-    // `RootFile::create(...).add(...)` is the one way to compose a file; a single
+    // `FileWriter::create(...).add(...)` is the one way to compose a file; a single
     // profile could also use `prof.write_root(path, comp)`.
     let path = dir.join("oxiroot_ex_profile.root");
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&prof)
         .write(Compression::Zstd(5))?;
     println!("wrote profile -> {}", path.display());
 
-    let f = RFile::open(&path)?;
+    let f = FileReader::open(&path)?;
     let back = TProfile::read_root(&f, "resp")?;
     // TProfile derives PartialEq, so a full round-trip is a single comparison.
     println!(

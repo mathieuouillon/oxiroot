@@ -136,15 +136,15 @@ pub(crate) fn read_feature_flags(r: &mut RBuffer) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::read_envelope;
-    use crate::RNTuple;
-    use oxiroot_io_core::RFile;
+    use crate::NtupleReader;
+    use oxiroot_io_core::FileReader;
 
     #[test]
     fn a_root_written_rntuple_has_typed_envelopes() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/rntuple_scalars_uncompressed.root");
-        let f = RFile::open(path).unwrap();
-        let ntpl = RNTuple::open(&f, "ntpl").unwrap();
+        let f = FileReader::open(path).unwrap();
+        let ntpl = NtupleReader::open(&f, "ntpl").unwrap();
         let header = read_envelope(ntpl.header_envelope()).unwrap();
         assert_eq!(header.type_id, 0x01);
         // The payload is the envelope minus its 8-byte preamble and checksum.

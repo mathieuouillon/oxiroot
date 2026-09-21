@@ -2,7 +2,7 @@
 //! with the metadata that describes how it was produced — a JSON-ish config
 //! string (`TObjString`), the integrated luminosity (`TParameter<double>`), the
 //! run number (`TParameter<Long64_t>`), and the list of input files (a `TList`
-//! of `TObjString`s) — into ONE ROOT file via the `RootFile` builder, then read
+//! of `TObjString`s) — into ONE ROOT file via `FileWriter`, then read
 //! it all back. Everything written here is a real ROOT object, so ROOT and
 //! uproot read the provenance alongside the plot.
 //!
@@ -49,11 +49,11 @@ fn main() -> oxiroot::Result<()> {
         file_list = file_list.add(&TObjString::new(f));
     }
 
-    // --- Bundle data + provenance into ONE file with the `RootFile` builder. ----
+    // --- Bundle data + provenance into ONE file with `FileWriter`. ----------------
     // Each `add` takes a `&dyn WriteRoot`, so histograms and metadata objects sit
     // side by side as top-level keys — exactly how ROOT stashes run info next to
     // the plots it belongs to.
-    RootFile::create(&path)
+    FileWriter::create(&path)
         .add(&mass) // the data
         .add(&config) // the metadata, alongside it
         .add(&lumi)
@@ -69,7 +69,7 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Read it back (the `ReadRoot` trait: `Type::read_root(&file, key)`). ----
     // Each object type knows how to decode itself from a key by name.
-    let f = RFile::open(&path)?;
+    let f = FileReader::open(&path)?;
 
     let mass_back = TH1::read_root(&f, "mass")?;
     println!(

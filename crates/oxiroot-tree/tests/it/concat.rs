@@ -1,20 +1,20 @@
 //! Concatenating trees with [`concat_trees`] — the `hadd` building block.
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_tree::{concat_trees, write_tree_file, Branch, BranchValues, TTree, Tree};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_tree::{concat_trees, write_tree_file, Branch, BranchValues, Tree, TreeReader};
 
 /// Write `branches` as tree `Events` to a fresh temp file and reopen it.
-fn write_open(tag: &str, branches: Vec<Branch>) -> (RFile, &'static str) {
+fn write_open(tag: &str, branches: Vec<Branch>) -> (FileReader, &'static str) {
     let path = std::env::temp_dir().join(format!("oxiroot_concat_{tag}.root"));
     write_tree_file(&path, "Events", &branches, Compression::None).expect("write");
-    (RFile::open(&path).expect("reopen"), "Events")
+    (FileReader::open(&path).expect("reopen"), "Events")
 }
 
 /// Write a merged [`Tree`] to a fresh temp file and reopen it.
-fn write_merged(tag: &str, tree: &Tree) -> RFile {
+fn write_merged(tag: &str, tree: &Tree) -> FileReader {
     let path = std::env::temp_dir().join(format!("oxiroot_concat_{tag}.root"));
     tree.write_root(&path, Compression::None)
         .expect("write merged");
-    RFile::open(&path).expect("reopen merged")
+    FileReader::open(&path).expect("reopen merged")
 }
 
 #[test]
@@ -35,12 +35,12 @@ fn concatenates_flat_scalar_branches() {
             Branch::strings("s", vec!["d".into(), "e".into()]),
         ],
     );
-    let ta = TTree::open(&fa, "Events").unwrap();
-    let tb = TTree::open(&fb, "Events").unwrap();
+    let ta = TreeReader::open(&fa, "Events").unwrap();
+    let tb = TreeReader::open(&fb, "Events").unwrap();
 
     let merged = concat_trees(&[(&fa, &ta), (&fb, &tb)]).expect("concat");
     let fo = write_merged("flat_out", &merged);
-    let to = TTree::open(&fo, "Events").unwrap();
+    let to = TreeReader::open(&fo, "Events").unwrap();
 
     assert_eq!(to.num_entries(), 5);
     assert_eq!(
@@ -84,12 +84,12 @@ fn preserves_and_concatenates_jagged_and_vector_branches() {
             Branch::vector_i32("v", vec_b.clone()),
         ],
     );
-    let ta = TTree::open(&fa, "Events").unwrap();
-    let tb = TTree::open(&fb, "Events").unwrap();
+    let ta = TreeReader::open(&fa, "Events").unwrap();
+    let tb = TreeReader::open(&fb, "Events").unwrap();
 
     let merged = concat_trees(&[(&fa, &ta), (&fb, &tb)]).expect("concat");
     let fo = write_merged("jag_out", &merged);
-    let to = TTree::open(&fo, "Events").unwrap();
+    let to = TreeReader::open(&fo, "Events").unwrap();
 
     assert_eq!(to.num_entries(), 3);
     assert_eq!(
@@ -105,11 +105,11 @@ fn preserves_and_concatenates_jagged_and_vector_branches() {
 #[test]
 fn single_input_round_trips_the_values() {
     let (fa, _) = write_open("solo", vec![Branch::f32("q", vec![1.5, 2.5, 3.5])]);
-    let ta = TTree::open(&fa, "Events").unwrap();
+    let ta = TreeReader::open(&fa, "Events").unwrap();
 
     let merged = concat_trees(&[(&fa, &ta)]).expect("concat");
     let fo = write_merged("solo_out", &merged);
-    let to = TTree::open(&fo, "Events").unwrap();
+    let to = TreeReader::open(&fo, "Events").unwrap();
 
     assert_eq!(to.num_entries(), 3);
     assert_eq!(
@@ -125,8 +125,8 @@ fn rejects_a_missing_branch() {
         vec![Branch::i32("i", vec![1]), Branch::f64("x", vec![1.0])],
     );
     let (fb, _) = write_open("miss_b", vec![Branch::i32("i", vec![2])]);
-    let ta = TTree::open(&fa, "Events").unwrap();
-    let tb = TTree::open(&fb, "Events").unwrap();
+    let ta = TreeReader::open(&fa, "Events").unwrap();
+    let tb = TreeReader::open(&fb, "Events").unwrap();
 
     let Err(err) = concat_trees(&[(&fa, &ta), (&fb, &tb)]) else {
         panic!("expected an error for a missing branch");
@@ -138,8 +138,8 @@ fn rejects_a_missing_branch() {
 fn rejects_a_type_mismatch() {
     let (fa, _) = write_open("ty_a", vec![Branch::i32("v", vec![1, 2])]);
     let (fb, _) = write_open("ty_b", vec![Branch::f64("v", vec![3.0])]);
-    let ta = TTree::open(&fa, "Events").unwrap();
-    let tb = TTree::open(&fb, "Events").unwrap();
+    let ta = TreeReader::open(&fa, "Events").unwrap();
+    let tb = TreeReader::open(&fb, "Events").unwrap();
 
     let Err(err) = concat_trees(&[(&fa, &ta), (&fb, &tb)]) else {
         panic!("expected an error for a type mismatch");

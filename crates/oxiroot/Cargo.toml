@@ -29,16 +29,16 @@ oxiroot-plot = { workspace = true, optional = true }
 # need. `rayon` is opt-in, so a library never spawns threads its user did not ask
 # for.
 default = ["fit", "plot", "mmap", "argmin"]
-# Enable the memory-mapped read path (`RFile::open_mmap`).
+# Enable the memory-mapped read path (`FileReader::open_mmap`).
 mmap = ["oxiroot-io-core/mmap"]
-# Enable remote reads over HTTP(S) byte-range requests (`RFile::open_url`). Opt
+# Enable remote reads over HTTP(S) byte-range requests (`FileReader::open_url`). Opt
 # in — off by default so the standard build pulls no networking/TLS stack.
 http = ["oxiroot-io-core/http"]
-# Enable remote reads over the XRootD `root://` protocol (`RFile::open_url`).
+# Enable remote reads over the XRootD `root://` protocol (`FileReader::open_url`).
 # Opt-in; pure `std::net` (unix auth), so it adds no dependencies.
 xrootd = ["oxiroot-io-core/xrootd"]
 # Enable the data-parallel helpers: the histogram fill (`hist::fill_par`) and
-# the parallel TTree reads (`TTree::read_branch_par` and friends).
+# the parallel TTree reads (`TreeReader::read_branch_par` and friends).
 rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
 # Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxiroot-fit` engine,
 # the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works, and

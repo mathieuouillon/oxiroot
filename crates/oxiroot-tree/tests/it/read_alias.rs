@@ -5,18 +5,20 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{TEntryList, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{TEntryList, TreeReader};
 
-fn fixture() -> RFile {
-    RFile::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_alias.root"))
-        .expect("open fixture")
+fn fixture() -> FileReader {
+    FileReader::open(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_alias.root"),
+    )
+    .expect("open fixture")
 }
 
 #[test]
 fn reads_tree_aliases() {
     let f = fixture();
-    let t = TTree::open(&f, "t").expect("open tree");
+    let t = TreeReader::open(&f, "t").expect("open tree");
     assert_eq!(
         t.aliases(),
         &[
@@ -31,11 +33,11 @@ fn reads_tree_aliases() {
 
 #[test]
 fn a_tree_without_aliases_has_none() {
-    let f = RFile::open(
+    let f = FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_flat.root"),
     )
     .expect("open flat fixture");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert!(t.aliases().is_empty());
     assert_eq!(t.alias("anything"), None);
 }

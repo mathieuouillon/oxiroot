@@ -7,20 +7,20 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_rntuple::{FieldValues, RNTuple, StructRole};
+use oxiroot_io_core::FileReader;
+use oxiroot_rntuple::{FieldValues, NtupleReader, StructRole};
 
-fn open(name: &str) -> RFile {
+fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures")
         .join(name);
-    RFile::open(path).expect("open fixture")
+    FileReader::open(path).expect("open fixture")
 }
 
 #[test]
 fn reads_streamer_field() {
     let file = open("rntuple_streamer.root");
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open ntpl");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(ntpl.num_entries(), 3);
 
     // The field is the kStreamer role, typed with the class name.

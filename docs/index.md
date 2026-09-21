@@ -17,7 +17,7 @@ h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;
 
 // Read it back.
-let h = TH1::read_root(&RFile::open("hist.root")?, "pt")?;
+let h = TH1::read_root(&FileReader::open("hist.root")?, "pt")?;
 ```
 
 ## Why oxiroot
@@ -31,7 +31,7 @@ let h = TH1::read_root(&RFile::open("hist.root")?, "pt")?;
   (fuzz-tested); writers refuse to silently corrupt a file past the 2 GiB 32-bit
   limit; same-name key collisions are a loud error, not a silent shadow.
 - **Idiomatic.** A histogram is just data you name when you persist it; one trait
-  per direction (`WriteRoot` / `ReadRoot`); a `RootFile` builder for composing
+  per direction (`WriteRoot` / `ReadRoot`); a `FileWriter` for composing
   files; fitting that works on *any* 1-D data.
 
 ## What's covered

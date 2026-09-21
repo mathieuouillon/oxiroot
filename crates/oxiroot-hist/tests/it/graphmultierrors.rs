@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{Compression, ReadRoot, TGraphMultiErrors, WriteRoot};
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn reads_root_written_graphmultierrors() {
-    let f = RFile::open(fixture("graphmultierrors.root")).expect("open");
+    let f = FileReader::open(fixture("graphmultierrors.root")).expect("open");
     let g = TGraphMultiErrors::read_root(&f, "gme").expect("read gme");
     assert_eq!(g.name, "gme");
     assert_eq!(g.title, "multi");
@@ -30,11 +30,11 @@ fn reads_root_written_graphmultierrors() {
 
 #[test]
 fn graphmultierrors_round_trip_from_fixture() {
-    let f = RFile::open(fixture("graphmultierrors.root")).expect("open");
+    let f = FileReader::open(fixture("graphmultierrors.root")).expect("open");
     let g = TGraphMultiErrors::read_root(&f, "gme").unwrap();
     let out = std::env::temp_dir().join("oxiroot_gme_rt.root");
     g.write_root(&out, Compression::None).expect("write");
-    let back = TGraphMultiErrors::read_root(&RFile::open(&out).unwrap(), "gme").unwrap();
+    let back = TGraphMultiErrors::read_root(&FileReader::open(&out).unwrap(), "gme").unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
@@ -58,7 +58,7 @@ fn graphmultierrors_build_from_scratch() {
 
     let out = std::env::temp_dir().join("oxiroot_gme_scratch.root");
     g.write_root(&out, Compression::Zstd(3)).expect("write");
-    let back = TGraphMultiErrors::read_root(&RFile::open(&out).unwrap(), "multi").unwrap();
+    let back = TGraphMultiErrors::read_root(&FileReader::open(&out).unwrap(), "multi").unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
@@ -71,7 +71,7 @@ fn empty_graphmultierrors_round_trip() {
     assert!(g.is_empty());
     let out = std::env::temp_dir().join("oxiroot_gme_empty.root");
     g.write_root(&out, Compression::None).expect("write");
-    let back = TGraphMultiErrors::read_root(&RFile::open(&out).unwrap(), "empty").unwrap();
+    let back = TGraphMultiErrors::read_root(&FileReader::open(&out).unwrap(), "empty").unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }

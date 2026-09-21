@@ -8,7 +8,7 @@
 //! Objects of a class oxiroot cannot read *and* write are skipped and listed in
 //! the returned report rather than silently dropped.
 //!
-//! The output is written through the same typed [`RootFile`] builder as any
+//! The output is written through the same typed [`FileWriter`] builder as any
 //! other oxiroot write, so its `TStreamerInfo` matches the bytes exactly (no
 //! reliance on the inputs' streamer versions). [`merge_files`](super::merge_files)
 //! uses it when a fileset contains no `TTree` or RNTuple.
@@ -17,12 +17,12 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_io_core::{Compression, FileReader};
 
 use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
 use oxiroot_hist::{
-    ReadRoot, RootFile, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
+    FileWriter, ReadRoot, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
     THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D,
     WriteRoot, TH1, TH2, TH3,
 };
@@ -76,7 +76,7 @@ fn summable_hist_dim(class: &str) -> Option<u8> {
 /// a partial sum.
 pub fn merge_histogram_files(
     output: &Path,
-    inputs: &[RFile],
+    inputs: &[FileReader],
     compression: Compression,
 ) -> Result<HistMergeOutcome> {
     // Union of top-level key names, in first-seen order, with the class of the
@@ -99,7 +99,7 @@ pub fn merge_histogram_files(
 
     for (name, class) in &order {
         // Inputs that hold this key with a matching class, in file order.
-        let contributors: Vec<&RFile> = inputs
+        let contributors: Vec<&FileReader> = inputs
             .iter()
             .filter(|f| f.key(name).is_some_and(|k| k.class_name == *class))
             .collect();
@@ -120,7 +120,7 @@ pub fn merge_histogram_files(
         }
     }
 
-    let mut file = RootFile::create(output);
+    let mut file = FileWriter::create(output);
     for obj in &objects {
         file = file.add(&**obj);
     }
@@ -139,7 +139,7 @@ enum Built {
 /// Sum a summable histogram type across `contributors` (first as the
 /// accumulator), or copy a supported non-summable type from the first
 /// contributor. Unknown classes become [`Built::Skipped`].
-fn build_object(class: &str, name: &str, contributors: &[&RFile]) -> Result<Built> {
+fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result<Built> {
     // Add every contributor, read as `$T`, onto the first. If any of them cannot
     // be read, the whole key is skipped with the reason, as `copied!` does, so
     // one unreadable object neither aborts the merge nor leaves a partial sum.

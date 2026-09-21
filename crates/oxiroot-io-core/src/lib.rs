@@ -30,7 +30,7 @@ pub use compression::Compression;
 pub use error::{decompress_payload, Error, Result};
 pub use file::{
     compress_if_smaller, ByteSource, BytesSource, ContainerWriter, DirId, Directory, FileHeader,
-    FileSource, FreeSegment, RFile, RootFile, SubdirBuilder, TDatime, TKey, TUuid, DATIME,
+    FileReader, FileSource, FileWriter, FreeSegment, SubdirWriter, TDatime, TKey, TUuid, DATIME,
     FILE_VERSION, KSTART_BIG_FILE,
 };
 pub use object::{ObjHeader, TagReader};

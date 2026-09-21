@@ -80,4 +80,4 @@ pub use threaded::{Mergeable, ThreadedHist};
 pub use tprofile::{ErrorMode, TProfile};
 pub use tprofile2d::TProfile2D;
 pub use tprofile3d::TProfile3D;
-pub use write::{hist_streamer_blob, RootFile, SubdirBuilder, WriteRoot};
+pub use write::{hist_streamer_blob, FileWriter, SubdirWriter, WriteRoot};

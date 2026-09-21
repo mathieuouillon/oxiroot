@@ -18,12 +18,12 @@ mod streamer_gen;
 mod value;
 mod writer;
 
-pub use chain::TChain;
+pub use chain::ChainReader;
 pub use entrylist::TEntryList;
 pub use merge::{append_trees, concat_trees};
-pub use reader::{Friend, TTree};
+pub use reader::{Friend, TreeReader};
 pub use value::{BranchValues, Jagged, LeafType};
 pub use writer::{
-    tree_file_bytes, write_tree_file, write_tree_file_baskets, Branch, SplitMember, TTreeWriter,
-    Tree,
+    tree_file_bytes, write_tree_file, write_tree_file_baskets, Branch, SplitMember, Tree,
+    TreeWriter,
 };

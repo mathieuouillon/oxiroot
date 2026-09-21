@@ -1,6 +1,6 @@
 //! The start-here RNTuple example: write a flat event dataset columnarly, reopen
 //! it, and read a few fields back per entry — then put two RNTuples in one file
-//! with the `RootFile` builder and read both. RNTuple is ROOT's modern columnar
+//! with `FileWriter` and read both. RNTuple is ROOT's modern columnar
 //! event-data format; the files here are readable by official ROOT and uproot.
 //! (For nested fields — `std::vector<std::vector<T>>`, records — see
 //! `rntuple_nested.rs`.)
@@ -50,8 +50,8 @@ fn main() -> oxiroot::Result<()> {
     // --- Reopen and inspect the schema before touching any data. ---------------
     // Opening only parses the anchor, header, and footer — column pages are read
     // lazily, per field, when you ask for them.
-    let f = RFile::open(&path)?;
-    let ntpl = RNTuple::open(&f, "events")?;
+    let f = FileReader::open(&path)?;
+    let ntpl = NtupleReader::open(&f, "events")?;
     println!(
         "reopened: {} entries, fields = {:?}",
         ntpl.num_entries(),
@@ -91,13 +91,13 @@ fn main() -> oxiroot::Result<()> {
     let total_jets: usize = jets.iter().map(Vec::len).sum();
     println!("  ({total_jets} jets across {} events)", jets.len());
 
-    // --- Several RNTuples in one file, via the `RootFile` builder. ------------
-    // `Ntuple::write_root` writes exactly one; `RootFile::put` puts more than one
+    // --- Several RNTuples in one file, via `FileWriter`. ------------------------
+    // `Ntuple::write_root` writes exactly one; `FileWriter::put` puts more than one
     // in the same file (next to histograms or trees, and in `TDirectory`s — see
     // the docs). Here: the per-event `events` alongside a small per-run
     // bookkeeping RNTuple.
     let multi_path = dir.join("oxiroot_ex_rntuple_multi.root");
-    RootFile::create(&multi_path)
+    FileWriter::create(&multi_path)
         .put(Ntuple::new(
             "events",
             vec![
@@ -116,9 +116,9 @@ fn main() -> oxiroot::Result<()> {
     println!("wrote 2 RNTuples -> {}", multi_path.display());
 
     // --- Read both RNTuples back out of the one file. --------------------------
-    let g = RFile::open(&multi_path)?;
-    let ev = RNTuple::open(&g, "events")?;
-    let runs = RNTuple::open(&g, "runs")?;
+    let g = FileReader::open(&multi_path)?;
+    let ev = NtupleReader::open(&g, "events")?;
+    let runs = NtupleReader::open(&g, "runs")?;
     println!(
         "  `events`: {} entries {:?}",
         ev.num_entries(),

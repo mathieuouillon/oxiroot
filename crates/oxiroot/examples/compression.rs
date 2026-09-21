@@ -112,8 +112,8 @@ fn main() -> oxiroot::Result<()> {
     // Read the Zstd(9) file (index 2) back and compare every value to the source
     // vectors we wrote. If decompression altered a single bit, an assert fires.
     let (zstd_label, zstd_path) = (codecs[2].0, &paths[2]);
-    let f = RFile::open(zstd_path)?;
-    let tree = TTree::open(&f, "Events")?;
+    let f = FileReader::open(zstd_path)?;
+    let tree = TreeReader::open(&f, "Events")?;
     assert_eq!(
         tree.num_entries() as usize,
         n,

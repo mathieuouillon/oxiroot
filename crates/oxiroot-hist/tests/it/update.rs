@@ -5,8 +5,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, RootFile, WriteRoot, TH1, TH2};
-use oxiroot_io_core::{Compression, RFile};
+use oxiroot_hist::{FileWriter, Hist, ReadRoot, WriteRoot, TH1, TH2};
+use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
 fn appends_objects_to_an_existing_file() {
@@ -28,7 +28,7 @@ fn appends_objects_to_an_existing_file() {
         .named("c")
         .titled("third");
     c.fill(0.5, 1.5);
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open for append")
         .add(&b)
         .add(&c)
@@ -36,7 +36,7 @@ fn appends_objects_to_an_existing_file() {
         .expect("append");
 
     // All three are present and intact.
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let names: Vec<&str> = f.keys().iter().map(|k| k.name.as_str()).collect();
     assert!(
         names.contains(&"a") && names.contains(&"b") && names.contains(&"c"),
@@ -64,13 +64,13 @@ fn re_adding_a_name_bumps_the_cycle() {
     let mut v2 = Hist::reg(4, 0.0, 4.0).double().named("h").titled("v2");
     v2.fill(1.5);
     v2.fill(1.5);
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open for append")
         .add(&v2)
         .write(oxiroot_io_core::Compression::None)
         .expect("append v2");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let cycles: Vec<u16> = f
         .keys()
         .iter()
@@ -97,7 +97,7 @@ fn appends_to_a_file_with_a_subdirectory() {
         .named("s")
         .titled("in subdir");
     s.fill(1.5);
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&a)
         .dir("region", |d| d.add(&s))
         .write(Compression::None)
@@ -108,13 +108,13 @@ fn appends_to_a_file_with_a_subdirectory() {
         .named("b")
         .titled("appended");
     b.fill(0.5);
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open for append")
         .add(&b)
         .write(Compression::None)
         .expect("append");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     let names: Vec<&str> = f.keys().iter().map(|k| k.name.as_str()).collect();
     assert!(
         names.contains(&"a") && names.contains(&"region") && names.contains(&"b"),
@@ -143,7 +143,7 @@ fn adding_a_new_subdir_during_append_is_rejected() {
     a.write_root(&out, Compression::None).expect("write");
 
     let s = Hist::reg(2, 0.0, 2.0).double().named("s");
-    let err = RootFile::open(&out)
+    let err = FileWriter::open(&out)
         .expect("open")
         .dir("new", |d| d.add(&s))
         .write(Compression::None)
@@ -160,16 +160,16 @@ fn appending_adds_the_streamer_info_the_file_lacks() {
     h.fill(0.5);
     h.write_root(&out, Compression::None)
         .expect("initial write");
-    let before = RFile::open(&out).unwrap().streamer_registry().unwrap();
+    let before = FileReader::open(&out).unwrap().streamer_registry().unwrap();
     assert!(before.get("TParameter<double>").is_none());
 
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open")
         .add(&oxiroot_hist::TParameter::f64("lumi", 12.5))
         .write(Compression::None)
         .expect("append");
 
-    let f = RFile::open(&out).unwrap();
+    let f = FileReader::open(&out).unwrap();
     let after = f.streamer_registry().expect("merged streamer info parses");
     assert!(after.get("TParameter<double>").is_some());
     assert_eq!(
@@ -181,10 +181,13 @@ fn appending_adds_the_streamer_info_the_file_lacks() {
 
     // Appending again with nothing new leaves the record where it is.
     let seek_info = f.header().seek_info;
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open")
         .add(&oxiroot_hist::TParameter::f64("lumi2", 1.0))
         .write(Compression::None)
         .expect("append again");
-    assert_eq!(RFile::open(&out).unwrap().header().seek_info, seek_info);
+    assert_eq!(
+        FileReader::open(&out).unwrap().header().seek_info,
+        seek_info
+    );
 }

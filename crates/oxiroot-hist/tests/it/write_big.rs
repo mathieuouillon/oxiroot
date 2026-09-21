@@ -1,13 +1,13 @@
 //! The 64-bit ("big") TFile container form for the one-shot object writers, used
 //! automatically once a file would exceed 2 GiB. The big-file threshold is
-//! lowered here (via `RootFile::write_threshold`) so the wide header/directory/
+//! lowered here (via `FileWriter::write_threshold`) so the wide header/directory/
 //! key path is exercised without producing a 2 GiB file; the result must read
 //! back through our own reader with every object intact.
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, RootFile, TH1, TH2};
-use oxiroot_io_core::RFile;
+use oxiroot_hist::{FileWriter, Hist, ReadRoot, TH1, TH2};
+use oxiroot_io_core::FileReader;
 
 fn th1(name: &str) -> TH1 {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named(name).titled("1-D");
@@ -30,13 +30,13 @@ fn big_container_flat_round_trips() {
     h2.fill(1.5, 1.5);
 
     // Threshold 0 forces the 64-bit container form even for this tiny file.
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&h1)
         .add(&h2)
         .write_threshold(oxiroot_io_core::Compression::None, 0)
         .expect("write big");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(
         f.header().is_big(),
         "forced-big file must use fVersion>=1e6"
@@ -58,13 +58,13 @@ fn big_container_with_subdirs_round_trips() {
     let top = th1("top");
     let inner = th1("inner");
 
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&top)
         .dir("region_a", |d| d.add(&inner))
         .write_threshold(oxiroot_io_core::Compression::None, 0)
         .expect("write big dirs");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
     assert_eq!(TH1::read_root(&f, "top").expect("top"), top);
     // The histogram inside the big-format subdirectory reads back too.
@@ -79,11 +79,11 @@ fn big_container_streamer_info_parses() {
     // The baked histogram list refers back into itself by offset within its key,
     // so it must read back in the 64-bit form too.
     let out = std::env::temp_dir().join("oxiroot_big_streamers.root");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&th1("h"))
         .write_threshold(oxiroot_io_core::Compression::Zstd(1), 0)
         .expect("write big");
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
     let registry = f.streamer_registry().expect("streamer info parses");
     for class in ["TH1D", "TH1", "TAxis", "TNamed"] {
@@ -98,21 +98,21 @@ fn append_crossing_into_big_round_trips() {
     // keeping the first object untouched — and read back both objects.
     let out = PathBuf::from("/tmp/oxiroot_big_append.root");
     let first = th1("h_first");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&first)
         .write(oxiroot_io_core::Compression::None) // normal small file
         .expect("write first");
     // Sanity: the base file is small.
-    assert!(!RFile::open(&out).unwrap().header().is_big());
+    assert!(!FileReader::open(&out).unwrap().header().is_big());
 
     let second = th1("h_second");
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open")
         .add(&second)
         .write_threshold(oxiroot_io_core::Compression::None, 0) // force big output
         .expect("append big");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(
         f.header().is_big(),
         "the appended file must be the big form"
@@ -132,16 +132,16 @@ fn append_crossing_into_big_works_for_a_renamed_root_file() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
     let out = std::env::temp_dir().join("oxiroot_big_append_a_much_longer_file_name.root");
     std::fs::copy(fixture.join("th1d_uncompressed.root"), &out).expect("copy fixture");
-    let original = TH1::read_root(&RFile::open(&out).unwrap(), "h1").expect("fixture h1");
+    let original = TH1::read_root(&FileReader::open(&out).unwrap(), "h1").expect("fixture h1");
 
     let extra = th1("extra");
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open")
         .add(&extra)
         .write_threshold(oxiroot_io_core::Compression::None, 0) // force big
         .expect("append big");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
     assert_eq!(TH1::read_root(&f, "h1").expect("h1"), original);
     assert_eq!(TH1::read_root(&f, "extra").expect("extra"), extra);
@@ -153,20 +153,20 @@ fn append_to_already_big_file_round_trips() {
     // every object.
     let out = PathBuf::from("/tmp/oxiroot_big_append2.root");
     let a = th1("a");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&a)
         .write_threshold(oxiroot_io_core::Compression::None, 0) // big from the start
         .expect("write big base");
-    assert!(RFile::open(&out).unwrap().header().is_big());
+    assert!(FileReader::open(&out).unwrap().header().is_big());
 
     let b = th1("b");
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open")
         .add(&b)
         .write_threshold(oxiroot_io_core::Compression::None, 0)
         .expect("append to big");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
     assert_eq!(TH1::read_root(&f, "a").expect("a"), a);
     assert_eq!(TH1::read_root(&f, "b").expect("b"), b);
@@ -179,21 +179,21 @@ fn append_crossing_into_big_preserves_existing_subdir() {
     let out = PathBuf::from("/tmp/oxiroot_big_append_subdir.root");
     let top = th1("top");
     let inner = th1("inner");
-    RootFile::create(&out)
+    FileWriter::create(&out)
         .add(&top)
         .dir("region", |d| d.add(&inner))
         .write(oxiroot_io_core::Compression::None) // small file with a subdir
         .expect("write base");
-    assert!(!RFile::open(&out).unwrap().header().is_big());
+    assert!(!FileReader::open(&out).unwrap().header().is_big());
 
     let extra = th1("extra");
-    RootFile::open(&out)
+    FileWriter::open(&out)
         .expect("open")
         .add(&extra)
         .write_threshold(oxiroot_io_core::Compression::None, 0) // force big
         .expect("append big");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
     assert_eq!(TH1::read_root(&f, "top").expect("top"), top);
     assert_eq!(TH1::read_root(&f, "extra").expect("extra"), extra);

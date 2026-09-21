@@ -7,8 +7,8 @@ framing.
 
 ## Choosing compression on write
 
-Every write entry point — `obj.write_root(path, compression)`, the
-[`RootFile`](../getting-started/quickstart.md) builder's `.write(compression)`,
+Every write entry point — `obj.write_root(path, compression)`,
+[`FileWriter`](../getting-started/quickstart.md)'s `.write(compression)`,
 `Tree::write_root`, `Ntuple::write_root` — takes a single
 [`Compression`](../api/oxiroot/index.html) value. It is re-exported from the
 prelude, so `use oxiroot::prelude::*;` is all you need.
@@ -34,7 +34,7 @@ use oxiroot::prelude::*;
 let h = Hist::reg(50, 0.0, 100.0).double().named("pt");
 let prof = Hist::reg(5, 0.0, 5.0).profile().named("prof");
 
-RootFile::create("out.root")
+FileWriter::create("out.root")
     .add(&h)
     .add(&prof)
     .write(Compression::Zlib(1))?;   // older-ROOT-style zlib default
@@ -168,12 +168,12 @@ assert_eq!(back, payload);
 `decompress` needs the expected uncompressed length (ROOT stores it in the
 enclosing `TKey` or RNTuple anchor) and validates the produced size against it,
 returning a `CompressError` on any truncation or size mismatch. For normal
-file IO you never call these directly — `write_root` / `RFile::open` apply them
+file IO you never call these directly — `write_root` / `FileReader::open` apply them
 for you from the `Compression` value.
 
 ## See also
 
 - [Quick start](../getting-started/quickstart.md) — writing files with a chosen compression
-- [Histograms](histograms.md) — `write_root` and the `RootFile` builder
+- [Histograms](histograms.md) — `write_root` and `FileWriter`
 - [RNTuple](rntuple.md) — per-page compression in the columnar format
 - [API reference](../api/oxiroot/index.html) — `Compression` and the `compress` module

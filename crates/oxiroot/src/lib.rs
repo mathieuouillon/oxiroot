@@ -21,11 +21,24 @@
 //! // Write a columnar dataset, then read it back.
 //! let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
 //! write_rntuple_file("data.root", "events", &fields, Compression::None)?;
-//! let f = RFile::open("data.root")?;
-//! let ntpl = RNTuple::open(&f, "events")?;
+//! let f = FileReader::open("data.root")?;
+//! let ntpl = NtupleReader::open(&f, "events")?;
 //! assert_eq!(ntpl.num_entries(), 2);
 //! # Ok::<(), oxiroot::Error>(())
 //! ```
+//!
+//! # Naming
+//!
+//! Types that read a file end in `Reader` ([`FileReader`],
+//! [`TreeReader`](tree::TreeReader), [`NtupleReader`](ntuple::NtupleReader),
+//! [`ChainReader`](tree::ChainReader)), and types that write one end in
+//! `Writer` ([`FileWriter`](file::FileWriter), [`TreeWriter`](tree::TreeWriter),
+//! [`NtupleWriter`](ntuple::NtupleWriter)). The rest is in-memory data:
+//! histograms and graphs keep their ROOT class names (`TH1`, `TGraph`, …), and
+//! a [`Tree`](tree::Tree) or [`Ntuple`](ntuple::Ntuple) holds a whole tree or
+//! RNTuple to write in one go. ROOT's names for the readers and writers
+//! (`TFile`, `TTree`, `RNTuple`, `TChain`) are doc aliases, so searching the
+//! docs for them finds these types.
 //!
 //! The flat [`prelude`] covers the common read/write surface; the [`hist`],
 //! [`ntuple`], [`tree`], [`compress`], and [`file`](mod@file) modules expose
@@ -33,7 +46,7 @@
 
 #[doc(inline)]
 pub use oxiroot_io_core::{
-    buffer, error, file, read_object, Compression, Error, RFile, Result, Value,
+    buffer, error, file, read_object, Compression, Error, FileReader, Result, Value,
 };
 
 pub mod hadd;
@@ -105,15 +118,16 @@ pub mod plot {
 
 /// The common types and functions for reading and writing ROOT files.
 ///
-/// `use oxiroot::prelude::*;` brings in the container ([`RFile`],
-/// [`Compression`]), the histogram types with their `read_*`/`write_*` helpers,
-/// and the RNTuple reader/writer.
+/// `use oxiroot::prelude::*;` brings in the file reader and writer
+/// ([`FileReader`], [`FileWriter`](crate::file::FileWriter)), [`Compression`],
+/// the histogram types with their `read_*`/`write_*` helpers, and the tree and
+/// RNTuple readers and writers.
 pub mod prelude {
     // `Error` and `Result` are deliberately not here: a glob import would shadow
     // `std::result::Result`. Name them as `oxiroot::Error` / `oxiroot::Result`.
     pub use oxiroot_io_core::{
-        Compression, FromMember, ListKind, ObjList, ParamValue, RFile, ReadRoot, RootFile,
-        SubdirBuilder, TMap, TObjString, TParameter, WriteInto, WriteRoot,
+        Compression, FileReader, FileWriter, FromMember, ListKind, ObjList, ParamValue, ReadRoot,
+        SubdirWriter, TMap, TObjString, TParameter, WriteInto, WriteRoot,
     };
 
     pub use crate::hadd::{merge_files, MergeKind, MergeReport, Merger};
@@ -134,11 +148,11 @@ pub mod prelude {
     pub use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
     pub use oxiroot_rntuple::{
-        write_rntuple_file, Column, Field, FieldValues, Ntuple, RNTuple, RNTupleWriter,
+        write_rntuple_file, Column, Field, FieldValues, Ntuple, NtupleReader, NtupleWriter,
     };
 
     pub use oxiroot_tree::{
-        write_tree_file, write_tree_file_baskets, Branch, BranchValues, Friend, Jagged, LeafType,
-        SplitMember, TChain, TEntryList, TTree, TTreeWriter, Tree,
+        write_tree_file, write_tree_file_baskets, Branch, BranchValues, ChainReader, Friend,
+        Jagged, LeafType, SplitMember, TEntryList, Tree, TreeReader, TreeWriter,
     };
 }

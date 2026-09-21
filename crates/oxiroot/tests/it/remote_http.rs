@@ -2,7 +2,7 @@
 //!
 //! A tiny in-process HTTP/1.1 server serves a fixture `.root` file with
 //! `Range` support and records what it was asked for. The test then reads the
-//! file through [`RFile::open_url`] and asserts (a) the parsed content matches
+//! file through [`FileReader::open_url`] and asserts (a) the parsed content matches
 //! a local read byte-for-byte, and (b) only ranges were fetched — the file was
 //! never downloaded whole, the way ROOT and uproot read remote files.
 #![cfg(feature = "http")]
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use oxiroot::prelude::*;
-use oxiroot::tree::TTree;
+use oxiroot::tree::TreeReader;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -143,7 +143,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
     let size = bytes.len() as u64;
 
     // Local reference: the tree, its branches, and one branch's values.
-    let local = RFile::from_bytes(bytes.clone()).expect("local open");
+    let local = FileReader::from_bytes(bytes.clone()).expect("local open");
     let local_keys: Vec<String> = local.keys().iter().map(|k| k.name.clone()).collect();
     let tkey = local
         .keys()
@@ -151,7 +151,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
         .find(|k| k.class_name == "TTree")
         .expect("a TTree key");
     let tname = tkey.name.clone();
-    let ltree = TTree::open(&local, &tname).expect("local tree");
+    let ltree = TreeReader::open(&local, &tname).expect("local tree");
     let branch = ltree.branch_names()[0].to_string();
     let local_vals = format!(
         "{:?}",
@@ -160,7 +160,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
 
     // Serve it and read it back over HTTP range requests.
     let server = RangeServer::start(bytes);
-    let remote = RFile::open_url(&server.url).expect("open_url");
+    let remote = FileReader::open_url(&server.url).expect("open_url");
 
     // Opening parsed only the header/dir/keys — not the whole file.
     let after_open = server.bytes_served();
@@ -175,7 +175,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
     assert_eq!(remote_keys, local_keys, "same keys over HTTP");
 
     // Same tree data, fetched as baskets.
-    let rtree = TTree::open(&remote, &tname).expect("remote tree");
+    let rtree = TreeReader::open(&remote, &tname).expect("remote tree");
     assert_eq!(rtree.num_entries(), ltree.num_entries());
     let remote_vals = format!(
         "{:?}",

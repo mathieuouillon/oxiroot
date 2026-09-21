@@ -6,11 +6,11 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_tree::{write_tree_file_baskets, Branch, TTree};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_tree::{write_tree_file_baskets, Branch, TreeReader};
 
-fn fixture(name: &str) -> RFile {
-    RFile::open(
+fn fixture(name: &str) -> FileReader {
+    FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join(name),
@@ -18,7 +18,7 @@ fn fixture(name: &str) -> RFile {
     .expect("open fixture")
 }
 
-fn assert_par_matches_serial(f: &RFile, t: &TTree) {
+fn assert_par_matches_serial(f: &FileReader, t: &TreeReader) {
     for name in t.branch_names() {
         let serial = t.read_branch(f, name);
         assert_eq!(t.read_branch_par(f, name), serial, "branch {name}");
@@ -39,7 +39,7 @@ fn assert_par_matches_serial(f: &RFile, t: &TTree) {
 #[test]
 fn parallel_reads_match_serial_on_a_root_written_tree() {
     let f = fixture("tree_multibasket.root");
-    let t = TTree::open(&f, "Events").expect("open tree");
+    let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_par_matches_serial(&f, &t);
 }
 
@@ -64,8 +64,8 @@ fn parallel_reads_match_serial_across_many_baskets() {
         37, // many baskets per branch
     )
     .expect("write");
-    let f = RFile::open(&out).expect("open");
+    let f = FileReader::open(&out).expect("open");
     let _ = std::fs::remove_file(&out);
-    let t = TTree::open(&f, "T").expect("open tree");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_par_matches_serial(&f, &t);
 }

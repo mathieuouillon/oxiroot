@@ -99,22 +99,25 @@ fn file_merge_sums_2d_and_3d_profiles() {
 
     let (a2, a3) = (profile_2d(&[&SET_A_2D]), profile_3d(&[&SET_A_3D]));
     let (b2, b3) = (profile_2d(&[&SET_B_2D]), profile_3d(&[&SET_B_3D]));
-    RootFile::create(&in1)
+    FileWriter::create(&in1)
         .add(&a2)
         .add(&a3)
         .write(Compression::None)
         .unwrap();
-    RootFile::create(&in2)
+    FileWriter::create(&in2)
         .add(&b2)
         .add(&b3)
         .write(Compression::None)
         .unwrap();
 
-    let inputs = [RFile::open(&in1).unwrap(), RFile::open(&in2).unwrap()];
+    let inputs = [
+        FileReader::open(&in1).unwrap(),
+        FileReader::open(&in2).unwrap(),
+    ];
     let outcome = merge_histogram_files(&out, &inputs, Compression::None).unwrap();
 
     let result = (|| {
-        let f = RFile::open(&out)?;
+        let f = FileReader::open(&out)?;
         Ok::<_, Error>((
             TProfile2D::read_root(&f, "p2")?,
             TProfile3D::read_root(&f, "p3")?,
@@ -148,21 +151,21 @@ fn an_unreadable_profile_is_skipped_not_fatal() {
     let p2 = profile_2d(&[&SET_A_2D]);
     let mut broken = p2.clone();
     broken.bin_sumw2 = vec![1.0; 3]; // not one per cell: the reader rejects it
-    RootFile::create(&good)
+    FileWriter::create(&good)
         .add(&h)
         .add(&p2)
         .write(Compression::None)
         .unwrap();
-    RootFile::create(&bad)
+    FileWriter::create(&bad)
         .add(&h)
         .add(&broken)
         .write(Compression::None)
         .unwrap();
 
     let run = |inputs: [&std::path::Path; 2], out: &std::path::Path| {
-        let files = inputs.map(|p| RFile::open(p).unwrap());
+        let files = inputs.map(|p| FileReader::open(p).unwrap());
         let outcome = merge_histogram_files(out, &files, Compression::None).unwrap();
-        let summed_h = TH1::read_root(&RFile::open(out).unwrap(), "h").unwrap();
+        let summed_h = TH1::read_root(&FileReader::open(out).unwrap(), "h").unwrap();
         (outcome, summed_h)
     };
     // The bad object last, then first: either way the key is skipped whole.
@@ -202,7 +205,10 @@ fn a_binning_mismatch_names_the_key() {
         .named("pt")
         .write_root(&f2, Compression::None)
         .unwrap();
-    let files = [RFile::open(&f1).unwrap(), RFile::open(&f2).unwrap()];
+    let files = [
+        FileReader::open(&f1).unwrap(),
+        FileReader::open(&f2).unwrap(),
+    ];
     let result = merge_histogram_files(&out, &files, Compression::None);
     for p in [&f1, &f2, &out] {
         let _ = std::fs::remove_file(p);

@@ -7,7 +7,7 @@
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::skip_versioned;
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::axis::TAxis;
 use crate::base::{
@@ -310,12 +310,16 @@ impl TProfile3D {
 }
 
 /// Read a `TProfile3D` named `name` from `file`.
-pub(crate) fn read_tprofile3d(file: &RFile, name: &str) -> Result<TProfile3D> {
+pub(crate) fn read_tprofile3d(file: &FileReader, name: &str) -> Result<TProfile3D> {
     TProfile3D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile3D")?))
 }
 
 /// Read a `TProfile3D` from subdirectory `subdir`.
-pub(crate) fn read_tprofile3d_in(file: &RFile, subdir: &str, name: &str) -> Result<TProfile3D> {
+pub(crate) fn read_tprofile3d_in(
+    file: &FileReader,
+    subdir: &str,
+    name: &str,
+) -> Result<TProfile3D> {
     TProfile3D::read(&mut RBuffer::new(&object_bytes_in(
         file,
         subdir,

@@ -2,10 +2,10 @@
 //! Fuzz the TFile container parser, including the directory-navigation parse
 //! paths: arbitrary bytes must never panic.
 use libfuzzer_sys::fuzz_target;
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fuzz_target!(|data: &[u8]| {
-    if let Ok(f) = RFile::from_bytes(data.to_vec()) {
+    if let Ok(f) = FileReader::from_bytes(data.to_vec()) {
         let size = usize::try_from(f.size()).unwrap_or(usize::MAX);
         for k in f.keys() {
             let _ = f.key_payload(k);

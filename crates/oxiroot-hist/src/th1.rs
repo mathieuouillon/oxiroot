@@ -5,7 +5,7 @@
 
 use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::Result;
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 use crate::axis::TAxis;
 use crate::base::{
@@ -391,12 +391,12 @@ impl TH1 {
 
 /// Read any 1-D histogram (`TH1D/F/I/S/C/L`), detecting the bin content type
 /// from the stored class.
-pub(crate) fn read_th1(file: &RFile, name: &str) -> Result<TH1> {
+pub(crate) fn read_th1(file: &FileReader, name: &str) -> Result<TH1> {
     decode_th1(histogram_object(file, name, "TH1")?)
 }
 
 /// Read any 1-D histogram from subdirectory `subdir`.
-pub(crate) fn read_th1_in(file: &RFile, subdir: &str, name: &str) -> Result<TH1> {
+pub(crate) fn read_th1_in(file: &FileReader, subdir: &str, name: &str) -> Result<TH1> {
     decode_th1(histogram_object_in(file, subdir, name, "TH1")?)
 }
 

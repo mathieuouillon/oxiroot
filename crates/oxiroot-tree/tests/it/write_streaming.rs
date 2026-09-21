@@ -1,8 +1,8 @@
-//! Streaming, bounded-memory writes via `TTreeWriter` (B13): append entries in
+//! Streaming, bounded-memory writes via `TreeWriter` (B13): append entries in
 //! batches (one basket per branch each), then read the file back.
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_tree::{Branch, BranchValues, TTree, TTreeWriter};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_tree::{Branch, BranchValues, TreeReader, TreeWriter};
 
 /// A unique temp path per test (tests run in parallel in one process).
 fn tmp(name: &str) -> std::path::PathBuf {
@@ -12,7 +12,7 @@ fn tmp(name: &str) -> std::path::PathBuf {
 #[test]
 fn streaming_scalars_round_trip() {
     let out = tmp("scalars");
-    let mut w = TTreeWriter::create(&out, "T", Compression::None).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
     // Three batches of differing sizes -> three baskets per branch.
     let batches: [(Vec<i32>, Vec<f64>); 3] = [
         (vec![0, 1, 2], vec![0.0, 1.0, 2.0]),
@@ -26,8 +26,8 @@ fn streaming_scalars_round_trip() {
     assert_eq!(w.num_entries(), 9);
     w.finish().expect("finish");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "T").expect("open");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(t.num_entries(), 9);
     assert_eq!(
         t.read_branch(&f, "x").expect("x"),
@@ -49,7 +49,7 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
     // More than ROOT's default fMaxBaskets (10): the writer must grow the basket
     // arrays so every basket is addressable.
     let out = tmp("many");
-    let mut w = TTreeWriter::create(&out, "T", Compression::None).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
     let n_batches = 25;
     for b in 0..n_batches {
         let x: Vec<i64> = (0..4).map(|i| (b * 4 + i) as i64).collect();
@@ -57,8 +57,8 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
     }
     w.finish().expect("finish");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "T").expect("open");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "T").expect("open");
     let total = (n_batches * 4) as u64;
     assert_eq!(t.num_entries(), total);
     assert_eq!(
@@ -75,7 +75,7 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
 #[test]
 fn streaming_jagged_vector_string_round_trip() {
     let out = tmp("mixed");
-    let mut w = TTreeWriter::create(&out, "T", Compression::Zlib(6)).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::Zlib(6)).expect("create");
 
     let jag: Vec<Vec<f64>> = vec![vec![1.0], vec![], vec![2.0, 3.0, 4.0], vec![5.0, 6.0]];
     let vec_branch: Vec<Vec<i32>> = vec![vec![10], vec![20, 21], vec![], vec![30, 31, 32]];
@@ -95,8 +95,8 @@ fn streaming_jagged_vector_string_round_trip() {
     }
     w.finish().expect("finish");
 
-    let f = RFile::open(&out).expect("reopen");
-    let t = TTree::open(&f, "T").expect("open");
+    let f = FileReader::open(&out).expect("reopen");
+    let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(t.num_entries(), 4);
     assert_eq!(
         t.read_branch(&f, "j").expect("j"),
@@ -121,7 +121,7 @@ fn streaming_create_large_writes_big_container_round_trip() {
     // entries in order — exercising the same wide header/dir/key path a genuine
     // >2 GiB file uses, without producing 2 GiB.
     let out = tmp("large_scalars");
-    let mut w = TTreeWriter::create_large(&out, "T", Compression::None).expect("create_large");
+    let mut w = TreeWriter::create_large(&out, "T", Compression::None).expect("create_large");
     let batches: [(Vec<i32>, Vec<f64>); 3] = [
         (vec![0, 1, 2], vec![0.0, 1.0, 2.0]),
         (vec![3, 4], vec![3.0, 4.0]),
@@ -133,13 +133,13 @@ fn streaming_create_large_writes_big_container_round_trip() {
     }
     w.finish().expect("finish");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(
         f.header().is_big(),
         "create_large must write the 64-bit container"
     );
     assert_eq!(f.header().units, 8, "big-format fUnits is 8");
-    let t = TTree::open(&f, "T").expect("open");
+    let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(t.num_entries(), 9);
     assert_eq!(
         t.read_branch(&f, "x").expect("x"),
@@ -156,7 +156,7 @@ fn streaming_jagged_big_container_round_trips() {
     // A jagged + vector + string tree in the big container form: the wider keys
     // must not disturb the count/offset machinery.
     let out = tmp("large_mixed");
-    let mut w = TTreeWriter::create_large(&out, "T", Compression::Zlib(6)).expect("create_large");
+    let mut w = TreeWriter::create_large(&out, "T", Compression::Zlib(6)).expect("create_large");
     let jag: Vec<Vec<f64>> = vec![vec![1.0], vec![], vec![2.0, 3.0, 4.0], vec![5.0, 6.0]];
     for r in [0usize..2, 2..4] {
         w.write_batch(&[Branch::jagged_f64("j", jag[r.clone()].to_vec())])
@@ -164,9 +164,9 @@ fn streaming_jagged_big_container_round_trips() {
     }
     w.finish().expect("finish");
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
-    let t = TTree::open(&f, "T").expect("open");
+    let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(
         t.read_branch(&f, "j").expect("j"),
         BranchValues::VecF64(jag)
@@ -176,7 +176,7 @@ fn streaming_jagged_big_container_round_trips() {
 #[test]
 fn streaming_schema_mismatch_is_rejected() {
     let out = tmp("mismatch");
-    let mut w = TTreeWriter::create(&out, "T", Compression::None).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
     w.write_batch(&[Branch::i32("x", vec![1, 2])])
         .expect("first");
     // A second batch with a different element type for the same branch.
@@ -189,7 +189,7 @@ fn streaming_schema_mismatch_is_rejected() {
 #[test]
 fn streaming_uneven_batch_entries_is_rejected() {
     let out = tmp("uneven");
-    let mut w = TTreeWriter::create(&out, "T", Compression::None).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
     let err = w
         .write_batch(&[Branch::i32("x", vec![1, 2, 3]), Branch::i32("y", vec![1])])
         .expect_err("uneven entry counts must error");
@@ -206,7 +206,7 @@ fn streaming_uneven_batch_entries_is_rejected() {
 #[test]
 fn streaming_no_batches_is_rejected() {
     let out = tmp("empty");
-    let w = TTreeWriter::create(&out, "T", Compression::None).expect("create");
+    let w = TreeWriter::create(&out, "T", Compression::None).expect("create");
     assert!(w.finish().is_err(), "finishing with no batch must error");
 }
 
@@ -219,7 +219,7 @@ fn streaming_no_batches_is_rejected() {
 #[ignore = "writes a real >2 GiB file"]
 fn streaming_real_over_two_gib() {
     let out = tmp("real_big");
-    let mut w = TTreeWriter::create_large(&out, "T", Compression::None).expect("create_large");
+    let mut w = TreeWriter::create_large(&out, "T", Compression::None).expect("create_large");
     // 300 batches × 1_000_000 f64 (8 MB each) ≈ 2.4 GiB of basket payload, well
     // past kStartBigFile. The last batch's baskets sit above 2 GiB.
     let per_batch = 1_000_000i64;
@@ -239,9 +239,9 @@ fn streaming_real_over_two_gib() {
         meta.len()
     );
 
-    let f = RFile::open(&out).expect("reopen");
+    let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big(), "a >2 GiB file must be the big form");
-    let t = TTree::open(&f, "T").expect("open");
+    let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(t.num_entries(), total);
     // Read the final four entries — their basket sits past the 2 GiB mark, so
     // this proves the 64-bit fBasketSeek round-trips.

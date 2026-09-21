@@ -6,20 +6,20 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{Compression, RFile};
-use oxiroot_rntuple::{Field, FieldValues, Ntuple, RNTuple, StructRole};
+use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader, StructRole};
 
-fn open(name: &str) -> RFile {
+fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures")
         .join(name);
-    RFile::open(path).expect("open fixture")
+    FileReader::open(path).expect("open fixture")
 }
 
 /// A `std::set<int32_t>` ROOT wrote reads as a collection of its elements.
 fn check_set_fixture(name: &str) {
     let file = open(name);
-    let ntpl = RNTuple::open(&file, "ntpl").expect("open ntpl");
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(ntpl.num_entries(), 4, "{name}");
     // ROOT records the field as a Collection named with the set type.
     let s = &ntpl.header().fields[0];
@@ -57,8 +57,8 @@ fn writes_set_round_trip() {
     );
     let out = std::env::temp_dir().join("oxiroot_set_rt.root");
     nt.write_root(&out, Compression::None).expect("write");
-    let file = RFile::open(&out).unwrap();
-    let ntpl = RNTuple::open(&file, "ntpl").unwrap();
+    let file = FileReader::open(&out).unwrap();
+    let ntpl = NtupleReader::open(&file, "ntpl").unwrap();
     assert_eq!(ntpl.header().fields[0].type_name, "std::set<std::int32_t>");
     assert_eq!(
         ntpl.read_field(&file, "s").unwrap(),
@@ -80,8 +80,8 @@ fn writes_map_round_trip() {
     );
     let out = std::env::temp_dir().join("oxiroot_map_rt.root");
     nt.write_root(&out, Compression::None).expect("write");
-    let file = RFile::open(&out).unwrap();
-    let ntpl = RNTuple::open(&file, "ntpl").unwrap();
+    let file = FileReader::open(&out).unwrap();
+    let ntpl = NtupleReader::open(&file, "ntpl").unwrap();
 
     let m = &ntpl.header().fields[0];
     assert_eq!(m.struct_role, StructRole::Collection);

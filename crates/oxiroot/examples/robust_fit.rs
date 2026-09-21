@@ -138,7 +138,7 @@ fn main() {
     fitted
         .write_root(&path, Compression::Zstd(5))
         .expect("write TF1");
-    let f = RFile::open(&path).expect("open file");
+    let f = FileReader::open(&path).expect("open file");
     let back = TF1::read_root(&f, "robust_line").expect("read TF1");
     println!();
     println!(

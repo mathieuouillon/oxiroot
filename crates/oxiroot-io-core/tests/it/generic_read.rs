@@ -1,6 +1,6 @@
 //! Tests for the generic streamer-info-driven object reader.
 
-use oxiroot_io_core::{RFile, Value};
+use oxiroot_io_core::{FileReader, Value};
 
 fn fixture(name: &str) -> String {
     format!("{}/../../fixtures/{}", env!("CARGO_MANIFEST_DIR"), name)
@@ -23,7 +23,7 @@ fn sweep_all_fixtures() {
     let mut ok = 0;
     let mut degraded = 0;
     for file in files {
-        let Ok(f) = RFile::open(fixture(&file)) else {
+        let Ok(f) = FileReader::open(fixture(&file)) else {
             continue;
         };
         for key in f.keys().iter() {
@@ -60,7 +60,7 @@ fn sweep_all_fixtures() {
 #[test]
 fn decoded_values_match_root() {
     // TObjString.
-    let f = RFile::open(fixture("persist_objs.root")).unwrap();
+    let f = FileReader::open(fixture("persist_objs.root")).unwrap();
     let s = f.get_value("label").unwrap();
     assert_eq!(
         s.get("fString").and_then(Value::as_str),
@@ -85,7 +85,7 @@ fn decoded_values_match_root() {
 
     // TH1D: name, title, and the bin contents (TArrayD base), vs uproot's
     // values(flow=True) = [0, 20, 38, 54, 68, 80, …].
-    let h = RFile::open(fixture("analysis.root"))
+    let h = FileReader::open(fixture("analysis.root"))
         .unwrap()
         .get_value("h")
         .unwrap();
@@ -103,7 +103,7 @@ fn decoded_values_match_root() {
     assert_eq!(first, [0.0, 20.0, 38.0, 54.0, 68.0, 80.0]);
 
     // TGraphErrors: fX / fY / fEX / fEY point arrays.
-    let g = RFile::open(fixture("graphs.root"))
+    let g = FileReader::open(fixture("graphs.root"))
         .unwrap()
         .get_value("ge")
         .unwrap();
@@ -125,7 +125,7 @@ fn decoded_values_match_root() {
     assert_eq!(fy, [10.0, 20.0, 30.0, 40.0]);
 
     // TMap: three pairs, mixed value types, recursively decoded.
-    let m = RFile::open(fixture("tmap.root"))
+    let m = FileReader::open(fixture("tmap.root"))
         .unwrap()
         .get_value("meta")
         .unwrap();
@@ -140,7 +140,7 @@ fn decoded_values_match_root() {
     );
 
     // TList: three heterogeneous members.
-    let l = RFile::open(fixture("objlist.root"))
+    let l = FileReader::open(fixture("objlist.root"))
         .unwrap()
         .get_value("mylist")
         .unwrap();
@@ -150,7 +150,7 @@ fn decoded_values_match_root() {
     assert_eq!(its[1].get("fString").and_then(Value::as_str), Some("hello"));
 
     // TF1: the fitted formula string and cling parameters, nested in TFormula.
-    let f1 = RFile::open(fixture("tf1.root"))
+    let f1 = FileReader::open(fixture("tf1.root"))
         .unwrap()
         .get_value("myfunc")
         .unwrap();
@@ -165,7 +165,7 @@ fn decoded_values_match_root() {
 /// (6.40), not oxiroot (regenerate via `scripts/gen_rootcpp_objects.cpp`).
 #[test]
 fn reads_root_cpp_written_file() {
-    let f = RFile::open(fixture("rootcpp_objects.root")).unwrap();
+    let f = FileReader::open(fixture("rootcpp_objects.root")).unwrap();
 
     // TObjString + TParameter<double> written by ROOT.
     assert_eq!(

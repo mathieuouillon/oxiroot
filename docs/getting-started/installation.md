@@ -39,8 +39,8 @@ just the lean, pure-Rust format core.
 
 | Feature | Default | Effect |
 |---------|:---:|--------|
-| `mmap` | ✅ | Memory-mapped read path (`RFile::open_mmap`) for large files; adds `memmap2`. |
-| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TTree::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
+| `mmap` | ✅ | Memory-mapped read path (`FileReader::open_mmap`) for large files; adds `memmap2`. |
+| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TreeReader::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 | `plot` | ✅ | Plotting to SVG/PNG/PDF (`oxiroot::plot`); adds `tiny-skia`/`ab_glyph` and the ReX TeX engine. |

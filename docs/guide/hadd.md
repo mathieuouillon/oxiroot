@@ -74,7 +74,7 @@ let report = Merger::new()
 ## The report
 
 `merge_files` returns a `MergeReport` describing exactly what happened: the
-`kind` of merge (`Histograms`, `Tree(name)`, or `RNTuple(name)`), the keys
+`kind` of merge (`Histograms`, `Tree(name)`, or `Ntuple(name)`), the keys
 `merged` / `copied` / `skipped` (with reasons), and the total `entries` for a
 tree or RNTuple. Its `Display` prints a one-line summary. **Nothing is dropped
 without appearing in `skipped`.**
@@ -82,7 +82,7 @@ without appearing in `skipped`.**
 ## What a fileset may contain
 
 One call writes **one** output file, and the merger does not yet combine
-histograms with a `TTree`/RNTuple in that output (a `RootFile` can hold all three,
+histograms with a `TTree`/RNTuple in that output (a `FileWriter` can hold all three,
 but the merger concatenates each tree or RNTuple on its own path). So a fileset
 must be one of:
 

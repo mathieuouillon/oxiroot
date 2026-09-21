@@ -10,12 +10,12 @@
 //! cargo run -p oxiroot-hist --example bake_streamers -- \
 //!     /tmp/alltypes.root crates/oxiroot-hist/src/histograms.streamerinfo.bin
 //! ```
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (src, dst) = (&args[1], &args[2]);
-    let f = RFile::open(src).expect("open source ROOT file");
+    let f = FileReader::open(src).expect("open source ROOT file");
     let blob = f
         .streamer_info_object()
         .expect("read streamer info")

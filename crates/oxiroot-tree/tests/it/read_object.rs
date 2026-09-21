@@ -6,16 +6,16 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::RFile;
-use oxiroot_tree::{BranchValues, TTree};
+use oxiroot_io_core::FileReader;
+use oxiroot_tree::{BranchValues, TreeReader};
 
 #[test]
 fn reads_split_single_object_scalars() {
-    let f = RFile::open(
+    let f = FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_object.root"),
     )
     .expect("open fixture");
-    let t = TTree::open(&f, "T").expect("open tree");
+    let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.num_entries(), 3);
     assert_eq!(t.branch_names(), vec!["id", "inner.a", "inner.b", "w"]);
     assert!(t.unsupported_branches().is_empty());

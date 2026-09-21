@@ -5,7 +5,7 @@
 use oxiroot_hist::{Compression, GraphFunction, ReadRoot, TGraph, WriteRoot};
 use oxiroot_hist_func::TF1;
 use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::RFile;
+use oxiroot_io_core::FileReader;
 
 fn fitted() -> TF1 {
     TF1::new("fit", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]", -2.0, 6.0)
@@ -41,7 +41,7 @@ fn attached_function_evaluates_after_a_file_round_trip() {
     let path = std::env::temp_dir().join("oxiroot_hist_func_graph_function.root");
     g.write_root(&path, Compression::None).unwrap();
 
-    let back = TGraph::read_root(&RFile::open(&path).unwrap(), "g").unwrap();
+    let back = TGraph::read_root(&FileReader::open(&path).unwrap(), "g").unwrap();
     assert_eq!(back.functions.len(), 1);
     let h = TF1::from_graph_function(back.functions[0].clone()).unwrap();
     for x in [-1.0, 0.0, 1.5, 2.25, 5.0] {
