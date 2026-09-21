@@ -82,6 +82,17 @@ pub enum Error {
         /// The rendered error message.
         message: String,
     },
+    /// A statistics function rejected its input (converted from
+    /// [`oxiroot_stat::StatError`]; the `stat` feature).
+    #[cfg(feature = "stat")]
+    Stat(oxiroot_stat::StatError),
+    /// A formula did not parse (converted from [`oxiroot_formula::ParseError`];
+    /// the `formula` feature).
+    #[cfg(feature = "formula")]
+    Formula(oxiroot_formula::ParseError),
+    /// Building or saving a figure failed (converted from `oxiroot_plot::Error`,
+    /// whose I/O errors become [`Error::Io`]); the message says why.
+    Plot(String),
 }
 
 impl fmt::Display for Error {
@@ -125,6 +136,11 @@ impl fmt::Display for Error {
                  address (2 GiB); write it in the 64-bit form"
             ),
             Error::Io { message, .. } => write!(f, "I/O error: {message}"),
+            #[cfg(feature = "stat")]
+            Error::Stat(e) => write!(f, "statistics: {e}"),
+            #[cfg(feature = "formula")]
+            Error::Formula(e) => write!(f, "invalid formula: {e}"),
+            Error::Plot(message) => write!(f, "plotting: {message}"),
         }
     }
 }
@@ -133,6 +149,10 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Decompress { source, .. } => Some(source),
+            #[cfg(feature = "stat")]
+            Error::Stat(e) => Some(e),
+            #[cfg(feature = "formula")]
+            Error::Formula(e) => Some(e),
             _ => None,
         }
     }
@@ -154,6 +174,20 @@ pub fn decompress_payload(payload: &[u8], len: usize, what: impl fmt::Display) -
         context: what.to_string(),
         source,
     })
+}
+
+#[cfg(feature = "stat")]
+impl From<oxiroot_stat::StatError> for Error {
+    fn from(e: oxiroot_stat::StatError) -> Self {
+        Error::Stat(e)
+    }
+}
+
+#[cfg(feature = "formula")]
+impl From<oxiroot_formula::ParseError> for Error {
+    fn from(e: oxiroot_formula::ParseError) -> Self {
+        Error::Formula(e)
+    }
 }
 
 impl From<std::io::Error> for Error {

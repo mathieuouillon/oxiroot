@@ -71,6 +71,10 @@ ax.save("pt.png")?;                // or "pt.svg" / "pt.pdf"
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
+Plotting errors are `oxiroot::plot::Error`, and they convert into
+`oxiroot::Error`, so a function that reads a file and saves a figure can return
+`oxiroot::Result` and use `?` on both.
+
 ## Histograms (mplhep style)
 
 `hist` draws a `TH1` as an mplhep staircase. `hist_with` takes a `HistOpts`

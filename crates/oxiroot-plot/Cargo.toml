@@ -10,6 +10,10 @@ description = "Pure-Rust plotting for ROOT histograms and graphs — matplotlib-
 [dependencies]
 # Draw the histogram and graph types directly (the `hist` feature).
 oxiroot-hist = { workspace = true, optional = true }
+# With `hist` (which already brings it in through oxiroot-hist): the shared
+# `oxiroot::Error` that plotting errors convert into, so `?` works in code that
+# reads files and saves figures.
+oxiroot-io-core = { workspace = true, optional = true }
 # Optional: overlay a fitted `Model` curve with `Axes::model` (the `fit` feature).
 oxiroot-fit = { workspace = true, optional = true }
 # CPU anti-aliased 2D rasterizer (resvg's own renderer); re-exports the pure-Rust
@@ -34,7 +38,7 @@ ttf-parser = { workspace = true }
 # the TeX engine, and lays `$…$` labels out as plain text.
 default = ["hist", "png", "math"]
 # Implement the plot data traits for oxiroot's TH1/TH2/TProfile/TGraph.
-hist = ["dep:oxiroot-hist"]
+hist = ["dep:oxiroot-hist", "dep:oxiroot-io-core"]
 # PNG output, through the tiny-skia rasterizer.
 png = ["dep:tiny-skia"]
 # Typeset `$…$` label spans as TeX math, through the ReX engine.

@@ -127,7 +127,7 @@ use oxiroot::prelude::*;
 let model = Model::from_formula("decay", "[0]*exp(-[1]*x)")?
     .with_params(vec![100.0, 0.5])
     .lower_limit("p1", 0.0);
-# Ok::<(), Box<dyn std::error::Error>>(())
+# Ok::<(), oxiroot::Error>(())
 ```
 
 ### Custom closures

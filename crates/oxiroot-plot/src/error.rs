@@ -54,5 +54,20 @@ impl From<std::io::Error> for Error {
     }
 }
 
+/// With the `hist` feature, plotting errors convert into the error the rest of
+/// oxiroot uses, so `?` works in a function returning `oxiroot::Result` that both
+/// reads files and saves figures. I/O errors keep their kind
+/// ([`oxiroot_io_core::Error::Io`]); the others become
+/// [`oxiroot_io_core::Error::Plot`] with this error's message.
+#[cfg(feature = "hist")]
+impl From<Error> for oxiroot_io_core::Error {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::Io(e) => oxiroot_io_core::Error::from(e),
+            other => oxiroot_io_core::Error::Plot(other.to_string()),
+        }
+    }
+}
+
 /// Crate result alias.
 pub type Result<T> = std::result::Result<T, Error>;

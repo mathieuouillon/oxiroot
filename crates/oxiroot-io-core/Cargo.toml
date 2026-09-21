@@ -12,6 +12,8 @@ oxiroot-compress = { workspace = true }
 bytes = { workspace = true }
 memmap2 = { version = "0.9", optional = true }
 ureq = { workspace = true, optional = true }
+oxiroot-stat = { workspace = true, optional = true }
+oxiroot-formula = { workspace = true, optional = true }
 
 [features]
 # Opt-in memory-mapped read path (`RFile::open_mmap`). Off by default so the
@@ -23,6 +25,12 @@ http = ["dep:ureq"]
 # Opt-in remote reads over the XRootD `root://` protocol (`RFile::open_url`).
 # Pure `std::net` (unix auth, no crypto) — adds no dependencies.
 xrootd = []
+# `From` conversions into `Error` from the statistics and formula error types,
+# so `?` works across crates in code that returns `oxiroot::Result`. The
+# `oxiroot` facade turns both on. They are opt-in so that a format-only build
+# (and oxiroot-hist, which must not compile the formula engine) stays lean.
+stat = ["dep:oxiroot-stat"]
+formula = ["dep:oxiroot-formula"]
 
 # Render every read path (mmap, http) in the docs.rs API reference.
 [package.metadata.docs.rs]

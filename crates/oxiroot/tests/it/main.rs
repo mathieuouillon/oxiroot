@@ -3,6 +3,7 @@
 
 mod append_rntuple;
 mod end_to_end;
+mod errors;
 mod hadd;
 mod hadd_histograms;
 mod mixed_file;

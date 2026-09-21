@@ -41,11 +41,11 @@ oxiroot    -> io-core, compress, rntuple, hist, hist-func, linalg, tree,
 hist-func  -> hist, io-core, formula, [fit]
 hist       -> io-core, stat, [fit]
 fit        -> formula, stat
-plot       -> [hist], [fit], [rex]
+plot       -> [hist], [io-core], [fit], [rex]
 tree       -> io-core
 rntuple    -> io-core
 linalg     -> io-core
-io-core    -> compress
+io-core    -> compress, [stat], [formula]
 formula, stat, particle, compress, rex: no oxiroot dependencies
 oxiroot-cli (oxroot) -> oxiroot
 
