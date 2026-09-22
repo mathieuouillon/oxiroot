@@ -18,7 +18,7 @@ use std::io::{Cursor, Seek, SeekFrom, Write};
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
 use crate::streamer_gen::{append_streamer_infos, streamer_info_list, Cls};
-use crate::streamer_info::parse_streamer_info;
+use crate::streamer_info::{parse_streamer_info, StreamerRegistry};
 use crate::Compression;
 
 use super::header::{TUuid, BIG_FILE_VERSION, MAGIC};
@@ -168,7 +168,7 @@ enum ExistingInfo {
     Readable {
         list: Vec<u8>,
         key_len: u16,
-        classes: Vec<String>,
+        classes: Vec<(String, i32)>,
     },
     /// A record this crate cannot parse; it is kept as it is.
     Opaque,
@@ -425,8 +425,8 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// Store the file's streamer info, referenced from the header rather than
     /// listed in a directory: `list` is a streamed `TList<TStreamerInfo>` (or
     /// empty), and `extra` are further classes added after its entries, skipping
-    /// any it already describes. Nothing is written when both are empty. A later
-    /// call replaces the reference.
+    /// any it already describes at the same version. Nothing is written when both
+    /// are empty. A later call replaces the reference.
     ///
     /// When continuing a file that already has streamer info, `list` is not
     /// used: the file's own entries are kept, and only the `extra` classes they
@@ -441,7 +441,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
             }) => {
                 let missing: Vec<Cls<'_>> = extra
                     .iter()
-                    .filter(|c| !classes.iter().any(|name| *name == c.name))
+                    .filter(|c| !describes(classes, c))
                     .cloned()
                     .collect();
                 if missing.is_empty() {
@@ -464,7 +464,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
                 };
                 let extra: Vec<Cls<'_>> = extra
                     .iter()
-                    .filter(|c| !listed.iter().any(|name| *name == c.name))
+                    .filter(|c| !describes(&listed, c))
                     .cloned()
                     .collect();
                 let list = match (list.is_empty(), extra.is_empty()) {
@@ -871,17 +871,30 @@ impl ContainerWriter<Cursor<Vec<u8>>> {
     }
 }
 
-/// The classes a serialized list describes, or none if it does not parse.
-fn described_classes(list: &[u8], key_len: u16) -> Vec<String> {
+/// The classes a serialized list describes, with their versions, or none if it
+/// does not parse.
+fn described_classes(list: &[u8], key_len: u16) -> Vec<(String, i32)> {
     parse_streamer_info(list, usize::from(key_len))
-        .map(|registry| {
-            registry
-                .class_names()
-                .into_iter()
-                .map(String::from)
-                .collect()
-        })
+        .map(|registry| versions_of(&registry))
         .unwrap_or_default()
+}
+
+/// Each class a registry describes, with its version.
+fn versions_of(registry: &StreamerRegistry) -> Vec<(String, i32)> {
+    registry
+        .infos()
+        .iter()
+        .map(|info| (info.class_name.clone(), info.class_version))
+        .collect()
+}
+
+/// Whether `listed` already describes `class` at its version. A file may hold
+/// several versions of a class (objects written by older releases keep theirs),
+/// so a class listed at another version is still added.
+fn describes(listed: &[(String, i32)], class: &Cls<'_>) -> bool {
+    listed
+        .iter()
+        .any(|(name, version)| *name == class.name && *version == class.version)
 }
 
 /// Read a continued file's streamer-info record.
@@ -892,11 +905,7 @@ fn read_existing_info(file: &FileReader) -> Result<ExistingInfo> {
     let list = file
         .streamer_info_object()?
         .ok_or_else(|| Error::Format("no streamer-info record".to_string()))?;
-    let classes = parse_streamer_info(&list, usize::from(key_len))?
-        .class_names()
-        .into_iter()
-        .map(String::from)
-        .collect();
+    let classes = versions_of(&parse_streamer_info(&list, usize::from(key_len))?);
     Ok(ExistingInfo::Readable {
         list,
         key_len,

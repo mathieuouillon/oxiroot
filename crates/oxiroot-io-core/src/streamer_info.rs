@@ -8,6 +8,8 @@
 //! references are keyed by the object's buffer offset **plus the key length**
 //! (ROOT reads key objects with `origin = -fKeylen`).
 
+use std::ops::Range;
+
 use crate::buffer::RBuffer;
 use crate::error::Result;
 use crate::object::TagReader;
@@ -84,6 +86,46 @@ impl StreamerRegistry {
 /// Parse the `TList<TStreamerInfo>` object bytes (already decompressed).
 /// `keylen` is the streamer-info key's header length (`fKeyLen`).
 pub fn parse_streamer_info(object: &[u8], keylen: usize) -> Result<StreamerRegistry> {
+    let infos = parse_list(object, keylen)?
+        .into_iter()
+        .map(|(info, _)| info)
+        .collect();
+    Ok(StreamerRegistry { infos })
+}
+
+/// A class's streamer info as a file stores it, for copying into another file:
+/// the parsed description, and each element as its `TStreamerElement` subclass
+/// name and body. An element body holds no class tags or object references, so
+/// it can be written again verbatim under a fresh class tag.
+#[derive(Debug, Clone)]
+pub(crate) struct StoredInfo {
+    /// The parsed description.
+    pub(crate) info: StreamerInfo,
+    /// Each element's subclass name and body, or `None` if an element had no
+    /// byte count to delimit its body.
+    pub(crate) elements: Option<Vec<(String, Vec<u8>)>>,
+}
+
+/// Parse the `TList<TStreamerInfo>` object bytes, keeping each element's body.
+pub(crate) fn parse_stored_infos(object: &[u8], keylen: usize) -> Result<Vec<StoredInfo>> {
+    Ok(parse_list(object, keylen)?
+        .into_iter()
+        .map(|(info, ranges)| {
+            let elements = ranges
+                .into_iter()
+                .map(|(class, range)| range.map(|range| (class, object[range].to_vec())))
+                .collect();
+            StoredInfo { info, elements }
+        })
+        .collect())
+}
+
+/// Each element's `TStreamerElement` subclass name and the byte range of its
+/// body in the list's buffer, when it has a byte count.
+type ElementRanges = Vec<(String, Option<Range<usize>>)>;
+
+/// Parse the list into its infos, with the byte range of each element's body.
+fn parse_list(object: &[u8], keylen: usize) -> Result<Vec<(StreamerInfo, ElementRanges)>> {
     let mut r = RBuffer::new(object);
     let mut tags = TagReader::new(keylen);
 
@@ -109,11 +151,12 @@ pub fn parse_streamer_info(object: &[u8], keylen: usize) -> Result<StreamerRegis
     if let Some(end) = list.end {
         r.seek(end)?;
     }
-    Ok(StreamerRegistry { infos })
+    Ok(infos)
 }
 
-/// Parse a `TStreamerInfo` body (after its `ReadObjectAny` header).
-fn parse_one_info(r: &mut RBuffer, tags: &mut TagReader) -> Result<StreamerInfo> {
+/// Parse a `TStreamerInfo` body (after its `ReadObjectAny` header), with the
+/// byte range of each element's body.
+fn parse_one_info(r: &mut RBuffer, tags: &mut TagReader) -> Result<(StreamerInfo, ElementRanges)> {
     let _version = r.read_version()?;
     let named = read_tnamed(r)?;
     let checksum = r.be_u32()?;
@@ -121,25 +164,31 @@ fn parse_one_info(r: &mut RBuffer, tags: &mut TagReader) -> Result<StreamerInfo>
 
     // fElements is a TObjArray, read via the generic protocol.
     let header = tags.read_header(r)?;
-    let elements = if header.class_name.as_deref() == Some("TObjArray") {
-        parse_element_array(r, tags)?
+    let (elements, ranges) = if header.class_name.as_deref() == Some("TObjArray") {
+        parse_element_array(r, tags)?.into_iter().unzip()
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     if let Some(end) = header.end {
         r.seek(end)?;
     }
 
-    Ok(StreamerInfo {
+    let info = StreamerInfo {
         class_name: named.name,
         class_version,
         checksum,
         elements,
-    })
+    };
+    Ok((info, ranges))
 }
 
-/// Parse a `TObjArray` of `TStreamerElement`s (after its `ReadObjectAny` header).
-fn parse_element_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<StreamerElement>> {
+/// Parse a `TObjArray` of `TStreamerElement`s (after its `ReadObjectAny` header),
+/// with each element's subclass name and body range.
+#[allow(clippy::type_complexity)]
+fn parse_element_array(
+    r: &mut RBuffer,
+    tags: &mut TagReader,
+) -> Result<Vec<(StreamerElement, (String, Option<Range<usize>>))>> {
     let _version = r.read_version()?;
     read_tobject(r)?;
     let _name = r.string()?;
@@ -150,7 +199,9 @@ fn parse_element_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Stre
     for _ in 0..size {
         let header = tags.read_header(r)?;
         if let Some(class) = header.class_name.clone() {
-            elements.push(parse_one_element(r, &class)?);
+            let body = header.end.map(|end| r.pos()..end);
+            let element = parse_one_element(r, &class)?;
+            elements.push((element, (class, body)));
         }
         if let Some(end) = header.end {
             r.seek(end)?;

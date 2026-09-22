@@ -11,12 +11,14 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
+use crate::buffer::K_BYTE_COUNT_MASK;
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
 use crate::object::TagReader;
 use crate::object_io::{object_bytes_any_keyed, ReadRoot, StreamerSet, WriteRoot};
 use crate::streamer::{read_tobject, write_object_any, write_tobject};
-use crate::streamer_gen::Cls;
+use crate::streamer_gen::{stored, Cls};
+use crate::streamer_info::StoredInfo;
 use crate::FileReader;
 
 use super::scalars::{
@@ -38,6 +40,11 @@ pub enum ListKind {
 /// and [`add`](ObjList::add) any writable objects; read one back with
 /// [`ObjList::read_root`](ReadRoot::read_root) and extract members by type with
 /// [`items`](ObjList::items).
+///
+/// A list read from a file can be written again as it is, whatever its members:
+/// it keeps the streamer info that file stores for their classes (and the
+/// classes those depend on), and a list stored without a name (as ROOT writes
+/// them) takes its key's name.
 #[derive(Debug, Clone)]
 pub struct ObjList {
     kind: ListKind,
@@ -188,6 +195,93 @@ fn member_streamer_classes<'a>(
     set.classes().to_vec()
 }
 
+/// The streamer info `file` stores for the classes of `members` (each a class
+/// name and streamed body) and every class they depend on, dependencies first.
+/// A collection read from `file` keeps them, so wherever it is written its
+/// members are described, whatever their class. A file whose streamer info
+/// cannot be read contributes nothing.
+fn source_classes<'a>(
+    file: &FileReader,
+    members: impl Iterator<Item = (&'a str, &'a [u8])>,
+) -> Vec<Cls<'static>> {
+    let Ok(infos) = file.stored_streamer_infos() else {
+        return Vec::new();
+    };
+    let mut seen = Vec::new();
+    let mut out = Vec::new();
+    for (class, body) in members {
+        if !class.is_empty() {
+            collect_stored(&infos, class, object_version(body), &mut seen, &mut out);
+        }
+    }
+    out
+}
+
+/// The class version at the head of a streamed object body, if it has one.
+fn object_version(body: &[u8]) -> Option<i32> {
+    let head: [u8; 6] = body.get(..6)?.try_into().ok()?;
+    let count = u32::from_be_bytes([head[0], head[1], head[2], head[3]]);
+    let version = if count & K_BYTE_COUNT_MASK != 0 {
+        u16::from_be_bytes([head[4], head[5]])
+    } else {
+        u16::from_be_bytes([head[0], head[1]])
+    };
+    Some(i32::from(version))
+}
+
+/// Add the stored info for `class` (at `version` when the file has that one)
+/// to `out`, after the classes it depends on: its bases, and any class named
+/// in a member's type (a `TAxis`, a `vector<TLorentzVector>`, …).
+fn collect_stored(
+    infos: &[StoredInfo],
+    class: &str,
+    version: Option<i32>,
+    seen: &mut Vec<(String, i32)>,
+    out: &mut Vec<Cls<'static>>,
+) {
+    let named = |s: &&StoredInfo| s.info.class_name == class;
+    let Some(entry) = infos
+        .iter()
+        .filter(named)
+        .find(|s| version.is_none_or(|v| s.info.class_version == v))
+        .or_else(|| infos.iter().find(named))
+    else {
+        return;
+    };
+    let key = (entry.info.class_name.clone(), entry.info.class_version);
+    if seen.contains(&key) {
+        return;
+    }
+    seen.push(key);
+    for element in &entry.info.elements {
+        if element.element_class == "TStreamerBase" {
+            collect_stored(infos, &element.name, element.base_version, seen, out);
+        } else {
+            let names = element
+                .type_name
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == ':'))
+                .filter(|name| !name.is_empty() && *name != class);
+            for name in names {
+                collect_stored(infos, name, None, seen, out);
+            }
+        }
+    }
+    if let Some(bodies) = &entry.elements {
+        out.push(Cls {
+            name: entry.info.class_name.clone().into(),
+            version: entry.info.class_version,
+            checksum: entry.info.checksum,
+            elements: bodies
+                .iter()
+                .zip(&entry.info.elements)
+                .map(|((element_class, body), element)| {
+                    stored(element_class.clone(), element.name.clone(), body.clone())
+                })
+                .collect(),
+        });
+    }
+}
+
 /// A member's class name and the byte range of its streamed body within the
 /// collection's object buffer.
 type MemberRange = (String, Range<usize>);
@@ -253,12 +347,33 @@ fn decode_objlist(class: &str, object: &[u8], keylen: usize) -> Result<ObjList> 
 
 fn read_objlist(file: &FileReader, name: &str) -> Result<ObjList> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
-    decode_objlist(&class, &object, keylen)
+    Ok(read_back(
+        file,
+        name,
+        decode_objlist(&class, &object, keylen)?,
+    ))
 }
 
 fn read_objlist_in(file: &FileReader, subdir: &str, name: &str) -> Result<ObjList> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
-    decode_objlist(&class, &object, keylen)
+    Ok(read_back(
+        file,
+        name,
+        decode_objlist(&class, &object, keylen)?,
+    ))
+}
+
+/// `list`, read from `file` under the key `key`, ready to be written again: named
+/// by its key when the list itself has no name (ROOT writes lists that way), and
+/// carrying the streamer info `file` stores for its members.
+fn read_back(file: &FileReader, key: &str, mut list: ObjList) -> ObjList {
+    if list.name.is_empty() {
+        list.name = key.to_string();
+    }
+    let members = list.members.iter().map(|(c, b)| (c.as_str(), b.as_slice()));
+    let classes = source_classes(file, members);
+    list.streamers.add_classes(classes);
+    list
 }
 
 /// A type that can be decoded from an [`ObjList`] or [`TMap`] member's
@@ -293,6 +408,10 @@ type MapEntry = (String, Vec<u8>);
 /// keys) or [`TMap::add`] (any key object); read one back with
 /// [`TMap::read_root`](ReadRoot::read_root) and look values up by string key with
 /// [`get`](TMap::get).
+///
+/// Like an [`ObjList`], a map read from a file keeps the streamer info that file
+/// stores for its keys' and values' classes, and takes its key's name if it has
+/// none of its own.
 ///
 /// Note: uproot has no `TMap` model, so a `TMap` is unreadable there (ROOT's own
 /// `TMap`s share this). ROOT C++ reads what oxiroot writes, and oxiroot reads
@@ -478,12 +597,36 @@ fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
 
 fn read_tmap(file: &FileReader, name: &str) -> Result<TMap> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
-    decode_tmap(&class, &object, keylen)
+    Ok(map_read_back(
+        file,
+        name,
+        decode_tmap(&class, &object, keylen)?,
+    ))
 }
 
 fn read_tmap_in(file: &FileReader, subdir: &str, name: &str) -> Result<TMap> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
-    decode_tmap(&class, &object, keylen)
+    Ok(map_read_back(
+        file,
+        name,
+        decode_tmap(&class, &object, keylen)?,
+    ))
+}
+
+/// `map`, read from `file` under the key `key`, ready to be written again; see
+/// [`read_back`].
+fn map_read_back(file: &FileReader, key: &str, mut map: TMap) -> TMap {
+    if map.name.is_empty() {
+        map.name = key.to_string();
+    }
+    let entries = map
+        .pairs
+        .iter()
+        .flat_map(|(key, value)| [key, value])
+        .map(|(c, b)| (c.as_str(), b.as_slice()));
+    let classes = source_classes(file, entries);
+    map.streamers.add_classes(classes);
+    map
 }
 
 impl ReadRoot for ObjList {
