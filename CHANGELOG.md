@@ -5,7 +5,7 @@ Notable changes to oxiroot, by release. The format follows
 [Semantic Versioning](https://semver.org/): before 1.0, a minor release may
 change the API.
 
-## [0.1.0] — Unreleased
+## [0.1.0] — 2026-09-22
 
 The first release: pure-Rust reading and writing of the CERN ROOT file format,
 with no C++/libROOT or Python dependency. Files written by oxiroot open in ROOT
