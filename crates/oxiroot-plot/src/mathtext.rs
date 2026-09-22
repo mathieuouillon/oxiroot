@@ -96,7 +96,56 @@ pub(crate) fn layout_label(
         return;
     }
 
-    // Lay out the runs along one baseline (x from 0), collecting local prims.
+    let (prims, width, ascent, descent) = build_label(fonts, label, size_px);
+    let hoff = match halign {
+        HAlign::Left => 0.0,
+        HAlign::Center => -width / 2.0,
+        HAlign::Right => -width,
+    };
+    let voff = match valign {
+        VAlign::Baseline => 0.0,
+        VAlign::Top => ascent,
+        VAlign::Middle => (ascent - descent) / 2.0,
+        VAlign::Bottom => -descent,
+    };
+    let (sin, cos) = rotation_deg.to_radians().sin_cos();
+    let xf = move |lx: f32, ly: f32| -> Pt {
+        let px = lx + hoff;
+        let py = ly + voff;
+        (x + px * cos - py * sin, y + px * sin + py * cos)
+    };
+
+    for prim in prims {
+        match prim {
+            LocalPrim::Fill(p) => g.push(DrawCommand::Path {
+                path: transform_path(&p, &xf),
+                fill: Some(color),
+                stroke: None,
+            }),
+            #[cfg(feature = "math")]
+            LocalPrim::Poly(pts) => g.push(DrawCommand::Polygon {
+                pts: pts.iter().map(|&(lx, ly)| xf(lx, ly)).collect(),
+                fill: Some(color),
+                stroke: None,
+            }),
+        }
+    }
+}
+
+/// The width, ascent and descent (in pixels) a label takes when drawn by
+/// [`layout_label`] at `size_px`: what `VAlign::Top`/`Bottom` align to.
+pub(crate) fn label_extents(fonts: &FontSet, label: &str, size_px: f32) -> (f32, f32, f32) {
+    if !label.contains('$') {
+        let ext = text::measure(fonts, label, size_px, FontStyle::Regular);
+        return (ext.width, ext.ascent, ext.descent);
+    }
+    let (_, width, ascent, descent) = build_label(fonts, label, size_px);
+    (width, ascent, descent)
+}
+
+/// Lay out a label containing `$…$` runs along one baseline, from x = 0: its
+/// primitives in label-local coordinates, width, ascent and descent.
+fn build_label(fonts: &FontSet, label: &str, size_px: f32) -> (Vec<LocalPrim>, f32, f32, f32) {
     let mut prims: Vec<LocalPrim> = Vec::new();
     let mut pen = 0.0_f32;
     let mut ascent = size_px * 0.7;
@@ -132,41 +181,7 @@ pub(crate) fn layout_label(
             descent = descent.max(ext.descent);
         }
     }
-
-    let width = pen;
-    let hoff = match halign {
-        HAlign::Left => 0.0,
-        HAlign::Center => -width / 2.0,
-        HAlign::Right => -width,
-    };
-    let voff = match valign {
-        VAlign::Baseline => 0.0,
-        VAlign::Top => ascent,
-        VAlign::Middle => (ascent - descent) / 2.0,
-        VAlign::Bottom => -descent,
-    };
-    let (sin, cos) = rotation_deg.to_radians().sin_cos();
-    let xf = move |lx: f32, ly: f32| -> Pt {
-        let px = lx + hoff;
-        let py = ly + voff;
-        (x + px * cos - py * sin, y + px * sin + py * cos)
-    };
-
-    for prim in prims {
-        match prim {
-            LocalPrim::Fill(p) => g.push(DrawCommand::Path {
-                path: transform_path(&p, &xf),
-                fill: Some(color),
-                stroke: None,
-            }),
-            #[cfg(feature = "math")]
-            LocalPrim::Poly(pts) => g.push(DrawCommand::Polygon {
-                pts: pts.iter().map(|&(lx, ly)| xf(lx, ly)).collect(),
-                fill: Some(color),
-                stroke: None,
-            }),
-        }
-    }
+    (prims, pen, ascent, descent)
 }
 
 fn push_text_run(prims: &mut Vec<LocalPrim>, fonts: &FontSet, text: &str, pen: f32, size_px: f32) {

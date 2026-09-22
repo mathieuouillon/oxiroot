@@ -17,6 +17,12 @@ use crate::text::{self, FontStyle, HAlign, VAlign};
 use crate::ticker;
 use crate::transform::{Bounds, Transform};
 
+/// Gap between the frame and the bottom of the title, in points.
+const TITLE_PAD_PT: f32 = 6.0;
+/// The least room left between the top of a title and the top of the figure,
+/// in points.
+const TITLE_EDGE_PT: f32 = 2.0;
+
 /// A single plot panel.
 #[derive(Clone)]
 pub struct Axes {
@@ -719,6 +725,20 @@ impl Axes {
     /// (used by [`crate::figure::Figure`] for grid/ratio layouts).
     pub(crate) fn render_at(&self, mut box_: Rect) -> Vec<DrawGroup> {
         let s = &self.style;
+        // A title taller than the top margin (a stacked fraction, say) would run
+        // off the top of the figure: lower the frame just enough to keep it in.
+        if let Some(tt) = &self.title {
+            let (_, ascent, descent) =
+                crate::mathtext::label_extents(&s.fonts, tt, s.px(s.title_size_pt));
+            let top = box_.y - s.px(TITLE_PAD_PT) - (ascent + descent);
+            let edge = s.px(TITLE_EDGE_PT);
+            if top < edge {
+                // Never take more than half the frame, however tall the title.
+                let shift = (edge - top).min(box_.h / 2.0);
+                box_.y += shift;
+                box_.h -= shift;
+            }
+        }
         // Reserve space on the right for a colorbar, if present.
         let cb_rect = self.colorbar.as_ref().map(|_| {
             let cb_w = s.px(14.0);
@@ -974,7 +994,7 @@ impl Axes {
             );
         }
         if let Some(tt) = &self.title {
-            let y = box_.y - s.px(6.0);
+            let y = box_.y - s.px(TITLE_PAD_PT);
             crate::mathtext::layout_label(
                 &mut axis,
                 &s.fonts,

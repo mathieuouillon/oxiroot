@@ -363,6 +363,10 @@ and Greek all render, e.g. `"$\\frac{1}{\\sigma}\\frac{d\\sigma}{dp_T}$"` or
 `"$\\sqrt{s} = 13\\,\\mathrm{TeV}$"`. A malformed math run falls back to plain
 text rather than failing.
 
+A title taller than the top margin — a display-style fraction, say — lowers the
+frame just enough to stay inside the figure; other titles leave the layout as
+it is.
+
 ## Figures and saving
 
 For a single panel, `Axes::save` is the convenient path. For composing or for the
