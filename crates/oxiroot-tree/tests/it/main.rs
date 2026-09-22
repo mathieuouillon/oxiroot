@@ -3,6 +3,7 @@
 
 mod chain;
 mod concat;
+mod errors;
 mod introspect;
 mod malformed;
 mod read_alias;

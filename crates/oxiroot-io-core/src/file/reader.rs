@@ -102,7 +102,7 @@ impl FileReader {
         if url.starts_with("http://") || url.starts_with("https://") {
             return Self::from_source(Box::new(super::http::HttpSource::open(url)?));
         }
-        Err(Error::Format(format!(
+        Err(Error::Unsupported(format!(
             "unsupported or unavailable URL scheme (need the http/xrootd feature): {url:?}"
         )))
     }
@@ -167,7 +167,7 @@ impl FileReader {
         for part in path.split('/').filter(|p| !p.is_empty()) {
             current = Some(self.read_subdir(current.as_ref(), part)?);
         }
-        current.ok_or_else(|| Error::Format(format!("empty subdirectory path {path:?}")))
+        current.ok_or_else(|| Error::InvalidInput(format!("empty subdirectory path {path:?}")))
     }
 
     /// Read the subdirectory `name` directly inside `parent` (or the root
@@ -179,7 +179,10 @@ impl FileReader {
             .find(|k| {
                 k.name == name && (k.class_name == "TDirectory" || k.class_name == "TDirectoryFile")
             })
-            .ok_or_else(|| Error::Format(format!("no subdirectory named {name:?}")))?;
+            .ok_or_else(|| Error::NotFound {
+                what: "subdirectory",
+                name: name.to_string(),
+            })?;
         Directory::read(&*self.source, key.payload_start(self.size as usize)? as u64)
     }
 
@@ -200,7 +203,10 @@ impl FileReader {
             .iter()
             .filter(|k| k.name == name && !k.is_deleted())
             .max_by_key(|k| k.cycle)
-            .ok_or_else(|| Error::Format(format!("no key {name:?} in subdirectory {subdir:?}")))?;
+            .ok_or_else(|| Error::NotFound {
+                what: "key",
+                name: format!("{}/{name}", subdir.trim_end_matches('/')),
+            })?;
         let payload = self.key_payload(key)?;
         let object =
             decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;

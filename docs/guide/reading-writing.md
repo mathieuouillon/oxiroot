@@ -191,6 +191,41 @@ let err = FileWriter::create("dup.root").add(&a).add(&b).write(Compression::None
 assert!(err.is_err()); // Error::DuplicateName { name: "h", .. }
 ```
 
+## When a read or write fails
+
+Everything returns `oxiroot::Error`, whose variants say what went wrong, so a
+caller can handle a missing object differently from a corrupt file:
+
+| Variant | Means |
+| --- | --- |
+| `NotFound { what, name }` | No key, subdirectory, branch or field of that name |
+| `WrongClass { name, found, expected }` | The key holds another class: a `TH2F` read as a `TH1`, say |
+| `UnsupportedVersion { class, version }` | A class version oxiroot cannot decode, such as one written by a ROOT release older than streamer info |
+| `MissingStreamerInfo { class }` | The file has no `TStreamerInfo` for a class it needs to decode |
+| `ChecksumMismatch { what, .. }` | An RNTuple checksum does not match its data: the data is corrupt |
+| `Format(message)` | The bytes break the ROOT format: a truncated or corrupt file |
+| `Unsupported(message)` | Valid ROOT that oxiroot does not read or write yet |
+| `InvalidInput(message)` | An argument cannot be used, such as an unnamed object; nothing was written |
+| `LengthMismatch { what, expected, found }` | Inputs that must have the same length do not |
+| `Io { kind, message }` | An I/O failure, local or remote, with its `std::io::ErrorKind` |
+
+`Error` is `#[non_exhaustive]`, so match the variants you handle and keep a
+wildcard arm:
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::Error;
+
+let file = FileReader::open("hist.root")?;
+match TH1::read_root(&file, "h") {
+    Ok(h) => println!("{} entries", h.entries()),
+    Err(Error::NotFound { .. }) => println!("no object named h"),
+    Err(Error::WrongClass { found, .. }) => println!("h is a {found}, not a 1-D histogram"),
+    Err(e) => return Err(e),
+}
+# Ok::<(), oxiroot::Error>(())
+```
+
 ## Self-describing output
 
 Written files embed a `TStreamerInfo` list describing every class they contain,

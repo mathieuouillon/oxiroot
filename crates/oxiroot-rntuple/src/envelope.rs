@@ -46,9 +46,11 @@ pub fn read_envelope(bytes: &[u8]) -> Result<Envelope<'_>> {
     let stored = u64::from_le_bytes(bytes[checksum_pos..length].try_into().unwrap());
     let computed = xxhash_rust::xxh3::xxh3_64(&bytes[..checksum_pos]);
     if computed != stored {
-        return Err(Error::Format(format!(
-            "envelope checksum mismatch: computed {computed:#018x}, stored {stored:#018x}"
-        )));
+        return Err(Error::ChecksumMismatch {
+            what: "RNTuple envelope".to_string(),
+            computed,
+            stored,
+        });
     }
 
     Ok(Envelope {
@@ -107,7 +109,7 @@ pub struct Locator {
 pub fn read_locator(r: &mut RBuffer) -> Result<Locator> {
     let size = r.le_i32()?;
     if size < 0 {
-        return Err(Error::Format(
+        return Err(Error::Unsupported(
             "non-standard RNTuple locator is unsupported".into(),
         ));
     }

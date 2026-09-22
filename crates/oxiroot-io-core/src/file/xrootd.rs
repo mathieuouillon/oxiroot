@@ -62,7 +62,7 @@ impl XrootdUrl {
         let rest = url
             .strip_prefix("root://")
             .or_else(|| url.strip_prefix("roots://"))
-            .ok_or_else(|| Error::Format(format!("not a root:// URL: {url:?}")))?;
+            .ok_or_else(|| Error::InvalidInput(format!("not a root:// URL: {url:?}")))?;
         // Authority is up to the first '/', the path is the remainder. XRootD's
         // canonical form uses a double slash — `root://host//abs/path` — so the
         // remainder already carries the leading slash of the absolute path.
@@ -73,10 +73,14 @@ impl XrootdUrl {
             None => (authority.to_string(), DEFAULT_PORT),
         };
         if host.is_empty() {
-            return Err(Error::Format(format!("root:// URL has no host: {url:?}")));
+            return Err(Error::InvalidInput(format!(
+                "root:// URL has no host: {url:?}"
+            )));
         }
         let path = if path.is_empty() {
-            return Err(Error::Format(format!("root:// URL has no path: {url:?}")));
+            return Err(Error::InvalidInput(format!(
+                "root:// URL has no path: {url:?}"
+            )));
         } else if path.starts_with('/') {
             path.to_string()
         } else {
@@ -138,9 +142,10 @@ impl Conn {
                 }
             }
         }
-        Err(Error::Format(format!(
-            "root://{host}: too many redirects opening {path:?}"
-        )))
+        Err(Error::Io {
+            kind: std::io::ErrorKind::Other,
+            message: format!("root://{host}: too many redirects opening {path:?}"),
+        })
     }
 
     /// Send a request (24-byte header + `data`) and return the collected
@@ -205,7 +210,7 @@ impl Conn {
                 self.auth_unix()?;
             } else {
                 let spec = String::from_utf8_lossy(sec);
-                return Err(Error::Format(format!(
+                return Err(Error::Unsupported(format!(
                     "root://: server requires authentication this client does not support \
                      (only `unix` is implemented); offered: {spec}"
                 )));
@@ -234,7 +239,7 @@ impl Conn {
         match status {
             KXR_OK => {
                 if payload.len() < 4 {
-                    return Err(Error::Format("root://: short open response".into()));
+                    return Err(protocol_err("root://: short open response".into()));
                 }
                 self.fhandle.copy_from_slice(&payload[0..4]);
                 Ok(OpenOutcome::Opened)
@@ -270,7 +275,7 @@ impl Conn {
         s.split_whitespace()
             .nth(1)
             .and_then(|f| f.parse().ok())
-            .ok_or_else(|| Error::Format(format!("root://: unparseable stat {:?}", s.trim())))
+            .ok_or_else(|| protocol_err(format!("root://: unparseable stat {:?}", s.trim())))
     }
 
     fn read_at(&mut self, offset: u64, len: usize) -> Result<Bytes> {
@@ -389,14 +394,14 @@ fn handshake(stream: &mut TcpStream) -> Result<()> {
 /// token (the `?…` tail, empty if none) to forward on the data server's re-open.
 fn parse_redirect(payload: &[u8]) -> Result<(String, u16, String)> {
     if payload.len() < 4 {
-        return Err(Error::Format("root://: short redirect response".into()));
+        return Err(protocol_err("root://: short redirect response".into()));
     }
     let port = i32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
     let rest = String::from_utf8_lossy(&payload[4..]);
     let (hostport, opaque) = rest.split_once('?').unwrap_or((rest.as_ref(), ""));
     let host = hostport.split(':').next().unwrap_or("").trim().to_string();
     if host.is_empty() || !(0..=65535).contains(&port) {
-        return Err(Error::Format(format!(
+        return Err(protocol_err(format!(
             "root://: bad redirect to {rest:?}:{port}"
         )));
     }
@@ -409,9 +414,20 @@ fn server_error(ctx: &str, status: u16, payload: &[u8]) -> Error {
     if status == KXR_ERROR && payload.len() >= 4 {
         let msg = String::from_utf8_lossy(&payload[4..]);
         let msg = msg.trim_end_matches('\0');
-        Error::Format(format!("root:// {ctx}: {msg}"))
+        Error::Io {
+            kind: std::io::ErrorKind::Other,
+            message: format!("root:// {ctx}: {msg}"),
+        }
     } else {
-        Error::Format(format!("root:// {ctx}: unexpected status {status}"))
+        protocol_err(format!("root:// {ctx}: unexpected status {status}"))
+    }
+}
+
+/// A server response that breaks the XRootD protocol.
+fn protocol_err(message: String) -> Error {
+    Error::Io {
+        kind: std::io::ErrorKind::InvalidData,
+        message,
     }
 }
 

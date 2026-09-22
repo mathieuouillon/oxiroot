@@ -29,14 +29,16 @@ pub struct TEntryList {
 impl TEntryList {
     /// Open the `TEntryList` named `name` in `file`.
     pub fn open(file: &FileReader, name: &str) -> Result<TEntryList> {
-        let key = file
-            .key(name)
-            .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+        let key = file.key(name).ok_or_else(|| Error::NotFound {
+            what: "key",
+            name: name.to_string(),
+        })?;
         if key.class_name != "TEntryList" {
-            return Err(Error::Format(format!(
-                "key {name:?} is a {}, not a TEntryList",
-                key.class_name
-            )));
+            return Err(Error::WrongClass {
+                name: name.to_string(),
+                found: key.class_name.clone(),
+                expected: "TEntryList".to_string(),
+            });
         }
         let payload = file.key_payload(key)?;
         let object = decompress_payload(&payload, key.obj_len as usize, "TEntryList")?;

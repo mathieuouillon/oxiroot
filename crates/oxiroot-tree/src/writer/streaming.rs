@@ -191,14 +191,14 @@ impl<W: Write + Seek> TreeWriter<W> {
     pub fn write_batch(&mut self, branches: &[Branch]) -> Result<()> {
         for b in branches {
             if b.split().is_some() {
-                return Err(Error::Format(format!(
+                return Err(Error::Unsupported(format!(
                     "branch {:?}: TreeWriter does not support split std::vector<Struct> branches; \
                      use write_tree_file for those",
                     b.name
                 )));
             }
             if !b.jagged() && !b.stl_vector() && b.is_jagged() {
-                return Err(Error::Format(format!(
+                return Err(Error::InvalidInput(format!(
                     "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_*",
                     b.name
                 )));
@@ -317,7 +317,7 @@ impl<W: Write + Seek> TreeWriter<W> {
     /// written or the file exceeds the 2 GiB small-format limit.
     pub fn finish(mut self) -> Result<W> {
         if self.schema.is_none() {
-            return Err(Error::Format(
+            return Err(Error::InvalidInput(
                 "TreeWriter finished with no batches written".into(),
             ));
         }

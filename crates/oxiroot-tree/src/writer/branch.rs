@@ -263,7 +263,7 @@ pub(super) fn vec_row_lengths(values: &BranchValues) -> Vec<i32> {
 /// the file would claim entries some members do not hold.
 pub(super) fn check_split_members(branch: &str, spec: &SplitSpec) -> Result<()> {
     let Some(first) = spec.members.first() else {
-        return Err(Error::Format(format!(
+        return Err(Error::InvalidInput(format!(
             "branch {branch:?}: a split {:?} branch needs at least one member; \
              add them with Branch::split_vector(.., vec![SplitMember::..])",
             spec.class_name
@@ -272,21 +272,23 @@ pub(super) fn check_split_members(branch: &str, spec: &SplitSpec) -> Result<()> 
     let counts = vec_row_lengths(&first.values);
     for m in &spec.members[1..] {
         let other = vec_row_lengths(&m.values);
+        // Every member needs one value per struct: the first member's shape.
         if other.len() != counts.len() {
-            return Err(Error::Format(format!(
-                "branch {branch:?}: split member {:?} has {} entries but member {:?} has {}",
-                m.name,
-                other.len(),
-                first.name,
-                counts.len()
-            )));
+            return Err(Error::LengthMismatch {
+                what: format!("branch {branch:?} split member {:?}", m.name),
+                expected: counts.len(),
+                found: other.len(),
+            });
         }
         if let Some(entry) = other.iter().zip(&counts).position(|(a, b)| a != b) {
-            return Err(Error::Format(format!(
-                "branch {branch:?}: in entry {entry}, split member {:?} has {} elements but \
-                 member {:?} has {}; every member of a struct vector needs one value per struct",
-                m.name, other[entry], first.name, counts[entry]
-            )));
+            return Err(Error::LengthMismatch {
+                what: format!(
+                    "branch {branch:?} split member {:?} in entry {entry}",
+                    m.name
+                ),
+                expected: counts[entry] as usize,
+                found: other[entry] as usize,
+            });
         }
     }
     Ok(())

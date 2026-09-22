@@ -125,14 +125,14 @@ pub(super) fn build_header(name: &str, fields: &[FieldPlan], cols: &[ColumnPlan]
 /// page that big would need to be split across more clusters by the caller.
 pub(super) fn check_page_limits(n_elements: u32, disk_size: usize) -> Result<()> {
     if n_elements > i32::MAX as u32 {
-        return Err(Error::Format(format!(
+        return Err(Error::InvalidInput(format!(
             "RNTuple page has {n_elements} elements, over the per-page limit of {} \
              (write fewer entries per cluster)",
             i32::MAX
         )));
     }
     if disk_size > i32::MAX as usize {
-        return Err(Error::Format(format!(
+        return Err(Error::InvalidInput(format!(
             "RNTuple page on-disk size {disk_size} exceeds the per-page limit of {} bytes",
             i32::MAX
         )));

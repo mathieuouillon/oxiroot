@@ -58,7 +58,7 @@ fn check_column(what: &str, col: &Column) -> Result<()> {
         }
         Column::Nested { offsets, items } | Column::Assoc { offsets, items, .. } => {
             if let Some(i) = offsets.windows(2).position(|w| w[1] < w[0]) {
-                return Err(Error::Format(format!(
+                return Err(Error::InvalidInput(format!(
                     "{what}: collection offsets decrease at entry {}",
                     i + 1
                 )));
@@ -78,7 +78,7 @@ fn check_column(what: &str, col: &Column) -> Result<()> {
                     0 => {}
                     k if k <= alternatives.len() => counts[k - 1] += 1,
                     k => {
-                        return Err(Error::Format(format!(
+                        return Err(Error::InvalidInput(format!(
                             "{what}: variant tag {k} but only {} alternatives",
                             alternatives.len()
                         )))
@@ -100,7 +100,7 @@ fn check_column(what: &str, col: &Column) -> Result<()> {
             check_column(&items_what, items)?;
             match (entry_count(items), *len) {
                 (Some(n), 0) if n != 0 => Err(mismatch(items_what, 0, n)),
-                (Some(n), len) if len != 0 && n % len != 0 => Err(Error::Format(format!(
+                (Some(n), len) if len != 0 && n % len != 0 => Err(Error::InvalidInput(format!(
                     "{what}: {n} array items do not divide into arrays of {len}"
                 ))),
                 _ => Ok(()),
@@ -108,7 +108,7 @@ fn check_column(what: &str, col: &Column) -> Result<()> {
         }
         Column::Bitset { len, bits } => match (bits.len(), *len) {
             (n, 0) if n != 0 => Err(mismatch(format!("{what} bits"), 0, n)),
-            (n, len) if len != 0 && n % len != 0 => Err(Error::Format(format!(
+            (n, len) if len != 0 && n % len != 0 => Err(Error::InvalidInput(format!(
                 "{what}: {n} bits do not divide into bitsets of {len}"
             ))),
             _ => Ok(()),

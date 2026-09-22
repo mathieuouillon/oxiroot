@@ -194,7 +194,7 @@ fn read_base(
             }
             (None, vh) => {
                 let end = vh.end.ok_or_else(|| {
-                    Error::Format(
+                    Error::Unsupported(
                         "cannot skip a versioned object that carries no byte count".into(),
                     )
                 })?;

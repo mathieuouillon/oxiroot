@@ -25,7 +25,7 @@ pub(crate) struct FuncCore {
 impl FuncCore {
     fn build(name: &str, source: &str) -> Result<FuncCore> {
         let formula = Formula::parse(source)
-            .map_err(|e| Error::Format(format!("bad formula {source:?}: {e}")))?;
+            .map_err(|e| Error::InvalidInput(format!("bad formula {source:?}: {e}")))?;
         let npar = formula.npar();
         Ok(FuncCore {
             name: name.to_string(),
@@ -59,8 +59,9 @@ impl FuncCore {
 
     /// Parse a `TF1` record's formula back into a function core.
     pub(crate) fn from_record(f: GraphFunction) -> Result<FuncCore> {
-        let formula = Formula::parse(&f.formula)
-            .map_err(|e| Error::Format(format!("bad formula {:?}: {e}", f.formula)))?;
+        let formula = Formula::parse(&f.formula).map_err(|e| {
+            Error::Unsupported(format!("formula {:?} does not parse: {e}", f.formula))
+        })?;
         Ok(FuncCore {
             name: f.name,
             title: f.title,

@@ -239,7 +239,11 @@ impl WriteRoot for THStack {
 
 fn decode_thstack(class: &str, object: &[u8], keylen: usize) -> Result<THStack> {
     if class != "THStack" {
-        return Err(Error::Format(format!("key is a {class}, not a THStack")));
+        return Err(Error::WrongClass {
+            name: String::new(),
+            found: class.to_string(),
+            expected: "THStack".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     r.read_version()?; // THStack version
@@ -357,9 +361,11 @@ impl WriteRoot for TMultiGraph {
 
 fn decode_tmultigraph(class: &str, object: &[u8], keylen: usize) -> Result<TMultiGraph> {
     if class != "TMultiGraph" {
-        return Err(Error::Format(format!(
-            "key is a {class}, not a TMultiGraph"
-        )));
+        return Err(Error::WrongClass {
+            name: String::new(),
+            found: class.to_string(),
+            expected: "TMultiGraph".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     r.read_version()?; // TMultiGraph version

@@ -197,14 +197,14 @@ pub fn merge_files<P: AsRef<Path>>(
 ) -> Result<MergeReport> {
     let output = output.as_ref();
     if inputs.is_empty() {
-        return Err(Error::Format("merge_files: no input files".into()));
+        return Err(Error::InvalidInput("merge_files: no input files".into()));
     }
 
     // The inputs are read on demand, so the output must not be one of them.
     let out_path = std::fs::canonicalize(output).ok();
     for input in inputs {
         if out_path.is_some() && std::fs::canonicalize(input).ok() == out_path {
-            return Err(Error::Format(format!(
+            return Err(Error::InvalidInput(format!(
                 "merge_files: the output {} is also an input",
                 output.display()
             )));
@@ -251,7 +251,7 @@ pub fn merge_files<P: AsRef<Path>>(
             large,
         ),
         // Anything mixed or plural: refuse loudly rather than write a partial file.
-        _ => Err(Error::Format(format!(
+        _ => Err(Error::Unsupported(format!(
             "merge_files: this fileset mixes objects oxiroot cannot combine into one file yet \
              ({} TTree(s): {trees:?}; {} RNTuple(s): {rntuples:?}; {others} other object(s)). \
              oxiroot merges either an all-histogram fileset, a single TTree, or a single RNTuple \

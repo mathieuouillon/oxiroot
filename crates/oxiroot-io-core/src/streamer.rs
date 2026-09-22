@@ -72,7 +72,7 @@ pub fn skip_versioned(r: &mut RBuffer) -> Result<u16> {
             r.seek(end)?;
             Ok(vh.version)
         }
-        None => Err(crate::error::Error::Format(
+        None => Err(crate::error::Error::Unsupported(
             "cannot skip a versioned object that carries no byte count".into(),
         )),
     }

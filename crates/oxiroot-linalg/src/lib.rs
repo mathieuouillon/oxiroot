@@ -31,7 +31,7 @@ fn element_count(what: &str, nrows: usize, ncols: usize) -> Result<usize> {
         .checked_mul(ncols)
         .filter(|&count| nrows <= MAX_DIM && ncols <= MAX_DIM && count <= MAX_DIM)
         .ok_or_else(|| {
-            Error::Format(format!(
+            Error::InvalidInput(format!(
                 "{what}: a {nrows}x{ncols} matrix is larger than ROOT can store \
                  (at most {MAX_DIM} rows, columns and elements)"
             ))
@@ -174,9 +174,11 @@ impl ReadRoot for TVectorD {
 /// [`TVectorD`]. `class` is checked; `object` is the decompressed payload.
 pub fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<TVectorD> {
     if class != "TVectorT<double>" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TVectorD"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TVectorD".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     r.read_version()?; // TVectorT version
@@ -304,9 +306,11 @@ impl ReadRoot for TMatrixD {
 /// Decode a `TMatrixT<double>` object body into a [`TMatrixD`].
 pub fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<TMatrixD> {
     if class != "TMatrixT<double>" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TMatrixD"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TMatrixD".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     r.read_version()?; // TMatrixT version (outer)
@@ -443,9 +447,11 @@ impl ReadRoot for TMatrixDSym {
 /// full [`TMatrixDSym`].
 pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMatrixDSym> {
     if class != "TMatrixTSym<double>" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TMatrixDSym"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TMatrixDSym".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     let (n, ncols) = read_matrix_base(&mut r)?;
@@ -597,23 +603,23 @@ mod tests {
         let big = i32::MAX as usize + 1;
         assert!(matches!(
             TMatrixD::new(big, 0, vec![]),
-            Err(Error::Format(_))
+            Err(Error::InvalidInput(_))
         ));
         assert!(matches!(
             TMatrixD::new(0, big, vec![]),
-            Err(Error::Format(_))
+            Err(Error::InvalidInput(_))
         ));
         assert!(matches!(
             TMatrixD::new(1 << 16, 1 << 16, vec![]),
-            Err(Error::Format(_))
+            Err(Error::InvalidInput(_))
         ));
         assert!(matches!(
             TMatrixD::new(usize::MAX, 2, vec![]),
-            Err(Error::Format(_))
+            Err(Error::InvalidInput(_))
         ));
         assert!(matches!(
             TMatrixDSym::new(big, vec![]),
-            Err(Error::Format(_))
+            Err(Error::InvalidInput(_))
         ));
     }
 

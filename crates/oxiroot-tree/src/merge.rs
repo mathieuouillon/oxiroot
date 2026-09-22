@@ -36,12 +36,12 @@ use crate::writer::{Branch, Tree, TreeWriter};
 pub fn concat_trees(inputs: &[(&FileReader, &TreeReader)]) -> Result<Tree> {
     let &(first_file, first) = inputs
         .first()
-        .ok_or_else(|| Error::Format("concat_trees: no input trees".into()))?;
+        .ok_or_else(|| Error::InvalidInput("concat_trees: no input trees".into()))?;
 
     // Refuse a tree with branches we cannot even read — the output would
     // silently drop them.
     if let Some((name, reason)) = first.unsupported_branches().first() {
-        return Err(Error::Format(format!(
+        return Err(Error::Unsupported(format!(
             "concat_trees: tree {:?} has an unreadable branch {name:?} ({reason}); \
              cannot merge it without losing data",
             first.name(),
@@ -60,16 +60,18 @@ pub fn concat_trees(inputs: &[(&FileReader, &TreeReader)]) -> Result<Tree> {
         let mut values = first.read_branch(first_file, name)?;
         for (i, &(file, tree)) in inputs.iter().enumerate().skip(1) {
             if tree.branch_meta(name).is_none() {
-                return Err(Error::Format(format!(
-                    "concat_trees: input #{i} ({:?}) is missing branch {name:?} \
+                return Err(Error::SchemaChanged {
+                    detail: format!(
+                        "concat_trees: input #{i} ({:?}) is missing branch {name:?} \
                      present in the first tree",
-                    tree.name(),
-                )));
+                        tree.name(),
+                    ),
+                });
             }
             let more = tree.read_branch(file, name)?;
             values
                 .append(more)
-                .map_err(|e| Error::Format(format!("concat_trees: branch {name:?}: {e}")))?;
+                .map_err(|e| e.context(format_args!("concat_trees: branch {name:?}")))?;
         }
 
         branches.push(build_branch(name, &meta, values)?);
@@ -94,12 +96,12 @@ pub fn append_trees<W: Write + Seek>(
 ) -> Result<u64> {
     let &(_, first) = inputs
         .first()
-        .ok_or_else(|| Error::Format("append_trees: no input trees".into()))?;
+        .ok_or_else(|| Error::InvalidInput("append_trees: no input trees".into()))?;
     let names = first.branch_names();
     let mut appended = 0;
     for (i, &(file, tree)) in inputs.iter().enumerate() {
         if let Some((name, reason)) = tree.unsupported_branches().first() {
-            return Err(Error::Format(format!(
+            return Err(Error::Unsupported(format!(
                 "append_trees: input #{i} ({:?}) has an unreadable branch {name:?} ({reason}); \
                  cannot merge it without losing data",
                 tree.name(),
@@ -107,12 +109,12 @@ pub fn append_trees<W: Write + Seek>(
         }
         let mut batch = Vec::with_capacity(names.len());
         for &name in &names {
-            let meta = tree.branch_meta(name).ok_or_else(|| {
-                Error::Format(format!(
+            let meta = tree.branch_meta(name).ok_or_else(|| Error::SchemaChanged {
+                detail: format!(
                     "append_trees: input #{i} ({:?}) is missing branch {name:?} \
                      present in the first tree",
                     tree.name(),
-                ))
+                ),
             })?;
             batch.push(build_branch(name, &meta, tree.read_branch(file, name)?)?);
         }
@@ -127,7 +129,7 @@ pub fn append_trees<W: Write + Seek>(
 fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Result<Branch> {
     // Layouts this crate can read but not yet write back.
     let reject = |what: &str| -> Result<Branch> {
-        Err(Error::Format(format!(
+        Err(Error::Unsupported(format!(
             "concat_trees: branch {name:?} is a {what}, which oxiroot cannot write yet",
         )))
     };

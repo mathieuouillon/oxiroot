@@ -70,7 +70,7 @@ impl TH3 {
                                       // Class version 1 (ROOT 1) streamed the TH1 base, the bin array, then the
                                       // TH3 members, with no TH3 record of their own.
         if th3x.version < 2 {
-            return Err(unsupported_version("TH3", th3x.version, "ROOT 1"));
+            return Err(unsupported_version("TH3", th3x.version));
         }
         let th3 = r.read_version()?; // TH3 wrapper
 

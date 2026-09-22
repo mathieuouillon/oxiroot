@@ -35,8 +35,8 @@ pub(super) fn read_tree(
     let tree_hdr = r.read_version()?; // TTree
     let info = reg
         .get_at("TTree", i32::from(tree_hdr.version))
-        .ok_or_else(|| {
-            Error::Format("file has no TStreamerInfo for TTree; cannot parse the tree".to_string())
+        .ok_or_else(|| Error::MissingStreamerInfo {
+            class: "TTree".to_string(),
         })?;
     let mut out = Members::new();
     let mut branches = Vec::new();
@@ -309,7 +309,9 @@ pub(super) fn read_branch(
 ) -> Result<Vec<Branch>> {
     let info = reg
         .get("TBranch")
-        .ok_or_else(|| Error::Format("file has no TStreamerInfo for TBranch".to_string()))?;
+        .ok_or_else(|| Error::MissingStreamerInfo {
+            class: "TBranch".to_string(),
+        })?;
     let _vh = r.read_version()?; // TBranch
     let (out, sub, leaves) = read_tbranch_base(r, tags, diag, reg, &info.elements, "")?;
 
@@ -404,7 +406,9 @@ fn read_branch_element(
 ) -> Result<Vec<Branch>> {
     let info = reg
         .get("TBranchElement")
-        .ok_or_else(|| Error::Format("file has no TStreamerInfo for TBranchElement".to_string()))?;
+        .ok_or_else(|| Error::MissingStreamerInfo {
+            class: "TBranchElement".to_string(),
+        })?;
     let _vh = r.read_version()?; // TBranchElement — the object's own version
                                  // Walk the TBranchElement elements: the first is the `TBranch` base (read
                                  // in place via its own streamer info, capturing the basket locators and the
@@ -493,7 +497,9 @@ fn read_branch_object(
 ) -> Result<Vec<Branch>> {
     let info = reg
         .get("TBranchObject")
-        .ok_or_else(|| Error::Format("file has no TStreamerInfo for TBranchObject".to_string()))?;
+        .ok_or_else(|| Error::MissingStreamerInfo {
+            class: "TBranchObject".to_string(),
+        })?;
     let _vh = r.read_version()?; // TBranchObject
     let (out, sub, _leaves) = read_tbranch_base(r, tags, diag, reg, &info.elements, "")?;
 

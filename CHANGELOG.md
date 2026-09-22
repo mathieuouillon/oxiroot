@@ -7,7 +7,22 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- `Error::context` puts context in front of an error's message and keeps its
+  variant.
+
 ### Changed
+
+- **Typed errors.** `Error` gains `NotFound`, `WrongClass`,
+  `UnsupportedVersion`, `MissingStreamerInfo`, `ChecksumMismatch`,
+  `Unsupported` and `InvalidInput`. The errors that fit them use them instead
+  of `Error::Format`, which is left for bytes that break the ROOT format: a
+  truncated or corrupt file. Remote (HTTP and XRootD) failures are `Error::Io`,
+  with an `ErrorKind` that fits where there is one, such as `NotFound` for an
+  HTTP 404. `SchemaChanged` also covers trees and RNTuples being concatenated,
+  or the trees of a chain, that do not share a schema. Code that matched
+  `Error::Format` for one of these conditions must match the new variant.
 
 - **Each public item has one path.** `oxiroot-io-core`, `oxiroot-plot` and
   `oxiroot-stat` no longer expose their modules next to the root re-exports:

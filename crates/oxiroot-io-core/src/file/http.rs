@@ -52,10 +52,18 @@ impl HttpSource {
             .map_err(|e| http_err(&format!("opening {url}"), &e))?;
         let status = res.status().as_u16();
         if status != 206 {
-            return Err(Error::Format(format!(
-                "remote {url}: server must support HTTP Range requests \
-                 (expected 206 Partial Content, got {status})"
-            )));
+            // A 200 means the server ignored the Range header.
+            let kind = match status {
+                200 => std::io::ErrorKind::Unsupported,
+                _ => status_kind(status),
+            };
+            return Err(Error::Io {
+                kind,
+                message: format!(
+                    "remote {url}: server must support HTTP Range requests \
+                     (expected 206 Partial Content, got {status})"
+                ),
+            });
         }
         let total = content_range_total(&res, url)?;
         // Drain the (one-byte) body so the connection returns to the pool.
@@ -80,10 +88,10 @@ impl HttpSource {
             .map_err(|e| http_err(&format!("range {range} of {}", self.url), &e))?;
         let status = res.status().as_u16();
         if status != 206 && status != 200 {
-            return Err(Error::Format(format!(
-                "remote {}: range {range} returned HTTP {status}",
-                self.url
-            )));
+            return Err(Error::Io {
+                kind: status_kind(status),
+                message: format!("remote {}: range {range} returned HTTP {status}", self.url),
+            });
         }
         let mut buf = Vec::with_capacity(len);
         res.into_body()
@@ -144,11 +152,26 @@ fn content_range_total(res: &ureq::http::Response<ureq::Body>, url: &str) -> Res
         .headers()
         .get("content-range")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| Error::Format(format!("remote {url}: 206 without Content-Range")))?;
+        .ok_or_else(|| Error::Io {
+            kind: std::io::ErrorKind::InvalidData,
+            message: format!("remote {url}: 206 without Content-Range"),
+        })?;
     cr.rsplit('/')
         .next()
         .and_then(|s| s.trim().parse::<u64>().ok())
-        .ok_or_else(|| Error::Format(format!("remote {url}: unparseable Content-Range {cr:?}")))
+        .ok_or_else(|| Error::Io {
+            kind: std::io::ErrorKind::InvalidData,
+            message: format!("remote {url}: unparseable Content-Range {cr:?}"),
+        })
+}
+
+/// The I/O error kind an HTTP error status stands for.
+fn status_kind(status: u16) -> std::io::ErrorKind {
+    match status {
+        404 | 410 => std::io::ErrorKind::NotFound,
+        401 | 403 => std::io::ErrorKind::PermissionDenied,
+        _ => std::io::ErrorKind::Other,
+    }
 }
 
 /// Map a ureq transport error to an [`Error`] with context.

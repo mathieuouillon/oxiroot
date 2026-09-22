@@ -53,12 +53,12 @@ impl TAxis {
     /// ascending — the fallible form for untrusted input.
     pub fn try_variable(name: &str, edges: &[f64]) -> Result<TAxis> {
         if edges.len() < 2 {
-            return Err(Error::Format(
+            return Err(Error::InvalidInput(
                 "a variable axis needs at least two edges".to_string(),
             ));
         }
         if !edges.windows(2).all(|w| w[0] < w[1]) {
-            return Err(Error::Format(
+            return Err(Error::InvalidInput(
                 "variable axis edges must be strictly ascending".to_string(),
             ));
         }
@@ -123,10 +123,10 @@ impl TAxis {
     pub fn read(r: &mut RBuffer) -> Result<TAxis> {
         let vh = r.read_version()?; // TAxis (e.g. version 10)
         if vh.version < 6 {
-            return Err(Error::Format(format!(
-                "TAxis class version {} (ROOT 2) is not supported",
-                vh.version
-            )));
+            return Err(Error::UnsupportedVersion {
+                class: "TAxis".to_string(),
+                version: i32::from(vh.version),
+            });
         }
         let named = read_tnamed(r)?; // TNamed base
         skip_versioned(r)?; // TAttAxis base (drawing attributes — not needed)

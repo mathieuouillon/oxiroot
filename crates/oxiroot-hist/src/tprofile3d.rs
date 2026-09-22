@@ -242,11 +242,7 @@ impl TProfile3D {
         let tp = r.read_version()?; // TProfile3D wrapper
         let version = tp.version;
         if version < 6 {
-            return Err(unsupported_version(
-                "TProfile3D",
-                version,
-                "older than the class, added at version 6",
-            ));
+            return Err(unsupported_version("TProfile3D", version));
         }
         let _th3d = r.read_version()?; // TH3D wrapper
         let th3 = r.read_version()?; // TH3 wrapper

@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_io_core::{Compression, Error, FileReader};
 use oxiroot_tree::{write_tree_file, Branch, BranchValues, SplitMember, TreeReader};
 
 fn split_branch() -> Branch {
@@ -165,18 +165,18 @@ fn inconsistent_split_members_are_rejected() {
 
     // Different entry counts.
     let err = write(vec![x(), SplitMember::f32("y", vec![vec![9.0]])]).unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("\"y\" has 1 entries") && msg.contains("\"x\" has 2"),
-        "{msg}"
+        matches!(&err, Error::LengthMismatch { what, expected: 2, found: 1 }
+            if what.contains("\"hits\"") && what.contains("\"y\"")),
+        "{err:?}"
     );
 
     // Same entry count, different element count in entry 1.
     let err = write(vec![x(), SplitMember::i32("id", vec![vec![1], vec![2]])]).unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("in entry 1") && msg.contains("\"id\" has 1 elements"),
-        "{msg}"
+        matches!(&err, Error::LengthMismatch { what, expected: 2, found: 1 }
+            if what.contains("\"id\"") && what.contains("in entry 1")),
+        "{err:?}"
     );
 
     // A consistent pair still writes.

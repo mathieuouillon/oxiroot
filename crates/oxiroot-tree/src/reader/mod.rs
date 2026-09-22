@@ -174,9 +174,10 @@ struct Leaf {
 impl TreeReader {
     /// Open the `TTree` named `name` in `file`.
     pub fn open(file: &FileReader, name: &str) -> Result<TreeReader> {
-        let key = file
-            .key(name)
-            .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+        let key = file.key(name).ok_or_else(|| Error::NotFound {
+            what: "key",
+            name: name.to_string(),
+        })?;
         Self::open_from_key(file, key)
     }
 
@@ -191,8 +192,9 @@ impl TreeReader {
             .iter()
             .filter(|k| k.name == name && !k.is_deleted())
             .max_by_key(|k| k.cycle)
-            .ok_or_else(|| {
-                Error::Format(format!("no key named {name:?} in subdirectory {subdir:?}"))
+            .ok_or_else(|| Error::NotFound {
+                what: "key",
+                name: format!("{}/{name}", subdir.trim_end_matches('/')),
             })?;
         // Detach from the borrowed `dir` so the returned tree owns nothing tied to
         // it; the key's seek offsets are absolute, so decoding is identical.
@@ -205,10 +207,11 @@ impl TreeReader {
         // `TNtuple` / `TNtupleD` are `TTree` subclasses (a `TTree` base wrapped in
         // one extra header plus a trailing `Int_t fNvar`); read them as trees too.
         if !matches!(key.class_name.as_str(), "TTree" | "TNtuple" | "TNtupleD") {
-            return Err(Error::Format(format!(
-                "key {:?} is a {}, not a TTree",
-                key.name, key.class_name
-            )));
+            return Err(Error::WrongClass {
+                name: key.name.clone(),
+                found: key.class_name.clone(),
+                expected: "TTree".to_string(),
+            });
         }
         // The file's TStreamerInfo is the authoritative schema: the reader walks
         // each class's declared member list rather than assuming a fixed layout,
@@ -361,9 +364,10 @@ impl TreeReader {
         name: &str,
         decode: Decode,
     ) -> Result<BranchValues> {
-        let branch = self
-            .branch(name)
-            .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
+        let branch = self.branch(name).ok_or_else(|| Error::NotFound {
+            what: "branch",
+            name: name.to_string(),
+        })?;
         let baskets = read_baskets(file, branch, 0..branch.n_baskets, decode)?;
         decode_baskets(branch, &baskets)
     }
@@ -407,9 +411,10 @@ impl TreeReader {
         stop: u64,
         decode: Decode,
     ) -> Result<BranchValues> {
-        let branch = self
-            .branch(name)
-            .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
+        let branch = self.branch(name).ok_or_else(|| Error::NotFound {
+            what: "branch",
+            name: name.to_string(),
+        })?;
         let stop = stop.min(self.entries);
         let start = start.min(stop);
 
@@ -473,16 +478,17 @@ impl TreeReader {
         name: &str,
         decode: Decode,
     ) -> Result<Jagged> {
-        let branch = self
-            .branch(name)
-            .ok_or_else(|| Error::Format(format!("no branch named {name:?}")))?;
+        let branch = self.branch(name).ok_or_else(|| Error::NotFound {
+            what: "branch",
+            name: name.to_string(),
+        })?;
         if branch.leaf_type == LeafType::Str {
-            return Err(Error::Format(format!(
+            return Err(Error::InvalidInput(format!(
                 "branch {name:?} is a string branch; use read_branch"
             )));
         }
         if branch.object_member.is_some() {
-            return Err(Error::Format(format!(
+            return Err(Error::InvalidInput(format!(
                 "branch {name:?} is a TBranchObject member; use read_branch"
             )));
         }

@@ -73,7 +73,7 @@ pub(crate) fn bin_content_type_of(class: &str) -> Result<BinContentType> {
         Some('S') => Ok(BinContentType::I16),
         Some('C') => Ok(BinContentType::I8),
         Some('L') => Ok(BinContentType::I64),
-        _ => Err(Error::Format(format!(
+        _ => Err(Error::Unsupported(format!(
             "unsupported histogram type: {class}"
         ))),
     }
@@ -124,11 +124,12 @@ pub struct TH1Core {
 }
 
 /// An object written by a ROOT release older than this crate can read: `class`
-/// at `version` still used a hand-written streamer (`what` says which ROOT).
-pub(crate) fn unsupported_version(class: &str, version: u16, what: &str) -> Error {
-    Error::Format(format!(
-        "{class} class version {version} ({what}) is not supported"
-    ))
+/// at `version` still used a hand-written streamer.
+pub(crate) fn unsupported_version(class: &str, version: u16) -> Error {
+    Error::UnsupportedVersion {
+        class: class.to_string(),
+        version: i32::from(version),
+    }
 }
 
 /// Move past the rest of `header`'s record: the members a newer class version
@@ -189,7 +190,7 @@ pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<TH1Core> {
     // Class version 1 (ROOT 1) stored fMaximum, fMinimum, fNormFactor and
     // fContour as floats; every later version reads the same up to fSumw2.
     if th1.version < 2 {
-        return Err(unsupported_version("TH1", th1.version, "ROOT 1"));
+        return Err(unsupported_version("TH1", th1.version));
     }
 
     let named = read_tnamed(r)?;
@@ -302,14 +303,16 @@ pub(crate) fn read_th1_object(
 
 /// Check that key `name` exists and holds a `class`, before its payload is read.
 fn check_key_class(file: &FileReader, name: &str, class: &str) -> Result<()> {
-    let key = file
-        .key(name)
-        .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+    let key = file.key(name).ok_or_else(|| Error::NotFound {
+        what: "key",
+        name: name.to_string(),
+    })?;
     if key.class_name != class {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {}, not {class}",
-            key.class_name
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: key.class_name.clone(),
+            expected: class.to_string(),
+        });
     }
     Ok(())
 }
@@ -365,9 +368,11 @@ fn check_dim(
     if class.len() == 4 && class.starts_with(dim_prefix) {
         Ok((class, object))
     } else {
-        Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a {dim_prefix} histogram"
-        )))
+        Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class,
+            expected: format!("{dim_prefix} histogram"),
+        })
     }
 }
 
@@ -382,9 +387,11 @@ pub(crate) fn object_bytes_in(
     if got == class {
         Ok(object)
     } else {
-        Err(Error::Format(format!(
-            "key {name:?} in {subdir:?} is a {got}, not {class}"
-        )))
+        Err(Error::WrongClass {
+            name: format!("{}/{name}", subdir.trim_end_matches('/')),
+            found: got,
+            expected: class.to_string(),
+        })
     }
 }
 

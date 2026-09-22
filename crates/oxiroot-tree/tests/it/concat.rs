@@ -131,7 +131,10 @@ fn rejects_a_missing_branch() {
     let Err(err) = concat_trees(&[(&fa, &ta), (&fb, &tb)]) else {
         panic!("expected an error for a missing branch");
     };
-    assert!(err.to_string().contains("missing branch"), "{err}");
+    assert!(
+        matches!(&err, oxiroot_io_core::Error::SchemaChanged { detail } if detail.contains("missing branch")),
+        "{err:?}"
+    );
 }
 
 #[test]

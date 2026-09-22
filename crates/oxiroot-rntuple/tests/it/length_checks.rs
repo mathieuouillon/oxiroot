@@ -62,7 +62,7 @@ fn collection_offsets_must_end_at_the_item_count() {
     };
     let err = write(&[Field::new("v", decreasing)]).unwrap_err();
     assert!(
-        matches!(err, Error::Format(ref m) if m.contains("decrease")),
+        matches!(err, Error::InvalidInput(ref m) if m.contains("decrease")),
         "{err:?}"
     );
 
@@ -91,7 +91,7 @@ fn variant_tags_must_match_their_alternatives() {
 
     let err = write(&[Field::variant("v", vec![Column::I32(vec![1])], vec![3])]).unwrap_err();
     assert!(
-        matches!(err, Error::Format(ref m) if m.contains("variant tag 3")),
+        matches!(err, Error::InvalidInput(ref m) if m.contains("variant tag 3")),
         "{err:?}"
     );
 }
@@ -121,7 +121,7 @@ fn fixed_size_fields_reject_ragged_entries() {
     };
     let err = write(&[Field::new("a", array)]).unwrap_err();
     assert!(
-        matches!(err, Error::Format(ref m) if m.contains("do not divide")),
+        matches!(err, Error::InvalidInput(ref m) if m.contains("do not divide")),
         "{err:?}"
     );
 }

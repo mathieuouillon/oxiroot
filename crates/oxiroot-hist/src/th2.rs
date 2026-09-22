@@ -61,7 +61,7 @@ impl TH2 {
                                       // Class version 1 (ROOT 1) streamed the TH1 base, the bin array, then the
                                       // TH2 members, with no TH2 record of their own.
         if th2x.version < 2 {
-            return Err(unsupported_version("TH2", th2x.version, "ROOT 1"));
+            return Err(unsupported_version("TH2", th2x.version));
         }
         let th2 = r.read_version()?; // TH2 wrapper (TH1 base + TH2 members)
 
