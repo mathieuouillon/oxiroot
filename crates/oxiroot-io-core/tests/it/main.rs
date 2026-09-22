@@ -1,6 +1,7 @@
 //! The oxiroot-io-core container and object integration tests, compiled as one binary so the
 //! suite links once. Each module is one topic.
 
+mod collection_streamers;
 mod container;
 mod decompress_error;
 mod generic_read;

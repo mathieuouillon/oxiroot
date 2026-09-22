@@ -157,10 +157,14 @@ impl StreamerSet {
         }
     }
 
-    /// Add each class not already present.
+    /// Add each class not already present at the same version.
     pub fn add_classes(&mut self, classes: impl IntoIterator<Item = Cls<'static>>) {
         for class in classes {
-            if !self.classes.iter().any(|c| c.name == class.name) {
+            if !self
+                .classes
+                .iter()
+                .any(|c| c.name == class.name && c.version == class.version)
+            {
                 self.classes.push(class);
             }
         }

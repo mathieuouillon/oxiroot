@@ -16,7 +16,7 @@ use super::source::{ByteSource, BytesSource, FileSource};
 use crate::buffer::RBuffer;
 use crate::error::{decompress_payload, Error, Result};
 use crate::read_object::read_object;
-use crate::streamer_info::{parse_streamer_info, StreamerRegistry};
+use crate::streamer_info::{parse_stored_infos, parse_streamer_info, StoredInfo, StreamerRegistry};
 use crate::value::Value;
 
 /// Bytes fetched from the start of the file to parse its header. The TFile
@@ -240,6 +240,15 @@ impl FileReader {
             return Ok(StreamerRegistry::default());
         };
         parse_streamer_info(&object, keylen)
+    }
+
+    /// Each class's streamer info as the file stores it, element bodies included,
+    /// so it can be copied into another file.
+    pub(crate) fn stored_streamer_infos(&self) -> Result<Vec<StoredInfo>> {
+        let Some((object, keylen)) = self.streamer_info_decompressed()? else {
+            return Ok(Vec::new());
+        };
+        parse_stored_infos(&object, keylen)
     }
 
     /// The decompressed streamer-info object (the `TList<TStreamerInfo>` bytes at

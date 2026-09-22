@@ -71,6 +71,9 @@ enum Ek<'a> {
     /// than the one declaring this element (e.g. a base class) — `None` uses the
     /// declaring class.
     BasicPtr(Cow<'a, str>, Option<(Cow<'a, str>, i32)>),
+    /// An element copied from another file: its `TStreamerElement` subclass
+    /// name and body, written again verbatim.
+    Stored(Cow<'a, str>, Cow<'a, [u8]>),
 }
 
 /// One class's `TStreamerInfo`: name, on-disk version, ROOT checksum, members
@@ -122,6 +125,7 @@ impl El<'_> {
                 Ek::BasicPtr(count, owner) => {
                     Ek::BasicPtr(own(count), owner.map(|(class, v)| (own(class), v)))
                 }
+                Ek::Stored(class, body) => Ek::Stored(own(class), Cow::Owned(body.into_owned())),
             },
         }
     }
@@ -259,6 +263,19 @@ pub fn basicptr_in<'a>(
     }
 }
 
+/// An element another file stored: its `TStreamerElement` subclass name
+/// (`element_class`) and body, which is written again verbatim. `name` is the
+/// member's name, for diagnostics.
+pub(crate) fn stored(element_class: String, name: String, body: Vec<u8>) -> El<'static> {
+    El {
+        name: Cow::Owned(name),
+        ty: 0,
+        size: 0,
+        type_name: Cow::Borrowed(""),
+        kind: Ek::Stored(Cow::Owned(element_class), Cow::Owned(body)),
+    }
+}
+
 /// `fBits` ROOT writes for the embedded `TStreamerInfo`'s `TNamed`.
 const SI_BITS: u32 = 0x0001_0000;
 
@@ -296,6 +313,12 @@ fn write_element_base(w: &mut WBuffer, el: &El<'_>) {
 /// `owner`/`owner_version` name the class that declares the element (used for a
 /// `//[fCount]` pointer's `fCountClass`/`fCountVersion`).
 fn write_element(w: &mut WBuffer, el: &El<'_>, owner: &str, owner_version: i32) {
+    if let Ek::Stored(class, body) = &el.kind {
+        let bc = begin_object_any(w, class);
+        w.bytes(body);
+        end_object_any(w, bc);
+        return;
+    }
     let (class, version) = match &el.kind {
         Ek::Base(_) => ("TStreamerBase", 3),
         Ek::Basic => ("TStreamerBasicType", 2),
@@ -306,6 +329,7 @@ fn write_element(w: &mut WBuffer, el: &El<'_>, owner: &str, owner_version: i32) 
         Ek::AnyPtr => ("TStreamerObjectAnyPointer", 1),
         Ek::Stl(..) => ("TStreamerSTL", 3),
         Ek::BasicPtr(..) => ("TStreamerBasicPointer", 2),
+        Ek::Stored(..) => unreachable!("written verbatim above"),
     };
     let bc = begin_object_any(w, class);
     let sub = w.begin_object(version);
