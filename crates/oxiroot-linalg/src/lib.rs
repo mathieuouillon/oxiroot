@@ -20,6 +20,43 @@ use oxiroot_io_core::{object_bytes_any, FileReader, FromMember, ReadRoot, WriteR
 /// `DBL_EPSILON`. Matched so written files equal ROOT's byte-for-byte.
 const MATRIX_TOL: f64 = f64::EPSILON;
 
+/// The most rows, columns or elements a matrix can have: ROOT stores `fNrows`,
+/// `fNcols` and `fNelems` as `Int_t`.
+const MAX_DIM: usize = i32::MAX as usize;
+
+/// The element count of an `nrows`×`ncols` matrix, or an error if ROOT cannot
+/// store a matrix that large.
+fn element_count(what: &str, nrows: usize, ncols: usize) -> Result<usize> {
+    nrows
+        .checked_mul(ncols)
+        .filter(|&count| nrows <= MAX_DIM && ncols <= MAX_DIM && count <= MAX_DIM)
+        .ok_or_else(|| {
+            Error::Format(format!(
+                "{what}: a {nrows}x{ncols} matrix is larger than ROOT can store \
+                 (at most {MAX_DIM} rows, columns and elements)"
+            ))
+        })
+}
+
+/// `Ok` if `elements` has the `expected` length, else [`Error::LengthMismatch`].
+fn check_len(what: String, expected: usize, found: usize) -> Result<()> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(Error::LengthMismatch {
+            what,
+            expected,
+            found,
+        })
+    }
+}
+
+/// A dimension read from a file: ROOT's `Int_t`, which must not be negative.
+fn read_dim(r: &mut RBuffer, field: &str) -> Result<usize> {
+    let v = r.be_i32()?;
+    usize::try_from(v).map_err(|_| Error::Format(format!("negative matrix {field} ({v})")))
+}
+
 /// Write the seven `TMatrixTBase<double>` dimension fields (a byte-counted
 /// `TObject` + dims + `fTol`) for an `nrows`×`ncols` matrix.
 fn write_matrix_base(w: &mut WBuffer, nrows: usize, ncols: usize) {
@@ -40,8 +77,8 @@ fn write_matrix_base(w: &mut WBuffer, nrows: usize, ncols: usize) {
 fn read_matrix_base(r: &mut RBuffer) -> Result<(usize, usize)> {
     r.read_version()?; // TMatrixTBase version
     read_tobject(r)?;
-    let nrows = r.be_i32()?.max(0) as usize;
-    let ncols = r.be_i32()?.max(0) as usize;
+    let nrows = read_dim(r, "fNrows")?;
+    let ncols = read_dim(r, "fNcols")?;
     r.be_i32()?; // fRowLwb
     r.be_i32()?; // fColLwb
     r.be_i32()?; // fNelems
@@ -144,7 +181,7 @@ pub fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<TVector
     let mut r = RBuffer::new(object);
     r.read_version()?; // TVectorT version
     read_tobject(&mut r)?;
-    let nrows = r.be_i32()?.max(0) as usize;
+    let nrows = read_dim(&mut r, "fNrows")?;
     r.be_i32()?; // fRowLwb
     r.u8()?; // is-array flag
     let elements = (0..nrows).map(|_| r.be_f64()).collect::<Result<_>>()?;
@@ -169,23 +206,24 @@ pub struct TMatrixD {
 impl TMatrixD {
     /// A matrix from `elements` in row-major order (`nrows * ncols` of them).
     ///
-    /// # Panics
-    /// If `elements.len() != nrows * ncols`.
-    pub fn new(nrows: usize, ncols: usize, elements: impl Into<Vec<f64>>) -> TMatrixD {
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `elements.len() != nrows * ncols`, and
+    /// [`Error::Format`] if the matrix has more rows, columns or elements than
+    /// ROOT can store (`i32::MAX`).
+    pub fn new(nrows: usize, ncols: usize, elements: impl Into<Vec<f64>>) -> Result<TMatrixD> {
         let elements = elements.into();
-        assert_eq!(
+        let expected = element_count("TMatrixD", nrows, ncols)?;
+        check_len(
+            format!("TMatrixD {nrows}x{ncols} elements"),
+            expected,
             elements.len(),
-            nrows * ncols,
-            "TMatrixD: {nrows}x{ncols} needs {} elements, got {}",
-            nrows * ncols,
-            elements.len()
-        );
-        TMatrixD {
+        )?;
+        Ok(TMatrixD {
             name: String::new(),
             nrows,
             ncols,
             elements,
-        }
+        })
     }
 
     /// Set the key name this matrix is stored under.
@@ -208,7 +246,16 @@ impl TMatrixD {
         self.ncols
     }
     /// The element at row `i`, column `j`.
+    ///
+    /// # Panics
+    /// If `i` or `j` is out of range.
     pub fn get(&self, i: usize, j: usize) -> f64 {
+        assert!(
+            i < self.nrows && j < self.ncols,
+            "TMatrixD::get({i}, {j}) out of range for a {}x{} matrix",
+            self.nrows,
+            self.ncols
+        );
         self.elements[i * self.ncols + j]
     }
     /// The elements, row-major.
@@ -281,7 +328,8 @@ pub fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<TMatrix
 /// A `TMatrixDSym` — a symmetric `n`×`n` matrix of `f64` (ROOT's
 /// `TMatrixTSym<double>`), the shape a fit's covariance matrix takes. Stored as
 /// the full `n*n` row-major matrix in memory; on disk ROOT writes only the upper
-/// triangle, which this type expands and re-packs.
+/// triangle, which this type expands and re-packs. The lower triangle is always
+/// the mirror of the upper one, so a matrix reads back exactly as built.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TMatrixDSym {
     name: String,
@@ -291,25 +339,32 @@ pub struct TMatrixDSym {
 }
 
 impl TMatrixDSym {
-    /// A symmetric matrix from the full `n*n` row-major `elements`. The matrix is
-    /// assumed symmetric; only the upper triangle is written.
+    /// A symmetric matrix from the full `n*n` row-major `elements`. Only the
+    /// upper triangle (`j >= i`) is used, as ROOT writes only that triangle: the
+    /// lower one is set to its mirror image.
     ///
-    /// # Panics
-    /// If `elements.len() != n * n`.
-    pub fn new(n: usize, elements: impl Into<Vec<f64>>) -> TMatrixDSym {
-        let elements = elements.into();
-        assert_eq!(
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `elements.len() != n * n`, and
+    /// [`Error::Format`] if the matrix has more rows or elements than ROOT can
+    /// store (`i32::MAX`).
+    pub fn new(n: usize, elements: impl Into<Vec<f64>>) -> Result<TMatrixDSym> {
+        let mut elements = elements.into();
+        let expected = element_count("TMatrixDSym", n, n)?;
+        check_len(
+            format!("TMatrixDSym {n}x{n} elements"),
+            expected,
             elements.len(),
-            n * n,
-            "TMatrixDSym: {n}x{n} needs {} elements, got {}",
-            n * n,
-            elements.len()
-        );
-        TMatrixDSym {
+        )?;
+        for i in 0..n {
+            for j in 0..i {
+                elements[i * n + j] = elements[j * n + i];
+            }
+        }
+        Ok(TMatrixDSym {
             name: String::new(),
             n,
             elements,
-        }
+        })
     }
 
     /// Set the key name this matrix is stored under.
@@ -328,7 +383,15 @@ impl TMatrixDSym {
         self.n
     }
     /// The element at row `i`, column `j`.
+    ///
+    /// # Panics
+    /// If `i` or `j` is out of range.
     pub fn get(&self, i: usize, j: usize) -> f64 {
+        assert!(
+            i < self.n && j < self.n,
+            "TMatrixDSym::get({i}, {j}) out of range for a {n}x{n} matrix",
+            n = self.n
+        );
         self.elements[i * self.n + j]
     }
     /// The full `n*n` elements, row-major.
@@ -385,9 +448,25 @@ pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<TMat
         )));
     }
     let mut r = RBuffer::new(object);
-    let (n, _ncols) = read_matrix_base(&mut r)?;
+    let (n, ncols) = read_matrix_base(&mut r)?;
+    if ncols != n {
+        return Err(Error::Format(format!(
+            "key {name:?}: a TMatrixDSym must be square, not {n}x{ncols}"
+        )));
+    }
     // The upper triangle, row-major (n(n+1)/2 elements), expanded to the full
-    // symmetric matrix.
+    // symmetric matrix. Check the triangle is all there before allocating the
+    // n*n matrix, which a corrupt header could make enormous.
+    let needed = n
+        .checked_mul(n + 1)
+        .and_then(|twice| (twice / 2).checked_mul(8))
+        .ok_or_else(|| Error::Format(format!("key {name:?}: TMatrixDSym size {n} overflows")))?;
+    if r.remaining() < needed {
+        return Err(Error::UnexpectedEof {
+            needed,
+            available: r.remaining(),
+        });
+    }
     let mut elements = vec![0.0; n * n];
     for i in 0..n {
         for j in i..n {
@@ -485,5 +564,129 @@ pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
         // only the shared base is needed.
         "TMatrixTSym<double>" | "TMatrixTBase<double>" => vec![matrix_base()],
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wrong_element_count_is_an_error() {
+        let Err(Error::LengthMismatch {
+            expected, found, ..
+        }) = TMatrixD::new(2, 3, vec![1.0; 5])
+        else {
+            panic!("TMatrixD::new accepted 5 elements for a 2x3 matrix");
+        };
+        assert_eq!((expected, found), (6, 5));
+
+        let Err(Error::LengthMismatch {
+            expected, found, ..
+        }) = TMatrixDSym::new(2, vec![1.0; 3])
+        else {
+            panic!("TMatrixDSym::new accepted 3 elements for a 2x2 matrix");
+        };
+        assert_eq!((expected, found), (4, 3));
+    }
+
+    #[test]
+    fn a_matrix_too_large_for_root_is_an_error() {
+        // fNrows/fNcols/fNelems are Int_t: one more than i32::MAX must not be
+        // truncated on write, and a product that overflows must not wrap.
+        let big = i32::MAX as usize + 1;
+        assert!(matches!(
+            TMatrixD::new(big, 0, vec![]),
+            Err(Error::Format(_))
+        ));
+        assert!(matches!(
+            TMatrixD::new(0, big, vec![]),
+            Err(Error::Format(_))
+        ));
+        assert!(matches!(
+            TMatrixD::new(1 << 16, 1 << 16, vec![]),
+            Err(Error::Format(_))
+        ));
+        assert!(matches!(
+            TMatrixD::new(usize::MAX, 2, vec![]),
+            Err(Error::Format(_))
+        ));
+        assert!(matches!(
+            TMatrixDSym::new(big, vec![]),
+            Err(Error::Format(_))
+        ));
+    }
+
+    #[test]
+    fn empty_matrices_are_fine() {
+        assert_eq!(
+            TMatrixD::new(0, 0, vec![]).unwrap().elements(),
+            &[] as &[f64]
+        );
+        assert_eq!(TMatrixD::new(3, 0, vec![]).unwrap().rows(), 3);
+        assert_eq!(TMatrixDSym::new(0, vec![]).unwrap().dim(), 0);
+    }
+
+    #[test]
+    fn the_lower_triangle_mirrors_the_upper_one() {
+        // ROOT writes only the upper triangle, so that is the triangle used: the
+        // matrix in memory is the one that reads back.
+        let s = TMatrixDSym::new(2, vec![1.0, 0.5, 0.25, 2.0])
+            .unwrap()
+            .named("s");
+        assert_eq!(s.elements(), &[1.0, 0.5, 0.5, 2.0]);
+        let back = decode_tmatrixdsym("s", "TMatrixTSym<double>", &s.to_root_bytes()).unwrap();
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn get_rejects_a_column_past_the_end() {
+        // (0, 3) of a 2x3 matrix is not element (1, 0).
+        TMatrixD::new(2, 3, vec![0.0; 6]).unwrap().get(0, 3);
+    }
+
+    /// A `TMatrixTSym<double>` body claiming an `n`×`ncols` matrix, followed by
+    /// `payload` bytes.
+    fn sym_body(n: i32, ncols: i32, payload: &[u8]) -> Vec<u8> {
+        let mut w = WBuffer::new();
+        let base = w.begin_object(5);
+        write_tobject(&mut w, 0);
+        w.be_i32(n);
+        w.be_i32(ncols);
+        w.be_i32(0);
+        w.be_i32(0);
+        w.be_i32(n.wrapping_mul(ncols));
+        w.be_i32(0);
+        w.be_f64(MATRIX_TOL);
+        w.end_object(base);
+        let mut bytes = w.into_vec();
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    #[test]
+    fn a_huge_claimed_dimension_fails_before_allocating() {
+        // A corrupt header claiming i32::MAX rows used to allocate the n²
+        // doubles up front: a capacity-overflow panic here, and an abort for
+        // a smaller n that still does not fit in memory.
+        let body = sym_body(i32::MAX, i32::MAX, &[0; 16]);
+        assert!(matches!(
+            decode_tmatrixdsym("s", "TMatrixTSym<double>", &body),
+            Err(Error::UnexpectedEof { .. })
+        ));
+    }
+
+    #[test]
+    fn a_malformed_symmetric_header_is_an_error() {
+        let class = "TMatrixTSym<double>";
+        assert!(matches!(
+            decode_tmatrixdsym("s", class, &sym_body(2, 3, &[0; 48])),
+            Err(Error::Format(_))
+        ));
+        assert!(matches!(
+            decode_tmatrixdsym("s", class, &sym_body(-1, -1, &[])),
+            Err(Error::Format(_))
+        ));
     }
 }

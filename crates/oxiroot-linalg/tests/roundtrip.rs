@@ -45,11 +45,11 @@ fn matrix_bytes_are_byte_exact_against_root() {
         ("v", &TVectorD::new(vec![1.5, 2.5, 3.5])),
         (
             "m",
-            &TMatrixD::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+            &TMatrixD::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap(),
         ),
         (
             "s",
-            &TMatrixDSym::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0]),
+            &TMatrixDSym::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0]).unwrap(),
         ),
     ];
     for (name, obj) in cases {
@@ -68,6 +68,7 @@ fn single_object_write_root_round_trips() {
     // `streamer_blob` (which bakes its own `TStreamerInfo` list from scratch).
     let out = std::env::temp_dir().join("oxiroot_linalg_single.root");
     TMatrixDSym::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0])
+        .unwrap()
         .named("cov")
         .write_root(&out, Compression::None)
         .unwrap();

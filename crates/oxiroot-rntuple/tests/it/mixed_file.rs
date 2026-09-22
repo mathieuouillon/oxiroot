@@ -8,7 +8,9 @@ use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader};
 #[test]
 fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_mixed.root");
-    let cov = TMatrixD::new(2, 2, vec![1.0, 0.5, 0.5, 2.0]).named("cov");
+    let cov = TMatrixD::new(2, 2, vec![1.0, 0.5, 0.5, 2.0])
+        .unwrap()
+        .named("cov");
     FileWriter::create(&path)
         .add(&cov)
         .put(Ntuple::new("events", vec![Field::f64("x", vec![0.5, 1.5])]))
