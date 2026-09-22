@@ -5,6 +5,14 @@ Notable changes to oxiroot, by release. The format follows
 [Semantic Versioning](https://semver.org/): before 1.0, a minor release may
 change the API.
 
+## [Unreleased]
+
+### Internal
+
+- The tree reader and writer and the RNTuple writer, which ran to 2,000–2,600
+  lines each, are split into modules by concern. The API and the written bytes
+  are unchanged.
+
 ## [0.1.0] — 2026-09-22
 
 The first release: pure-Rust reading and writing of the CERN ROOT file format,
@@ -53,4 +61,5 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
+[Unreleased]: https://github.com/mathieuouillon/oxiroot/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/mathieuouillon/oxiroot/releases/tag/v0.1.0
