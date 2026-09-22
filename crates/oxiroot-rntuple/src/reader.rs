@@ -433,7 +433,9 @@ impl NtupleReader {
                     }
                 };
                 let registry = file.streamer_registry()?;
-                let info = registry.get(&fld.type_name).ok_or_else(|| {
+                // The field's type version is the class version it was written at.
+                let version = i32::try_from(fld.type_version).unwrap_or(i32::MAX);
+                let info = registry.get_at(&fld.type_name, version).ok_or_else(|| {
                     Error::Format(format!(
                         "streamer field {:?} has no TStreamerInfo for class {:?}",
                         fld.name, fld.type_name

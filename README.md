@@ -940,11 +940,6 @@ Grouped by the ROOT feature each fills.
     blocked because ROOT 6.40's `std::map` collection proxy is non-functional in
     the test build — it can neither create nor read a `std::map` RNTuple field —
     so this needs a ROOT install with the `std::map` dictionary loaded to verify.
-- **Generic object reader** — read *any* class in a file driven by its
-  `TStreamerInfo` into a dynamic value tree (the streamer-info member walker
-  already powers the `TTree` reader), so oxiroot can inspect arbitrary ROOT files
-  (`rootls` / `rootprint`-style), not only the typed hist/graph/tree/RNTuple
-  models.
 - **Remote reads** — richer XRootD auth (**GSI / X.509** and **token / ZTN**) for
   access-controlled data. The `root://` transport ships today (`FileReader::open_url`,
   the `xrootd` feature) with `unix` auth for public data, alongside HTTP(S) range

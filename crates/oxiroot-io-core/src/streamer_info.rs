@@ -77,6 +77,17 @@ impl StreamerRegistry {
         self.infos.iter().find(|i| i.class_name == class)
     }
 
+    /// The streamer info describing `class` at class version `version`, or the
+    /// first one for `class` if the file has none for that version. A file
+    /// describes each version of a class it holds objects of, and the layouts
+    /// can differ, so decode an object with the description of its own version.
+    pub fn get_at(&self, class: &str, version: i32) -> Option<&StreamerInfo> {
+        self.infos
+            .iter()
+            .find(|i| i.class_name == class && i.class_version == version)
+            .or_else(|| self.get(class))
+    }
+
     /// The names of all described classes.
     pub fn class_names(&self) -> Vec<&str> {
         self.infos.iter().map(|i| i.class_name.as_str()).collect()
