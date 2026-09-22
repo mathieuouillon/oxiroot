@@ -6,8 +6,7 @@
 
 use std::borrow::Cow;
 
-use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
+use oxiroot_io_core::{write_tnamed, write_tobject, WBuffer};
 // The object framework (the `WriteRoot` trait and `FileWriter`) lives
 // in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, FileWriter, SubdirWriter}`
 // and the in-crate `crate::write::WriteRoot` path keep resolving.

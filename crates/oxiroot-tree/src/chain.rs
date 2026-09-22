@@ -1,8 +1,7 @@
 //! [`ChainReader`] — read a branch across several files' trees as one concatenated
 //! column, the way ROOT's `TChain` spans a dataset split over many files.
 
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{Error, FileReader, Result};
 
 use crate::reader::TreeReader;
 use crate::value::BranchValues;

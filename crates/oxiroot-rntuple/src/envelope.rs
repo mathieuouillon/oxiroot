@@ -4,8 +4,7 @@
 //! 48-bit uncompressed length (high bits), followed by the payload and a
 //! trailing XXH3-64 checksum over everything before it.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, RBuffer, Result};
 
 /// Schema (fields, columns) envelope.
 pub const ENVELOPE_HEADER: u16 = 0x01;

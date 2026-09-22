@@ -1,8 +1,8 @@
 //! The branches a caller builds: [`Branch`] and its constructors, and the
 //! members of a split `std::vector<MyStruct>` branch ([`SplitMember`]).
 
-use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer_gen::{basic, Cls};
+use oxiroot_io_core::{Error, Result};
 
 use crate::value::BranchValues;
 

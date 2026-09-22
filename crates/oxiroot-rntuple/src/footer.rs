@@ -1,7 +1,6 @@
 //! The RNTuple footer envelope: cluster groups and their page-list locators.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::Result;
+use oxiroot_io_core::{RBuffer, Result};
 
 use crate::envelope::{read_feature_flags, read_frame, read_locator, Locator};
 use crate::header::{read_column_list, read_field_list, ColumnDescriptor, FieldDescriptor};

@@ -212,8 +212,8 @@ fn reads_root_cpp_written_file() {
 /// layouts can differ; each object must be decoded with its own version's.
 #[test]
 fn each_object_is_decoded_with_its_own_class_version() {
-    use oxiroot_io_core::buffer::WBuffer;
     use oxiroot_io_core::streamer_gen::{basic, Cls};
+    use oxiroot_io_core::WBuffer;
     use oxiroot_io_core::{Compression, FileWriter, WriteRoot};
 
     /// `MyHit` at class version 1 (`fE`) or 2 (`fE`, then `fId`).

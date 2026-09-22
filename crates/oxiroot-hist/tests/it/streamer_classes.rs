@@ -3,9 +3,8 @@
 //! what its objects bring — for types defined outside this workspace too.
 
 use oxiroot_hist::{FileWriter, Hist, ObjList, ReadRoot, TObjString, TParameter, WriteRoot};
-use oxiroot_io_core::buffer::WBuffer;
 use oxiroot_io_core::streamer_gen::{base, basic, Cls};
-use oxiroot_io_core::{Compression, FileReader, StreamerRegistry};
+use oxiroot_io_core::{Compression, FileReader, StreamerRegistry, WBuffer};
 
 /// A class this workspace knows nothing about: `struct Point : TObject { double x, y; }`.
 struct Point {

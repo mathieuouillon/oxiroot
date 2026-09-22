@@ -1,5 +1,5 @@
 //! Generating `TStreamerInfo` records — the write-side counterpart to
-//! [`streamer_info`](crate::streamer_info)'s parser.
+//! [`parse_streamer_info`](crate::parse_streamer_info).
 //!
 //! A written file embeds a `TList<TStreamerInfo>` describing every class it
 //! stores, so it is self-describing (uproot relies on it; the streamer-driven

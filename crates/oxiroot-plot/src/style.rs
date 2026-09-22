@@ -1,10 +1,4 @@
 //! Plot style — the matplotlib default `rcParams` translated to a struct.
-//!
-//! All sizes are stored in **points** (matplotlib's unit); convert to device
-//! pixels with [`Style::px`] (`pt * dpi / 72`). The defaults reproduce a plain
-//! matplotlib figure: 6.4×4.8 in at 100 dpi, DejaVu Sans 10 pt, a black 0.8 pt
-//! rectangular frame, out-pointing major ticks on the bottom and left, the
-//! `tab10` color cycle, no grid, no minor ticks, and a 5 % data margin.
 
 use crate::color::{Color, TAB10};
 use crate::fonts::FontSet;
@@ -34,7 +28,16 @@ pub struct Sides {
     pub top: bool,
 }
 
-/// A full style configuration.
+/// A full style configuration: the matplotlib default `rcParams` translated to
+/// a struct.
+///
+/// All sizes are stored in **points** (matplotlib's unit); convert to device
+/// pixels with [`Style::px`] (`pt * dpi / 72`). The defaults reproduce a plain
+/// matplotlib figure: 6.4×4.8 in at 100 dpi, 10 pt text, a black 0.8 pt
+/// rectangular frame, out-pointing major ticks on the bottom and left, the
+/// `tab10` color cycle, no grid, no minor ticks, and a 5 % data margin. The text
+/// is set in STIX Two ([`FontSet::stix`]); [`FontSet::dejavu`] gives
+/// matplotlib's DejaVu Sans. [`Style::mplhep`] is the HEP look.
 #[derive(Debug, Clone)]
 pub struct Style {
     /// Figure size in inches `(width, height)`.

@@ -23,19 +23,18 @@ let (t, p) = ttest_1samp(&[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0], 4.0);
 It is also published on its own as the [`oxiroot-stat`](https://crates.io/crates/oxiroot-stat)
 crate if you want the numerics without the rest of oxiroot.
 
-The commonly-used items are re-exported at `oxiroot::stat` (shown above); the
-full set lives in submodules you can also reach directly, e.g.
-`oxiroot::stat::distributions::Normal`.
+Everything is at `oxiroot::stat`, as above:
 
-| Module | What it holds |
+| Topic | What it holds |
 | --- | --- |
-| `special` | `erf`/`erfc`, `gammaln`, incomplete gamma & beta, inverse normal CDF |
-| `distributions` | `Normal`, `StudentT`, `ChiSquared`, `FisherF`; Poisson/Binomial |
-| `descriptive` | `describe`, moments, `skew`/`kurtosis`, quantiles, `entropy`, … |
-| `correlation` | `pearsonr`, `spearmanr` |
-| `hypothesis` | t-tests, `normaltest`, `chisquare`, KS, Mann–Whitney, Wilcoxon |
-| `physics` | significance ↔ p-value, weighted means, efficiency & Feldman–Cousins intervals |
-| `resample` | seeded percentile `bootstrap_ci` |
+| Special functions | `erf`/`erfc`, `gammaln`, incomplete gamma & beta, inverse normal CDF |
+| Distributions | `Normal`, `StudentT`, `ChiSquared`, `FisherF`; Poisson/Binomial |
+| Descriptive statistics | `describe`, moments, `skew`/`kurtosis`, quantiles, `entropy`, … |
+| Correlation | `pearsonr`, `spearmanr` |
+| Hypothesis tests | t-tests, `normaltest`, `chisquare`, KS, Mann–Whitney, Wilcoxon |
+| HEP lineshapes | Crystal Ball, Breit–Wigner, Voigt, Novosibirsk, ARGUS, Landau, … |
+| Physics helpers | significance ↔ p-value, weighted means, efficiency & Feldman–Cousins intervals |
+| Resampling | seeded percentile `bootstrap_ci` |
 
 Every value in the examples below is the number scipy returns for the same
 input — the [test suite](https://github.com/mathieuouillon/oxiroot) pins them

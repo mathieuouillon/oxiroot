@@ -4,8 +4,7 @@
 use std::io::{Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{Compression, ContainerWriter, DirId};
+use oxiroot_io_core::{Compression, ContainerWriter, DirId, Error, Result};
 
 use super::baskets::{chunk_values, write_basket, BasketRec};
 use super::branch::{Branch, BranchKind};

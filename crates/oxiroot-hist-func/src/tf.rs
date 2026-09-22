@@ -3,7 +3,7 @@
 
 use oxiroot_formula::{derivative, integrate, Formula};
 use oxiroot_hist::GraphFunction;
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 /// The data shared by [`TF1`]/[`TF2`]/[`TF3`]: a name and title, the parsed
 /// formula, the parameter values, and the fit-result metadata ROOT stores

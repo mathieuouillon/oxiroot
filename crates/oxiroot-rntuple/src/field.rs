@@ -5,7 +5,7 @@
 //! an index column with a char column, and `std::vector<T>` combines an index
 //! column with the element field's column.
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 use crate::page::ColumnValues;
 

@@ -10,6 +10,11 @@ use core::fmt;
 
 /// A dynamically-typed value decoded from a ROOT object.
 ///
+/// Where the typed models (`TH1`, `TGraph`, …) decode a *known* class into a Rust
+/// struct, a `Value` represents *any* class: a tree of named members whose shape
+/// comes entirely from the file's `TStreamerInfo` (see
+/// [`read_object`](fn@crate::read_object)).
+///
 /// Numbers keep their exact on-disk width; strings, arrays, and nested objects
 /// nest recursively. Members preserve their stream order (a `Vec`, not a map), so
 /// a printed object matches ROOT's layout. A member the reader cannot decode

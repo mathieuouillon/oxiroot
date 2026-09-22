@@ -4,9 +4,7 @@
 //! fTsumwxy }, TArray }`. The inline `TArray` holds the `(nx+2)*(ny+2)` cells
 //! with the x index varying fastest.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::axis::TAxis;
 use crate::base::{

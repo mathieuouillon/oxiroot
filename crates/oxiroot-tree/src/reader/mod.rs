@@ -12,10 +12,7 @@
 //! *split* (`fSplitLevel > 0`) `std::vector<MyStruct>` branches, which are
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
-use oxiroot_io_core::error::{decompress_payload, Error, Result};
-use oxiroot_io_core::file::TKey;
-use oxiroot_io_core::streamer_info::StreamerElement;
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{decompress_payload, Error, FileReader, Result, StreamerElement, TKey};
 
 use crate::value::{BranchValues, Jagged, LeafType};
 

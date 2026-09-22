@@ -180,7 +180,7 @@ fn described(f: &FileReader) -> Vec<String> {
 fn streamer_key_len(f: &FileReader) -> u16 {
     let h = f.header();
     let record = f.read_at(h.seek_info, h.nbytes_info as usize).unwrap();
-    TKey::read(&mut oxiroot_io_core::buffer::RBuffer::new(&record))
+    TKey::read(&mut oxiroot_io_core::RBuffer::new(&record))
         .unwrap()
         .key_len
 }

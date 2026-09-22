@@ -1,7 +1,7 @@
 //! Checking fields before anything is written: entry counts, offsets and
 //! nesting.
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 use super::fields::{Column, Field};
 

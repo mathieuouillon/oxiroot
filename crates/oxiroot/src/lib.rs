@@ -45,9 +45,14 @@
 //! everything else.
 
 #[doc(inline)]
-pub use oxiroot_io_core::{
-    buffer, error, file, read_object, Compression, Error, FileReader, Result, Value,
-};
+pub use oxiroot_io_core::{read_object, Compression, Error, FileReader, Result, Value};
+
+/// The ROOT file container and the object framework: reading and writing files,
+/// keys and directories, streamer info, and the traits objects implement
+/// (re-exported from `oxiroot-io-core`).
+pub mod file {
+    pub use oxiroot_io_core::*;
+}
 
 pub mod hadd;
 

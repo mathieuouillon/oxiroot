@@ -4,8 +4,7 @@
 
 use oxiroot_hist::{Compression, GraphFunction, ReadRoot, TGraph, WriteRoot};
 use oxiroot_hist_func::TF1;
-use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{FileReader, WBuffer};
 
 fn fitted() -> TF1 {
     TF1::new("fit", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]", -2.0, 6.0)

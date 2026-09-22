@@ -3,7 +3,7 @@
 //! −0.0, via bit-pattern equality) and ROOT strings across the 254/255-byte
 //! short/long length boundary.
 
-use oxiroot_io_core::buffer::{RBuffer, WBuffer};
+use oxiroot_io_core::{RBuffer, WBuffer};
 use proptest::prelude::*;
 
 proptest! {

@@ -12,9 +12,10 @@ use std::collections::HashMap;
 use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer_gen::Cls;
-use oxiroot_io_core::{Compression, ContainerWriter, DirId, WriteInto, KSTART_BIG_FILE};
+use oxiroot_io_core::{
+    Compression, ContainerWriter, DirId, Error, Result, WriteInto, KSTART_BIG_FILE,
+};
 
 use crate::value::BranchValues;
 
@@ -130,7 +131,7 @@ pub fn write_tree_file_baskets(
 ///     Branch::f64("energy", vec![10.5, 20.1, 5.0]),
 /// ];
 /// Tree::new("Events", branches).write_root("tree.root", Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::error::Error>(())
+/// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 pub struct Tree {
     name: String,

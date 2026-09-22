@@ -25,11 +25,9 @@
 //! only thing not reconstructed is the spatial fast-fill grid. The reader handles
 //! both layouts — when `fCells` yields no bins it falls back to reading `fBins`.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::object::TagReader;
-use oxiroot_io_core::streamer::{read_tobject, skip_versioned};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{
+    read_tobject, skip_versioned, Error, FileReader, RBuffer, Result, TagReader,
+};
 
 use crate::axis::TAxis;
 use crate::base::{check_len, object_bytes_keyed, read_th1_base};

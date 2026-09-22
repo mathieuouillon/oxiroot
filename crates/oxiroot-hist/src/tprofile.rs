@@ -9,9 +9,7 @@
 //! in version 4 (ROOT 4) and `fBinSumw2` in version 6 (ROOT 5.24). Versions 2
 //! onwards are read; version 1 (ROOT 1) stored `fYmin`/`fYmax` as floats.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::Result;
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{FileReader, RBuffer, Result};
 
 use crate::axis::TAxis;
 use crate::base::{

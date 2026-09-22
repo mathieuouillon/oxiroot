@@ -16,8 +16,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_io_core::{Compression, Error, FileReader, Result};
 
 use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 

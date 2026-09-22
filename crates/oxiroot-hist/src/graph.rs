@@ -11,10 +11,9 @@
 //! `TF1`s — fitted functions, parsed into [`functions`](TGraph::functions)),
 //! `fHistogram` (an optional display frame), `fMinimum`, `fMaximum`, `fOption`.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{
+    read_tnamed, read_tobject, skip_versioned, Error, FileReader, RBuffer, Result,
+};
 
 use crate::base::{bin_content_type_of, check_len, object_bytes_any, BinContentType};
 use crate::th1::TH1;

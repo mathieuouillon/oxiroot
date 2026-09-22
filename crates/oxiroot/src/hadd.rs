@@ -44,8 +44,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{Compression, FileReader, KSTART_BIG_FILE};
+use oxiroot_io_core::{Compression, Error, FileReader, Result, KSTART_BIG_FILE};
 
 mod histograms;
 pub use histograms::{merge_histogram_files, HistMergeOutcome};

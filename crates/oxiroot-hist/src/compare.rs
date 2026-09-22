@@ -6,7 +6,7 @@
 //! `TMath::KolmogorovProb` — supplied by the dependency-free
 //! [`oxiroot_stat`](oxiroot_stat) crate (shared with `oxiroot-fit`).
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 use oxiroot_stat::{chi_square_prob, kolmogorov_prob};
 
 use crate::th1::TH1;

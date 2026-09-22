@@ -4,10 +4,7 @@
 //! the TH3 `fSumw2`). On disk it is a `TH3D` plus the profile members, exactly as
 //! `TProfile`/`TProfile2D` extend `TH1D`/`TH2D`.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer::skip_versioned;
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{skip_versioned, Error, FileReader, RBuffer, Result};
 
 use crate::axis::TAxis;
 use crate::base::{

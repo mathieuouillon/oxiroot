@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::ThreadId;
 
-use oxiroot_io_core::error::Result;
+use oxiroot_io_core::Result;
 
 use crate::{TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3};
 

@@ -1,7 +1,7 @@
 //! Lowering fields to the on-disk model: one field record per (sub)field and
 //! one column with its encoded page per column.
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 use super::check::{check_fields, entry_count};
 use super::classes::class_checksum;

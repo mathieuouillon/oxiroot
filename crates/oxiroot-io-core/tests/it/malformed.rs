@@ -4,8 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::{FileReader, TDatime, TKey};
+use oxiroot_io_core::{FileReader, TDatime, TKey, WBuffer};
 
 fn fixture(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -9,11 +9,9 @@
 //! single-tree case (the `fBlocks` array); a multi-tree list (`fLists`) is not
 //! yet expanded.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{decompress_payload, Error, Result};
-use oxiroot_io_core::object::TagReader;
-use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{
+    decompress_payload, read_tnamed, read_tobject, Error, FileReader, RBuffer, Result, TagReader,
+};
 
 /// Entries per `TEntryListBlock` window (ROOT's `TEntryListBlock::kBlockSize`).
 const K_BLOCK_SIZE: u64 = 64000;

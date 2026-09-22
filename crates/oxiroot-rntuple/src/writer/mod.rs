@@ -12,10 +12,10 @@
 use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer_gen::Cls;
 use oxiroot_io_core::{
-    compress_if_smaller, Compression, ContainerWriter, DirId, WriteInto, KSTART_BIG_FILE,
+    compress_if_smaller, Compression, ContainerWriter, DirId, Error, Result, WriteInto,
+    KSTART_BIG_FILE,
 };
 
 use crate::anchor::ANCHOR_CLASS;
@@ -349,7 +349,7 @@ pub fn write_rntuple_file(
 ///     Field::i32("charge", vec![0, -1]),
 /// ];
 /// Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::error::Error>(())
+/// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 pub struct Ntuple {
     name: String,
@@ -406,7 +406,7 @@ impl Ntuple {
     ///         &[(2, Field::f32("y", vec![3.5, 4.5]))],
     ///         Compression::None,
     ///     )?;
-    /// # Ok::<(), oxiroot_io_core::error::Error>(())
+    /// # Ok::<(), oxiroot_io_core::Error>(())
     /// ```
     pub fn write_root_extended(
         &self,
@@ -441,7 +441,7 @@ impl Ntuple {
 ///     .put(Ntuple::new("runs", vec![Field::i32("run", vec![7])]))
 ///     .dir("cal", |d| d.put(Ntuple::new("pedestals", vec![Field::f64("p", vec![0.5])])))
 ///     .write(Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::error::Error>(())
+/// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 impl WriteInto for Ntuple {
     fn root_class(&self) -> String {

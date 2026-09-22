@@ -1,8 +1,6 @@
 //! `TAxis` — a histogram axis.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
+use oxiroot_io_core::{read_tnamed, read_tobject, skip_versioned, Error, RBuffer, Result};
 
 use crate::base::end_record;
 

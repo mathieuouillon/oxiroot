@@ -4,7 +4,7 @@
 //! including per-bin error (`Sumw2`) propagation. `add` with `c = 1` is the
 //! bin-by-bin merge used to combine outputs across parallel jobs (`hadd`).
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 use crate::{TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3};
 

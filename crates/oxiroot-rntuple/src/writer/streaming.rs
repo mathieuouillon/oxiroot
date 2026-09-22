@@ -4,8 +4,9 @@
 use std::io::{Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, KSTART_BIG_FILE};
+use oxiroot_io_core::{
+    compress_if_smaller, Compression, ContainerWriter, DirId, Error, Result, KSTART_BIG_FILE,
+};
 
 use super::classes::ntuple_streamer_info;
 use super::envelopes::{
