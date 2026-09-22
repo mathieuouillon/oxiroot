@@ -62,6 +62,10 @@ pub struct Branch {
 enum BranchKind {
     /// A scalar, fixed-size array (`x[N]`), or string (`TLeafC`) branch.
     Plain,
+    /// The `n<name>` count branch of a jagged array: a plain `Int_t` scalar
+    /// whose leaf, like ROOT's, is a range (`fIsRange`) whose `fMaximum` is the
+    /// largest count.
+    Count,
     /// A variable-length (jagged) array: rows may differ in length, written
     /// with a paired `n<name>` count branch and an `fLeafCount` reference.
     Jagged,
@@ -99,6 +103,7 @@ impl Branch {
         match self.kind {
             BranchKind::Jagged => BranchKind::Jagged,
             BranchKind::StlVector => BranchKind::StlVector,
+            BranchKind::Count => BranchKind::Count,
             _ => BranchKind::Plain,
         }
     }
@@ -458,9 +463,9 @@ impl Branch {
         }
     }
 
-    /// The maximum value among integer scalar leaves — ROOT's `fMaximum`, which
-    /// it uses to size the buffer when this leaf is a leaf count. 0 for
-    /// non-integer leaves (where `fMaximum` is unused for reading).
+    /// The largest value of an integer scalar branch — the `fMaximum` of a count
+    /// leaf, which ROOT uses to size the read buffer of the array it counts —
+    /// or, for a string branch, the longest length + 1. 0 for anything else.
     fn leaf_max(&self) -> i64 {
         use BranchValues::*;
         match &self.values {
@@ -593,7 +598,7 @@ impl Branch {
         self.jagged().then(|| Branch {
             name: self.count_name(),
             values: BranchValues::I32(self.row_lengths()),
-            kind: BranchKind::Plain,
+            kind: BranchKind::Count,
         })
     }
 
@@ -1199,7 +1204,7 @@ impl<W: Write + Seek> TreeWriter<W> {
                     rep: Branch {
                         name: count.name.clone(),
                         values: BranchValues::I32(vec![m as i32]),
-                        kind: BranchKind::Plain,
+                        kind: BranchKind::Count,
                     },
                     baskets: Vec::new(),
                     agg: ColAgg::Count(m),
@@ -2162,21 +2167,29 @@ fn write_leaf(w: &mut WBuffer, branch: &Branch, refs: &LeafRefs) {
         branch.flen()
     };
     let f_len_type = if is_str { 1 } else { leaf.len_type };
+    // As ROOT fills them: a count leaf is a range, and it and a TLeafC track
+    // their maximum (the largest count, the longest string + 1); any other
+    // leaf keeps fMaximum at 0.
+    let is_count = matches!(branch.kind, BranchKind::Count);
+    let f_maximum = if is_count || is_str {
+        branch.leaf_max()
+    } else {
+        0
+    };
     let outer = w.begin_object(1); // TLeafX v1
     let base = w.begin_object(2); // TLeaf v2
     write_tnamed(w, OBJ_BITS, &branch.name, &title);
     w.be_i32(f_len); // fLen
     w.be_i32(f_len_type); // fLenType
     w.be_i32(0); // fOffset
-    w.u8(0); // fIsRange
+    w.u8(u8::from(is_count)); // fIsRange
     w.u8(leaf.unsigned as u8); // fIsUnsigned
     w.be_u32(f_leaf_count); // fLeafCount (object ref to the count leaf, or null)
     w.end_object(base);
-    // fMinimum (0), fMaximum (the leaf's max value, so ROOT can size a buffer
-    // when this leaf is a leaf count). TLeafC stores them as 4-byte ints (string
+    // fMinimum (0) and fMaximum. TLeafC stores them as 4-byte ints (string
     // lengths); every other leaf uses its element width.
-    let minmax_size = if leaf.code == 'C' { 4 } else { leaf.size };
-    write_leaf_minmax(w, minmax_size, branch.leaf_max());
+    let minmax_size = if is_str { 4 } else { leaf.size };
+    write_leaf_minmax(w, minmax_size, f_maximum);
     w.end_object(outer);
 }
 
@@ -2220,12 +2233,94 @@ mod tests {
         ]
     }
 
+    /// Each leaf's `(name, fIsRange, fMaximum)`, as a generic reader sees them.
+    fn leaf_ranges(bytes: Vec<u8>) -> Vec<(String, bool, i64)> {
+        use oxiroot_io_core::Value;
+        fn walk(v: &Value, out: &mut Vec<(String, bool, i64)>) {
+            if v.class().is_some_and(|c| c.starts_with("TLeaf")) {
+                let name = v.get("fName").and_then(Value::as_str).unwrap_or("");
+                if !out.iter().any(|(n, ..)| n == name) {
+                    let range = v.get("fIsRange").and_then(Value::as_bool).unwrap();
+                    let max = v.get("fMaximum").and_then(Value::as_f64).unwrap() as i64;
+                    out.push((name.to_string(), range, max));
+                }
+                return;
+            }
+            for (_, member) in v.members().unwrap_or_default() {
+                walk(member, out);
+            }
+            for element in v.as_array().unwrap_or_default() {
+                walk(element, out);
+            }
+        }
+        let f = FileReader::from_bytes(bytes).unwrap();
+        let mut out = Vec::new();
+        walk(&f.get_value("T").unwrap(), &mut out);
+        out
+    }
+
+    #[test]
+    fn both_writers_fill_leaf_ranges_as_root_does() {
+        // ROOT keeps a plain leaf's fMaximum at 0, marks a count leaf as a range
+        // with the largest count, and gives a TLeafC the longest string + 1.
+        // The streamed file sees the largest values only in its second batch.
+        let first = || {
+            vec![
+                Branch::i32("x", vec![3, 7]),
+                Branch::jagged_f32("v", vec![vec![1.0], vec![]]),
+                Branch::strings("s", vec!["a".into(), "bbb".into()]),
+            ]
+        };
+        let second = || {
+            vec![
+                Branch::i32("x", vec![9, 1]),
+                Branch::jagged_f32("v", vec![vec![2.0, 3.0, 4.0], vec![5.0]]),
+                Branch::strings("s", vec!["cc".into(), "dddd".into()]),
+            ]
+        };
+        let all = vec![
+            Branch::i32("x", vec![3, 7, 9, 1]),
+            Branch::jagged_f32("v", vec![vec![1.0], vec![], vec![2.0, 3.0, 4.0], vec![5.0]]),
+            Branch::strings(
+                "s",
+                vec!["a".into(), "bbb".into(), "cc".into(), "dddd".into()],
+            ),
+        ];
+        let expected: Vec<(String, bool, i64)> = [
+            ("x", false, 0),
+            ("nv", true, 3),
+            ("v", false, 0),
+            ("s", false, 5),
+        ]
+        .into_iter()
+        .map(|(n, r, m)| (n.to_string(), r, m))
+        .collect();
+
+        let one_shot =
+            tree_bytes("t.root", "T", &all, Compression::None, 0, KSTART_BIG_FILE).unwrap();
+        assert_eq!(leaf_ranges(one_shot), expected, "one-shot writer");
+
+        let mut w =
+            TreeWriter::new(Cursor::new(Vec::new()), "t.root", "T", Compression::None).unwrap();
+        w.write_batch(&first()).unwrap();
+        w.write_batch(&second()).unwrap();
+        assert_eq!(
+            leaf_ranges(w.finish().unwrap().into_inner()),
+            expected,
+            "streaming writer"
+        );
+    }
+
     #[test]
     fn one_shot_switches_to_the_big_form_past_the_threshold() {
         // Forced into the 64-bit form, a tiny tree matches the streaming writer's
-        // big output for the same single batch. (Constant values: the streaming
-        // writer takes a plain leaf's `fMaximum` from its first row.)
-        let scalars = || vec![Branch::i32("x", vec![3; 3]), Branch::f64("y", vec![0.5; 3])];
+        // big output for the same single batch.
+        let scalars = || {
+            vec![
+                Branch::i32("x", vec![3, 7, 5]),
+                Branch::f64("y", vec![0.5, 2.0, 1.0]),
+            ]
+        };
         let one_shot = tree_bytes("t.root", "T", &scalars(), Compression::Zstd(3), 0, 0).unwrap();
         let mut w =
             TreeWriter::new_large(Cursor::new(Vec::new()), "t.root", "T", Compression::Zstd(3))
