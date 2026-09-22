@@ -431,6 +431,52 @@ mod tests {
         );
     }
 
+    /// The frame: the clip rectangle of the data groups.
+    fn frame(groups: &[draw::DrawGroup]) -> draw::Rect {
+        groups
+            .iter()
+            .find_map(|g| g.clip)
+            .expect("an axes renders a clipped data group")
+    }
+
+    /// An axes with one line, and `title` if given.
+    fn titled_axes(title: Option<&str>) -> Axes {
+        let mut ax = Axes::new();
+        ax.plot(&[0.0, 1.0, 2.0], &[0.0, 1.0, 0.5]).unwrap();
+        if let Some(t) = title {
+            ax.title(t);
+        }
+        ax
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
+    fn a_tall_title_stays_inside_the_figure() {
+        // A display-style stacked fraction is taller than the top margin: the
+        // frame moves down to make room instead of the title leaving the figure.
+        let title = "$\\displaystyle\\frac{\\frac{a}{b}}{\\frac{c}{d}}$ vs. $m$";
+        let groups = titled_axes(Some(title)).render(640, 480);
+        let top = groups
+            .iter()
+            .map(|g| ink_y_extent(g).0)
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            top >= 0.0,
+            "the title's ink reaches y = {top}, above the figure"
+        );
+        let plain = frame(&titled_axes(None).render(640, 480));
+        assert!(frame(&groups).y > plain.y, "the frame did not move down");
+    }
+
+    #[test]
+    fn an_ordinary_title_leaves_the_frame_alone() {
+        let plain = frame(&titled_axes(None).render(640, 480));
+        for title in ["Z candidates", "$Z \\rightarrow \\mu\\mu$ candidates"] {
+            let with_title = frame(&titled_axes(Some(title)).render(640, 480));
+            assert_eq!(with_title, plain, "{title:?} moved the frame");
+        }
+    }
+
     #[test]
     #[cfg(feature = "math")]
     fn inline_math_is_set_in_text_style() {

@@ -6,7 +6,8 @@
 //! cargo run -p oxiroot --example plot --features plot
 //! ```
 //!
-//! It renders four figures, each as PNG, SVG, and PDF:
+//! It renders these figures into `oxiroot-plots` in the temporary directory,
+//! most as PNG, SVG, and PDF:
 //!
 //! 1. `mass` — a filled MC template with "data" points overlaid, a legend, and a
 //!    LaTeX axis label (the default matplotlib look). Also saved at 220 DPI.
@@ -16,6 +17,12 @@
 //!    a fitted Gaussian, and a ROOT-style fit stat box (with the `fit` feature).
 //! 3. `heatmap` — a 2-D TH2 as a viridis color mesh with a colorbar.
 //! 4. `ratio` — a main panel over a data/MC ratio panel sharing the x-axis.
+//! 5. `grid` — a 2×2 grid of panels sharing their axes, with a figure title.
+//! 6. `fit` — a fitted Gaussian with a ROOT-style stat box (the `fit` feature).
+//! 7. `font-stix` and `font-dejavu` — the MC template in the default STIX Two
+//!    fonts and in the matplotlib DejaVu Sans look.
+//!
+//! The plotting guide's images are these files, prefixed with `plot-`.
 
 #[cfg(not(feature = "plot"))]
 fn main() {
@@ -25,7 +32,8 @@ fn main() {
 #[cfg(feature = "plot")]
 fn main() -> oxiroot::Result<()> {
     use oxiroot::plot::{
-        ratio_subplots, Axes, Color, ErrorbarOpts, Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
+        ratio_subplots, Axes, Color, ErrorbarOpts, FontSet, Hist2dOpts, HistOpts, HistType,
+        SaveOpts, Style,
     };
     use oxiroot::prelude::*;
 
@@ -233,6 +241,27 @@ fn main() -> oxiroot::Result<()> {
         ax.ylabel("Events / 2 GeV");
         ax.legend();
         save_both(&ax, &out, "fit")?;
+    }
+
+    // --- 7. The MC template in each font set, for the guide's Fonts section. ---
+    for (stem, title, fonts) in [
+        ("font-stix", "STIX Two (default)", FontSet::stix()),
+        ("font-dejavu", "DejaVu Sans", FontSet::dejavu()),
+    ] {
+        let mut ax = Axes::new();
+        ax.fonts(fonts);
+        ax.hist_with(
+            &mc,
+            HistOpts::new()
+                .histtype(HistType::Fill)
+                .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
+                .label("MC"),
+        );
+        ax.xlabel("$m_{\\mu\\mu}$ [GeV]");
+        ax.ylabel("Events / 2 GeV");
+        ax.title(title);
+        ax.legend();
+        save_both(&ax, &out, stem)?;
     }
 
     Ok(())
