@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["root", "cern", "hep", "tfile", "physics"]
+categories = ["science", "parser-implementations", "encoding"]
 description = "Core ROOT (TFile) container and buffer primitives"
 
 [dependencies]

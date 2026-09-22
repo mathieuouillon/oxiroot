@@ -6,21 +6,21 @@ crates pulled in automatically.
 
 ## Add the dependency
 
-oxiroot is experimental (`0.0.x`) and not yet published to crates.io, so depend
-on it via git. Pull in everything through the **facade**, or just the one crate
-you need — the histogram, tree, and RNTuple crates are independent, so a
-histogram-only project never compiles the others.
+oxiroot is on crates.io. It is pre-1.0 (`0.1`), so the API may still change
+between minor versions. Pull in everything through the **facade**, or just the
+one crate you need — the histogram, tree, and RNTuple crates are independent, so
+a histogram-only project never compiles the others.
 
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple — through the facade:
-oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
+oxiroot = "0.1"
 
-# …or depend on just one crate from the same repo:
-oxiroot-hist      = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
-oxiroot-hist-func = { git = "https://github.com/mathieuouillon/oxiroot" }  # TF1/TF2/TF3
-oxiroot-tree      = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
-oxiroot-rntuple   = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
+# …or depend on just one crate:
+oxiroot-hist      = "0.1"  # histograms + graphs
+oxiroot-hist-func = "0.1"  # TF1/TF2/TF3
+oxiroot-tree      = "0.1"  # TTree
+oxiroot-rntuple   = "0.1"  # RNTuple
 ```
 
 Then bring the common types into scope with the prelude:
@@ -48,10 +48,10 @@ just the lean, pure-Rust format core.
 ```toml
 [dependencies]
 # Batteries-included — fitting, plotting, mmap, and argmin all on:
-oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
+oxiroot = "0.1"
 
 # …or the lean format core only (drops the extra dependencies):
-# oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
+# oxiroot = { version = "0.1", default-features = false }
 ```
 
 !!! tip "Leaner builds"

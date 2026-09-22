@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["root", "cern", "hep", "cli", "inspector"]
+categories = ["command-line-utilities", "science"]
 description = "oxroot: a command-line inspector for ROOT files (ls / show / dump / stat)"
 
 [[bin]]

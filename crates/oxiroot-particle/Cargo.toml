@@ -7,6 +7,9 @@ rust-version.workspace = true
 # (BSD-3-Clause; see LICENSE-3rdparty), so the SPDX expression names both.
 license = "MIT AND BSD-3-Clause"
 repository.workspace = true
+homepage.workspace = true
+keywords = ["pdg", "particle", "monte-carlo", "hep", "physics"]
+categories = ["science"]
 description = "Pure-Rust PDG particle data — the Monte Carlo numbering-scheme decoder plus a bundled particle table (masses, widths, quantum numbers), modelled on scikit-hep/particle"
 
 [dependencies]

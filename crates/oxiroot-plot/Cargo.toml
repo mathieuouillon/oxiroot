@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["plot", "histogram", "matplotlib", "mplhep", "hep"]
+categories = ["visualization", "science"]
 description = "Pure-Rust plotting for ROOT histograms and graphs — matplotlib-like API, mplhep style, SVG/PNG/PDF"
 
 [dependencies]

@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["statistics", "distributions", "scipy", "hep", "physics"]
+categories = ["science", "mathematics"]
 description = "Pure-Rust statistics — special functions, distributions, descriptive stats, correlation, hypothesis tests, and HEP lineshapes (Crystal Ball, Voigt, …), verified against scipy.stats"
 
 [dependencies]

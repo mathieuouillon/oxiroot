@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["root", "cern", "hep", "zstd", "lz4"]
+categories = ["compression", "science"]
 description = "ROOT compression block framing and codecs"
 
 [dependencies]

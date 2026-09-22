@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["root", "cern", "hep", "tf1", "function"]
+categories = ["science", "mathematics"]
 description = "ROOT parametric functions (TF1/TF2/TF3) evaluated in pure Rust, with ROOT read/write"
 
 [dependencies]

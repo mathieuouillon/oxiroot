@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["root", "cern", "hep", "matrix", "covariance"]
+categories = ["science", "mathematics"]
 description = "ROOT linear-algebra objects (TVectorD / TMatrixD / TMatrixDSym) with byte-exact ROOT read/write"
 
 [dependencies]
