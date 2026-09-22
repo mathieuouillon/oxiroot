@@ -51,7 +51,7 @@ const STREAMER_INFO_TITLE: &str = "Doubly linked list";
 /// so a list captured from a ROOT file (like the baked histogram list) only reads
 /// back under a key of the length it was captured with: 64 bytes, ROOT's
 /// small-form length. The big form keeps that length with a shorter title.
-const STREAMER_INFO_KEY_LEN: u16 = 64;
+pub(crate) const STREAMER_INFO_KEY_LEN: u16 = 64;
 
 /// Class written on the top directory's own keys, and on subdirectory keys.
 const TOP_DIR_CLASS: &str = "TFile";

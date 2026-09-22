@@ -252,7 +252,7 @@ impl FileWriter {
             self.top.place(c, DirId::TOP)?;
             // When appending to a file that has streamer info, only the generated
             // classes it lacks are added (readers know the histogram family).
-            c.place_streamer_info(streamers.list(), streamers.classes())?;
+            c.place_streamer_info(&[], streamers.classes())?;
             for (name, entries) in &self.dirs {
                 let id = c.mkdir(DirId::TOP, name)?;
                 entries.place(c, id)?;

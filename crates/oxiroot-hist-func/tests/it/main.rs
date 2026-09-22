@@ -2,4 +2,5 @@
 
 mod graph_function;
 mod malformed;
+mod streamer_info;
 mod tf;

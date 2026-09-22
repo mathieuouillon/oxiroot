@@ -8,19 +8,18 @@
 //! position-independent. Reading uses [`TagReader`], which resolves both the
 //! class tags oxiroot writes and the back-references ROOT writes.
 
-use std::borrow::Cow;
 use std::ops::Range;
 
 use oxiroot_io_core::streamer_gen::{base, basic, objptr, Cls};
 use oxiroot_io_core::{
     read_tobject, write_object_any, write_tnamed, write_tobject, Error, FileReader, RBuffer,
-    Result, TagReader, WBuffer, K_BYTE_COUNT_MASK,
+    Result, StreamerSet, TagReader, WBuffer, K_BYTE_COUNT_MASK,
 };
 
 use crate::base::object_bytes_any_keyed;
 use crate::graph::{decode_tgraph, TGraph};
 use crate::th1::{decode_th1, TH1};
-use crate::write::WriteRoot;
+use crate::write::{hist_streamer_classes, WriteRoot};
 
 const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
 const K_CLASS_MASK: u32 = 0x8000_0000;
@@ -229,11 +228,15 @@ impl WriteRoot for THStack {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob()
-    }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        vec![thstack_class()]
+        // Its bases and list, the stacked histograms' classes, then its own.
+        let mut set = StreamerSet::default();
+        set.add_classes(hist_streamer_classes(&["TNamed", "TList"]));
+        for h in &self.hists {
+            set.add(h);
+        }
+        set.add_classes([thstack_class()]);
+        set.classes().to_vec()
     }
 }
 
@@ -351,11 +354,15 @@ impl WriteRoot for TMultiGraph {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob()
-    }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        vec![tmultigraph_class()]
+        // Its bases and list, the graphs' classes, then its own.
+        let mut set = StreamerSet::default();
+        set.add_classes(hist_streamer_classes(&["TNamed", "TList"]));
+        for g in &self.graphs {
+            set.add(g);
+        }
+        set.add_classes([tmultigraph_class()]);
+        set.classes().to_vec()
     }
 }
 

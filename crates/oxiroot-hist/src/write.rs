@@ -4,9 +4,10 @@
 //! against a ROOT-written fixture), filling the data-bearing members from a
 //! [`TH1`] and the cosmetic/auxiliary members with ROOT's defaults.
 
-use std::borrow::Cow;
+use std::sync::LazyLock;
 
-use oxiroot_io_core::{write_tnamed, write_tobject, WBuffer};
+use oxiroot_io_core::streamer_gen::{Cls, StreamerInfoList};
+use oxiroot_io_core::{write_tnamed, write_tobject, TObjString, WBuffer};
 // The object framework (the `WriteRoot` trait and `FileWriter`) lives
 // in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, FileWriter, SubdirWriter}`
 // and the in-crate `crate::write::WriteRoot` path keep resolving.
@@ -27,18 +28,35 @@ use crate::tprofile::TProfile;
 use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
-/// The captured `TList<TStreamerInfo>` for the histogram family, as ROOT 6
-/// streams it: the histogram, profile, efficiency, sparse and graph classes this
-/// crate writes, with their bases, plus `TF1` and `TFormula` (a graph's attached
-/// functions). `TF2`/`TF3` are not in it; `oxiroot-hist-func` adds those through
-/// [`WriteRoot::streamer_classes`].
-///
-/// Return it from [`WriteRoot::streamer_blob`] for a type that belongs to this
-/// family. A file keeps only the first non-empty blob it is given, so the family
-/// must share this one list rather than bake its own.
+/// The streamer info ROOT 6 writes for the histogram family, captured from a
+/// ROOT-written file: the histogram, profile, efficiency, sparse and graph
+/// classes this crate writes, with their bases and members' classes, plus `TF1`,
+/// `TFormula` and `TF1Parameters` (a graph's attached functions). `TF2`/`TF3`
+/// are not in it; `oxiroot-hist-func` generates those.
+static HIST_INFO: LazyLock<StreamerInfoList> = LazyLock::new(|| {
+    StreamerInfoList::parse(HIST_STREAMER_INFO)
+        .expect("the captured histogram streamer info parses")
+});
+
+/// The captured descriptions of `classes` and of every class they depend on,
+/// for [`WriteRoot::streamer_classes`]. A histogram-family type asks for its
+/// own class, plus any class it holds behind a base-class pointer or in a list
+/// (a `TEfficiency`'s `TH1D`s, say), so a file describes only the classes it
+/// holds.
 #[must_use]
-pub fn hist_streamer_blob() -> Cow<'static, [u8]> {
-    Cow::Borrowed(HIST_STREAMER_INFO)
+pub fn hist_streamer_classes(classes: &[&str]) -> Vec<Cls<'static>> {
+    HIST_INFO.classes_for(classes)
+}
+
+/// `TObjString`'s description, when any of `axes` carries bin labels: they are
+/// stored as a `THashList` of `TObjString`s, and the captured list does not
+/// describe `TObjString`.
+fn label_classes<'a>(axes: impl IntoIterator<Item = &'a TAxis>) -> Vec<Cls<'static>> {
+    if axes.into_iter().any(|a| !a.labels.is_empty()) {
+        TObjString::new("").streamer_classes()
+    } else {
+        Vec::new()
+    }
 }
 
 /// `TH1`/`TH2`/`TH3` serialize with the bin content type carried by their `class_name`;
@@ -67,8 +85,10 @@ macro_rules! impl_write_root_hist {
                 }
                 w.into_vec()
             }
-            fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_blob()
+            fn streamer_classes(&self) -> Vec<Cls<'static>> {
+                let mut classes = hist_streamer_classes(&[&self.class_name()]);
+                classes.extend(label_classes([&self.xaxis, &self.yaxis, &self.zaxis]));
+                classes
             }
         }
     };
@@ -77,10 +97,13 @@ impl_write_root_hist!(TH1, write_th1d, write_th1f, write_th1i, write_th1s, write
 impl_write_root_hist!(TH2, write_th2d, write_th2f, write_th2i, write_th2s, write_th2c, write_th2l);
 impl_write_root_hist!(TH3, write_th3d, write_th3f, write_th3i, write_th3s, write_th3c, write_th3l);
 
-/// A fixed-class writable type (profiles, efficiency, sparse, poly, graph):
+/// A fixed-class writable type (profiles, efficiency, sparse, poly):
 /// `root_class` is a constant and `to_root_bytes` delegates to its serializer.
+/// The streamer info covers the class, the classes of the objects it holds that
+/// its members' types do not name (`$holds`), and the bin labels of its axes
+/// (`$axis`).
 macro_rules! impl_write_root_fixed {
-    ($ty:ty, $class:expr, $bytes:ident) => {
+    ($ty:ty, $class:expr, $bytes:ident, [$($holds:expr),*], [$($axis:ident),*]) => {
         impl WriteRoot for $ty {
             fn root_class(&self) -> String {
                 $class.to_string()
@@ -94,18 +117,54 @@ macro_rules! impl_write_root_fixed {
             fn to_root_bytes(&self) -> Vec<u8> {
                 $bytes(self)
             }
-            fn streamer_blob(&self) -> Cow<'static, [u8]> {
-                crate::write::hist_streamer_blob()
+            fn streamer_classes(&self) -> Vec<Cls<'static>> {
+                let mut classes = hist_streamer_classes(&[$class $(, $holds)*]);
+                classes.extend(label_classes([$(&self.$axis),*]));
+                classes
             }
         }
     };
 }
-impl_write_root_fixed!(TProfile, "TProfile", tprofile_to_bytes);
-impl_write_root_fixed!(TProfile2D, "TProfile2D", tprofile2d_to_bytes);
-impl_write_root_fixed!(TProfile3D, "TProfile3D", tprofile3d_to_bytes);
-impl_write_root_fixed!(TEfficiency, "TEfficiency", tefficiency_to_bytes);
-impl_write_root_fixed!(THnSparse, "THnSparseT<TArrayD>", thnsparse_to_bytes);
-impl_write_root_fixed!(TH2Poly, "TH2Poly", th2poly_to_bytes);
+impl_write_root_fixed!(TProfile, "TProfile", tprofile_to_bytes, [], [xaxis]);
+impl_write_root_fixed!(
+    TProfile2D,
+    "TProfile2D",
+    tprofile2d_to_bytes,
+    [],
+    [xaxis, yaxis]
+);
+impl_write_root_fixed!(
+    TProfile3D,
+    "TProfile3D",
+    tprofile3d_to_bytes,
+    [],
+    [xaxis, yaxis, zaxis]
+);
+// Its passed and total histograms, held as `TH1*`.
+impl_write_root_fixed!(
+    TEfficiency,
+    "TEfficiency",
+    tefficiency_to_bytes,
+    ["TH1D"],
+    []
+);
+// Its axes, held in a `TObjArray`. (The `THnSparseArrayChunk`s and their
+// `TArrayD`s are not in the captured list.)
+impl_write_root_fixed!(
+    THnSparse,
+    "THnSparseT<TArrayD>",
+    thnsparse_to_bytes,
+    ["TAxis"],
+    []
+);
+// Its bins, held in a `TList`, each with its polygon as a `TObject*`.
+impl_write_root_fixed!(
+    TH2Poly,
+    "TH2Poly",
+    th2poly_to_bytes,
+    ["TH2PolyBin", "TGraph"],
+    []
+);
 
 impl WriteRoot for TGraph {
     fn root_class(&self) -> String {
@@ -120,8 +179,17 @@ impl WriteRoot for TGraph {
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraph_to_bytes(self)
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob()
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        // Attached functions are `TF1`s in the `fFunctions` list.
+        let functions = if self.functions.is_empty() {
+            None
+        } else {
+            Some("TF1")
+        };
+        let classes: Vec<&str> = std::iter::once(self.class_name())
+            .chain(functions)
+            .collect();
+        hist_streamer_classes(&classes)
     }
 }
 
@@ -850,8 +918,8 @@ impl WriteRoot for TGraph2D {
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraph2d_to_bytes(self)
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob()
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        hist_streamer_classes(&["TGraph2D"])
     }
 }
 
@@ -927,8 +995,8 @@ impl WriteRoot for TGraphMultiErrors {
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraphmultierrors_to_bytes(self)
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        crate::write::hist_streamer_blob()
+    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        hist_streamer_classes(&["TGraphMultiErrors"])
     }
 }
 

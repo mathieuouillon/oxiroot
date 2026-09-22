@@ -8,7 +8,6 @@
 //! framework so a leaf crate (e.g. `oxiroot-linalg`) can persist its own types
 //! without depending on `oxiroot-hist`.
 
-use std::borrow::Cow;
 use std::fmt;
 use std::path::Path;
 
@@ -41,9 +40,8 @@ pub trait ReadRoot: Sized {
 ///
 /// The result reads in ROOT, uproot, and this crate. A type whose class a reader
 /// may not know describes it with
-/// [`streamer_classes`](WriteRoot::streamer_classes) (and, for the histogram
-/// family, [`streamer_blob`](WriteRoot::streamer_blob)); every file that stores
-/// the object embeds that description, so uproot can model it.
+/// [`streamer_classes`](WriteRoot::streamer_classes); every file that stores the
+/// object embeds that description, so uproot can model it.
 pub trait WriteRoot {
     /// The ROOT class name written for this object (e.g. `"TH1D"`, `"TProfile"`).
     fn root_class(&self) -> String;
@@ -62,15 +60,6 @@ pub trait WriteRoot {
     /// class name.
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         Vec::new()
-    }
-
-    /// A serialized `TList<TStreamerInfo>` this object's class needs, for
-    /// descriptions captured from ROOT rather than generated (the histogram
-    /// family's). The default is empty. A file embeds the first non-empty list
-    /// among its objects, followed by their
-    /// [`streamer_classes`](Self::streamer_classes).
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        Cow::Borrowed(&[])
     }
 
     /// Write this object as the sole content of a new ROOT file at `path`.
@@ -96,7 +85,7 @@ pub trait WriteRoot {
                     &record.title,
                     &record.object,
                 )?;
-                c.place_streamer_info(streamers.list(), streamers.classes())
+                c.place_streamer_info(&[], streamers.classes())
             })
         })
     }
@@ -121,40 +110,24 @@ pub trait WriteInto {
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         Vec::new()
     }
-    /// A serialized `TList<TStreamerInfo>` the object needs; see
-    /// [`WriteRoot::streamer_blob`].
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        Cow::Borrowed(&[])
-    }
 }
 
-/// The streamer info a set of objects needs: the first serialized list any of
-/// them brings ([`WriteRoot::streamer_blob`]), and each generated class
-/// ([`WriteRoot::streamer_classes`]) once.
+/// The streamer info a set of objects needs: each class their
+/// [`streamer_classes`](WriteRoot::streamer_classes) describe, once.
 #[derive(Clone, Default)]
 pub struct StreamerSet {
-    list: Cow<'static, [u8]>,
     classes: Vec<Cls<'static>>,
 }
 
 impl StreamerSet {
     /// Add what `object` needs.
     pub fn add(&mut self, object: &dyn WriteRoot) {
-        self.add_list(object.streamer_blob());
         self.add_classes(object.streamer_classes());
     }
 
     /// Add what a multi-record `object` needs.
     pub fn add_records(&mut self, object: &dyn WriteInto) {
-        self.add_list(object.streamer_blob());
         self.add_classes(object.streamer_classes());
-    }
-
-    /// Use `list` as the serialized list, unless one is already set.
-    pub fn add_list(&mut self, list: Cow<'static, [u8]>) {
-        if self.list.is_empty() {
-            self.list = list;
-        }
     }
 
     /// Add each class not already present at the same version.
@@ -172,24 +145,10 @@ impl StreamerSet {
 
     /// Add everything `other` holds.
     pub fn extend(&mut self, other: &StreamerSet) {
-        self.add_list(other.list.clone());
         self.add_classes(other.classes.iter().cloned());
     }
 
-    /// The serialized list (empty if no object brought one).
-    #[must_use]
-    pub fn list(&self) -> &[u8] {
-        &self.list
-    }
-
-    /// The serialized list as a [`WriteRoot::streamer_blob`] value, for a
-    /// collection passing on what its members brought.
-    #[must_use]
-    pub fn blob(&self) -> Cow<'static, [u8]> {
-        self.list.clone()
-    }
-
-    /// The generated classes, in the order they were first added.
+    /// The classes, in the order they were first added.
     #[must_use]
     pub fn classes(&self) -> &[Cls<'static>] {
         &self.classes
@@ -199,7 +158,6 @@ impl StreamerSet {
 impl fmt::Debug for StreamerSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamerSet")
-            .field("list_bytes", &self.list.len())
             .field(
                 "classes",
                 &self.classes.iter().map(|c| &*c.name).collect::<Vec<_>>(),

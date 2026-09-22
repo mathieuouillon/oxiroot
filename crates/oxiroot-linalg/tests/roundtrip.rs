@@ -65,7 +65,7 @@ fn matrix_bytes_are_byte_exact_against_root() {
 #[test]
 fn single_object_write_root_round_trips() {
     // Exercise the io-core `WriteRoot::write_root` default + the matrix's
-    // `streamer_blob` (which bakes its own `TStreamerInfo` list from scratch).
+    // `streamer_classes` (which describes its own class from scratch).
     let out = std::env::temp_dir().join("oxiroot_linalg_single.root");
     TMatrixDSym::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0])
         .unwrap()

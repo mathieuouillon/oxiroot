@@ -18,7 +18,9 @@ use std::borrow::Cow;
 
 use crate::buffer::{Patch, RBuffer, WBuffer, K_BYTE_COUNT_MASK};
 use crate::error::Result;
+use crate::file::STREAMER_INFO_KEY_LEN;
 use crate::streamer::{read_tobject, write_tnamed, write_tobject};
+use crate::streamer_info::{parse_stored_infos, StoredInfo};
 
 /// ROOT `fType` codes for an object/string member and the base-class slots.
 const K_TOBJECT: i32 = 66;
@@ -432,4 +434,92 @@ pub fn append_streamer_infos(base_list: &[u8], extra: &[Cls<'_>]) -> Result<Vec<
     let inner = (out.len() - 4) as u32;
     out[..4].copy_from_slice(&(inner | K_BYTE_COUNT_MASK).to_be_bytes());
     Ok(out)
+}
+
+/// Add the stored info for `class` (at `version` when the file has that one)
+/// to `out`, after the classes it depends on: its bases, and any class named
+/// in a member's type (a `TAxis`, a `vector<TLorentzVector>`, …).
+pub(crate) fn collect_stored(
+    infos: &[StoredInfo],
+    class: &str,
+    version: Option<i32>,
+    seen: &mut Vec<(String, i32)>,
+    out: &mut Vec<Cls<'static>>,
+) {
+    let named = |s: &&StoredInfo| s.info.class_name == class;
+    let Some(entry) = infos
+        .iter()
+        .filter(named)
+        .find(|s| version.is_none_or(|v| s.info.class_version == v))
+        .or_else(|| infos.iter().find(named))
+    else {
+        return;
+    };
+    let key = (entry.info.class_name.clone(), entry.info.class_version);
+    if seen.contains(&key) {
+        return;
+    }
+    seen.push(key);
+    for element in &entry.info.elements {
+        if element.element_class == "TStreamerBase" {
+            collect_stored(infos, &element.name, element.base_version, seen, out);
+        } else {
+            let names = element
+                .type_name
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == ':'))
+                .filter(|name| !name.is_empty() && *name != class);
+            for name in names {
+                collect_stored(infos, name, None, seen, out);
+            }
+        }
+    }
+    if let Some(bodies) = &entry.elements {
+        out.push(Cls {
+            name: entry.info.class_name.clone().into(),
+            version: entry.info.class_version,
+            checksum: entry.info.checksum,
+            elements: bodies
+                .iter()
+                .zip(&entry.info.elements)
+                .map(|((element_class, body), element)| {
+                    stored(element_class.clone(), element.name.clone(), body.clone())
+                })
+                .collect(),
+        });
+    }
+}
+
+/// A `TList<TStreamerInfo>`, in the form oxiroot writes a file's streamer-info
+/// record, parsed so its classes can be copied into another file: a list
+/// captured from ROOT, say, for classes too intricate to describe with the
+/// helpers above. [`classes_for`](Self::classes_for) picks out what an object
+/// needs, so a file describes only the classes it holds.
+#[derive(Debug, Clone)]
+pub struct StreamerInfoList {
+    infos: Vec<StoredInfo>,
+}
+
+impl StreamerInfoList {
+    /// Parse `list`, the object bytes of a streamer-info record written under
+    /// oxiroot's 64-byte streamer-info key (the list's class tags count from
+    /// it).
+    pub fn parse(list: &[u8]) -> Result<StreamerInfoList> {
+        Ok(StreamerInfoList {
+            infos: parse_stored_infos(list, usize::from(STREAMER_INFO_KEY_LEN))?,
+        })
+    }
+
+    /// The descriptions of `classes` and of every class they depend on (their
+    /// bases, and the classes named in their members' types), dependencies
+    /// first, each copied verbatim. A class the list does not describe is left
+    /// out.
+    #[must_use]
+    pub fn classes_for(&self, classes: &[&str]) -> Vec<Cls<'static>> {
+        let mut seen = Vec::new();
+        let mut out = Vec::new();
+        for class in classes {
+            collect_stored(&self.infos, class, None, &mut seen, &mut out);
+        }
+        out
+    }
 }
