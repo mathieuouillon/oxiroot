@@ -3,8 +3,7 @@
 //! [`TMap::get`](oxiroot_io_core::TMap::get) can pull histograms and graphs out
 //! of a collection.
 
-use oxiroot_io_core::error::Result;
-use oxiroot_io_core::FromMember;
+use oxiroot_io_core::{FromMember, Result};
 
 use crate::graph::{decode_tgraph, TGraph};
 use crate::th1::{decode_th1, TH1};

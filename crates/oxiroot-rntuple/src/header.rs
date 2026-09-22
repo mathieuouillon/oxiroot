@@ -1,7 +1,6 @@
 //! The RNTuple header envelope: the schema (fields + columns).
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::Result;
+use oxiroot_io_core::{RBuffer, Result};
 
 use crate::column::ColumnType;
 use crate::envelope::{read_feature_flags, read_frame, read_string};

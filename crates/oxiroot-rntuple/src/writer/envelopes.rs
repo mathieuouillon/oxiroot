@@ -1,6 +1,6 @@
 //! The header, page-list and footer envelopes, and the anchor.
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 use super::lower::{ColumnPlan, FieldPlan};
 use super::{CHECKSUM_TYPE_VERSION, COLUMN_FLAG_DEFERRED, COLUMN_FLAG_RANGE, K_BYTE_COUNT_MASK};

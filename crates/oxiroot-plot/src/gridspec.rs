@@ -1,14 +1,14 @@
-//! `GridSpec` — divide a figure into a grid of cells for multi-panel layouts,
-//! with optional per-row/column size ratios and inter-cell spacing.
-//!
-//! The cell geometry follows matplotlib's `GridSpecBase.get_grid_positions`:
-//! `hspace`/`wspace` are gaps expressed as a fraction of the *average* cell size,
-//! and `height_ratios`/`width_ratios` scale the rows/columns to fill the area
-//! between the figure margins.
+//! `GridSpec` — divide a figure into a grid of cells for multi-panel layouts.
 
 use crate::draw::Rect;
 
-/// A grid layout for placing axes within a figure.
+/// A grid layout for placing axes within a figure, with optional per-row and
+/// per-column size ratios and spacing between cells.
+///
+/// The cell geometry follows matplotlib's `GridSpecBase.get_grid_positions`:
+/// `hspace`/`wspace` are gaps expressed as a fraction of the *average* cell size,
+/// and `height_ratios`/`width_ratios` scale the rows/columns to fill the area
+/// between the figure margins.
 #[derive(Debug, Clone)]
 pub struct GridSpec {
     /// Number of rows.

@@ -4,8 +4,7 @@
 //! per-column frame ends with the column's element offset and compression
 //! settings (inside the frame).
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::Result;
+use oxiroot_io_core::{RBuffer, Result};
 
 use crate::envelope::{read_frame, read_locator, Locator};
 

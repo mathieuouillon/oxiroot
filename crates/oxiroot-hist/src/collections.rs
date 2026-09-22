@@ -11,12 +11,11 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use oxiroot_io_core::buffer::{RBuffer, WBuffer, K_BYTE_COUNT_MASK};
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::object::TagReader;
-use oxiroot_io_core::streamer::{read_tobject, write_object_any, write_tnamed, write_tobject};
 use oxiroot_io_core::streamer_gen::{base, basic, objptr, Cls};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{
+    read_tobject, write_object_any, write_tnamed, write_tobject, Error, FileReader, RBuffer,
+    Result, TagReader, WBuffer, K_BYTE_COUNT_MASK,
+};
 
 use crate::base::object_bytes_any_keyed;
 use crate::graph::{decode_tgraph, TGraph};

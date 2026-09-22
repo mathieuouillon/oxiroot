@@ -1,6 +1,6 @@
 //! RNTuple column types (the on-disk physical column encodings).
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 /// A physical column type, per the RNTuple spec's type-code table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

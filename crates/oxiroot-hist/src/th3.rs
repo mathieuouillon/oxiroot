@@ -5,10 +5,7 @@
 //! (skipped via its byte count); the inline `TArray` holds the
 //! `(nx+2)*(ny+2)*(nz+2)` cells with x fastest, then y, then z.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer::skip_versioned;
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{skip_versioned, Error, FileReader, RBuffer, Result};
 
 use crate::axis::TAxis;
 use crate::base::{

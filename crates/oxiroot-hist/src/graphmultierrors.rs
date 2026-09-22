@@ -12,10 +12,7 @@
 //! Note: uproot cannot decode the memberwise attribute vectors, so this class is
 //! cross-checked against compiled ROOT C++ only.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{read_tnamed, skip_versioned, Error, FileReader, RBuffer, Result};
 
 use crate::base::{check_len, object_bytes_any};
 

@@ -1,6 +1,6 @@
 //! Branch value types.
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 /// The element type of a branch's leaf, derived from the leaf class and its
 /// `fIsUnsigned` flag.

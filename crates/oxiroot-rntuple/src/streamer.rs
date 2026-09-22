@@ -9,9 +9,7 @@
 //! Only flat classes of basic members and `std::string` are supported: no base
 //! classes, nested objects, arrays, or STL collections beyond `std::string`.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer_info::{StreamerElement, StreamerInfo};
+use oxiroot_io_core::{Error, RBuffer, Result, StreamerElement, StreamerInfo};
 
 use crate::field::FieldValues;
 

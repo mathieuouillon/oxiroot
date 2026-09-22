@@ -3,8 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::buffer::{RBuffer, WBuffer};
-use oxiroot_io_core::{FileHeader, FileReader};
+use oxiroot_io_core::{FileHeader, FileReader, RBuffer, WBuffer};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

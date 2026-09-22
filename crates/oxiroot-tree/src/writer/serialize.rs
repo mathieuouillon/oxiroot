@@ -3,9 +3,9 @@
 
 use std::collections::HashMap;
 
-use oxiroot_io_core::buffer::{CountToken, Patch, WBuffer, K_BYTE_COUNT_MASK};
-use oxiroot_io_core::streamer::{write_tnamed, write_tobject};
-use oxiroot_io_core::TKey;
+use oxiroot_io_core::{
+    write_tnamed, write_tobject, CountToken, Patch, TKey, WBuffer, K_BYTE_COUNT_MASK,
+};
 
 use super::baskets::BasketRec;
 use super::branch::{

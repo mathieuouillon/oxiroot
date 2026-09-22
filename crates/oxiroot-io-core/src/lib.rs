@@ -1,37 +1,71 @@
-//! Core ROOT (TFile) container support for `oxiroot`.
+//! The ROOT file container for `oxiroot`: reading and writing `TFile`s and the
+//! objects in them. The other oxiroot crates build on it.
 //!
-//! This crate is the format-agnostic foundation that `oxiroot-rntuple` and
-//! `oxiroot-hist` build on. It owns:
+//! # Files
 //!
-//! - [`buffer`]: big-/little-endian read ([`buffer::RBuffer`]) and write
-//!   ([`buffer::WBuffer`]) cursors, including ROOT string encoding and the
-//!   streamed-object byte-count framing.
-//! - The TFile header, TKey, TStreamerInfo, free list and directory tree
-//!   (added in milestones M1–M2).
+//! [`FileReader`] opens a file from disk, from memory, through a memory map (the
+//! `mmap` feature), or remotely over HTTP(S) (`http`) or XRootD (`xrootd`), and
+//! reads its keys, directories and streamer info on demand through a
+//! [`ByteSource`]. [`FileWriter`] writes a new file, or appends to an existing
+//! one, with subdirectories ([`SubdirWriter`]). [`ContainerWriter`] is the layer
+//! beneath it, which places keys and raw records: formats such as `TTree` and
+//! RNTuple are more than one keyed object.
 //!
-//! ROOT's classic on-disk integers are big-endian; accessors name their
-//! endianness explicitly so the same buffer types serve RNTuple's
+//! # Objects
+//!
+//! Every persistable type implements [`WriteRoot`] and [`ReadRoot`], or
+//! [`WriteInto`] when it is written as several records. The concrete classes
+//! (histograms, graphs, matrices, …) live in the crates that model them. This
+//! crate owns only the framework, so a crate can persist its own types without
+//! depending on `oxiroot-hist`. The generic objects that belong to no format live
+//! here: [`TObjString`], [`TParameter`], [`ObjList`] (`TList` and `TObjArray`)
+//! and [`TMap`].
+//!
+//! # Any class, through its streamer info
+//!
+//! [`read_object`] decodes an object of any class into a [`Value`] tree, by the
+//! member layout the file's own `TStreamerInfo` declares ([`StreamerRegistry`]),
+//! with no compiled-in knowledge of the class. `rootls`- and `rootprint`-style
+//! inspection runs on it.
+//!
+//! # Building blocks
+//!
+//! To implement the traits for a class of your own: [`RBuffer`] and [`WBuffer`]
+//! read and write ROOT's encoding and its byte-count framing; [`read_tobject`],
+//! [`read_tnamed`], [`write_tobject`] and [`write_tnamed`] stream the common base
+//! classes; and [`TagReader`] resolves class tags and back-references. The
+//! [`streamer_gen`] module describes a class's members for the `TStreamerInfo`
+//! record a written file carries. ROOT's classic on-disk integers are big-endian;
+//! the buffers name their endianness, so the same types serve RNTuple's
 //! little-endian payloads.
+//!
+//! Every item is exported at the crate root, except the [`streamer_gen`] helpers,
+//! whose short names (`basic`, `base`, `stl`, …) read best qualified.
 
-pub mod buffer;
-pub mod compression;
-pub mod error;
-pub mod file;
-pub mod object;
-pub mod object_io;
-pub mod objects;
-pub mod read_object;
-pub mod streamer;
+mod buffer;
+mod compression;
+mod error;
+mod file;
+mod object;
+mod object_io;
+mod objects;
+mod read_object;
+mod streamer;
 pub mod streamer_gen;
-pub mod streamer_info;
-pub mod value;
+mod streamer_info;
+mod value;
 
+pub use buffer::{CountToken, Patch, RBuffer, VersionHeader, WBuffer, K_BYTE_COUNT_MASK};
 pub use compression::Compression;
 pub use error::{decompress_payload, Error, Result};
+#[cfg(feature = "mmap")]
+pub use file::MmapSource;
+#[cfg(feature = "xrootd")]
+pub use file::XrootdSource;
 pub use file::{
-    compress_if_smaller, ByteSource, BytesSource, ContainerWriter, DirId, Directory, FileHeader,
-    FileReader, FileSource, FileWriter, FreeSegment, SubdirWriter, TDatime, TKey, TUuid, DATIME,
-    FILE_VERSION, KSTART_BIG_FILE,
+    compress_if_smaller, read_free, ByteSource, BytesSource, ContainerWriter, DirId, Directory,
+    FileHeader, FileReader, FileSource, FileWriter, FreeSegment, SubdirWriter, TDatime, TKey,
+    TUuid, BIG_FILE_VERSION, DATIME, FILE_VERSION, KSTART_BIG_FILE, MAGIC,
 };
 pub use object::{ObjHeader, TagReader};
 pub use object_io::{

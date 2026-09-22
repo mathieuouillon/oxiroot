@@ -4,9 +4,7 @@
 //! (`sumz2`, the TH2 `fSumw2`). On disk it is a `TH2D` plus the profile members,
 //! exactly as `TProfile` is a `TH1D` plus profile members.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::axis::TAxis;
 use crate::base::{

@@ -8,25 +8,50 @@
 //! `kolmogorov_test`) and the goodness-of-fit p-value of
 //! [`oxiroot_fit`](https://crates.io/crates/oxiroot-fit), and now offers:
 //!
-//! - [`special`] — `erf`/`erfc`, `gammaln`, the regularized incomplete
-//!   gamma (`gammainc`/`gammaincc`) and beta (`betainc`) functions, and the
-//!   inverse normal CDF `ndtri`.
-//! - [`distributions`] — [`Normal`], [`StudentT`], [`ChiSquared`], and [`FisherF`]
-//!   with `pdf`/`cdf`/`sf`/`ppf`, plus Poisson/Binomial CDF & survival.
-//! - [`descriptive`] — `gmean`/`hmean`, `skew`, `kurtosis`, `moment`, `sem`,
-//!   `variation`, `iqr`, `median_abs_deviation`, `entropy`, `zscore`, `rankdata`, …
-//! - [`correlation`] — `pearsonr`, `spearmanr`.
-//! - [`hypothesis`] — `ttest_1samp`/`ttest_ind`, `normaltest`, `chisquare`,
-//!   `ks_1samp`/`ks_2samp`, and the nonparametric `mannwhitneyu`/`wilcoxon`.
-//! - [`lineshapes`] — HEP fit shapes: the Crystal Ball (and double-sided),
+//! - **Special functions** — [`erf`]/[`erfc`], [`gammaln`], the regularized
+//!   incomplete gamma ([`gammainc`]/[`gammaincc`]) and beta ([`betainc`])
+//!   functions, and the inverse normal CDF [`ndtri`]. The rest of the crate is
+//!   built on them; names follow `scipy.special` where there is a direct
+//!   counterpart.
+//! - **Distributions** — [`Normal`], [`StudentT`], [`ChiSquared`], and
+//!   [`FisherF`] with `pdf`/`cdf`/`sf`/`ppf`, plus the Poisson and Binomial CDF
+//!   and survival functions ([`poisson_cdf`], [`binom_sf`], …).
+//! - **Descriptive statistics** — [`gmean`]/[`hmean`], [`skew`], [`kurtosis`],
+//!   [`moment`], [`sem`], [`variation`], [`iqr`], [`median_abs_deviation`],
+//!   [`entropy`], [`zscore`], [`rankdata`], … They follow `scipy.stats`
+//!   conventions: population moments unless noted, and linear interpolation for
+//!   [`iqr`] and [`median`], as in NumPy. An empty sample yields `NaN`.
+//! - **Correlation** — [`pearsonr`], [`spearmanr`], with two-sided p-values.
+//! - **Hypothesis tests** — [`ttest_1samp`]/[`ttest_ind`], [`normaltest`],
+//!   [`chisquare`], [`ks_1samp`]/[`ks_2samp`], and the nonparametric
+//!   [`mannwhitneyu`]/[`wilcoxon`], each returning `(statistic, p_value)`.
+//! - **Lineshapes** — HEP fit shapes: the Crystal Ball (and double-sided),
 //!   Breit–Wigner / relativistic Breit–Wigner, the Voigt profile, Novosibirsk,
-//!   ARGUS, the bifurcated Gaussian, Moyal, and Landau.
-//! - [`physics`] — HEP helpers: significance ↔ p-value, weighted means /
+//!   ARGUS, the bifurcated Gaussian, Moyal, and Landau (see
+//!   [below](#lineshapes)).
+//! - **Physics helpers** — significance ↔ p-value, weighted means and
 //!   measurement combination, Clopper–Pearson / Garwood / Wilson / Agresti–Coull
-//!   confidence intervals, and the `feldman_cousins` unified interval.
-//! - [`resample`] — a seeded percentile `bootstrap_ci`.
+//!   confidence intervals, and the [`feldman_cousins`] unified interval.
+//! - **Resampling** — a seeded percentile [`bootstrap_ci`].
 //!
-//! The commonly-used items are also re-exported at the crate root.
+//! Everything is exported at the crate root.
+//!
+//! # Lineshapes
+//!
+//! Two conventions, chosen to be the ones physicists fit:
+//!
+//! - The **peaked shapes** — [`gaussian`], [`crystal_ball`],
+//!   [`double_crystal_ball`], [`novosibirsk`], [`bifurcated_gaussian`] — are
+//!   normalized to **unit height at the peak**, so you multiply by an amplitude
+//!   (a yield or peak height) to fit a spectrum.
+//! - The **densities** — [`breit_wigner`], [`relativistic_breit_wigner`],
+//!   [`voigtian`], [`moyal`], [`landau`] — are normalized **probability
+//!   densities** (unit area). [`argus`] is the conventional (unnormalized)
+//!   endpoint background shape.
+//!
+//! Conventions match RooFit and ROOT and, where they exist, `scipy.stats`
+//! (`crystalball`/`cauchy`/`moyal`) and `scipy.special.voigt_profile`.
+//! `oxiroot-fit` wraps these as fittable models.
 //!
 //! # Invalid input
 //!
@@ -42,15 +67,17 @@
 //! input rather than looping forever or reporting a spurious p-value. Other
 //! functions do not yet treat `NaN` consistently.
 
-pub mod correlation;
-pub mod descriptive;
-pub mod distributions;
+// The modules are private: every public item is re-exported at the crate root
+// below, so each has one path.
+mod correlation;
+mod descriptive;
+mod distributions;
 mod error;
-pub mod hypothesis;
-pub mod lineshapes;
-pub mod physics;
-pub mod resample;
-pub mod special;
+mod hypothesis;
+mod lineshapes;
+mod physics;
+mod resample;
+mod special;
 
 pub use correlation::{pearsonr, spearmanr};
 pub use descriptive::{

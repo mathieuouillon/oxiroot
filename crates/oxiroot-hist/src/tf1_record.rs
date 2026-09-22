@@ -2,9 +2,7 @@
 //! graph's `fFunctions` entries and the standalone `TF1`/`TF2`/`TF3` keys (in
 //! `oxiroot-hist-func`) share.
 
-use oxiroot_io_core::buffer::{RBuffer, WBuffer};
-use oxiroot_io_core::error::Result;
-use oxiroot_io_core::streamer::{read_tnamed, skip_versioned, write_tnamed};
+use oxiroot_io_core::{read_tnamed, skip_versioned, write_tnamed, RBuffer, Result, WBuffer};
 
 use crate::graph::GraphFunction;
 use crate::write::write_object_ptr;

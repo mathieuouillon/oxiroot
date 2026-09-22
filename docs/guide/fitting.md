@@ -99,8 +99,8 @@ the facade's `fit` feature turns on.)
 | `Model::exponential(name)` | `exp([0] + [1]·x)` (ROOT `"expo"`) | `constant`, `slope` |
 | `Model::polynomial(name, degree)` | `Σ p[k]·x^k` (ROOT `"polN"`) | `p0` … `p<degree>` |
 
-Plus the HEP lineshapes (`constant ·` the shapes from
-[`oxiroot::stat::lineshapes`](statistics.md#hep-lineshapes)) — a Gaussian peak
+Plus the HEP lineshapes (`constant ·` the
+[lineshapes of `oxiroot::stat`](statistics.md#hep-lineshapes)) — a Gaussian peak
 with tails, resonances, and a phase-space background:
 
 | Constructor | Shape | Parameters |

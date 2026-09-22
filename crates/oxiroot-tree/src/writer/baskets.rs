@@ -2,9 +2,7 @@
 
 use std::io::{Seek, Write};
 
-use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::error::Result;
-use oxiroot_io_core::{compress_if_smaller, ContainerWriter, DirId, TKey, DATIME};
+use oxiroot_io_core::{compress_if_smaller, ContainerWriter, DirId, Result, TKey, WBuffer, DATIME};
 
 use super::branch::{vec_row_lengths, Branch, BranchKind};
 use super::layout::Kind;

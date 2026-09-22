@@ -8,10 +8,7 @@
 //! stride is `2^Σ_{e<d} bits[e]`), packed big-endian into
 //! `fSingleCoordinateSize = ceil(Σ bits / 8)` bytes.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::Result;
-use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{read_tnamed, read_tobject, FileReader, RBuffer, Result};
 
 use crate::axis::TAxis;
 use crate::base::{check_len, object_bytes, object_bytes_in, read_tarray, BinContentType};

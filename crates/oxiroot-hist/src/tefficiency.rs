@@ -4,10 +4,7 @@
 //! (its `vector<pair<double,double>>` member uses memberwise serialization), so
 //! ROOT C++ is the interop oracle here.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::Result;
-use oxiroot_io_core::streamer::{read_tnamed, skip_versioned};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{read_tnamed, skip_versioned, FileReader, RBuffer, Result};
 
 use crate::base::{object_bytes, object_bytes_in, BinContentType};
 use crate::th1::TH1;

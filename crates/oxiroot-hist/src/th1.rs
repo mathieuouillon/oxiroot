@@ -3,9 +3,7 @@
 //! Streamed layout: `TH1x{ TH1{ … }, TArray }`. The `TH1` base is shared via
 //! the crate's `base` module; the inline `TArray` holds the bin contents.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::Result;
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{FileReader, RBuffer, Result};
 
 use crate::axis::TAxis;
 use crate::base::{

@@ -1,6 +1,6 @@
 //! The fields a caller writes: [`Field`] and the [`Column`] data it holds.
 
-use oxiroot_io_core::error::{Error, Result};
+use oxiroot_io_core::{Error, Result};
 
 use super::lower::flatten;
 

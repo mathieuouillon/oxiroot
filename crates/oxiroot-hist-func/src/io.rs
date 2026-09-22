@@ -5,10 +5,10 @@
 use std::borrow::Cow;
 
 use oxiroot_hist::{hist_streamer_blob, GraphFunction};
-use oxiroot_io_core::buffer::{RBuffer, WBuffer};
-use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer_gen::{any, base, basic, objanyptr, objptr, stl, strf, Cls};
-use oxiroot_io_core::{object_bytes_any, FileReader, ReadRoot, WriteRoot};
+use oxiroot_io_core::{
+    object_bytes_any, Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot,
+};
 
 use crate::tf::{FuncCore, TF1, TF2, TF3};
 

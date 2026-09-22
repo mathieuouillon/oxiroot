@@ -31,7 +31,10 @@ const MAX_DEPTH: usize = 64;
 /// key's `fKeyLen` (needed to resolve object back-references).
 ///
 /// Never panics and never returns an `Err` for an undecodable member: an object
-/// the reader cannot parse comes back as [`Value::Unsupported`].
+/// the reader cannot parse comes back as [`Value::Unsupported`]. So does a member
+/// it cannot decode (an unhandled `fType`, memberwise-streamed STL, a class with
+/// no streamer info); because ROOT wraps objects and containers in byte counts,
+/// decoding resynchronises past it and continues.
 pub fn read_object(reg: &StreamerRegistry, class: &str, bytes: &[u8], keylen: usize) -> Value {
     let mut r = RBuffer::new(bytes);
     let mut tags = TagReader::new(keylen);

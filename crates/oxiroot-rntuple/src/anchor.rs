@@ -5,9 +5,8 @@
 //! header, then 64 bytes of **big-endian** fields, then an 8-byte XXH3-64
 //! checksum over those 64 field bytes.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer_gen::{basic, Cls};
+use oxiroot_io_core::{Error, RBuffer, Result};
 
 /// The ROOT class name under which the anchor is stored.
 pub const ANCHOR_CLASS: &str = "ROOT::RNTuple";

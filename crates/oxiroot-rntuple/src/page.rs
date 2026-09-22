@@ -5,8 +5,7 @@
 //! byte-transposed back ("unsplit"), then signed-integer columns are
 //! zigzag-decoded and index columns are delta-decoded (cumulative sum).
 
-use oxiroot_io_core::error::{decompress_payload, Error, Result};
-use oxiroot_io_core::ByteSource;
+use oxiroot_io_core::{decompress_payload, ByteSource, Error, Result};
 
 use crate::column::ColumnType;
 use crate::pagelist::PageInfo;

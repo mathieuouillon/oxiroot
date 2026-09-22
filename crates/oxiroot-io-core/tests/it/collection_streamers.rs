@@ -2,12 +2,10 @@
 //! its members — and for the classes they depend on — so that, written again,
 //! it still describes members of classes this crate knows nothing about.
 
-use oxiroot_io_core::buffer::WBuffer;
-use oxiroot_io_core::streamer::write_tnamed;
 use oxiroot_io_core::streamer_gen::{any, base, basic, Cls};
 use oxiroot_io_core::{
-    Compression, FileReader, FileWriter, ObjList, ReadRoot, StreamerInfo, TMap, TObjString,
-    WriteRoot,
+    write_tnamed, Compression, FileReader, FileWriter, ObjList, ReadRoot, StreamerInfo, TMap,
+    TObjString, WBuffer, WriteRoot,
 };
 
 /// An object of a class only this test knows: `MyEvent` (version 3), a `TNamed`

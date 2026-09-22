@@ -7,6 +7,22 @@ change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- **Each public item has one path.** `oxiroot-io-core`, `oxiroot-plot` and
+  `oxiroot-stat` no longer expose their modules next to the root re-exports:
+  import from the crate root (`oxiroot_io_core::RBuffer`, not
+  `oxiroot_io_core::buffer::RBuffer`; `oxiroot_stat::Normal`, not
+  `oxiroot_stat::distributions::Normal`). io-core keeps one public module,
+  `streamer_gen`, for the helpers that describe a class's members, whose short
+  names read best qualified. The items that were reachable only through a
+  module are now at the root: io-core's byte buffers, `MmapSource`,
+  `XrootdSource`, `MAGIC`, `BIG_FILE_VERSION` and `read_free`, and plot's
+  `TickDir` and `Sides`.
+- In the `oxiroot` facade, `oxiroot::file` holds all of io-core, like the
+  facade's other per-crate modules, and `oxiroot::buffer` and `oxiroot::error`
+  are gone: use `oxiroot::file::RBuffer` and `oxiroot::Error`.
+
 ### Internal
 
 - The tree reader and writer and the RNTuple writer, which ran to 2,000–2,600

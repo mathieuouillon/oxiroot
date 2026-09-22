@@ -92,29 +92,27 @@
 
 #![doc(html_root_url = "https://docs.rs/oxiroot-plot")]
 
-// User-facing modules.
-pub mod axes;
-pub mod cmap;
-pub mod color;
-pub mod data;
-pub mod error;
-pub mod figure;
-pub mod fonts;
-pub mod gridspec;
-pub mod style;
-
-// Implementation details (the draw IR, text/math layout, tickers, transforms,
-// and the render backends) — private; the public types are re-exported below.
+// The modules are private: every public item is re-exported at the crate root
+// below, so each has one path.
 mod artists;
+mod axes;
+mod cmap;
 mod cmap_data;
+mod color;
 mod colorbar;
+mod data;
 mod draw;
+mod error;
+mod figure;
+mod fonts;
+mod gridspec;
 mod legend;
 mod mathtext;
-pub mod norm;
+mod norm;
 mod render;
 #[cfg(feature = "fit")]
 mod statbox;
+mod style;
 mod text;
 mod ticker;
 mod transform;
@@ -134,7 +132,7 @@ pub use gridspec::GridSpec;
 pub use norm::Norm;
 #[cfg(feature = "fit")]
 pub use statbox::{Corner, StatBox};
-pub use style::Style;
+pub use style::{Sides, Style, TickDir};
 
 #[cfg(test)]
 mod tests {

@@ -1,9 +1,8 @@
 //! Reading an object member by member, following the file's `TStreamerInfo`.
 
-use oxiroot_io_core::buffer::RBuffer;
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
-use oxiroot_io_core::streamer_info::{StreamerElement, StreamerRegistry};
+use oxiroot_io_core::{
+    read_tnamed, read_tobject, Error, RBuffer, Result, StreamerElement, StreamerRegistry,
+};
 
 /// A scalar or array member captured while walking a class's streamer elements.
 /// Integers (any width) are widened to `i64`; arrays keep their element values.
@@ -187,9 +186,9 @@ fn read_base(
 #[cfg(test)]
 mod tests {
     use super::{member_int, walk_members, MemberVal, Members};
-    use oxiroot_io_core::buffer::RBuffer;
-    use oxiroot_io_core::error::Result;
-    use oxiroot_io_core::streamer_info::{StreamerElement, StreamerRegistry};
+    use oxiroot_io_core::RBuffer;
+    use oxiroot_io_core::Result;
+    use oxiroot_io_core::{StreamerElement, StreamerRegistry};
 
     fn elem(class: &str, name: &str, el_type: i32, count: Option<&str>) -> StreamerElement {
         StreamerElement {

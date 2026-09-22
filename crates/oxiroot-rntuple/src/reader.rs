@@ -1,8 +1,7 @@
 //! Opening an RNTuple from a ROOT file: anchor → header/footer envelopes →
 //! page-list envelopes → on-demand column decoding.
 
-use oxiroot_io_core::error::{decompress_payload, Error, Result};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{decompress_payload, Error, FileReader, Result};
 
 use crate::anchor::{RNTupleAnchor, ANCHOR_CLASS};
 use crate::envelope::{read_envelope, ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST};

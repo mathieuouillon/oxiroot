@@ -12,10 +12,8 @@
 //! as the ROOT release that used it would have written them.
 
 use oxiroot_hist::{Hist, TAxis, TProfile, TProfile2D, TProfile3D, WriteRoot, TH2};
-use oxiroot_io_core::buffer::{RBuffer, WBuffer};
-use oxiroot_io_core::streamer::write_tnamed;
 use oxiroot_io_core::streamer_gen::{any, base, basic, Cls, El};
-use oxiroot_io_core::{Compression, Error, FileReader, ReadRoot};
+use oxiroot_io_core::{write_tnamed, Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer};
 
 // --- TAxis ------------------------------------------------------------------
 

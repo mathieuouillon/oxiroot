@@ -1,7 +1,6 @@
 //! [`ReadRoot`] — read a ROOT object from a file with an associated function.
 
-use oxiroot_io_core::error::Result;
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{FileReader, Result};
 
 use crate::collections::{THStack, TMultiGraph};
 use crate::graph::TGraph;

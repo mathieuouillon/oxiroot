@@ -9,8 +9,7 @@
 
 use std::io::{Seek, Write};
 
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{Error, FileReader, Result};
 
 use crate::reader::{BranchMetaLite, TreeReader};
 use crate::value::BranchValues;

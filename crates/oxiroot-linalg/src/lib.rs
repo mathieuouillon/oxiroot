@@ -10,11 +10,11 @@
 //! several objects in a file via the builder in `oxiroot-hist` / the `oxiroot`
 //! facade).
 
-use oxiroot_io_core::buffer::{RBuffer, WBuffer};
-use oxiroot_io_core::error::{Error, Result};
-use oxiroot_io_core::streamer::{read_tobject, write_tobject};
 use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, Cls};
-use oxiroot_io_core::{object_bytes_any, FileReader, FromMember, ReadRoot, WriteRoot};
+use oxiroot_io_core::{
+    object_bytes_any, read_tobject, write_tobject, Error, FileReader, FromMember, RBuffer,
+    ReadRoot, Result, WBuffer, WriteRoot,
+};
 
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default
 /// `DBL_EPSILON`. Matched so written files equal ROOT's byte-for-byte.
