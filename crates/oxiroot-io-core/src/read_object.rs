@@ -17,9 +17,9 @@
 //! continues past it rather than failing.
 
 use crate::buffer::RBuffer;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::object::TagReader;
-use crate::streamer::{read_tnamed, read_tobject, skip_versioned};
+use crate::streamer::{read_tnamed, read_tobject};
 use crate::streamer_info::{StreamerElement, StreamerRegistry};
 use crate::value::Value;
 
@@ -65,9 +65,13 @@ fn read_named_object(
         | "TSortedList" => read_collection(reg, class, r, tags, depth),
         // TArray{C,S,I,L,F,D}: `{Int_t n}{n elements}`, no version header.
         _ if tarray_elem(class).is_some() => read_tarray(class, r),
-        _ => match reg.get(class) {
-            Some(info) => {
-                let vh = r.read_version()?;
+        // Read the version first: the object is decoded with the description of
+        // its own class version.
+        _ => match r
+            .read_version()
+            .map(|vh| (reg.get_at(class, i32::from(vh.version)), vh))?
+        {
+            (Some(info), vh) => {
                 let mut members = Vec::new();
                 // Decode as far as we can; a mid-object failure yields a partial
                 // object, and the byte count resynchronises the buffer.
@@ -82,9 +86,8 @@ fn read_named_object(
                     members,
                 })
             }
-            None => {
+            (None, vh) => {
                 // No layout: skip via the byte count if present, else give up.
-                let vh = r.read_version()?;
                 if let Some(end) = vh.end {
                     r.seek(end)?;
                     Ok(unsupported(
@@ -176,16 +179,23 @@ fn read_base(
             out.push(("fN".to_string(), Value::I32(n as i32)));
             out.push(("fArray".to_string(), Value::Array(items)));
         }
-        _ => match reg.get(class) {
-            Some(info) => {
-                let vh = r.read_version()?;
+        _ => match r
+            .read_version()
+            .map(|vh| (reg.get_at(class, i32::from(vh.version)), vh))?
+        {
+            (Some(info), vh) => {
                 walk(reg, &info.elements, r, tags, out, depth + 1)?;
                 if let Some(end) = vh.end {
                     r.seek(end)?;
                 }
             }
-            None => {
-                skip_versioned(r)?;
+            (None, vh) => {
+                let end = vh.end.ok_or_else(|| {
+                    Error::Format(
+                        "cannot skip a versioned object that carries no byte count".into(),
+                    )
+                })?;
+                r.seek(end)?;
                 out.push((
                     class.to_string(),
                     unsupported(class, "base class has no TStreamerInfo"),

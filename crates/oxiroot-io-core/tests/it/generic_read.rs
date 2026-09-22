@@ -207,3 +207,74 @@ fn reads_root_cpp_written_file() {
         Some(10)
     );
 }
+
+/// A file describes every version of a class it holds objects of, and the
+/// layouts can differ; each object must be decoded with its own version's.
+#[test]
+fn each_object_is_decoded_with_its_own_class_version() {
+    use oxiroot_io_core::buffer::WBuffer;
+    use oxiroot_io_core::streamer_gen::{basic, Cls};
+    use oxiroot_io_core::{Compression, FileWriter, WriteRoot};
+
+    /// `MyHit` at class version 1 (`fE`) or 2 (`fE`, then `fId`).
+    struct Hit(u16);
+    impl WriteRoot for Hit {
+        fn root_class(&self) -> String {
+            "MyHit".to_string()
+        }
+        fn root_name(&self) -> &str {
+            if self.0 == 1 {
+                "old"
+            } else {
+                "new"
+            }
+        }
+        fn root_title(&self) -> &str {
+            ""
+        }
+        fn to_root_bytes(&self) -> Vec<u8> {
+            let mut w = WBuffer::new();
+            let hit = w.begin_object(self.0);
+            w.be_f64(2.5); // fE
+            if self.0 >= 2 {
+                w.be_i32(7); // fId
+            }
+            w.end_object(hit);
+            w.into_vec()
+        }
+        fn streamer_classes(&self) -> Vec<Cls<'static>> {
+            let mut elements = vec![basic("fE", 8, 8, "double")];
+            if self.0 >= 2 {
+                elements.push(basic("fId", 3, 4, "int"));
+            }
+            vec![Cls {
+                name: "MyHit".into(),
+                version: i32::from(self.0),
+                checksum: u32::from(self.0),
+                elements,
+            }]
+        }
+    }
+
+    let path = std::env::temp_dir().join("oxiroot_generic_read_versions.root");
+    FileWriter::create(&path)
+        .add(&Hit(1))
+        .add(&Hit(2))
+        .write(Compression::None)
+        .unwrap();
+    let f = FileReader::open(&path).unwrap();
+
+    // Version 1 is described first; version 2 must not be read with its layout.
+    let new = f.get_value("new").unwrap();
+    assert_eq!(new.get("fE").and_then(Value::as_f64), Some(2.5));
+    assert_eq!(new.get("fId").and_then(Value::as_i64), Some(7), "{new}");
+    let old = f.get_value("old").unwrap();
+    assert_eq!(old.get("fE").and_then(Value::as_f64), Some(2.5));
+    assert!(old.get("fId").is_none());
+
+    // A version the file does not describe falls back to the first description.
+    let reg = f.streamer_registry().unwrap();
+    assert_eq!(reg.get_at("MyHit", 2).map(|i| i.class_version), Some(2));
+    assert_eq!(reg.get_at("MyHit", 9).map(|i| i.class_version), Some(1));
+    let _ = std::fs::remove_file(path);
+}

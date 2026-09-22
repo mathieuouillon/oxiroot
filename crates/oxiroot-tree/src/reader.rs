@@ -16,7 +16,7 @@ use oxiroot_io_core::buffer::{RBuffer, K_BYTE_COUNT_MASK};
 use oxiroot_io_core::error::{decompress_payload, Error, Result};
 use oxiroot_io_core::file::TKey;
 use oxiroot_io_core::object::TagReader;
-use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
+use oxiroot_io_core::streamer::{read_tnamed, read_tobject};
 use oxiroot_io_core::streamer_info::{StreamerElement, StreamerRegistry};
 use oxiroot_io_core::FileReader;
 
@@ -1002,18 +1002,25 @@ fn read_base(
             out.insert("fName".to_string(), MemberVal::Str(named.name));
             out.insert("fTitle".to_string(), MemberVal::Str(named.title));
         }
-        _ => match reg.get(class) {
-            Some(info) => {
-                let vh = r.read_version()?;
-                walk_members(r, reg, &info.elements, out, on_object, stop_after)?;
-                if let Some(end) = vh.end {
+        _ => {
+            // Read the version first: the base is walked with the description
+            // of its own class version.
+            let vh = r.read_version()?;
+            match reg.get_at(class, i32::from(vh.version)) {
+                Some(info) => {
+                    walk_members(r, reg, &info.elements, out, on_object, stop_after)?;
+                    if let Some(end) = vh.end {
+                        r.seek(end)?;
+                    }
+                }
+                None => {
+                    let end = vh.end.ok_or_else(|| {
+                        Error::Format(format!("cannot skip a {class} that carries no byte count"))
+                    })?;
                     r.seek(end)?;
                 }
             }
-            None => {
-                skip_versioned(r)?;
-            }
-        },
+        }
     }
     Ok(())
 }
@@ -1026,9 +1033,6 @@ fn read_tree(
     reg: &StreamerRegistry,
     class_name: &str,
 ) -> Result<TreeReader> {
-    let info = reg.get("TTree").ok_or_else(|| {
-        Error::Format("file has no TStreamerInfo for TTree; cannot parse the tree".to_string())
-    })?;
     let mut r = RBuffer::new(object);
     let mut tags = TagReader::new(keylen);
 
@@ -1041,6 +1045,11 @@ fn read_tree(
         None
     };
     let tree_hdr = r.read_version()?; // TTree
+    let info = reg
+        .get_at("TTree", i32::from(tree_hdr.version))
+        .ok_or_else(|| {
+            Error::Format("file has no TStreamerInfo for TTree; cannot parse the tree".to_string())
+        })?;
     let mut out = Members::new();
     let mut branches = Vec::new();
     let mut unsupported = Vec::new();
