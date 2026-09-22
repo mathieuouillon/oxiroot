@@ -91,7 +91,7 @@ impl Acc {
             8 => Acc::F64(Vec::new()),              // Double
             65 | 365 | 500 => Acc::Str(Vec::new()), // TString / string / STLstring
             other => {
-                return Err(Error::Format(format!(
+                return Err(Error::Unsupported(format!(
                     "streamer member {:?} has unsupported type code {other} ({})",
                     el.name, el.type_name
                 )))

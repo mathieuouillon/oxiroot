@@ -79,7 +79,7 @@ pub trait WriteRoot {
         Self: Sized,
     {
         if self.root_name().is_empty() {
-            return Err(Error::Format(format!(
+            return Err(Error::InvalidInput(format!(
                 "cannot write an unnamed {}; give it a key name with `.named(\"...\")`",
                 self.root_class()
             )));
@@ -249,9 +249,10 @@ fn write_named(path: impl AsRef<Path>, build: impl FnOnce(&str) -> Result<Vec<u8
 /// Return a key's class name together with its decompressed object bytes,
 /// without checking the class.
 pub fn object_bytes_any(file: &FileReader, name: &str) -> Result<(String, Vec<u8>)> {
-    let key = file
-        .key(name)
-        .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+    let key = file.key(name).ok_or_else(|| Error::NotFound {
+        what: "key",
+        name: name.to_string(),
+    })?;
     let payload = file.key_payload(key)?;
     let object = decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;
     Ok((key.class_name.clone(), object))
@@ -262,9 +263,10 @@ pub fn object_bytes_any(file: &FileReader, name: &str) -> Result<(String, Vec<u8
 /// back-references inside a collection (a `THStack`'s `TList` of histograms, a
 /// `TMultiGraph`'s `TList` of graphs).
 pub fn object_bytes_any_keyed(file: &FileReader, name: &str) -> Result<(String, Vec<u8>, usize)> {
-    let key = file
-        .key(name)
-        .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+    let key = file.key(name).ok_or_else(|| Error::NotFound {
+        what: "key",
+        name: name.to_string(),
+    })?;
     let payload = file.key_payload(key)?;
     let object = decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;
     Ok((key.class_name.clone(), object, key.key_len as usize))

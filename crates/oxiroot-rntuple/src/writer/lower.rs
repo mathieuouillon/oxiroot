@@ -720,7 +720,7 @@ pub(super) fn lower(fields: &[Field]) -> Result<(Vec<FieldPlan>, Vec<ColumnPlan>
         .find_map(|f| entry_count(&f.data))
         .unwrap_or(0);
     let n_entries = u32::try_from(n_rows).map_err(|_| {
-        Error::Format(format!(
+        Error::InvalidInput(format!(
             "RNTuple batch has {n_rows} entries, over the {} limit for one write",
             u32::MAX
         ))

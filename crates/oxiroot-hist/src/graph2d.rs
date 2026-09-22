@@ -66,9 +66,11 @@ fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
 
 fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<TGraph2D> {
     if class != "TGraph2D" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TGraph2D"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TGraph2D".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     let base = r.read_version()?; // TGraph2D v1

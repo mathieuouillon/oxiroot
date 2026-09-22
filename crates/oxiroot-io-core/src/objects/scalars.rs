@@ -80,9 +80,11 @@ impl WriteRoot for TObjString {
 
 pub(crate) fn decode_tobjstring(name: &str, class: &str, object: &[u8]) -> Result<TObjString> {
     if class != "TObjString" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TObjString"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TObjString".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     r.read_version()?; // TObjString version
@@ -215,7 +217,11 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
     let type_name = class
         .strip_prefix("TParameter<")
         .and_then(|s| s.strip_suffix('>'))
-        .ok_or_else(|| Error::Format(format!("key {name:?} is a {class}, not a TParameter")))?;
+        .ok_or_else(|| Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TParameter".to_string(),
+        })?;
     let mut r = RBuffer::new(object);
     r.read_version()?; // TParameter version
     read_tobject(&mut r)?; // TObject base
@@ -226,7 +232,7 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
         "int" => ParamValue::Int(r.be_i32()?),
         "Long64_t" | "long" | "long long" => ParamValue::Long64(r.be_i64()?),
         other => {
-            return Err(Error::Format(format!(
+            return Err(Error::Unsupported(format!(
                 "TParameter element type {other:?} is not supported"
             )))
         }

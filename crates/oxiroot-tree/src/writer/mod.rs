@@ -270,7 +270,7 @@ fn check_branches(branches: &[Branch]) -> Result<()> {
     check_entry_counts(branches)?;
     for b in branches {
         if !b.jagged() && !b.stl_vector() && b.is_jagged() {
-            return Err(Error::Format(format!(
+            return Err(Error::InvalidInput(format!(
                 "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_* for \
                  variable-length arrays (Branch::vec_* requires every row to have the same length)",
                 b.name

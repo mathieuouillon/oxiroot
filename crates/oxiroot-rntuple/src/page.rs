@@ -64,9 +64,11 @@ fn read_page_bytes(file: &dyn ByteSource, page: &PageInfo, bits: u16) -> Result<
         let stored = u64::from_le_bytes(win[size..size + 8].try_into().unwrap());
         let computed = xxhash_rust::xxh3::xxh3_64(compressed);
         if computed != stored {
-            return Err(Error::Format(format!(
-                "RNTuple page checksum mismatch: computed {computed:#018x}, stored {stored:#018x}"
-            )));
+            return Err(Error::ChecksumMismatch {
+                what: "RNTuple page".to_string(),
+                computed,
+                stored,
+            });
         }
     }
 
@@ -256,7 +258,7 @@ pub fn read_column(
             ))
         }
 
-        other => Err(Error::Format(format!(
+        other => Err(Error::Unsupported(format!(
             "decoding column type {other:?} is not implemented yet"
         ))),
     }

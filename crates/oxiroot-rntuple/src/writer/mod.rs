@@ -176,17 +176,20 @@ fn prep_ntuple_extended(
     for (first_entry, field) in late {
         let (mut late_fp, mut late_cols, late_n) = lower(std::slice::from_ref(field))?;
         if late_cols.len() != 1 || late_fp.len() != 1 {
-            return Err(Error::Format(format!(
+            return Err(Error::Unsupported(format!(
                 "late RNTuple field {:?} must be a scalar leaf",
                 field.name
             )));
         }
         if *first_entry + late_n as u64 != u64::from(n_entries) {
-            return Err(Error::Format(format!(
-                "late RNTuple field {:?} has {late_n} values starting at entry {first_entry}, \
-                 but the RNTuple has {n_entries} entries",
-                field.name
-            )));
+            return Err(Error::LengthMismatch {
+                what: format!(
+                    "late RNTuple field {:?}, from entry {first_entry}",
+                    field.name
+                ),
+                expected: u64::from(n_entries).saturating_sub(*first_entry) as usize,
+                found: late_n as usize,
+            });
         }
         // Continue the schema's field/column IDs past everything added so far.
         let id_base = (base_fields_plan.len() + ext_fields.len()) as u32;
@@ -314,7 +317,7 @@ fn write_one_rntuple<W: Write + Seek>(
 /// A file offset as the `usize` the envelope builders take.
 fn offset(seek: u64) -> Result<usize> {
     usize::try_from(seek)
-        .map_err(|_| Error::Format(format!("file offset {seek} does not fit this platform")))
+        .map_err(|_| Error::Unsupported(format!("file offset {seek} does not fit this platform")))
 }
 
 /// Write a one-RNTuple ROOT file to `path`, optionally compressing pages

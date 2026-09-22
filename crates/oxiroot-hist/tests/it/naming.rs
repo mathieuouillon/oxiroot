@@ -31,7 +31,7 @@ fn writing_an_unnamed_object_is_a_clear_error() {
         .double()
         .write_root(&path, Compression::None);
     match err {
-        Err(Error::Format(msg)) => assert!(msg.contains("unnamed"), "got: {msg}"),
+        Err(Error::InvalidInput(msg)) => assert!(msg.contains("unnamed"), "got: {msg}"),
         other => panic!("expected an unnamed-object error, got {other:?}"),
     }
 }
@@ -112,7 +112,7 @@ fn an_unnamed_subdirectory_is_rejected() {
     let err = FileWriter::create(&path)
         .dir("", |d| d.add(&filled("a")))
         .write(Compression::None);
-    assert!(matches!(err, Err(Error::Format(_))), "got {err:?}");
+    assert!(matches!(err, Err(Error::InvalidInput(_))), "got {err:?}");
 }
 
 #[test]

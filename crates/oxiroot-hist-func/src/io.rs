@@ -214,9 +214,11 @@ fn read_tf2_body(r: &mut RBuffer) -> Result<(GraphFunction, f64, f64)> {
 
 fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> {
     if class != "TF1" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TF1"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TF1".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     TF1::from_graph_function(GraphFunction::read_tf1_body(&mut r)?)
@@ -224,9 +226,11 @@ fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> {
 
 fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> {
     if class != "TF2" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TF2"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TF2".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     let (d, ymin, ymax) = read_tf2_body(&mut r)?;
@@ -242,9 +246,11 @@ fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> {
 
 fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> {
     if class != "TF3" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TF3"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TF3".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     let _tf3 = r.read_version()?; // TF3 v3

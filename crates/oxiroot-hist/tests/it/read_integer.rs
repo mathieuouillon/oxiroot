@@ -62,5 +62,8 @@ fn reads_integer_histograms() {
 fn th1_read_root_rejects_wrong_dimension() {
     // th2f holds a TH2F; asking for a TH1 must fail rather than mis-read.
     let err = TH1::read_root(&open("th2f_uncompressed.root"), "h2f").unwrap_err();
-    assert!(matches!(err, oxiroot_io_core::Error::Format(_)));
+    assert!(
+        matches!(&err, oxiroot_io_core::Error::WrongClass { found, .. } if found == "TH2F"),
+        "{err:?}"
+    );
 }

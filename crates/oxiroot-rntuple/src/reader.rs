@@ -28,9 +28,10 @@ pub struct NtupleReader {
 impl NtupleReader {
     /// Open the RNTuple named `name` from the file's top directory.
     pub fn open(file: &FileReader, name: &str) -> Result<NtupleReader> {
-        let key = file
-            .key(name)
-            .ok_or_else(|| Error::Format(format!("no key named {name:?}")))?;
+        let key = file.key(name).ok_or_else(|| Error::NotFound {
+            what: "key",
+            name: name.to_string(),
+        })?;
         Self::open_from_key(file, key)
     }
 
@@ -46,8 +47,9 @@ impl NtupleReader {
             .iter()
             .filter(|k| k.name == name && !k.is_deleted())
             .max_by_key(|k| k.cycle)
-            .ok_or_else(|| {
-                Error::Format(format!("no key named {name:?} in subdirectory {subdir:?}"))
+            .ok_or_else(|| Error::NotFound {
+                what: "key",
+                name: format!("{}/{name}", subdir.trim_end_matches('/')),
             })?;
         // Clone out of the borrowed `dir` so the returned RNTuple owns nothing
         // tied to it.
@@ -58,10 +60,11 @@ impl NtupleReader {
     /// Read an RNTuple given its already-located anchor `key`.
     fn open_from_key(file: &FileReader, key: &oxiroot_io_core::TKey) -> Result<NtupleReader> {
         if key.class_name != ANCHOR_CLASS {
-            return Err(Error::Format(format!(
-                "key {:?} is a {}, not {ANCHOR_CLASS}",
-                key.name, key.class_name
-            )));
+            return Err(Error::WrongClass {
+                name: key.name.clone(),
+                found: key.class_name.clone(),
+                expected: ANCHOR_CLASS.to_string(),
+            });
         }
 
         let anchor_payload = file.key_payload(key)?;
@@ -177,7 +180,10 @@ impl NtupleReader {
             .header
             .columns
             .get(column_index)
-            .ok_or_else(|| Error::Format(format!("no column {column_index}")))?;
+            .ok_or_else(|| Error::NotFound {
+                what: "column",
+                name: column_index.to_string(),
+            })?;
 
         let mut pages: Vec<PageInfo> = Vec::new();
         for cluster in &self.page_clusters {
@@ -231,7 +237,10 @@ impl NtupleReader {
             .iter()
             .enumerate()
             .position(|(i, f)| f.name == name && f.parent_field_id as usize == i)
-            .ok_or_else(|| Error::Format(format!("no top-level field named {name:?}")))?;
+            .ok_or_else(|| Error::NotFound {
+                what: "top-level field",
+                name: name.to_string(),
+            })?;
 
         let values = self.read_field_tree(file, idx)?;
         // A top-level field carries exactly one element per entry; a mismatch
@@ -435,10 +444,9 @@ impl NtupleReader {
                 // The field's type version is the class version it was written at.
                 let version = i32::try_from(fld.type_version).unwrap_or(i32::MAX);
                 let info = registry.get_at(&fld.type_name, version).ok_or_else(|| {
-                    Error::Format(format!(
-                        "streamer field {:?} has no TStreamerInfo for class {:?}",
-                        fld.name, fld.type_name
-                    ))
+                    Error::MissingStreamerInfo {
+                        class: fld.type_name.clone(),
+                    }
                 })?;
                 crate::streamer::decode(info, &offsets, &bytes)
             }
@@ -477,7 +485,7 @@ impl NtupleReader {
                     indices,
                 })
             }
-            other => Err(Error::Format(format!(
+            other => Err(Error::Unsupported(format!(
                 "field role {other:?} is not supported"
             ))),
         }

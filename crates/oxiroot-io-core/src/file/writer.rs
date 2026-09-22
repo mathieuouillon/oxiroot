@@ -69,7 +69,7 @@ impl Entries {
         for entry in &self.entries {
             let name = entry.name();
             if name.is_empty() {
-                return Err(Error::Format(format!(
+                return Err(Error::InvalidInput(format!(
                     "cannot write an unnamed {} in {location}; give it a key name with `.named(\"...\")`",
                     entry.class()
                 )));
@@ -83,7 +83,7 @@ impl Entries {
         }
         for &name in subdirs {
             if name.is_empty() {
-                return Err(Error::Format(format!(
+                return Err(Error::InvalidInput(format!(
                     "cannot create a subdirectory with an empty name in {location}"
                 )));
             }
@@ -263,7 +263,7 @@ impl FileWriter {
         match &self.existing {
             Some(existing) => {
                 if !self.dirs.is_empty() {
-                    return Err(Error::Format(
+                    return Err(Error::Unsupported(
                         "adding new subdirectories while appending is not supported \
                          (append adds objects to the top directory; existing \
                          subdirectories are preserved)"

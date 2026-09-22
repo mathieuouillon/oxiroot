@@ -75,7 +75,7 @@ fn read_basic(r: &mut RBuffer, width: usize, is_float: bool) -> Result<MemberVal
 }
 
 fn unsupported_element(el: &StreamerElement) -> Error {
-    Error::Format(format!(
+    Error::Unsupported(format!(
         "streamer element {:?} has unsupported type code {} ({})",
         el.name, el.el_type, el.type_name
     ))
@@ -173,7 +173,9 @@ fn read_base(
                 }
                 None => {
                     let end = vh.end.ok_or_else(|| {
-                        Error::Format(format!("cannot skip a {class} that carries no byte count"))
+                        Error::Unsupported(format!(
+                            "cannot skip a {class} that carries no byte count"
+                        ))
                     })?;
                     r.seek(end)?;
                 }

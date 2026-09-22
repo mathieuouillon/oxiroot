@@ -241,11 +241,11 @@ impl TProfile2D {
         let tp = r.read_version()?; // TProfile2D wrapper
         let version = tp.version;
         if version < 2 {
-            return Err(unsupported_version("TProfile2D", version, "ROOT 1"));
+            return Err(unsupported_version("TProfile2D", version));
         }
         let th2d = r.read_version()?; // TH2D wrapper
         if th2d.version < 2 {
-            return Err(unsupported_version("TH2D", th2d.version, "ROOT 1"));
+            return Err(unsupported_version("TH2D", th2d.version));
         }
         let th2 = r.read_version()?; // TH2 wrapper (TH1 base + TH2 members)
 

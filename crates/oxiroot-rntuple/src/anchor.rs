@@ -87,10 +87,10 @@ impl RNTupleAnchor {
             ));
         }
         if header.version != ANCHOR_CLASS_VERSION {
-            return Err(Error::Format(format!(
-                "RNTuple anchor: unsupported class version {} (expected {ANCHOR_CLASS_VERSION})",
-                header.version
-            )));
+            return Err(Error::UnsupportedVersion {
+                class: ANCHOR_CLASS.to_string(),
+                version: i32::from(header.version),
+            });
         }
 
         let fields_start = r.pos();
@@ -111,9 +111,11 @@ impl RNTupleAnchor {
         let stored = r.be_u64()?;
         let computed = xxhash_rust::xxh3::xxh3_64(&object[fields_start..fields_end]);
         if computed != stored {
-            return Err(Error::Format(format!(
-                "RNTuple anchor checksum mismatch: computed {computed:#018x}, stored {stored:#018x}"
-            )));
+            return Err(Error::ChecksumMismatch {
+                what: "RNTuple anchor".to_string(),
+                computed,
+                stored,
+            });
         }
 
         Ok(RNTupleAnchor {

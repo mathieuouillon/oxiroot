@@ -105,7 +105,7 @@ impl TProfile {
         let tprofile = r.read_version()?; // TProfile wrapper
         let version = tprofile.version;
         if version < 2 {
-            return Err(unsupported_version("TProfile", version, "ROOT 1"));
+            return Err(unsupported_version("TProfile", version));
         }
 
         // The TH1D base: its own wrapper, the TH1 base, and the TArrayD sums.

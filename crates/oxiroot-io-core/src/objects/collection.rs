@@ -293,9 +293,11 @@ fn read_members(class: &str, object: &[u8], keylen: usize) -> Result<(String, Ve
         "TList" => ListKind::List,
         "TObjArray" => ListKind::Array,
         other => {
-            return Err(Error::Format(format!(
-                "key is a {other}, not a TList or TObjArray"
-            )))
+            return Err(Error::WrongClass {
+                name: String::new(),
+                found: other.to_string(),
+                expected: "TList or TObjArray".to_string(),
+            })
         }
     };
     let mut r = RBuffer::new(object);
@@ -573,7 +575,11 @@ fn read_entry(r: &mut RBuffer, tags: &mut TagReader, object: &[u8]) -> Result<Ma
 
 fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
     if class != "TMap" {
-        return Err(Error::Format(format!("key is a {class}, not a TMap")));
+        return Err(Error::WrongClass {
+            name: String::new(),
+            found: class.to_string(),
+            expected: "TMap".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     r.read_version()?; // TMap version

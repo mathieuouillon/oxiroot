@@ -274,7 +274,7 @@ impl FieldValues {
             VecF32(a) => join!(a, VecF32),
             VecF64(a) => join!(a, VecF64),
             VecStr(a) => join!(a, VecStr),
-            Record(_) | Nested { .. } | Variant { .. } | Opt { .. } => Err(Error::Format(
+            Record(_) | Nested { .. } | Variant { .. } | Opt { .. } => Err(Error::Unsupported(
                 "cannot concatenate a structural RNTuple field (record, nested \
                  collection, variant, or optional)"
                     .into(),
@@ -286,9 +286,11 @@ impl FieldValues {
 /// The error returned by [`FieldValues::append`] when the two fields are not the
 /// same variant.
 fn fv_mismatch(expected: &str) -> Error {
-    Error::Format(format!(
+    Error::SchemaChanged {
+        detail: format!(
         "cannot concatenate RNTuple fields of different types (expected another {expected} field)"
-    ))
+    ),
+    }
 }
 
 /// Generate `opt_<ty>(&self) -> Option<Vec<Option<T>>>` accessors that zip an
@@ -348,7 +350,7 @@ pub(crate) fn scalar(values: ColumnValues) -> Result<FieldValues> {
         ColumnValues::F32(v) => FieldValues::F32(v),
         ColumnValues::F64(v) => FieldValues::F64(v),
         ColumnValues::Bytes(_) => {
-            return Err(Error::Format(
+            return Err(Error::Unsupported(
                 "byte-typed scalar fields are not supported".into(),
             ))
         }

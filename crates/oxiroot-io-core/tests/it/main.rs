@@ -4,6 +4,7 @@
 mod collection_streamers;
 mod container;
 mod decompress_error;
+mod errors;
 mod generic_read;
 mod malformed;
 mod mmap;

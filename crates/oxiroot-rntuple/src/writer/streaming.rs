@@ -225,10 +225,9 @@ impl<W: Write + Seek> NtupleWriter<W> {
     /// Finish the file: write the page list (all clusters), footer, anchor key,
     /// and key list, then patch the header pointers.
     pub fn finish(mut self) -> Result<()> {
-        let header = self
-            .header
-            .take()
-            .ok_or_else(|| Error::Format("NtupleWriter finished with no batches written".into()))?;
+        let header = self.header.take().ok_or_else(|| {
+            Error::InvalidInput("NtupleWriter finished with no batches written".into())
+        })?;
         let num_clusters = self.summaries.len() as u32;
 
         let compression = self.file.compression_setting();

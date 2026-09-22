@@ -288,9 +288,11 @@ impl BranchValues {
 /// The error returned by [`BranchValues::append`] when the two columns are not
 /// the same variant.
 fn type_mismatch(expected: &str) -> Error {
-    Error::Format(format!(
-        "cannot concatenate branches of different types (expected another {expected} column)"
-    ))
+    Error::SchemaChanged {
+        detail: format!(
+            "cannot concatenate branches of different types (expected another {expected} column)"
+        ),
+    }
 }
 
 /// Generate `as_<ty>() -> Option<&[..]>` accessors for the common scalar types.

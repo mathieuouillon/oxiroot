@@ -446,8 +446,10 @@ pub(crate) fn decode_tgraph(name: &str, class: &str, object: &[u8]) -> Result<TG
             };
             Ok(g)
         }
-        other => Err(Error::Format(format!(
-            "key {name:?} is a {other}, not a TGraph/TGraphErrors/TGraphAsymmErrors"
-        ))),
+        other => Err(Error::WrongClass {
+            name: name.to_string(),
+            found: other.to_string(),
+            expected: "TGraph, TGraphErrors or TGraphAsymmErrors".to_string(),
+        }),
     }
 }

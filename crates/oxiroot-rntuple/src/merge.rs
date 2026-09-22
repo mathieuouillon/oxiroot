@@ -34,7 +34,7 @@ use crate::writer::{Field, Ntuple, NtupleWriter};
 pub fn concat_ntuples(name: &str, inputs: &[(&FileReader, &NtupleReader)]) -> Result<Ntuple> {
     let &(first_file, first) = inputs
         .first()
-        .ok_or_else(|| Error::Format("concat_ntuples: no input RNTuples".into()))?;
+        .ok_or_else(|| Error::InvalidInput("concat_ntuples: no input RNTuples".into()))?;
 
     let field_names = first.field_names();
     let mut fields = Vec::with_capacity(field_names.len());
@@ -45,11 +45,11 @@ pub fn concat_ntuples(name: &str, inputs: &[(&FileReader, &NtupleReader)]) -> Re
         let mut values = first.read_field(first_file, field)?;
         for (i, &(file, ntuple)) in inputs.iter().enumerate().skip(1) {
             let more = ntuple.read_field(file, field).map_err(|e| {
-                Error::Format(format!("concat_ntuples: input #{i} field {field:?}: {e}"))
+                e.context(format_args!("concat_ntuples: input #{i} field {field:?}"))
             })?;
             values
                 .append(more)
-                .map_err(|e| Error::Format(format!("concat_ntuples: field {field:?}: {e}")))?;
+                .map_err(|e| e.context(format_args!("concat_ntuples: field {field:?}")))?;
         }
         fields.push(build_field(field, values)?);
     }
@@ -73,14 +73,14 @@ pub fn append_ntuples<W: Write + Seek>(
 ) -> Result<u64> {
     let &(_, first) = inputs
         .first()
-        .ok_or_else(|| Error::Format("append_ntuples: no input RNTuples".into()))?;
+        .ok_or_else(|| Error::InvalidInput("append_ntuples: no input RNTuples".into()))?;
     let field_names = first.field_names();
     let mut appended = 0;
     for (i, &(file, ntuple)) in inputs.iter().enumerate() {
         let mut batch = Vec::with_capacity(field_names.len());
         for &field in &field_names {
             let values = ntuple.read_field(file, field).map_err(|e| {
-                Error::Format(format!("append_ntuples: input #{i} field {field:?}: {e}"))
+                e.context(format_args!("append_ntuples: input #{i} field {field:?}"))
             })?;
             batch.push(build_field(field, values)?);
         }
@@ -94,7 +94,7 @@ pub fn append_ntuples<W: Write + Seek>(
 fn build_field(name: &str, values: FieldValues) -> Result<Field> {
     use FieldValues::*;
     let reject = |what: &str| -> Result<Field> {
-        Err(Error::Format(format!(
+        Err(Error::Unsupported(format!(
             "concat_ntuples: field {name:?} is a {what}, which oxiroot cannot write yet",
         )))
     };

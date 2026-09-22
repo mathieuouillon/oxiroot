@@ -411,14 +411,16 @@ pub(crate) fn read_th2poly(file: &FileReader, name: &str) -> Result<TH2Poly> {
 pub(crate) fn read_th2poly_in(file: &FileReader, subdir: &str, name: &str) -> Result<TH2Poly> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     if class != "TH2Poly" {
-        return Err(Error::Format(format!(
-            "key {name:?} in {subdir:?} is a {class}, not TH2Poly"
-        )));
+        return Err(Error::WrongClass {
+            name: format!("{}/{name}", subdir.trim_end_matches('/')),
+            found: class,
+            expected: "TH2Poly".to_string(),
+        });
     }
     decode_th2poly(name, &object, keylen)
 }
 
 fn decode_th2poly(name: &str, object: &[u8], keylen: usize) -> Result<TH2Poly> {
     TH2Poly::read(&mut RBuffer::new(object), keylen)
-        .map_err(|e| Error::Format(format!("reading TH2Poly {name:?}: {e}")))
+        .map_err(|e| e.context(format_args!("reading TH2Poly {name:?}")))
 }

@@ -81,7 +81,7 @@ fn concat_values(parts: Vec<BranchValues>, name: &str) -> Result<BranchValues> {
     use BranchValues::*;
     let mut it = parts.into_iter();
     let Some(first) = it.next() else {
-        return Err(Error::Format(format!(
+        return Err(Error::InvalidInput(format!(
             "chain has no trees to read branch {name:?} from"
         )));
     };
@@ -91,11 +91,13 @@ fn concat_values(parts: Vec<BranchValues>, name: &str) -> Result<BranchValues> {
                 match p {
                     $variant(more) => $acc.extend(more),
                     other => {
-                        return Err(Error::Format(format!(
-                            "branch {name:?} has inconsistent types across the chain \
+                        return Err(Error::SchemaChanged {
+                            detail: format!(
+                                "branch {name:?} has inconsistent types across the chain \
                              (got {:?})",
-                            other.leaf_type()
-                        )))
+                                other.leaf_type()
+                            ),
+                        })
                     }
                 }
             }
@@ -142,11 +144,13 @@ fn concat_values(parts: Vec<BranchValues>, name: &str) -> Result<BranchValues> {
                         acc_items.push(*items);
                     }
                     other => {
-                        return Err(Error::Format(format!(
-                            "branch {name:?} has inconsistent types across the chain \
+                        return Err(Error::SchemaChanged {
+                            detail: format!(
+                                "branch {name:?} has inconsistent types across the chain \
                              (got {:?})",
-                            other.leaf_type()
-                        )))
+                                other.leaf_type()
+                            ),
+                        })
                     }
                 }
             }

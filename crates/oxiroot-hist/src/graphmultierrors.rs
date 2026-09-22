@@ -130,9 +130,11 @@ fn read_vector_tarrayd(r: &mut RBuffer) -> Result<Vec<Vec<f64>>> {
 
 fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<TGraphMultiErrors> {
     if class != "TGraphMultiErrors" {
-        return Err(Error::Format(format!(
-            "key {name:?} is a {class}, not a TGraphMultiErrors"
-        )));
+        return Err(Error::WrongClass {
+            name: name.to_string(),
+            found: class.to_string(),
+            expected: "TGraphMultiErrors".to_string(),
+        });
     }
     let mut r = RBuffer::new(object);
     let outer = r.read_version()?; // TGraphMultiErrors v1

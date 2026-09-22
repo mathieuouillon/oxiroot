@@ -288,7 +288,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
             )));
         }
         if header.is_big() && !big {
-            return Err(Error::Format(
+            return Err(Error::InvalidInput(
                 "a 64-bit file must be continued in the 64-bit form".to_string(),
             ));
         }
@@ -303,7 +303,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
                 .saturating_sub(u32::from(name_key.key_len));
             let reserved = name_key.obj_len.saturating_sub(name_title_len);
             if reserved < dir_record_len(true) {
-                return Err(Error::Format(format!(
+                return Err(Error::Unsupported(format!(
                     "cannot append into the 64-bit form: this file's root directory record \
                      reserves {reserved} bytes, but the big form needs {}. Rewrite the file \
                      with FileWriter::create (which reserves the 64-bit width) first.",
@@ -371,7 +371,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         self.dirs
             .get(dir.0)
             .map(|d| d.seek)
-            .ok_or_else(|| Error::Format(format!("{dir:?} does not belong to this file")))
+            .ok_or_else(|| Error::InvalidInput(format!("{dir:?} does not belong to this file")))
     }
 
     /// The compression setting (`algorithm*100 + level`) this file applies to
@@ -561,7 +561,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// [`finish`](Self::finish).
     pub fn close_dir(&mut self, dir: DirId) -> Result<()> {
         if dir == DirId::TOP {
-            return Err(Error::Format(
+            return Err(Error::InvalidInput(
                 "the top directory is closed by finish()".to_string(),
             ));
         }
@@ -631,11 +631,11 @@ impl<W: Write + Seek> ContainerWriter<W> {
     fn check_open(&self, dir: DirId) -> Result<()> {
         match self.dirs.get(dir.0) {
             Some(d) if d.open => Ok(()),
-            Some(d) => Err(Error::Format(format!(
+            Some(d) => Err(Error::InvalidInput(format!(
                 "directory {:?} is already closed",
                 d.name
             ))),
-            None => Err(Error::Format(format!(
+            None => Err(Error::InvalidInput(format!(
                 "{dir:?} does not belong to this file"
             ))),
         }
@@ -935,7 +935,7 @@ fn streamer_info_title(key_len: u16, big: bool) -> Option<String> {
 fn check_key_strings(class: &str, name: &str, title: &str) -> Result<()> {
     let len = TKey::header_len(class, name, title, true);
     if len > usize::from(u16::MAX) {
-        return Err(Error::Format(format!(
+        return Err(Error::InvalidInput(format!(
             "key {:?}: class, name and title total {len} bytes, more than a ROOT key header can hold",
             name.chars().take(40).collect::<String>()
         )));
@@ -946,7 +946,7 @@ fn check_key_strings(class: &str, name: &str, title: &str) -> Result<()> {
 /// A key's lengths must fit its 32-bit fields.
 fn checked_len(len: usize, name: &str) -> Result<u32> {
     u32::try_from(len).map_err(|_| {
-        Error::Format(format!(
+        Error::InvalidInput(format!(
             "record {name:?} is {len} bytes, more than a ROOT key can hold"
         ))
     })

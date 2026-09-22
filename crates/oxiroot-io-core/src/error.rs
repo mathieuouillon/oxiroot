@@ -36,8 +36,62 @@ pub enum Error {
         /// Bytes actually consumed reading it.
         got: usize,
     },
-    /// A generic, described format violation.
+    /// The bytes break the ROOT format: a truncated record, a size that runs
+    /// past its end, an offset out of range, … The file is corrupt, or not what
+    /// it claims to be.
     Format(String),
+    /// No key, subdirectory, branch or field of that name.
+    NotFound {
+        /// What was looked for: `"key"`, `"subdirectory"`, `"branch"`, `"field"`,
+        /// …
+        what: &'static str,
+        /// The name looked for. A key in a subdirectory is named by its path
+        /// (`"dir/name"`).
+        name: String,
+    },
+    /// A key holds a different class than the one asked for: reading a `TH2F` as
+    /// a `TH1`, say.
+    WrongClass {
+        /// The key's name (its path, in a subdirectory); empty if unknown.
+        name: String,
+        /// The class the key holds.
+        found: String,
+        /// The class, or classes, that were asked for.
+        expected: String,
+    },
+    /// An object's class version is one this crate cannot decode: older than
+    /// the first version ROOT describes through streamer info, or newer than
+    /// oxiroot knows.
+    UnsupportedVersion {
+        /// The class.
+        class: String,
+        /// Its version in the file.
+        version: i32,
+    },
+    /// The file has no `TStreamerInfo` for a class it holds, and decoding the
+    /// class needs one.
+    MissingStreamerInfo {
+        /// The class.
+        class: String,
+    },
+    /// A checksum stored in the file does not match its data: the data is
+    /// corrupt.
+    ChecksumMismatch {
+        /// What was checked, e.g. `RNTuple page`.
+        what: String,
+        /// The checksum of the data read.
+        computed: u64,
+        /// The checksum stored in the file.
+        stored: u64,
+    },
+    /// The input is valid ROOT, but oxiroot does not read or write it yet: a
+    /// column encoding, a streamer type, a set of objects `hadd` cannot merge,
+    /// … The message says what.
+    Unsupported(String),
+    /// An argument cannot be used: an object without a name, an axis without
+    /// edges, no inputs to merge, a batch over a format limit, … Nothing was
+    /// written. The message says what and, where there is one, the fix.
+    InvalidInput(String),
     /// A stored payload could not be decompressed. `source` says why; a codec
     /// this build cannot decode is [`CompressError::CodecUnavailable`].
     Decompress {
@@ -71,8 +125,8 @@ pub enum Error {
         /// Its actual length.
         found: usize,
     },
-    /// A streaming writer received entries whose schema differs from the
-    /// schema already committed to the file.
+    /// Inputs that must share a schema do not: a streaming writer's batches,
+    /// the trees or RNTuples being concatenated, or the trees of a chain.
     SchemaChanged {
         /// Human-readable description of the schema change.
         detail: String,
@@ -133,6 +187,32 @@ impl fmt::Display for Error {
                 )
             }
             Error::Format(s) => write!(f, "format error: {s}"),
+            Error::NotFound { what, name } => write!(f, "no {what} named {name:?}"),
+            Error::WrongClass {
+                name,
+                found,
+                expected,
+            } if name.is_empty() => write!(f, "the object is a {found}, not a {expected}"),
+            Error::WrongClass {
+                name,
+                found,
+                expected,
+            } => write!(f, "key {name:?} is a {found}, not a {expected}"),
+            Error::UnsupportedVersion { class, version } => {
+                write!(f, "{class} class version {version} is not supported")
+            }
+            Error::MissingStreamerInfo { class } => {
+                write!(f, "the file has no TStreamerInfo for {class}")
+            }
+            Error::ChecksumMismatch {
+                what,
+                computed,
+                stored,
+            } => write!(
+                f,
+                "{what} checksum mismatch: computed {computed:#018x}, stored {stored:#018x}"
+            ),
+            Error::Unsupported(s) | Error::InvalidInput(s) => f.write_str(s),
             Error::Decompress { context, source } if context.is_empty() => {
                 write!(f, "decompression failed: {source}")
             }
@@ -160,6 +240,28 @@ impl fmt::Display for Error {
             #[cfg(feature = "formula")]
             Error::Formula(e) => write!(f, "invalid formula: {e}"),
             Error::Plot(message) => write!(f, "plotting: {message}"),
+        }
+    }
+}
+
+impl Error {
+    /// This error with `context` in front of its message, for the variants that
+    /// carry a free-text message (`Format`, `Unsupported`, `InvalidInput`,
+    /// `SchemaChanged`, `BinningMismatch`). The other variants are returned
+    /// unchanged, so the error keeps its type.
+    #[must_use]
+    pub fn context(self, context: impl fmt::Display) -> Error {
+        match self {
+            Error::Format(m) => Error::Format(format!("{context}: {m}")),
+            Error::Unsupported(m) => Error::Unsupported(format!("{context}: {m}")),
+            Error::InvalidInput(m) => Error::InvalidInput(format!("{context}: {m}")),
+            Error::SchemaChanged { detail } => Error::SchemaChanged {
+                detail: format!("{context}: {detail}"),
+            },
+            Error::BinningMismatch { detail } => Error::BinningMismatch {
+                detail: format!("{context}: {detail}"),
+            },
+            other => other,
         }
     }
 }

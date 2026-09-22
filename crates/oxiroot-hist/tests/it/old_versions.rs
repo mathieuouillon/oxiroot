@@ -88,10 +88,11 @@ fn every_streamed_axis_version_reads() {
 #[test]
 fn an_axis_older_than_streamer_info_is_an_error() {
     let bytes = axis_record(5, 3, 0.0, 3.0, &[]);
-    let Err(Error::Format(message)) = TAxis::read(&mut RBuffer::new(&bytes)) else {
+    let Err(Error::UnsupportedVersion { class, version }) = TAxis::read(&mut RBuffer::new(&bytes))
+    else {
         panic!("TAxis v5 read");
     };
-    assert!(message.contains("TAxis class version 5"), "{message}");
+    assert_eq!((class.as_str(), version), ("TAxis", 5));
 }
 
 // --- Profiles ---------------------------------------------------------------
@@ -294,10 +295,10 @@ fn every_streamed_tprofile3d_version_reads() {
 fn profiles_older_than_streamer_info_are_an_error() {
     let p1 = Hist::reg(2, 0.0, 2.0).profile().named("p");
     let old = downgrade(&TPROFILE, p1.to_root_bytes(), 0, 1);
-    let Err(Error::Format(message)) = read_back::<TProfile>(&old, 1) else {
+    let Err(Error::UnsupportedVersion { class, version }) = read_back::<TProfile>(&old, 1) else {
         panic!("TProfile v1 read");
     };
-    assert!(message.contains("TProfile class version 1"), "{message}");
+    assert_eq!((class.as_str(), version), ("TProfile", 1));
 
     let p3 = Hist::reg(1, 0.0, 1.0)
         .reg(1, 0.0, 1.0)
@@ -305,10 +306,10 @@ fn profiles_older_than_streamer_info_are_an_error() {
         .profile()
         .named("p");
     let old = downgrade(&TPROFILE3D, p3.to_root_bytes(), 0, 5);
-    assert!(matches!(
-        read_back::<TProfile3D>(&old, 5),
-        Err(Error::Format(_))
-    ));
+    let Err(Error::UnsupportedVersion { class, version }) = read_back::<TProfile3D>(&old, 5) else {
+        panic!("TProfile3D v5 read");
+    };
+    assert_eq!((class.as_str(), version), ("TProfile3D", 5));
 
     // A TH1 base at class version 1 stored floats where later ones store
     // doubles. It sits after the TProfile and TH1D headers (6 bytes each).
@@ -319,10 +320,10 @@ fn profiles_older_than_streamer_info_are_an_error() {
         bytes,
         info: downgrade(&TPROFILE, p1.to_root_bytes(), 0, 7).info,
     };
-    let Err(Error::Format(message)) = read_back::<TProfile>(&old, 71) else {
+    let Err(Error::UnsupportedVersion { class, version }) = read_back::<TProfile>(&old, 71) else {
         panic!("TH1 v1 read");
     };
-    assert!(message.contains("TH1 class version 1"), "{message}");
+    assert_eq!((class.as_str(), version), ("TH1", 1));
 }
 
 #[test]
@@ -342,8 +343,8 @@ fn a_root_1_th2d_is_an_error() {
             elements: Vec::new(),
         },
     };
-    let Err(Error::Format(message)) = read_back::<TH2>(&old, 1) else {
+    let Err(Error::UnsupportedVersion { class, version }) = read_back::<TH2>(&old, 1) else {
         panic!("TH2D v1 read");
     };
-    assert!(message.contains("TH2 class version 1"), "{message}");
+    assert_eq!((class.as_str(), version), ("TH2", 1));
 }

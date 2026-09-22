@@ -105,7 +105,7 @@ impl ColumnType {
             0x1C => Real32Trunc,
             0x1D => Real32Quant,
             other => {
-                return Err(Error::Format(format!(
+                return Err(Error::Unsupported(format!(
                     "unknown RNTuple column type {other:#x}"
                 )))
             }
