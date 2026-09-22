@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["root", "cern", "hep", "histogram", "physics"]
+categories = ["science", "parser-implementations"]
 description = "Classic ROOT histograms, profiles and graphs (TH1/TH2/TH3/TProfile/TGraph…) read/write"
 
 [dependencies]

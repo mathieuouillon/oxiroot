@@ -94,25 +94,25 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 
 ## Quick start
 
-Not yet on crates.io — depend on it via git. Pull in everything through the
-facade, or just the part you need: the histogram, tree, and RNTuple crates are
-independent, so a histogram-only project never compiles the others.
+Pull in everything through the facade, or just the part you need: the
+histogram, tree, and RNTuple crates are independent, so a histogram-only project
+never compiles the others.
 
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple, fitting, plotting — through
 # the facade. Fitting, plotting, mmap and argmin are ON BY DEFAULT, so nothing
 # extra to enable (add `features = ["rayon"]` for the parallel helpers):
-oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
+oxiroot = "0.1"
 
 # …leaner, just the format core (drops the fitting/plotting/mmap deps):
-# oxiroot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
+# oxiroot = { version = "0.1", default-features = false }
 
-# …or depend on just one crate from the same repo:
-oxiroot-hist      = { git = "https://github.com/mathieuouillon/oxiroot" }  # histograms + graphs
-oxiroot-hist-func = { git = "https://github.com/mathieuouillon/oxiroot" }  # TF1/TF2/TF3
-oxiroot-tree      = { git = "https://github.com/mathieuouillon/oxiroot" }  # TTree
-oxiroot-rntuple   = { git = "https://github.com/mathieuouillon/oxiroot" }  # RNTuple
+# …or depend on just one crate:
+oxiroot-hist      = "0.1"  # histograms + graphs
+oxiroot-hist-func = "0.1"  # TF1/TF2/TF3
+oxiroot-tree      = "0.1"  # TTree
+oxiroot-rntuple   = "0.1"  # RNTuple
 ```
 
 ```rust
@@ -744,7 +744,7 @@ ax2.save("heatmap.svg")?;
 ### Command-line inspector — `oxroot` (`oxiroot-cli`)
 
 - **Look into a ROOT file from the shell**, no ROOT or Python:
-  `cargo install --path crates/oxiroot-cli` builds the `oxroot` binary. Objects
+  `cargo install oxiroot-cli` installs the `oxroot` binary. Objects
   are addressed `file.root:name` (uproot-style), with a `/`-path for nested
   `TDirectory`s (`file.root:cal/run2/Events`).
 - `oxroot ls [-l] [-r]` — list objects (name, class, title; `-l` adds cycle and
@@ -917,7 +917,8 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 
 ## Roadmap
 
-Experimental (`0.0.x`). On the list — each item targets the same bar as what
+Pre-1.0 (`0.1`): the API may still change between minor versions. On the list —
+each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 Grouped by the ROOT feature each fills.
 

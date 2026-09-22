@@ -10,6 +10,9 @@ rust-version.workspace = true
 # LICENSE-3rdparty.
 license = "MIT"
 repository.workspace = true
+homepage.workspace = true
+keywords = ["tex", "latex", "math", "typesetting"]
+categories = ["visualization"]
 description = "TeX math layout for oxiroot-plot: a trimmed, vendored copy of the ReX engine (KenyC/ReX). Internal; not a stable API."
 include = ["/src/**/*.rs", "/README.md", "/LICENSE-3rdparty"]
 

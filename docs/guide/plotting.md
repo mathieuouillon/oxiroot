@@ -13,7 +13,7 @@ behind the **`plot` feature** and exposed as `oxiroot::plot`.
 ```toml
 [dependencies]
 # the `plot` feature is on by default:
-oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
+oxiroot = "0.1"
 ```
 
 !!! note "How it works"
@@ -23,8 +23,8 @@ oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
     and text is reduced to glyph outlines, so the SVG is self-contained. `$…$`
     labels are typeset as real LaTeX math by the pure-Rust
     [ReX](https://github.com/KenyC/ReX) TeX engine into the same IR. ReX is not
-    on crates.io, so a trimmed copy is vendored in the workspace as
-    `oxiroot-rex`.
+    on crates.io, so a trimmed copy is vendored in the workspace and published
+    as `oxiroot-rex`.
 
 !!! tip "An SVG/PDF-only build"
     PNG output (`png`) and TeX math (`math`) are features of `oxiroot-plot`, both
@@ -35,7 +35,7 @@ oxiroot = { git = "https://github.com/mathieuouillon/oxiroot" }
 
     ```toml
     [dependencies]
-    oxiroot-plot = { git = "https://github.com/mathieuouillon/oxiroot", default-features = false }
+    oxiroot-plot = { version = "0.1", default-features = false }
     ```
 
 ## API conventions

@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords = ["root", "cern", "hep", "ttree", "columnar"]
+categories = ["science", "parser-implementations", "encoding"]
 description = "Reading and writing ROOT TTree (classic columnar storage)"
 
 [dependencies]
@@ -15,6 +18,10 @@ rayon = { version = "1", optional = true }
 # Add `TreeReader::read_branch_par` and friends, which decompress a branch's baskets
 # in parallel. The plain read methods stay serial either way.
 rayon = ["dep:rayon"]
+
+# Render the parallel reads (`rayon`) in the docs.rs API reference.
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

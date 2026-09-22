@@ -6,8 +6,9 @@ It ships in the `oxiroot-cli` crate and is built on the same readers as the
 library.
 
 ```sh
-cargo install --path crates/oxiroot-cli   # installs the `oxroot` binary
+cargo install oxiroot-cli   # installs the `oxroot` binary
 # or, from a checkout:
+cargo install --path crates/oxiroot-cli
 cargo run -p oxiroot-cli -- <command> ...
 ```
 
