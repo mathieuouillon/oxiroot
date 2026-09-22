@@ -16,6 +16,7 @@ mod linalg;
 mod malformed;
 mod naming;
 mod objlist;
+mod old_versions;
 mod ops;
 mod persist_objects;
 mod profile_merge;

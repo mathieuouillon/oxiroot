@@ -4,6 +4,8 @@ use oxiroot_io_core::buffer::RBuffer;
 use oxiroot_io_core::error::{Error, Result};
 use oxiroot_io_core::streamer::{read_tnamed, read_tobject, skip_versioned};
 
+use crate::base::end_record;
+
 /// A ROOT histogram axis (`TAxis`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TAxis {
@@ -116,8 +118,18 @@ impl TAxis {
 
     /// Read a `TAxis` from `r` (positioned at the axis's `{byte-count, version}`
     /// header), leaving the cursor at the axis's end.
+    ///
+    /// Class versions 6 to 10 are read (ROOT 3.02 onwards): version 7 added
+    /// `fLabels`, version 8 `fBits2`, and version 10 `fModLabs`. Earlier versions
+    /// used a hand-written streamer and are an error.
     pub fn read(r: &mut RBuffer) -> Result<TAxis> {
         let vh = r.read_version()?; // TAxis (e.g. version 10)
+        if vh.version < 6 {
+            return Err(Error::Format(format!(
+                "TAxis class version {} (ROOT 2) is not supported",
+                vh.version
+            )));
+        }
         let named = read_tnamed(r)?; // TNamed base
         skip_versioned(r)?; // TAttAxis base (drawing attributes — not needed)
 
@@ -137,15 +149,19 @@ impl TAxis {
         // fFirst, fLast, fBits2, fTimeDisplay, fTimeFormat precede the labels.
         let _first = r.be_i32()?;
         let _last = r.be_i32()?;
-        let _bits2 = r.be_u16()?;
+        if vh.version >= 8 {
+            let _bits2 = r.be_u16()?;
+        }
         let _time_display = r.u8()?;
         let _time_format = r.string()?;
-        let labels = read_labels(r, nbins.max(0) as usize)?; // fLabels (THashList*)
+        let labels = if vh.version >= 7 {
+            read_labels(r, nbins.max(0) as usize)? // fLabels (THashList*)
+        } else {
+            Vec::new()
+        };
 
         // Skip the remainder (fModLabs) via the axis byte count.
-        if let Some(end) = vh.end {
-            r.seek(end)?;
-        }
+        end_record(r, &vh, "TAxis")?;
 
         Ok(TAxis {
             name: named.name,

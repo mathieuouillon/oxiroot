@@ -11,8 +11,8 @@ use oxiroot_io_core::FileReader;
 
 use crate::axis::TAxis;
 use crate::base::{
-    cell_count, check_cells, object_bytes, object_bytes_in, read_tarray, read_th1_base,
-    BinContentType,
+    cell_count, check_cells, end_record, object_bytes, object_bytes_in, read_tarray, read_th1_base,
+    unsupported_version, BinContentType,
 };
 use crate::tprofile::ErrorMode;
 
@@ -240,7 +240,17 @@ impl TProfile3D {
     }
 
     pub(crate) fn read(r: &mut RBuffer) -> Result<TProfile3D> {
+        // fBinSumw2 arrived in class version 7 (ROOT 5.24). The class was added
+        // at version 6 (ROOT 5.12), which already had the other members.
         let tp = r.read_version()?; // TProfile3D wrapper
+        let version = tp.version;
+        if version < 6 {
+            return Err(unsupported_version(
+                "TProfile3D",
+                version,
+                "older than the class, added at version 6",
+            ));
+        }
         let _th3d = r.read_version()?; // TH3D wrapper
         let th3 = r.read_version()?; // TH3 wrapper
 
@@ -265,11 +275,12 @@ impl TProfile3D {
         let tmax = r.be_f64()?;
         let tsumwt = r.be_f64()?;
         let tsumwt2 = r.be_f64()?;
-        let bin_sumw2 = read_tarray(r, BinContentType::F64)?;
-
-        if let Some(end) = tp.end {
-            r.seek(end)?;
-        }
+        let bin_sumw2 = if version >= 7 {
+            read_tarray(r, BinContentType::F64)?
+        } else {
+            Vec::new() // no fBinSumw2: weights were not tracked
+        };
+        end_record(r, &tp, "TProfile3D")?;
 
         let cells = cell_count(&[c.xaxis.nbins, c.yaxis.nbins, c.zaxis.nbins])?;
         check_cells("TProfile3D sums", sums.len(), cells, false)?;
