@@ -68,6 +68,12 @@ assert!((ndtri(0.975)        - 1.959963984540054).abs()   < 1e-9);
 so it stays accurate deep into the tails — that is what keeps a 5σ p-value
 (`≈ 2.87e-7`) round-tripping (see [Physics helpers](#physics-helpers)).
 
+`gammainc`/`gammaincc` follow scipy's algorithms, and near `x ≈ a` switch to
+Temme's uniform asymptotic expansion, so they stay accurate for any shape
+parameter: within 10⁻¹³ of 50-digit references from `a = 0.01` up to `a = 10¹⁵`.
+Zero, negative and infinite arguments give scipy's values — `NaN` for a negative
+argument, `P(0, x) = 1` for `x > 0`, `P(a, 0) = 0`.
+
 ## Distributions
 
 Each continuous distribution is a small `Copy` struct with `pdf` / `cdf` / `sf`

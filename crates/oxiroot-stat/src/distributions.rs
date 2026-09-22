@@ -151,14 +151,20 @@ impl ChiSquared {
         let lp = (k / 2.0 - 1.0) * x.ln() - x / 2.0 - (k / 2.0) * 2.0_f64.ln() - gammaln(k / 2.0);
         lp.exp()
     }
-    /// Cumulative distribution `P(X ≤ x)`.
+    /// Cumulative distribution `P(X ≤ x)`; 0 below the support.
     #[must_use]
     pub fn cdf(&self, x: f64) -> f64 {
+        if x < 0.0 {
+            return 0.0;
+        }
         gammainc(self.df / 2.0, x / 2.0)
     }
-    /// Survival function `P(X > x)`.
+    /// Survival function `P(X > x)`; 1 below the support.
     #[must_use]
     pub fn sf(&self, x: f64) -> f64 {
+        if x < 0.0 {
+            return 1.0;
+        }
         gammaincc(self.df / 2.0, x / 2.0)
     }
     /// Quantile / inverse CDF.
