@@ -1,10 +1,14 @@
 //! Merging histogram files — the histogram half of [`merge_files`](super::merge_files).
 //!
 //! [`merge_histogram_files`] combines several ROOT files whose keys are all
-//! histogram-family objects: the summable ones (`TH1`/`TH2`/`TH3` and the
-//! `TProfile`/`TProfile2D`/`TProfile3D` profiles) are added bin-by-bin the way
-//! ROOT's `hadd` does, and every other supported object (graphs, efficiencies,
-//! functions, strings, matrices, …) is copied from the first file that holds it.
+//! histogram-family objects. Everything ROOT's `hadd` merges is merged the same
+//! way: `TH1`/`TH2`/`TH3`, the `TProfile`s, `TH2Poly` and `THnSparse` bin by
+//! bin, a `TEfficiency`'s passed and total histograms, a `THStack`'s histograms
+//! by name, a `TParameter`'s value, and the graphs by appending their points.
+//! What ROOT's `hadd` does not merge is copied from the first file that holds
+//! it: `TF1`/`TF2`/`TF3`, `TGraph2D`, `TGraphMultiErrors`, `TMultiGraph`,
+//! strings, maps and matrices. (ROOT writes one key per input for those, which
+//! oxiroot cannot do: it rejects two objects of the same name in one directory.)
 //! Objects of a class oxiroot cannot read *and* write are skipped and listed in
 //! the returned report rather than silently dropped.
 //!
@@ -21,9 +25,9 @@ use oxiroot_io_core::{Compression, Error, FileReader, Result};
 use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
 
 use oxiroot_hist::{
-    FileWriter, ReadRoot, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
-    THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D,
-    WriteRoot, TH1, TH2, TH3,
+    FileWriter, Mergeable, ReadRoot, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly,
+    THStack, THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D,
+    TProfile3D, WriteRoot, TH1, TH2, TH3,
 };
 use oxiroot_hist_func::{TF1, TF2, TF3};
 
@@ -161,7 +165,9 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
                 };
                 match acc.as_mut() {
                     None => acc = Some(h),
-                    Some(a) => a.add(&h, 1.0).map_err(|e| with_key(name, e))?,
+                    // Through `Mergeable`, so a type that cannot be merged
+                    // cannot be routed here.
+                    Some(a) => a.merge(&h).map_err(|e| with_key(name, e))?,
                 }
             }
             match (unreadable, acc) {
@@ -194,20 +200,27 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
         "TProfile" => summed!(TProfile),
         "TProfile2D" => summed!(TProfile2D),
         "TProfile3D" => summed!(TProfile3D),
-        "TEfficiency" => copied!(TEfficiency),
-        "TH2Poly" => copied!(TH2Poly),
+        // Summed, as ROOT's hadd does: the efficiency's two histograms, the
+        // poly's bins, the sparse histogram's filled bins, the graphs' points
+        // (appended), the stack's histograms by name, and the parameter's value.
+        "TEfficiency" => summed!(TEfficiency),
+        "TH2Poly" => summed!(TH2Poly),
+        "TGraph" | "TGraphErrors" | "TGraphAsymmErrors" => summed!(TGraph),
+        "THStack" => summed!(THStack),
+        c if c.starts_with("THnSparse") => summed!(THnSparse),
+        c if c.starts_with("TParameter") => summed!(TParameter),
+        // Copied from the first file: ROOT's hadd does not merge these either.
+        // It writes one key per input instead, which oxiroot cannot do, since
+        // it rejects two objects of the same name in one directory.
         "TF1" => copied!(TF1),
         "TF2" => copied!(TF2),
         "TF3" => copied!(TF3),
-        "TGraph" => copied!(TGraph),
         "TGraph2D" => copied!(TGraph2D),
+        // ROOT 6.40's hadd crashes merging this one.
         "TGraphMultiErrors" => copied!(TGraphMultiErrors),
         "TObjString" => copied!(TObjString),
-        "THStack" => copied!(THStack),
         "TMultiGraph" => copied!(TMultiGraph),
         "TMap" => copied!(TMap),
-        c if c.starts_with("THnSparse") => copied!(THnSparse),
-        c if c.starts_with("TParameter") => copied!(TParameter),
         c if c.starts_with("TVectorT") => copied!(TVectorD),
         c if c.starts_with("TMatrixTSym") => copied!(TMatrixDSym),
         c if c.starts_with("TMatrixT") => copied!(TMatrixD),

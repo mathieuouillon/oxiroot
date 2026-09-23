@@ -22,9 +22,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::ThreadId;
 
-use oxiroot_io_core::Result;
+use oxiroot_io_core::{Result, TParameter};
 
-use crate::{TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3};
+use crate::{
+    TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3,
+};
 
 /// Histograms that combine into one — the reduction behind in-memory merges
 /// (multithreaded fills, [`ThreadedHist`], `fill_par`). The file merger
@@ -64,7 +66,27 @@ macro_rules! impl_mergeable {
         }
     )+};
 }
-impl_mergeable!(TH1, TH2, TH3, TProfile, TProfile2D, TProfile3D);
+impl_mergeable!(TH1, TH2, TH3, TProfile, TProfile2D, TProfile3D, TH2Poly, THnSparse);
+
+impl Mergeable for TEfficiency {
+    fn merge(&mut self, other: &Self) -> Result<()> {
+        self.add(other)
+    }
+}
+
+impl Mergeable for TGraph {
+    /// Appends `other`'s points, the way ROOT's `hadd` merges graphs.
+    fn merge(&mut self, other: &Self) -> Result<()> {
+        self.append(other)
+    }
+}
+
+impl Mergeable for TParameter {
+    /// Adds the two values, the way ROOT's `hadd` merges parameters.
+    fn merge(&mut self, other: &Self) -> Result<()> {
+        self.add(other)
+    }
+}
 
 /// A multithreaded fill accumulator — the pure-Rust analog of ROOT's
 /// `TThreadedObject<TH1>`.

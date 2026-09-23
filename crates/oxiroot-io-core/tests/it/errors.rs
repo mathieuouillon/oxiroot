@@ -2,7 +2,8 @@
 //! holding another class, invalid input and an unsupported URL scheme.
 
 use oxiroot_io_core::{
-    object_bytes_any, Compression, Error, FileReader, FileWriter, ObjList, ReadRoot, TObjString,
+    object_bytes_any, Compression, Error, FileReader, FileWriter, ObjList, ParamValue, ReadRoot,
+    TObjString, TParameter,
 };
 
 /// A file with a string `s` and a list `l` at the top, and a string `t` in the
@@ -153,4 +154,18 @@ fn typed_errors_display_what_went_wrong() {
     for (err, text) in cases {
         assert_eq!(err.to_string(), text);
     }
+}
+
+#[test]
+fn parameters_of_different_types_do_not_add() {
+    let mut lumi = TParameter::f64("lumi", 1.5);
+    lumi.add(&TParameter::f64("lumi", 2.0)).unwrap();
+    assert_eq!(lumi.value(), ParamValue::Double(3.5));
+
+    let err = lumi.add(&TParameter::i32("n", 1)).unwrap_err();
+    assert!(
+        matches!(&err, Error::InvalidInput(m) if m.contains("TParameter<int>")),
+        "{err:?}"
+    );
+    assert_eq!(lumi.value(), ParamValue::Double(3.5), "unchanged");
 }

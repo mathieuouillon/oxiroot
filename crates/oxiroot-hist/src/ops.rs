@@ -4,9 +4,15 @@
 //! including per-bin error (`Sumw2`) propagation. `add` with `c = 1` is the
 //! bin-by-bin merge used to combine outputs across parallel jobs (`hadd`).
 
+use std::collections::HashMap;
+
 use oxiroot_io_core::{Error, Result};
 
-use crate::{TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3};
+use crate::graph::GraphErrors;
+use crate::thnsparse::SparseBin;
+use crate::{
+    TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3,
+};
 
 /// Effective per-bin error² for `other`: its `fSumw2[i]` if tracked, else the
 /// content (for an unweighted histogram, `Σw² == Σw == content`).
@@ -502,3 +508,148 @@ macro_rules! impl_histogram {
 impl_histogram!(TH1);
 impl_histogram!(TH2);
 impl_histogram!(TH3);
+
+impl TEfficiency {
+    /// Add `other`'s counts: its passed and its total histogram, bin by bin, as
+    /// ROOT's `TEfficiency::Add` and `hadd` do. The confidence level, statistic
+    /// option and weight stay as they are.
+    ///
+    /// Returns [`Error::BinningMismatch`] and makes no change if the binnings
+    /// differ.
+    pub fn add(&mut self, other: &TEfficiency) -> Result<()> {
+        // Both first, so a mismatch leaves the efficiency untouched.
+        let mut passed = self.passed.clone();
+        let mut total = self.total.clone();
+        passed.add(&other.passed, 1.0)?;
+        total.add(&other.total, 1.0)?;
+        self.passed = passed;
+        self.total = total;
+        Ok(())
+    }
+}
+
+impl TH2Poly {
+    /// Add `c * other`: every bin's content, the nine overflow regions, the
+    /// entry count and the statistics sums, as ROOT's `TH2Poly::Add` and `hadd`
+    /// do.
+    ///
+    /// Returns [`Error::BinningMismatch`] and makes no change unless the two
+    /// hold the same bins, in the same order.
+    pub fn add(&mut self, other: &TH2Poly, c: f64) -> Result<()> {
+        let same = self.bins.len() == other.bins.len()
+            && (self.bins.iter())
+                .zip(&other.bins)
+                .all(|(a, b)| a.x == b.x && a.y == b.y);
+        if !same {
+            return Err(binning_mismatch("TH2Poly::add"));
+        }
+        for (bin, from) in self.bins.iter_mut().zip(&other.bins) {
+            bin.content += c * from.content;
+        }
+        for (region, from) in self.overflow.iter_mut().zip(other.overflow) {
+            *region += c * from;
+        }
+        self.entries += c * other.entries;
+        self.tsumw += c * other.tsumw;
+        self.tsumw2 += c * c * other.tsumw2;
+        self.tsumwx += c * other.tsumwx;
+        self.tsumwx2 += c * other.tsumwx2;
+        self.tsumwy += c * other.tsumwy;
+        self.tsumwy2 += c * other.tsumwy2;
+        self.tsumwxy += c * other.tsumwxy;
+        Ok(())
+    }
+}
+
+impl THnSparse {
+    /// Add `c * other`: the filled bins they share, the bins only `other` holds,
+    /// the entry count and the statistics sums, as ROOT's `THnSparse::Add` and
+    /// `hadd` do.
+    ///
+    /// Returns [`Error::BinningMismatch`] and makes no change if the axes
+    /// differ.
+    pub fn add(&mut self, other: &THnSparse, c: f64) -> Result<()> {
+        let same = self.axes.len() == other.axes.len()
+            && (self.axes.iter())
+                .zip(&other.axes)
+                .all(|(a, b)| a.same_binning(b));
+        if !same {
+            return Err(binning_mismatch("THnSparse::add"));
+        }
+        let at: HashMap<Vec<i32>, usize> = (self.bins.iter().enumerate())
+            .map(|(i, bin)| (bin.coords.clone(), i))
+            .collect();
+        for bin in &other.bins {
+            match at.get(&bin.coords) {
+                Some(&i) => self.bins[i].content += c * bin.content,
+                None => self.bins.push(SparseBin {
+                    coords: bin.coords.clone(),
+                    content: c * bin.content,
+                }),
+            }
+        }
+        self.entries += c * other.entries;
+        self.tsumw += c * other.tsumw;
+        self.tsumw2 += c * c * other.tsumw2;
+        for (sum, from) in self.tsumwx.iter_mut().zip(&other.tsumwx) {
+            *sum += c * from;
+        }
+        for (sum, from) in self.tsumwx2.iter_mut().zip(&other.tsumwx2) {
+            *sum += c * from;
+        }
+        Ok(())
+    }
+}
+
+impl TGraph {
+    /// Append `other`'s points, as ROOT's `TGraph::Merge` and `hadd` do: this
+    /// graph's points keep their order and `other`'s follow, with their errors.
+    /// The attached functions and the display frame stay as they are.
+    ///
+    /// Returns [`Error::InvalidInput`] and makes no change if the two carry
+    /// different kinds of error bars (a `TGraph` and a `TGraphErrors`, say).
+    pub fn append(&mut self, other: &TGraph) -> Result<()> {
+        match (&mut self.errors, &other.errors) {
+            (GraphErrors::None, GraphErrors::None) => {}
+            (
+                GraphErrors::Symmetric { ex, ey },
+                GraphErrors::Symmetric {
+                    ex: from_ex,
+                    ey: from_ey,
+                },
+            ) => {
+                ex.extend_from_slice(from_ex);
+                ey.extend_from_slice(from_ey);
+            }
+            (
+                GraphErrors::Asymmetric {
+                    ex_low,
+                    ex_high,
+                    ey_low,
+                    ey_high,
+                },
+                GraphErrors::Asymmetric {
+                    ex_low: from_ex_low,
+                    ex_high: from_ex_high,
+                    ey_low: from_ey_low,
+                    ey_high: from_ey_high,
+                },
+            ) => {
+                ex_low.extend_from_slice(from_ex_low);
+                ex_high.extend_from_slice(from_ex_high);
+                ey_low.extend_from_slice(from_ey_low);
+                ey_high.extend_from_slice(from_ey_high);
+            }
+            _ => {
+                return Err(Error::InvalidInput(format!(
+                    "cannot append a {} to a {}: they carry different error bars",
+                    other.class_name(),
+                    self.class_name()
+                )))
+            }
+        }
+        self.x.extend_from_slice(&other.x);
+        self.y.extend_from_slice(&other.y);
+        Ok(())
+    }
+}

@@ -78,8 +78,10 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   `FileReader::open_ranged`.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
   `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
-- ➕ **`hadd`** — a pure-Rust file merger: histograms summed, `TTree` / RNTuple
-  entries concatenated, other objects copied — verified against ROOT's own
+- ➕ **`hadd`** — a pure-Rust file merger: everything ROOT's `hadd` merges
+  merged the same way (histograms, profiles, efficiencies, poly and sparse
+  histograms, stacks, parameters, and graphs by appending points), `TTree` /
+  RNTuple entries concatenated, the rest copied — checked against ROOT's own
   `hadd` (`oxiroot::hadd::merge_files`).
 - 🔎 **Command-line inspector** — `oxroot ls` / `show` / `dump` / `stat` looks
   into any ROOT file (keys, `TTree`/RNTuple structure, entries, histogram bins)

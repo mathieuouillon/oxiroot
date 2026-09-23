@@ -23,7 +23,12 @@ key:
 | Class | Action |
 |---|---|
 | `TH1`/`TH2`/`TH3`, `TProfile`/`TProfile2D`/`TProfile3D` | **summed** across every input that holds it (bin contents, `Sumw2`, entries, and all moment sums — the same exact `add` used by the [multithreaded fill](multithreading.md)) |
-| `TGraph*`, `TEfficiency`, `TH2Poly`, `THnSparse`, `TF1`/`2`/`3`, `TObjString`, `TParameter`, `TVectorD`, `TMatrixD`/`Sym`, `THStack`, `TMultiGraph`, `TMap` | **copied** from the first file that holds it (ROOT's `hadd` keeps the first for non-addable objects too) |
+| `TH2Poly`, `THnSparse` | **summed** bin by bin, with the entry count and moment sums |
+| `TEfficiency` | **summed**: its passed and its total histogram |
+| `TGraph`/`TGraphErrors`/`TGraphAsymmErrors` | **appended**: the inputs' points in order, with their errors, as ROOT's `TGraph::Merge` does |
+| `THStack` | **merged** histogram by histogram, matched by name |
+| `TParameter` | **summed** values |
+| `TF1`/`2`/`3`, `TGraph2D`, `TGraphMultiErrors`, `TMultiGraph`, `TObjString`, `TVectorD`, `TMatrixD`/`Sym`, `TMap` | **copied** from the first file that holds it. ROOT's `hadd` does not merge these either: it writes one key per input, which oxiroot cannot do, since it rejects two objects of the same name in one directory |
 | anything else | **skipped**, and listed in the report — never silently dropped |
 
 An object that cannot be read from one of the inputs is also skipped and listed,
@@ -108,7 +113,10 @@ not be one of the inputs.
 
 ## Verification
 
-oxiroot's merge is checked against ROOT 6.40's own `hadd`: the summed histogram
-bin contents are identical, the concatenated tree matches entry-for-entry, and
-the merged RNTuple is read back by both uproot and ROOT C++'s `RNTupleReader`.
+oxiroot's merge is checked against ROOT 6.40's own `hadd`. Two files written by
+ROOT, holding one object of every class the merge handles, are merged by both:
+every object ROOT merges comes out the same, key by key (`fixtures/hadd_*.root`,
+from `scripts/gen_hadd_inputs.cpp`). The concatenated tree matches
+entry-for-entry, and the merged RNTuple is read back by both uproot and ROOT
+C++'s `RNTupleReader`.
 See the [`merge` example](https://github.com/mathieuouillon/oxiroot/blob/main/crates/oxiroot/examples/merge.rs).

@@ -181,6 +181,28 @@ impl TParameter {
     pub fn name(&self) -> &str {
         &self.name
     }
+    /// Add `other`'s value to this one, as ROOT's `TParameter<T>::Merge` and
+    /// `hadd` do. The name stays as it is.
+    ///
+    /// Returns [`Error::InvalidInput`] and makes no change if the two hold
+    /// different types (a `TParameter<int>` and a `TParameter<double>`, say).
+    pub fn add(&mut self, other: &TParameter) -> Result<()> {
+        self.value = match (self.value, other.value) {
+            (ParamValue::Double(a), ParamValue::Double(b)) => ParamValue::Double(a + b),
+            (ParamValue::Float(a), ParamValue::Float(b)) => ParamValue::Float(a + b),
+            (ParamValue::Int(a), ParamValue::Int(b)) => ParamValue::Int(a.wrapping_add(b)),
+            (ParamValue::Long64(a), ParamValue::Long64(b)) => ParamValue::Long64(a.wrapping_add(b)),
+            (a, b) => {
+                return Err(Error::InvalidInput(format!(
+                    "cannot add a TParameter<{}> to a TParameter<{}>",
+                    b.type_name(),
+                    a.type_name()
+                )))
+            }
+        };
+        Ok(())
+    }
+
     /// The stored value (typed).
     pub fn value(&self) -> ParamValue {
         self.value

@@ -19,6 +19,7 @@ use oxiroot_io_core::{
 use crate::base::object_bytes_any_keyed;
 use crate::graph::{decode_tgraph, TGraph};
 use crate::th1::{decode_th1, TH1};
+use crate::threaded::Mergeable;
 use crate::write::{hist_streamer_classes, WriteRoot};
 
 const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
@@ -199,6 +200,25 @@ impl THStack {
     /// The stacked histograms, in the order they were added.
     pub fn hists(&self) -> &[TH1] {
         &self.hists
+    }
+}
+
+impl Mergeable for THStack {
+    /// Merge the stacks' histograms by name, as ROOT's `THStack::Merge` and
+    /// `hadd` do: a histogram both stacks hold is summed, one only `other`
+    /// holds is appended.
+    ///
+    /// Returns [`oxiroot_io_core::Error::BinningMismatch`] if two histograms of
+    /// the same name have different binnings; the histograms merged before it
+    /// keep their sums.
+    fn merge(&mut self, other: &THStack) -> Result<()> {
+        for from in &other.hists {
+            match self.hists.iter_mut().find(|h| h.name == from.name) {
+                Some(h) => h.add(from, 1.0)?,
+                None => self.hists.push(from.clone()),
+            }
+        }
+        Ok(())
     }
 }
 
