@@ -47,6 +47,7 @@ c++ $(root-config --cflags) scripts/gen_root_fixtures.cpp $(root-config --libs) 
 | `linalg.root` | a `TVectorD` `v`, `TMatrixD` `m` (2×3), `TMatrixDSym` `s` (3×3) (`scripts/gen_linalg.cpp`) | C++ ROOT |
 | `objlist.root` | a `TList` `mylist` (TH1F + TObjString + TParameter) + `TObjArray` `myarr` (2×TH1F) (`scripts/gen_objlist.cpp`) | C++ ROOT |
 | `tmap.root` | a `TMap` `meta` (string keys → TObjString / TParameter / TH1F) (`scripts/gen_tmap.cpp`) | C++ ROOT (uproot has no TMap model) |
+| `stl_members.root` | a `TF1` `fn`, `TEfficiency` `eff`, `TGraphMultiErrors` `gme` and `TH2Poly` `poly`, one of every STL member shape ROOT streams: a `map` and a `vector` of pointers objectwise, a `vector<pair<double,double>>` and `vector<TAttFill>`/`<TAttLine>` memberwise, `vector<TArrayD>`, and a `TStreamerLoop` of `TList`s the bins are shared through (`scripts/gen_stl_members.cpp`) | C++ ROOT |
 
 ## Why uproot and not ROOT?
 

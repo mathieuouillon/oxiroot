@@ -278,3 +278,129 @@ fn each_object_is_decoded_with_its_own_class_version() {
     assert_eq!(reg.get_at("MyHit", 9).map(|i| i.class_version), Some(1));
     let _ = std::fs::remove_file(path);
 }
+
+/// `fixtures/stl_members.root` (ROOT 6.40, `scripts/gen_stl_members.cpp`) holds
+/// one object of every STL member shape ROOT streams. The values asserted here
+/// are the ones ROOT itself reports for that file.
+#[test]
+fn stl_members_decode_as_root_wrote_them() {
+    let f = FileReader::open(fixture("stl_members.root")).unwrap();
+
+    // TFormula::fParams, a `map<TString,int>` streamed objectwise: the parameter
+    // names in index order.
+    let formula = f.get_value("fn").unwrap();
+    let params = formula
+        .get("fFormula")
+        .and_then(|v| v.get("fParams"))
+        .and_then(Value::as_array)
+        .unwrap();
+    let entries: Vec<(&str, i64)> = params
+        .iter()
+        .map(|e| {
+            (
+                e.get("first").and_then(Value::as_str).unwrap(),
+                e.get("second").and_then(Value::as_i64).unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(entries, vec![("p0", 0), ("p1", 1)]);
+    // An empty `vector<TObject*>` is an empty array, not an undecoded member.
+    assert_eq!(
+        formula
+            .get("fFormula")
+            .and_then(|v| v.get("fLinearParts"))
+            .and_then(Value::as_array),
+        Some(&[][..])
+    );
+
+    // TEfficiency::fBeta_bin_params, a `vector<pair<double,double>>` streamed
+    // memberwise: every `first`, then every `second`. Bins 1 and 2 were set to
+    // (2, 3) and (4, 5); the rest keep ROOT's (1, 1).
+    let eff = f.get_value("eff").unwrap();
+    let beta = eff
+        .get("fBeta_bin_params")
+        .and_then(Value::as_array)
+        .unwrap();
+    let pairs: Vec<(f64, f64)> = beta
+        .iter()
+        .map(|p| {
+            (
+                p.get("first").and_then(Value::as_f64).unwrap(),
+                p.get("second").and_then(Value::as_f64).unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![(1.0, 1.0), (2.0, 3.0), (4.0, 5.0), (1.0, 1.0), (1.0, 1.0)]
+    );
+
+    // TGraphMultiErrors: `vector<TArrayD>` (objectwise) per y-error bar, and
+    // `vector<TAttFill>`/`vector<TAttLine>` (memberwise) per bar.
+    let gme = f.get_value("gme").unwrap();
+    let low: Vec<Vec<f64>> = gme
+        .get("fEyL")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .map(|a| {
+            a.as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect()
+        })
+        .collect();
+    assert_eq!(low, vec![vec![0.3; 3], vec![0.5; 3]]);
+    let fills: Vec<i64> = gme
+        .get("fAttFill")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .map(|a| a.get("fFillColor").and_then(Value::as_i64).unwrap())
+        .collect();
+    assert_eq!(fills, vec![19, 632]); // the second bar was set to kRed
+    let widths: Vec<i64> = gme
+        .get("fAttLine")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .map(|a| a.get("fLineWidth").and_then(Value::as_i64).unwrap())
+        .collect();
+    assert_eq!(widths, vec![1, 3]);
+
+    // TH2Poly::fCells, a `TStreamerLoop` of `TList`s: ROOT writes each bin in
+    // full in the first cell it falls in, so the grid holds both bins once.
+    let poly = f.get_value("poly").unwrap();
+    let cells = poly.get("fCells").and_then(Value::as_array).unwrap();
+    assert_eq!(cells.len(), 625); // fNCells, the 25×25 lookup grid
+    let mut bins: Vec<(i64, f64)> = Vec::new();
+    for cell in cells {
+        for item in cell.get("items").and_then(Value::as_array).unwrap_or(&[]) {
+            if let Value::Object { class, .. } = item {
+                assert_eq!(class, "TH2PolyBin");
+                bins.push((
+                    item.get("fNumber").and_then(Value::as_i64).unwrap(),
+                    item.get("fContent").and_then(Value::as_f64).unwrap(),
+                ));
+            }
+        }
+    }
+    assert_eq!(bins, vec![(1, 1.0), (2, 2.0)]);
+
+    // Every other cell that holds a bin, and `fBins`, point back at those two:
+    // the slot names the class instead of claiming there is no object there.
+    let refs = poly
+        .get("fBins")
+        .and_then(|l| l.get("items"))
+        .and_then(Value::as_array)
+        .unwrap();
+    assert!(refs.len() == 2 && refs.iter().all(|v| matches!(v, Value::Ref { .. })));
+    assert_eq!(refs[0].class(), Some("TH2PolyBin"));
+
+    // Nothing in the file is left undecoded.
+    for key in ["fn", "eff", "gme", "poly"] {
+        let dump = f.get_value(key).unwrap().to_string();
+        assert!(!dump.contains("<unsupported"), "{key}: {dump}");
+    }
+}

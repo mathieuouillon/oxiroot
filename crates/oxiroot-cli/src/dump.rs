@@ -119,6 +119,11 @@ fn value_to_json(v: &Value) -> Json {
                 ),
             ),
         ]),
+        // A slot pointing at an object written elsewhere in the same object.
+        Value::Ref { class } => Json::Object(vec![
+            ("class", Json::s(class.clone())),
+            ("ref", Json::Bool(true)),
+        ]),
         Value::Unsupported { class, reason } => Json::Object(vec![
             ("class", Json::s(class.clone())),
             ("unsupported", Json::s(reason.clone())),

@@ -67,7 +67,7 @@ pub use file::{
     FileHeader, FileReader, FileSource, FileWriter, FreeSegment, SubdirWriter, TDatime, TKey,
     TUuid, BIG_FILE_VERSION, DATIME, FILE_VERSION, KSTART_BIG_FILE, MAGIC,
 };
-pub use object::{ObjHeader, TagReader};
+pub use object::{ObjHeader, ObjectRef, TagReader};
 pub use object_io::{
     object_bytes_any, object_bytes_any_keyed, record_of, ObjectRecord, ReadRoot, StreamerSet,
     WriteInto, WriteRoot,

@@ -35,8 +35,9 @@ pub struct StreamerElement {
     /// Base-class version, for `TStreamerBase` elements only (`fBaseVersion`).
     pub base_version: Option<i32>,
     /// The counter member's name (`fCountName`), for a `TStreamerBasicPointer`
-    /// (a `T* member; //[fCount]` variable-length array) — the member whose value
-    /// gives this array's length. `None` for every other element.
+    /// (a `T* member; //[fCount]` variable-length array) or a `TStreamerLoop`
+    /// (the same, of objects) — the member whose value gives this array's
+    /// length. `None` for every other element.
     pub count_name: Option<String>,
 }
 
@@ -256,7 +257,9 @@ fn parse_one_element(r: &mut RBuffer, element_class: &str) -> Result<StreamerEle
     let mut count_name = None;
     match element_class {
         "TStreamerBase" => base_version = Some(r.be_i32()?),
-        "TStreamerBasicPointer" => {
+        // `TStreamerLoop` (an array of objects, `T* //[fCount]`) carries the same
+        // counter fields as `TStreamerBasicPointer`.
+        "TStreamerBasicPointer" | "TStreamerLoop" => {
             let _count_version = r.be_i32()?; // fCountVersion
             count_name = Some(r.string()?); // fCountName
             let _count_class = r.string()?; // fCountClass

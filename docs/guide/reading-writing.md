@@ -68,10 +68,14 @@ println!("{h}"); // pretty rootprint-style tree
 `Value` is a tree of primitives, `Str`, `Array`, and `Object { class, members }`
 (members keep their on-disk order); accessors are `class()`, `get(name)`,
 `as_f64()`/`as_i64()`/`as_str()`/`as_array()`, and `Display` renders the tree.
-This is the engine behind `oxroot dump` for classes without a dedicated view. A
-member the reader cannot decode (memberwise STL, a class with no streamer info)
-becomes `Value::Unsupported` rather than failing the whole object, and
-`get_value_in(dir, name)` reads from a subdirectory.
+This is the engine behind `oxroot dump` for classes without a dedicated view.
+STL members decode too — `vector`, `set`, `list`, `map` and `pair`, of numbers,
+strings, `TArray`s, nested containers, objects or pointers, written objectwise
+or memberwise — and a slot pointing at an object written elsewhere in the same
+object is `Value::Ref`, naming the class it points at. A member the reader
+cannot decode (a class with no streamer info) becomes `Value::Unsupported`
+rather than failing the whole object, and `get_value_in(dir, name)` reads from a
+subdirectory.
 
 ## Remote and lazy reads
 

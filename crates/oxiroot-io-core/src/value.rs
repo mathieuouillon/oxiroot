@@ -57,23 +57,35 @@ pub enum Value {
         /// The members, `(name, value)`, in the order they appear on disk.
         members: Vec<(String, Value)>,
     },
+    /// A slot holding an object that is written elsewhere in the same object:
+    /// ROOT streams a shared object once and points at it from every other
+    /// place it appears (a `TH2Poly`'s `fBins` points at the bins its `fCells`
+    /// grid holds in full). The value carries the class it points at; the object
+    /// itself is in the tree where it was written.
+    Ref {
+        /// The class of the object this slot points at.
+        class: String,
+    },
     /// A member (or object) the reader could not decode — its class/type and why.
     /// The enclosing object's byte count lets decoding continue past it.
     Unsupported {
         /// The class or C++ type name that was not decoded.
         class: String,
-        /// Why it was not decoded (e.g. an unhandled `fType` or memberwise STL).
+        /// Why it was not decoded (e.g. an unhandled `fType`, or a class the
+        /// file does not describe).
         reason: String,
     },
 }
 
 impl Value {
-    /// The class name, for an [`Object`](Value::Object) or
-    /// [`Unsupported`](Value::Unsupported).
+    /// The class name, for an [`Object`](Value::Object), a [`Ref`](Value::Ref)
+    /// or an [`Unsupported`](Value::Unsupported).
     #[must_use]
     pub fn class(&self) -> Option<&str> {
         match self {
-            Value::Object { class, .. } | Value::Unsupported { class, .. } => Some(class),
+            Value::Object { class, .. }
+            | Value::Ref { class }
+            | Value::Unsupported { class, .. } => Some(class),
             _ => None,
         }
     }
@@ -170,7 +182,7 @@ impl Value {
     fn is_scalar(&self) -> bool {
         !matches!(
             self,
-            Value::Array(_) | Value::Object { .. } | Value::Unsupported { .. }
+            Value::Array(_) | Value::Object { .. } | Value::Ref { .. } | Value::Unsupported { .. }
         )
     }
 
@@ -225,6 +237,9 @@ impl Value {
                         item.render_into(out, indent + 1, None);
                     }
                 }
+            }
+            Value::Ref { class } => {
+                out.push_str(&format!("{pad}{name}<{class} written above>\n"));
             }
             Value::Unsupported { class, reason } => {
                 out.push_str(&format!("{pad}{name}<unsupported {class}: {reason}>\n"));
