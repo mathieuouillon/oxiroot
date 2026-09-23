@@ -204,7 +204,13 @@ fn a_histogram_family_object_describes_only_its_classes() {
         ("e", &["TEfficiency", "TH1D", "TH1"], &["TH2D", "TGraph"]),
         (
             "sp",
-            &["THnSparseT<TArrayD>", "THnSparse", "TAxis"],
+            &[
+                "THnSparseT<TArrayD>",
+                "THnSparse",
+                "TAxis",
+                "THnSparseArrayChunk",
+                "TArrayD",
+            ],
             &["TH1D", "TGraph"],
         ),
         (
@@ -250,8 +256,7 @@ fn a_histogram_family_object_describes_only_its_classes() {
 #[test]
 fn nothing_a_written_object_holds_goes_undescribed() {
     // The generic reader decodes an object from the file's streamer info alone,
-    // so an undescribed class surfaces as an unsupported member. (A sparse
-    // histogram's `THnSparseArrayChunk` is not in the captured list.)
+    // so an undescribed class surfaces as an unsupported member.
     let dir = std::env::temp_dir();
     for (name, object) in family() {
         let path = dir.join(format!("oxiroot_sc_decode_{name}.root"));
@@ -261,9 +266,7 @@ fn nothing_a_written_object_holds_goes_undescribed() {
             .unwrap();
         let value = FileReader::open(&path).unwrap().get_value(name).unwrap();
         let text = value.to_string();
-        for line in text.lines().filter(|l| l.contains("has no TStreamerInfo")) {
-            assert!(line.contains("THnSparseArrayChunk"), "{name}: {line}");
-        }
+        assert!(!text.contains("has no TStreamerInfo"), "{name}: {text}");
     }
 }
 

@@ -61,6 +61,10 @@ change the API.
 
 - A histogram or profile with bin labels describes `TObjString`, so a reader
   that follows the file's streamer info decodes its labels.
+- The captured histogram streamer info describes `THnSparseArrayChunk`,
+  `TArrayD` and `TArray`. The script that captures it wrote an empty
+  `THnSparse`, which holds no chunk, so a sparse histogram's chunks — and
+  every histogram's `TArrayD` base — went undescribed.
 
 ### Internal
 

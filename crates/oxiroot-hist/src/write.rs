@@ -29,10 +29,12 @@ use crate::tprofile2d::TProfile2D;
 use crate::tprofile3d::TProfile3D;
 
 /// The streamer info ROOT 6 writes for the histogram family, captured from a
-/// ROOT-written file: the histogram, profile, efficiency, sparse and graph
-/// classes this crate writes, with their bases and members' classes, plus `TF1`,
-/// `TFormula` and `TF1Parameters` (a graph's attached functions). `TF2`/`TF3`
-/// are not in it; `oxiroot-hist-func` generates those.
+/// ROOT-written file (`scripts/gen_hist_streamers.cpp`): the histogram,
+/// profile, efficiency, sparse and graph classes this crate writes, with their
+/// bases and members' classes — including the `THnSparseArrayChunk` and
+/// `TArrayD` a filled sparse histogram holds — plus `TF1`, `TFormula` and
+/// `TF1Parameters` (a graph's attached functions). `TF2`/`TF3` are not in it;
+/// `oxiroot-hist-func` generates those.
 static HIST_INFO: LazyLock<StreamerInfoList> = LazyLock::new(|| {
     StreamerInfoList::parse(HIST_STREAMER_INFO)
         .expect("the captured histogram streamer info parses")
@@ -148,13 +150,12 @@ impl_write_root_fixed!(
     ["TH1D"],
     []
 );
-// Its axes, held in a `TObjArray`. (The `THnSparseArrayChunk`s and their
-// `TArrayD`s are not in the captured list.)
+// Its axes and its chunks, held in `TObjArray`s.
 impl_write_root_fixed!(
     THnSparse,
     "THnSparseT<TArrayD>",
     thnsparse_to_bytes,
-    ["TAxis"],
+    ["TAxis", "THnSparseArrayChunk"],
     []
 );
 // Its bins, held in a `TList`, each with its polygon as a `TObject*`.
