@@ -105,16 +105,16 @@ never compiles the others.
 # Everything — histograms, graphs, TTree, RNTuple, fitting, plotting — through
 # the facade. Fitting, plotting, mmap and argmin are ON BY DEFAULT, so nothing
 # extra to enable (add `features = ["rayon"]` for the parallel helpers):
-oxiroot = "0.1"
+oxiroot = "0.2"
 
 # …leaner, just the format core (drops the fitting/plotting/mmap deps):
-# oxiroot = { version = "0.1", default-features = false }
+# oxiroot = { version = "0.2", default-features = false }
 
 # …or depend on just one crate:
-oxiroot-hist      = "0.1"  # histograms + graphs
-oxiroot-hist-func = "0.1"  # TF1/TF2/TF3
-oxiroot-tree      = "0.1"  # TTree
-oxiroot-rntuple   = "0.1"  # RNTuple
+oxiroot-hist      = "0.2"  # histograms + graphs
+oxiroot-hist-func = "0.2"  # TF1/TF2/TF3
+oxiroot-tree      = "0.2"  # TTree
+oxiroot-rntuple   = "0.2"  # RNTuple
 ```
 
 ```rust

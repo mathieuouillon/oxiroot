@@ -5,7 +5,12 @@ Notable changes to oxiroot, by release. The format follows
 [Semantic Versioning](https://semver.org/): before 1.0, a minor release may
 change the API.
 
-## [Unreleased]
+## [0.2.0] — 2026-09-23
+
+A release of the follow-ups to the architecture review: errors a caller can act
+on, one import path per item, files that describe only the classes they hold,
+and a `hadd` that merges everything ROOT's does. Files written by 0.1.0 and by
+0.2.0 read the same in ROOT, uproot and oxiroot.
 
 ### Added
 
@@ -131,5 +136,6 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/mathieuouillon/oxiroot/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mathieuouillon/oxiroot/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mathieuouillon/oxiroot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mathieuouillon/oxiroot/releases/tag/v0.1.0
