@@ -9,6 +9,17 @@ change the API.
 
 ### Added
 
+- **`hadd` merges everything ROOT's does.** `merge_files` sums a `TEfficiency`'s
+  passed and total histograms, a `TH2Poly`'s and a `THnSparse`'s bins, a
+  `THStack`'s histograms (matched by name) and a `TParameter`'s value, and
+  appends the points of `TGraph`, `TGraphErrors` and `TGraphAsymmErrors`, as
+  ROOT's `hadd` does; they were copied from the first file. `TF1`/`TF2`/`TF3`,
+  `TGraph2D`, `TGraphMultiErrors`, `TMultiGraph`, strings, maps and matrices are
+  still copied, which is what ROOT's `hadd` does with them too — it writes one
+  key per input, which oxiroot cannot, since it rejects two objects of the same
+  name in one directory. The merges are `TEfficiency::add`, `TH2Poly::add`,
+  `THnSparse::add`, `TGraph::append` and `TParameter::add`, and `Mergeable` now
+  covers them, so the merger cannot be pointed at a type that has no merge.
 - `Error::context` puts context in front of an error's message and keeps its
   variant.
 - `streamer_gen::StreamerInfoList` parses a stored `TList<TStreamerInfo>` and

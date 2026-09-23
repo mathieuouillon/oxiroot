@@ -6,6 +6,7 @@ mod end_to_end;
 mod errors;
 mod hadd;
 mod hadd_histograms;
+mod hadd_root_parity;
 mod mixed_file;
 mod plot;
 mod remote_http;

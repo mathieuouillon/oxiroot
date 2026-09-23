@@ -22,10 +22,13 @@
 //! concatenates each tree or RNTuple on its own path). So a fileset must be one
 //! of:
 //!
-//! * **all histogram-family objects** — `TH1`/`TH2`/`TH3` and the 1-, 2- and
-//!   3-D profiles are summed; graphs, efficiencies, functions, strings,
-//!   matrices, … are copied from the first file; unknown classes are skipped and
-//!   reported;
+//! * **all histogram-family objects** — everything ROOT's `hadd` merges is
+//!   merged the same way (`TH1`/`TH2`/`TH3`, the profiles, `TH2Poly` and
+//!   `THnSparse` bin by bin, a `TEfficiency`'s histograms, a `THStack`'s
+//!   histograms by name, a `TParameter`'s value, and the graphs by appending
+//!   their points); what it does not merge is copied from the first file
+//!   (`TF1`/`2`/`3`, `TGraph2D`, `TGraphMultiErrors`, `TMultiGraph`, strings,
+//!   maps, matrices); unknown classes are skipped and reported;
 //! * **a single `TTree`** (and nothing else) — entries concatenated;
 //! * **a single RNTuple** (and nothing else) — entries concatenated.
 //!
