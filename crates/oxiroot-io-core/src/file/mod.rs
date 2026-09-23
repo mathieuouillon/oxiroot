@@ -14,6 +14,7 @@ mod writer;
 #[cfg(feature = "xrootd")]
 mod xrootd;
 
+pub(crate) use container::STREAMER_INFO_KEY_LEN;
 pub use container::{
     compress_if_smaller, ContainerWriter, DirId, DATIME, FILE_VERSION, KSTART_BIG_FILE,
 };

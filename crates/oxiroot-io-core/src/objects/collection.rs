@@ -8,7 +8,6 @@
 //! class back-references ROOT emits for repeated member types resolve. (uproot
 //! reads `TList`/`TObjArray` but has no `TMap` model — see [`TMap`].)
 
-use std::borrow::Cow;
 use std::ops::Range;
 
 use crate::buffer::K_BYTE_COUNT_MASK;
@@ -17,8 +16,7 @@ use crate::error::{Error, Result};
 use crate::object::TagReader;
 use crate::object_io::{object_bytes_any_keyed, ReadRoot, StreamerSet, WriteRoot};
 use crate::streamer::{read_tobject, write_object_any, write_tobject};
-use crate::streamer_gen::{stored, Cls};
-use crate::streamer_info::StoredInfo;
+use crate::streamer_gen::{collect_stored, Cls};
 use crate::FileReader;
 
 use super::scalars::{
@@ -173,9 +171,6 @@ impl WriteRoot for ObjList {
         }
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        self.streamers.blob()
-    }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         member_streamer_classes(&self.streamers, self.members.iter().map(|(c, _)| c))
     }
@@ -227,59 +222,6 @@ fn object_version(body: &[u8]) -> Option<i32> {
         u16::from_be_bytes([head[0], head[1]])
     };
     Some(i32::from(version))
-}
-
-/// Add the stored info for `class` (at `version` when the file has that one)
-/// to `out`, after the classes it depends on: its bases, and any class named
-/// in a member's type (a `TAxis`, a `vector<TLorentzVector>`, …).
-fn collect_stored(
-    infos: &[StoredInfo],
-    class: &str,
-    version: Option<i32>,
-    seen: &mut Vec<(String, i32)>,
-    out: &mut Vec<Cls<'static>>,
-) {
-    let named = |s: &&StoredInfo| s.info.class_name == class;
-    let Some(entry) = infos
-        .iter()
-        .filter(named)
-        .find(|s| version.is_none_or(|v| s.info.class_version == v))
-        .or_else(|| infos.iter().find(named))
-    else {
-        return;
-    };
-    let key = (entry.info.class_name.clone(), entry.info.class_version);
-    if seen.contains(&key) {
-        return;
-    }
-    seen.push(key);
-    for element in &entry.info.elements {
-        if element.element_class == "TStreamerBase" {
-            collect_stored(infos, &element.name, element.base_version, seen, out);
-        } else {
-            let names = element
-                .type_name
-                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == ':'))
-                .filter(|name| !name.is_empty() && *name != class);
-            for name in names {
-                collect_stored(infos, name, None, seen, out);
-            }
-        }
-    }
-    if let Some(bodies) = &entry.elements {
-        out.push(Cls {
-            name: entry.info.class_name.clone().into(),
-            version: entry.info.class_version,
-            checksum: entry.info.checksum,
-            elements: bodies
-                .iter()
-                .zip(&entry.info.elements)
-                .map(|((element_class, body), element)| {
-                    stored(element_class.clone(), element.name.clone(), body.clone())
-                })
-                .collect(),
-        });
-    }
 }
 
 /// A member's class name and the byte range of its streamed body within the
@@ -542,9 +484,6 @@ impl WriteRoot for TMap {
         }
         w.end_object(obj);
         w.into_vec()
-    }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        self.streamers.blob()
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         member_streamer_classes(

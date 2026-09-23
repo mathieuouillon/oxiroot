@@ -2,9 +2,7 @@
 //! `TF2`/`TF3` object bodies around the shared `TF1` record, and the
 //! `TStreamerInfo`s a file storing them embeds.
 
-use std::borrow::Cow;
-
-use oxiroot_hist::{hist_streamer_blob, GraphFunction};
+use oxiroot_hist::{hist_streamer_classes, GraphFunction};
 use oxiroot_io_core::streamer_gen::{any, base, basic, objanyptr, objptr, stl, strf, Cls};
 use oxiroot_io_core::{
     object_bytes_any, Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot,
@@ -31,11 +29,8 @@ impl WriteRoot for TF1 {
             .write_tf1_body(&mut w, 1, 100);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        hist_streamer_blob()
-    }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        tf_classes(1)
+        function_classes(1)
     }
 }
 
@@ -55,11 +50,8 @@ impl WriteRoot for TF2 {
         write_tf2_body(&mut w, &record, 2, self.ymin, self.ymax);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        hist_streamer_blob()
-    }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        tf_classes(2)
+        function_classes(2)
     }
 }
 
@@ -79,11 +71,8 @@ impl WriteRoot for TF3 {
         write_tf3_body(&mut w, &record, self.ymin, self.ymax, self.zmin, self.zmax);
         w.into_vec()
     }
-    fn streamer_blob(&self) -> Cow<'static, [u8]> {
-        hist_streamer_blob()
-    }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        tf_classes(3)
+        function_classes(3)
     }
 }
 
@@ -117,6 +106,23 @@ fn write_tf3_body(w: &mut WBuffer, f: &GraphFunction, ymin: f64, ymax: f64, zmin
 
 /// The `TStreamerInfo`s a `TF1` (`dim` 1), `TF2` or `TF3` needs: its formula,
 /// then its base classes deepest first, then itself.
+/// The classes a `dim`-dimensional function needs: ROOT's captured `TF1`, with
+/// its `TFormula`, `TF1Parameters` and bases, then the generated `TF2`/`TF3`.
+/// The generated `TFormula` and `TF1` are the same class versions as the
+/// captured ones, which a file describes once.
+fn function_classes(dim: usize) -> Vec<Cls<'static>> {
+    let mut classes = hist_streamer_classes(&["TF1"]);
+    for class in tf_classes(dim) {
+        if !classes
+            .iter()
+            .any(|c| c.name == class.name && c.version == class.version)
+        {
+            classes.push(class);
+        }
+    }
+    classes
+}
+
 fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
     let tformula = Cls {
         name: "TFormula".into(),

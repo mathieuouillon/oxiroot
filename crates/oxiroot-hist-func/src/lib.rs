@@ -14,9 +14,9 @@
 //! assert!((f.eval(1.0) - 2.494_990).abs() < 1e-6);
 //! ```
 //!
-//! The functions are part of the histogram family: they share its
-//! `TStreamerInfo` list ([`oxiroot_hist::hist_streamer_blob`]) and store their
-//! record as an [`oxiroot_hist::GraphFunction`], the same `TF1` body a graph's
+//! The functions are part of the histogram family: they describe `TF1` with
+//! its captured streamer info ([`oxiroot_hist::hist_streamer_classes`]) and store
+//! their record as an [`oxiroot_hist::GraphFunction`], the same `TF1` body a graph's
 //! `fFunctions` list holds. They live in their own crate so a histogram-only build
 //! does not compile the formula engine. The `oxiroot` facade re-exports them as
 //! `oxiroot::hist::{TF1, TF2, TF3}` and in its prelude.

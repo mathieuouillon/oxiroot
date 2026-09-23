@@ -11,9 +11,20 @@ change the API.
 
 - `Error::context` puts context in front of an error's message and keeps its
   variant.
+- `streamer_gen::StreamerInfoList` parses a stored `TList<TStreamerInfo>` and
+  gives the descriptions a set of classes needs, with the classes they depend
+  on; `oxiroot_hist::hist_streamer_classes` does so for the histogram family's
+  captured list.
 
 ### Changed
 
+- **A file describes only the classes it holds.** A histogram-family object
+  (histograms, profiles, graphs, `TEfficiency`, `THnSparse`, `TH2Poly`,
+  `THStack`, `TMultiGraph`, `TF1`/`TF2`/`TF3`) used to embed the whole
+  captured histogram-family streamer info, 38 KB. It now embeds its own class,
+  the classes it depends on and the classes of the objects it holds. A file
+  holding one histogram, graph or function shrinks from about 38 KB to 6–20
+  KB; ROOT and uproot read every object as before.
 - **Typed errors.** `Error` gains `NotFound`, `WrongClass`,
   `UnsupportedVersion`, `MissingStreamerInfo`, `ChecksumMismatch`,
   `Unsupported` and `InvalidInput`. The errors that fit them use them instead
@@ -37,6 +48,19 @@ change the API.
 - In the `oxiroot` facade, `oxiroot::file` holds all of io-core, like the
   facade's other per-crate modules, and `oxiroot::buffer` and `oxiroot::error`
   are gone: use `oxiroot::file::RBuffer` and `oxiroot::Error`.
+
+### Removed
+
+- `WriteRoot::streamer_blob` and `WriteInto::streamer_blob`, with
+  `StreamerSet`'s serialized list (`add_list`, `list`, `blob`), and
+  `oxiroot_hist::hist_streamer_blob`. Describe classes with
+  `streamer_classes`, and take them from a captured list with
+  `StreamerInfoList` or `hist_streamer_classes`.
+
+### Fixed
+
+- A histogram or profile with bin labels describes `TObjString`, so a reader
+  that follows the file's streamer info decodes its labels.
 
 ### Internal
 

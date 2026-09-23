@@ -1,8 +1,11 @@
 //! Each written object brings the streamer info its class needs
-//! (`WriteRoot::streamer_classes` / `streamer_blob`), and a file embeds exactly
-//! what its objects bring — for types defined outside this workspace too.
+//! (`WriteRoot::streamer_classes`), and a file embeds exactly what its objects
+//! bring — for types defined outside this workspace too.
 
-use oxiroot_hist::{FileWriter, Hist, ObjList, ReadRoot, TObjString, TParameter, WriteRoot};
+use oxiroot_hist::{
+    hist_streamer_classes, FileWriter, GraphFunction, Hist, ObjList, ReadRoot, TEfficiency, TGraph,
+    TH2Poly, THStack, THnSparse, TMultiGraph, TObjString, TParameter, WriteRoot,
+};
 use oxiroot_io_core::streamer_gen::{base, basic, Cls};
 use oxiroot_io_core::{Compression, FileReader, StreamerRegistry, WBuffer};
 
@@ -148,4 +151,134 @@ fn a_collection_read_back_still_describes_its_members() {
     let names = registry(&second);
     assert!(names.get("TParameter<float>").is_some());
     assert!(names.get("TObjString").is_some());
+}
+
+/// The histogram-family objects, each holding what it can hold: labels, bins,
+/// functions, members.
+fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
+    let mut h = Hist::reg(3, 0.0, 3.0).double().named("h");
+    h.xaxis.set_label(1, "a");
+    let p = Hist::reg(2, 0.0, 2.0).profile().named("p");
+    let mut e = TEfficiency::new(2, 0.0, 2.0).named("e");
+    e.fill(true, 0.5);
+    let mut sp = THnSparse::new(&[(4, 0.0, 4.0)]).named("sp");
+    sp.fill(&[1.5]).unwrap();
+    let mut poly = TH2Poly::new(0.0, 2.0, 0.0, 2.0);
+    poly.add_bin_rect(0.0, 0.0, 1.0, 1.0);
+    poly.name = "poly".into();
+    let line = GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 3.0);
+    let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0])
+        .unwrap()
+        .named("g")
+        .with_function(line);
+    let st = THStack::new()
+        .named("st")
+        .add(Hist::reg(2, 0.0, 2.0).float().named("m"));
+    let mg = TMultiGraph::new().named("mg").add(g.clone());
+    vec![
+        ("h", Box::new(h)),
+        ("p", Box::new(p)),
+        ("e", Box::new(e)),
+        ("sp", Box::new(sp)),
+        ("poly", Box::new(poly)),
+        ("g", Box::new(g)),
+        ("st", Box::new(st)),
+        ("mg", Box::new(mg)),
+    ]
+}
+
+#[test]
+fn a_histogram_family_object_describes_only_its_classes() {
+    // What each object holds, and a class of the family it must not describe.
+    let expected: [(&str, &[&str], &[&str]); 8] = [
+        (
+            "h",
+            &["TH1D", "TH1", "TAxis", "THashList", "TObjString"],
+            &["TH2D", "TProfile"],
+        ),
+        (
+            "p",
+            &["TProfile", "TH1D", "TH1", "TAxis"],
+            &["TH2D", "TObjString"],
+        ),
+        ("e", &["TEfficiency", "TH1D", "TH1"], &["TH2D", "TGraph"]),
+        (
+            "sp",
+            &["THnSparseT<TArrayD>", "THnSparse", "TAxis"],
+            &["TH1D", "TGraph"],
+        ),
+        (
+            "poly",
+            &["TH2Poly", "TH2PolyBin", "TGraph", "TList"],
+            &["TH1D", "TProfile"],
+        ),
+        (
+            "g",
+            &["TGraph", "TF1", "TFormula", "TList"],
+            &["TH2D", "TProfile"],
+        ),
+        ("st", &["THStack", "TH1F", "TList"], &["TH2D", "TGraph"]),
+        (
+            "mg",
+            &["TMultiGraph", "TGraph", "TF1"],
+            &["TH2D", "TProfile"],
+        ),
+    ];
+    let dir = std::env::temp_dir();
+    for ((name, object), (key, holds, lacks)) in family().iter().zip(expected) {
+        assert_eq!(*name, key);
+        let path = dir.join(format!("oxiroot_sc_family_{name}.root"));
+        FileWriter::create(&path)
+            .add(&**object)
+            .write(Compression::None)
+            .unwrap();
+        let reg = registry(&path);
+        let classes = reg.class_names();
+        for class in holds {
+            assert!(classes.contains(class), "{name}: no {class} in {classes:?}");
+        }
+        for class in lacks {
+            assert!(!classes.contains(class), "{name}: {class} in {classes:?}");
+        }
+        assert!(
+            std::fs::metadata(&path).unwrap().len() < 36_000,
+            "{name}: the whole 38 KB family list"
+        );
+    }
+}
+
+#[test]
+fn nothing_a_written_object_holds_goes_undescribed() {
+    // The generic reader decodes an object from the file's streamer info alone,
+    // so an undescribed class surfaces as an unsupported member. (A sparse
+    // histogram's `THnSparseArrayChunk` is not in the captured list.)
+    let dir = std::env::temp_dir();
+    for (name, object) in family() {
+        let path = dir.join(format!("oxiroot_sc_decode_{name}.root"));
+        FileWriter::create(&path)
+            .add(&*object)
+            .write(Compression::None)
+            .unwrap();
+        let value = FileReader::open(&path).unwrap().get_value(name).unwrap();
+        let text = value.to_string();
+        for line in text.lines().filter(|l| l.contains("has no TStreamerInfo")) {
+            assert!(line.contains("THnSparseArrayChunk"), "{name}: {line}");
+        }
+    }
+}
+
+#[test]
+fn the_captured_list_gives_a_class_after_its_dependencies() {
+    let classes = hist_streamer_classes(&["TH1D"]);
+    let names: Vec<&str> = classes.iter().map(|c| &*c.name).collect();
+    let at = |class: &str| names.iter().position(|n| *n == class).unwrap();
+    assert_eq!(names.last(), Some(&"TH1D"));
+    assert!(at("TObject") < at("TNamed") && at("TNamed") < at("TH1"));
+    assert!(at("TAxis") < at("TH1"));
+
+    // A class the list does not describe gives nothing, and a class two
+    // requests share is described once.
+    assert!(hist_streamer_classes(&["NoSuchClass"]).is_empty());
+    let both = hist_streamer_classes(&["TH1D", "TH1F"]);
+    assert_eq!(both.iter().filter(|c| c.name == "TH1").count(), 1);
 }

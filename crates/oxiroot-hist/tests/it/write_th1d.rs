@@ -89,8 +89,9 @@ fn create_fill_save_round_trips() {
 
 #[test]
 fn written_file_embeds_self_describing_streamer_info() {
-    // A written file carries a TStreamerInfo list covering the histogram
-    // hierarchy at the exact versions we emit, so any ROOT reader can read it.
+    // A written file describes the classes it holds, at the exact versions we
+    // emit, so any ROOT reader can read it: a TH1D and every class it depends
+    // on, and none of the rest of the histogram family.
     let mut h = Hist::reg(5, 0.0, 5.0).double().named("h");
     h.fill(2.5);
     let out = std::path::PathBuf::from("/tmp/rootrs_streamerinfo_th1d.root");
@@ -100,17 +101,22 @@ fn written_file_embeds_self_describing_streamer_info() {
     let f = FileReader::open(&out).expect("reopen");
     let reg = f.streamer_registry().expect("parse embedded streamer info");
     let classes = reg.class_names();
-    for expected in ["TH1D", "TH2D", "TH3D", "TProfile", "TH1", "TAxis", "TNamed"] {
+    for expected in ["TH1D", "TH1", "TAxis", "TAttAxis", "TNamed", "TObject"] {
         assert!(
             classes.contains(&expected),
             "missing streamer for {expected}"
+        );
+    }
+    for absent in ["TH2D", "TH3D", "TProfile", "TGraph", "TEfficiency"] {
+        assert!(
+            !classes.contains(&absent),
+            "describes {absent}: {classes:?}"
         );
     }
     // Versions must match what our serializer writes.
     assert_eq!(reg.get("TH1").unwrap().class_version, 8);
     assert_eq!(reg.get("TH1D").unwrap().class_version, 3);
     assert_eq!(reg.get("TAxis").unwrap().class_version, 10);
-    assert_eq!(reg.get("TProfile").unwrap().class_version, 7);
 }
 
 #[test]
