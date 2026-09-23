@@ -259,6 +259,15 @@ impl FileReader {
     /// Fetch the `[fSeekInfo, fNbytesInfo]` record and return its decompressed
     /// object bytes plus the wrapping key's `fKeyLen`, or `None` if the file has
     /// no streamer info. Only that one record is read.
+    /// The file's streamer-info record: the list's object bytes and the key
+    /// length they were written under (`None` when the file has no record).
+    /// [`StreamerInfoList::parse_keyed`](crate::streamer_gen::StreamerInfoList::parse_keyed)
+    /// reads them; [`streamer_registry`](Self::streamer_registry) is the way to
+    /// the parsed descriptions.
+    pub fn streamer_info_list(&self) -> Result<Option<(Vec<u8>, usize)>> {
+        self.streamer_info_decompressed()
+    }
+
     fn streamer_info_decompressed(&self) -> Result<Option<(Vec<u8>, usize)>> {
         if self.header.seek_info == 0 || self.header.nbytes_info == 0 {
             return Ok(None);

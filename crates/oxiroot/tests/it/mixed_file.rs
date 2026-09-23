@@ -102,3 +102,31 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
         BranchValues::U8(vec![1, 0])
     );
 }
+
+/// A `TTree` is more than its key — its baskets sit elsewhere in the file — so
+/// compacting a file that holds one is refused, with the alternative named,
+/// rather than writing a file whose tree has lost its data.
+#[test]
+fn compacting_a_file_that_holds_a_tree_is_refused() {
+    let path = std::env::temp_dir().join("oxiroot_compact_with_tree.root");
+    FileWriter::create(&path)
+        .put(Tree::new("T", vec![Branch::i32("x", vec![1, 2, 3])]))
+        .write(Compression::None)
+        .expect("write");
+
+    let err = FileWriter::open(&path)
+        .expect("open")
+        .compact()
+        .write(Compression::None)
+        .expect_err("compacting a tree file must be refused");
+    let message = err.to_string();
+    assert!(
+        message.contains("TTree") && message.contains("hadd"),
+        "{err}"
+    );
+
+    // The file is untouched: the tree still reads.
+    let file = FileReader::open(&path).expect("reopen");
+    let tree = TreeReader::open(&file, "T").expect("tree");
+    assert_eq!(tree.num_entries(), 3);
+}

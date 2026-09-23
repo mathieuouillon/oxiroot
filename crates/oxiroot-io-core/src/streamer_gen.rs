@@ -509,6 +509,16 @@ impl StreamerInfoList {
         })
     }
 
+    /// Parse `list` when it was written under a key of `key_len` bytes — what a
+    /// file's own record says — rather than oxiroot's 64. The list's class tags
+    /// count from the key, so a list copied out of another file needs the key
+    /// length it was written under.
+    pub fn parse_keyed(list: &[u8], key_len: usize) -> Result<StreamerInfoList> {
+        Ok(StreamerInfoList {
+            infos: parse_stored_infos(list, key_len)?,
+        })
+    }
+
     /// The descriptions of `classes` and of every class they depend on (their
     /// bases, and the classes named in their members' types), dependencies
     /// first, each copied verbatim. A class the list does not describe is left

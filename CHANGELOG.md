@@ -26,6 +26,15 @@ change the API.
   if there were no object there. `ObjHeader::back_ref` says where the object
   was written, for a reader that wants to follow it.
 
+- **Delete, purge and compact in update mode.** `FileWriter::open` could only
+  add to a file. `delete` takes a name out of it — every cycle, or the one
+  `"h;1"` asks for — `purge` keeps only each name's current cycle, as ROOT's
+  `TFile::Purge` does, and `compact` rewrites the file from what is left so the
+  space the rest held is given up. Deleting without compacting leaves the file
+  the same size, which is what ROOT's `TFile::Delete` does; deleting a name the
+  file does not hold is an error rather than a quiet no-op; and compacting a
+  file that holds a `TTree` or an RNTuple is refused, since their records live
+  outside their key.
 - **Time axes.** A `TAxis` keeps `fTimeDisplay` and `fTimeFormat`, which it
   used to read and drop, so a histogram or graph whose x values are times keeps
   saying so through oxiroot. `TAxis::set_time_format` sets it in ROOT's own
