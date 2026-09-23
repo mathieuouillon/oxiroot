@@ -224,6 +224,27 @@ impl BranchValues {
         }
     }
 
+    /// This branch's scalar integer values, widened to `i64` — for a column
+    /// read as a key (an index's major or minor branch, an event or run number),
+    /// whatever integer width it was written in. `None` for a column that is not
+    /// a scalar integer.
+    #[must_use]
+    pub fn as_i64_vec(&self) -> Option<Vec<i64>> {
+        use BranchValues::*;
+        Some(match self {
+            Bool(v) => v.iter().map(|&b| i64::from(b)).collect(),
+            I8(v) => v.iter().map(|&x| i64::from(x)).collect(),
+            U8(v) => v.iter().map(|&x| i64::from(x)).collect(),
+            I16(v) => v.iter().map(|&x| i64::from(x)).collect(),
+            U16(v) => v.iter().map(|&x| i64::from(x)).collect(),
+            I32(v) => v.iter().map(|&x| i64::from(x)).collect(),
+            U32(v) => v.iter().map(|&x| i64::from(x)).collect(),
+            I64(v) => v.clone(),
+            U64(v) => v.iter().map(|&x| x as i64).collect(),
+            _ => return None,
+        })
+    }
+
     /// Append `other`'s entries onto this column in place, concatenating them.
     ///
     /// Both columns must be the same variant (same element type and nesting);

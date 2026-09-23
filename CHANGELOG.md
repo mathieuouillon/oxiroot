@@ -26,6 +26,15 @@ change the API.
   if there were no object there. `ObjHeader::back_ref` says where the object
   was written, for a reader that wants to follow it.
 
+- **Index-based friend join.** A tree's `fTreeIndex` — what
+  `TTree::BuildIndex(major, minor)` builds — is read into `TreeIndex`, with the
+  keys, the entry each names, and `entry_of`, which is ROOT's
+  `GetEntryNumberWithIndex`. `TreeReader::join_by_index` gives, for each entry
+  of the main tree, the friend entry carrying the same key, so friends whose
+  entries do not line up can be joined on `(run, event)` instead of by entry
+  number. A friend with no index is an error rather than a silent positional
+  join. `BranchValues::as_i64_vec` reads any scalar integer column as `i64`,
+  which is what an index key is made of.
 - **Delete, purge and compact in update mode.** `FileWriter::open` could only
   add to a file. `delete` takes a name out of it — every cycle, or the one
   `"h;1"` asks for — `purge` keeps only each name's current cycle, as ROOT's

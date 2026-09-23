@@ -10,7 +10,7 @@ use super::members::{member_int, member_str, walk_members, Members};
 use super::types::{
     member_leaf_type, parse_nested_vector_elem, parse_vector_elem, streamer_type_to_leaf,
 };
-use super::{Branch, Friend, Leaf, ObjectMember, TreeReader};
+use super::{Branch, Friend, Leaf, ObjectMember, TreeIndex, TreeReader};
 use crate::value::LeafType;
 
 /// Parse a decompressed `TTree` object (`keylen` is its key's header length),
@@ -43,6 +43,7 @@ pub(super) fn read_tree(
     let mut unsupported = Vec::new();
     let mut friends = Vec::new();
     let mut aliases = Vec::new();
+    let mut index = None;
     {
         let mut on_object = |name: &str, rb: &mut RBuffer| -> Result<()> {
             // The TTree streamer order (after the scalar members) is fBranches,
@@ -68,6 +69,9 @@ pub(super) fn read_tree(
                 // a null pointer is a bare 4-byte 0, which the tag header consumes.
                 "fTreeIndex" => {
                     let h = tags.read_header(rb)?;
+                    if h.class_name.as_deref() == Some("TTreeIndex") {
+                        index = read_tree_index(rb)?;
+                    }
                     if let Some(end) = h.end {
                         rb.seek(end)?;
                     }
@@ -103,7 +107,46 @@ pub(super) fn read_tree(
         streamer_classes: Vec::new(),
         friends,
         aliases,
+        index,
     })
+}
+
+/// Read a `TTreeIndex` body, the cursor just past its object-pointer header.
+///
+/// Version 2 (what ROOT 6 writes) is `TVirtualIndex` — a `TNamed` — then
+/// `fMajorName`, `fMinorName`, `fN`, and three `Long64_t[fN]` arrays written by
+/// its own streamer, so they carry no per-array framing: the major keys, the
+/// minor keys, and the entry each key names. An older version packed the two
+/// keys into one array; it is left unread rather than guessed at.
+fn read_tree_index(r: &mut RBuffer) -> Result<Option<TreeIndex>> {
+    let header = r.read_version()?;
+    if header.version < 2 {
+        return Ok(None);
+    }
+    skip_object(r)?; // the TVirtualIndex (TNamed) base
+    let major_name = r.string()?;
+    let minor_name = r.string()?;
+    let n = r.be_i64()?;
+    let n = usize::try_from(n).map_err(|_| {
+        Error::Format(format!(
+            "tree index declares {n} entries, which cannot be read"
+        ))
+    })?;
+    // Three arrays of n: refuse a count the record cannot hold rather than
+    // allocating for it.
+    if n.saturating_mul(24) > r.remaining() {
+        return Err(Error::Format(format!(
+            "tree index declares {n} entries, more than its record holds"
+        )));
+    }
+    let read_column =
+        |r: &mut RBuffer| -> Result<Vec<i64>> { (0..n).map(|_| r.be_i64()).collect() };
+    let major = read_column(r)?;
+    let minor = read_column(r)?;
+    let entries = read_column(r)?;
+    let keys: Vec<(i64, i64)> = major.into_iter().zip(minor).collect();
+    let entries: Vec<u64> = entries.into_iter().map(|e| e.max(0) as u64).collect();
+    Ok(Some(TreeIndex::new(major_name, minor_name, keys, entries)))
 }
 
 /// Position the cursor at a `TList`-valued member's body and return its object

@@ -158,6 +158,6 @@ pub mod prelude {
 
     pub use oxiroot_tree::{
         write_tree_file, write_tree_file_baskets, Branch, BranchValues, ChainReader, Friend,
-        Jagged, LeafType, SplitMember, TEntryList, Tree, TreeReader, TreeWriter,
+        Jagged, LeafType, SplitMember, TEntryList, Tree, TreeIndex, TreeReader, TreeWriter,
     };
 }
