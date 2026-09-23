@@ -33,6 +33,7 @@ mod tefficiency;
 mod th2poly;
 mod thnsparse;
 mod threaded;
+mod time_axis;
 mod tmap;
 mod tprofile2d;
 mod tprofile3d;

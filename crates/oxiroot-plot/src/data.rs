@@ -15,6 +15,12 @@ pub trait Hist1dData {
     fn values(&self) -> Vec<f64>;
     /// The uncertainty of in-range bin `i` (`0..n`).
     fn error(&self, i: usize) -> f64;
+    /// The x axis's ROOT time format, when its values are times
+    /// (`fTimeFormat` on a time axis). Plotting picks it up, so a histogram
+    /// with a time axis draws dates and clock times instead of numbers.
+    fn x_time_format(&self) -> Option<String> {
+        None
+    }
 }
 
 /// A 2-D binned distribution: `nx × ny` in-range bins.
@@ -41,6 +47,12 @@ pub trait PointData {
     fn y_errors(&self) -> Option<(Vec<f64>, Vec<f64>)> {
         None
     }
+
+    /// The x axis's ROOT time format, when its values are times (`fTimeFormat`
+    /// on a time axis). Plotting picks it up, so a time axis draws as times.
+    fn x_time_format(&self) -> Option<String> {
+        None
+    }
 }
 
 #[cfg(feature = "hist")]
@@ -58,6 +70,11 @@ mod hist_impls {
         }
         fn error(&self, i: usize) -> f64 {
             self.bin_error(i + 1)
+        }
+        fn x_time_format(&self) -> Option<String> {
+            self.xaxis
+                .time_display
+                .then(|| self.xaxis.time_format.clone())
         }
     }
 
@@ -118,6 +135,11 @@ mod hist_impls {
                 } => Some((padded(ey_low, n), padded(ey_high, n))),
                 _ => None,
             }
+        }
+        fn x_time_format(&self) -> Option<String> {
+            // A graph's axes live on its display frame, as in ROOT.
+            let axis = &self.histogram.as_ref()?.xaxis;
+            axis.time_display.then(|| axis.time_format.clone())
         }
     }
 }

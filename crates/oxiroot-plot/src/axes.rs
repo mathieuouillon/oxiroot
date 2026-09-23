@@ -15,6 +15,7 @@ use crate::figure::SaveOpts;
 use crate::style::{Style, TickDir};
 use crate::text::{self, FontStyle, HAlign, VAlign};
 use crate::ticker;
+use crate::timeaxis::TimeFormat;
 use crate::transform::{Bounds, Transform};
 
 /// Gap between the frame and the bottom of the title, in points.
@@ -54,6 +55,9 @@ pub struct Axes {
     /// A ROOT-style fit statistics box (`TPaveStats`), set by [`Axes::fit_stats`].
     #[cfg(feature = "fit")]
     stats: Option<crate::statbox::StatData>,
+    /// When set, the x values are times and its labels are drawn as dates and
+    /// clock times (`Axes::x_time_format`, or a plotted time axis).
+    x_time: Option<TimeFormat>,
 }
 
 impl Axes {
@@ -73,6 +77,7 @@ impl Axes {
             color_idx: 0,
             show_legend: false,
             y_from_zero: false,
+            x_time: None,
             colorbar: None,
             grid_minor: false,
             show_xticklabels: true,
@@ -305,6 +310,32 @@ impl Axes {
         (ax.render(w, h), w, h)
     }
 
+    /// Draw the x values as times, with `format` saying how a label reads: a
+    /// `strftime` format, and `%F` after it naming the epoch the values count
+    /// from, exactly as ROOT's `fTimeFormat` spells it
+    /// (`"%H:%M%F2024-01-01 00:00:00"`). The ticks then step in seconds,
+    /// minutes, hours or days rather than in decimals.
+    ///
+    /// Plotting a histogram or graph whose axis is already a time axis sets
+    /// this on its own, so this is for data that carries no axis of its own.
+    pub fn x_time_format(&mut self, format: &str) -> &mut Self {
+        self.x_time = Some(TimeFormat::parse(format));
+        self
+    }
+
+    /// The time format in force, for the crate's own tests.
+    #[cfg(test)]
+    pub(crate) fn x_time_format_for_test(&self) -> Option<&TimeFormat> {
+        self.x_time.as_ref()
+    }
+
+    /// Take the time format from plotted data, unless the caller set one.
+    fn adopt_time_format(&mut self, format: Option<String>) {
+        if let (None, Some(format)) = (&self.x_time, format) {
+            self.x_time = Some(TimeFormat::parse(&format));
+        }
+    }
+
     /// Plot a 1-D histogram (a `TH1`, or any [`Hist1dData`]) as an mplhep step
     /// staircase (the matplotlib `hist` analog).
     pub fn hist(&mut self, h: &impl Hist1dData) -> &mut Self {
@@ -326,6 +357,7 @@ impl Axes {
     /// # }
     /// ```
     pub fn hist_with(&mut self, h: &impl Hist1dData, opts: HistOpts) -> &mut Self {
+        self.adopt_time_format(h.x_time_format());
         let edges = h.edges();
         let values = h.values();
         let n = values.len();
@@ -381,6 +413,7 @@ impl Axes {
 
     /// Plot points with explicit options.
     pub fn errorbar_with(&mut self, g: &impl PointData, opts: ErrorbarOpts) -> &mut Self {
+        self.adopt_time_format(g.x_time_format());
         let xs = g.xs();
         let ys = g.ys();
         let (xerr, yerr) = (g.x_errors(), g.y_errors());
@@ -750,11 +783,19 @@ impl Axes {
         let (xmin, xmax, ymin, ymax) = self.limits();
         let t = Transform::new(box_, xmin, xmax, ymin, ymax);
 
-        let xticks = ticker::ticks(xmin, xmax, ((box_.w / 70.0).round() as usize).clamp(3, 11));
+        let xtick_target = ((box_.w / 70.0).round() as usize).clamp(3, 11);
+        // A time axis steps in minutes, hours or days, not in "nice" decimals.
+        let xticks = match &self.x_time {
+            Some(_) => crate::timeaxis::time_ticks(xmin, xmax, xtick_target),
+            None => ticker::ticks(xmin, xmax, xtick_target),
+        };
         let yticks = ticker::ticks(ymin, ymax, ((box_.h / 50.0).round() as usize).clamp(3, 9));
         let xstep = ticker::nice_step(xmin, xmax, ((box_.w / 70.0).round() as usize).clamp(3, 11));
         let ystep = ticker::nice_step(ymin, ymax, ((box_.h / 50.0).round() as usize).clamp(3, 9));
-        let xlabels = ticker::format_ticks(&xticks, xstep);
+        let xlabels = match &self.x_time {
+            Some(time) => xticks.iter().map(|&v| time.label(v)).collect(),
+            None => ticker::format_ticks(&xticks, xstep),
+        };
         let ylabels = ticker::format_ticks(&yticks, ystep);
 
         let mut grid = DrawGroup::new(Some(box_));

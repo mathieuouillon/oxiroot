@@ -1109,8 +1109,8 @@ fn write_taxis(w: &mut WBuffer, ax: &TAxis) {
     w.be_i32(0); // fFirst
     w.be_i32(0); // fLast
     w.be_u16(0); // fBits2
-    w.u8(0); // fTimeDisplay
-    w.string(""); // fTimeFormat
+    w.u8(u8::from(ax.time_display)); // fTimeDisplay
+    w.string(&ax.time_format); // fTimeFormat
     if ax.labels.iter().any(|l| !l.is_empty()) {
         write_labels(w, &ax.labels); // fLabels (THashList*)
     } else {

@@ -953,8 +953,6 @@ Grouped by the ROOT feature each fills.
 - **`TFile` container**
   - **Delete / compact in update mode** — append mode ships; rewriting a key at
     a new cycle and purging old cycles (`TFile::Purge`) does not.
-- **Axes** — **time axes** (`TAxis` `fTimeDisplay` / `fTimeFormat`) on histograms
-  and graphs, for monitoring-style time series.
 - **`RDataFrame`-style analysis** *(far future)* — a lazy, columnar analysis
   front-end (`Define` / `Filter` / `Histo1D` / `Sum`, executed in one pass over a
   `TTree` or RNTuple, parallelised across clusters) built on the existing readers.

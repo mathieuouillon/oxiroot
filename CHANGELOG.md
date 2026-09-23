@@ -26,6 +26,14 @@ change the API.
   if there were no object there. `ObjHeader::back_ref` says where the object
   was written, for a reader that wants to follow it.
 
+- **Time axes.** A `TAxis` keeps `fTimeDisplay` and `fTimeFormat`, which it
+  used to read and drop, so a histogram or graph whose x values are times keeps
+  saying so through oxiroot. `TAxis::set_time_format` sets it in ROOT's own
+  spelling (`"%H:%M%F2024-01-01 00:00:00"` — a `strftime` format, then the
+  epoch the values count from), and ROOT and uproot read the axis back as a
+  time axis. Plotting picks it up: `oxiroot-plot` labels the ticks as dates and
+  clock times and steps them in minutes, hours or days rather than decimals,
+  with `Axes::x_time_format` for data that carries no axis of its own.
 - **Directories nest.** `FileWriter::dir` could only open a directory in the
   top directory; `SubdirWriter::dir` opens one inside a subdirectory, so a file
   can be organised as deep as its data is. A clash in a nested directory is

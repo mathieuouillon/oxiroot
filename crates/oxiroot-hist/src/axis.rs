@@ -23,6 +23,14 @@ pub struct TAxis {
     /// `i + 1`). Empty for an ordinary numeric axis; an unlabelled bin in an
     /// otherwise-labelled axis holds an empty string.
     pub labels: Vec<String>,
+    /// Whether the axis values are times, to be drawn as dates and clock times
+    /// rather than numbers (`fTimeDisplay`). Set it with
+    /// [`set_time_format`](Self::set_time_format).
+    pub time_display: bool,
+    /// How a time axis formats its labels (`fTimeFormat`): a `strftime` format,
+    /// optionally followed by `%F` and the epoch the values count from
+    /// (`"%d/%m/%Y%F1970-01-01 00:00:00"`). Empty means ROOT's own default.
+    pub time_format: String,
 }
 
 impl TAxis {
@@ -36,6 +44,8 @@ impl TAxis {
             xmax,
             xbins: Vec::new(),
             labels: Vec::new(),
+            time_display: false,
+            time_format: String::new(),
         }
     }
 
@@ -70,6 +80,8 @@ impl TAxis {
             xmax: edges[edges.len() - 1],
             xbins: edges.to_vec(),
             labels: Vec::new(),
+            time_display: false,
+            time_format: String::new(),
         })
     }
 
@@ -150,8 +162,8 @@ impl TAxis {
         if vh.version >= 8 {
             let _bits2 = r.be_u16()?;
         }
-        let _time_display = r.u8()?;
-        let _time_format = r.string()?;
+        let time_display = r.u8()? != 0;
+        let time_format = r.string()?;
         let labels = if vh.version >= 7 {
             read_labels(r, nbins.max(0) as usize)? // fLabels (THashList*)
         } else {
@@ -169,6 +181,8 @@ impl TAxis {
             xmax,
             xbins,
             labels,
+            time_display,
+            time_format,
         })
     }
 
@@ -189,6 +203,30 @@ impl TAxis {
     /// Whether the axis carries alphanumeric bin labels (`fLabels`).
     pub fn is_labelled(&self) -> bool {
         self.labels.iter().any(|l| !l.is_empty())
+    }
+
+    /// Draw this axis as times: the values are seconds, and `format` says how a
+    /// label reads. It is a `strftime` format (`"%H:%M"`, `"%d/%m/%Y"`), and
+    /// `%F` after it names the epoch the values count from, as ROOT writes it —
+    /// `"%H:%M%F2024-01-01 00:00:00"` for values counted from the start of 2024.
+    /// An empty `format` leaves ROOT to choose one. ROOT, uproot and oxiroot
+    /// read the axis back as a time axis.
+    ///
+    /// ```
+    /// # use oxiroot_hist::Hist;
+    /// let mut h = Hist::reg(24, 0.0, 86_400.0).double().named("rate");
+    /// h.xaxis.set_time_format("%H:%M%F2024-01-01 00:00:00");
+    /// assert!(h.xaxis.time_display);
+    /// ```
+    pub fn set_time_format(&mut self, format: &str) {
+        self.time_display = true;
+        self.time_format = format.to_string();
+    }
+
+    /// Stop drawing this axis as times, and forget the format.
+    pub fn clear_time_format(&mut self) {
+        self.time_display = false;
+        self.time_format.clear();
     }
 
     /// Set the alphanumeric label for bin `bin` (1-based), growing the label
