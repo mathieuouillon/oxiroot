@@ -261,7 +261,7 @@ cargo run -p oxiroot --example analysis
   FileWriter::create("out.root")
       .add(&h)                            // any &dyn WriteRoot: hist, profile, graph…
       .add(&prof)
-      .dir("by_region", |d| d.add(&sig))  // a TDirectory per region
+      .dir("by_region", |d| d.add(&sig))  // a TDirectory per region; `dir` nests
       .write(Compression::Zstd(5))?;
   FileWriter::open("out.root")?.add(&extra).write(Compression::None)?; // append
   ```
@@ -951,7 +951,6 @@ Grouped by the ROOT feature each fills.
   the `xrootd` feature) with `unix` auth for public data, alongside HTTP(S) range
   reads (the `http` feature).
 - **`TFile` container**
-  - **Arbitrary-depth `TDirectory` write** — the builder nests one level today.
   - **Delete / compact in update mode** — append mode ships; rewriting a key at
     a new cycle and purging old cycles (`TFile::Purge`) does not.
 - **Axes** — **time axes** (`TAxis` `fTimeDisplay` / `fTimeFormat`) on histograms

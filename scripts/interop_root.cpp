@@ -51,9 +51,11 @@ static const std::vector<std::vector<float>> TREE_TH_Y = {
     {1.5}, {}, {2.5, 3.5}, {4.5}, {5.5, 6.5, 7.5}};
 static const std::vector<std::vector<int>> TREE_TH_ID = {
     {1}, {}, {2, 3}, {4}, {5, 6, 7}};
-// rust_multi.root (RootFile builder): top-level mh + subdirectory sub/sh.
+// rust_multi.root (RootFile builder): top-level mh, subdirectory sub/sh, and
+// sub/deep/deeper/dh2 three levels down.
 static const std::vector<double> MULTI_MH = {5, 6, 7};
 static const std::vector<double> MULTI_SH = {8, 9};
+static const std::vector<double> MULTI_DH2 = {10, 11};
 // rust_append.root: base bh, then ah appended via RootFile::open.
 static const std::vector<double> APPEND_BH = {3, 1};
 static const std::vector<double> APPEND_AH = {4};
@@ -283,9 +285,12 @@ static void read_rust(const char *dir) {
         if (!f || f->IsZombie())
             fail("cannot open rust_multi.root");
         check_hist(dynamic_cast<TH1D *>(f->Get("mh")), "rust multi mh", MULTI_MH);
-        // ROOT resolves "sub/sh" through the TDirectory the builder wrote.
+        // ROOT resolves "sub/sh" through the TDirectory the builder wrote, and
+        // the same way down a directory nested three levels deep.
         check_hist(dynamic_cast<TH1D *>(f->Get("sub/sh")), "rust multi sub/sh",
                    MULTI_SH);
+        check_hist(dynamic_cast<TH1D *>(f->Get("sub/deep/deeper/dh2")),
+                   "rust multi sub/deep/deeper/dh2", MULTI_DH2);
         f->Close();
     }
     // Append file: the base key plus the one appended via RootFile::open.
