@@ -55,7 +55,11 @@ int main() {
   TProfile3D p3("p3","",2,0,2,2,0,2,2,0,2); p3.Write();
   TEfficiency e("e","",2,0,2); e.Write();
   Int_t nb[2] = {2,2}; Double_t lo[2] = {0,0}, hi[2] = {2,2};
-  THnSparseD hs("hs","",2,nb,lo,hi); hs.Write();
+  // Filled: an empty THnSparse holds no chunk, so ROOT would record no
+  // THnSparseArrayChunk (nor the TArrayD holding a chunk's contents).
+  THnSparseD hs("hs","",2,nb,lo,hi);
+  Double_t hsx[2] = {0.5,0.5}; hs.Fill(hsx);
+  hs.Write();
   TH2Poly hp("hp","",0,2,0,2); hp.AddBin(0,0,1,1); hp.AddBin(1,1,2,2); hp.Write();
   Double_t gx[2] = {0,1}, gy[2] = {0,1}, ge[2] = {0,0};
   TGraph gr(2,gx,gy); gr.SetName("gr"); gr.Write();
