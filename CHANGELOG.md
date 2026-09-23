@@ -26,6 +26,16 @@ change the API.
   if there were no object there. `ObjHeader::back_ref` says where the object
   was written, for a reader that wants to follow it.
 
+- **Read an object at an explicit cycle.** Writing a name a file already holds
+  keeps the old object under a lower cycle; every read took the highest one and
+  had no way to ask for another. A name now takes ROOT's `"name;2"` form
+  wherever oxiroot takes one — `FileReader::key` and `get_value`, `read_root`,
+  `TreeReader::open`, `NtupleReader::open`, and `oxroot` — and `split_cycle`
+  and `find_key` are public for a caller that resolves names itself. A cycle the
+  file does not hold is `NotFound`, never a quiet fallback to another one, and a
+  name that carries a `;` of its own is left whole. `oxroot ls` names a key
+  `name;cycle` when the directory holds more than one cycle of it.
+
 ### Changed
 
 - **One offset convention.** An RNTuple's `FieldValues::Nested` and the writer's

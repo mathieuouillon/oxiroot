@@ -1,7 +1,7 @@
 //! Opening an RNTuple from a ROOT file: anchor → header/footer envelopes →
 //! page-list envelopes → on-demand column decoding.
 
-use oxiroot_io_core::{decompress_payload, Error, FileReader, Result};
+use oxiroot_io_core::{decompress_payload, find_key, Error, FileReader, Result};
 
 use crate::anchor::{RNTupleAnchor, ANCHOR_CLASS};
 use crate::envelope::{read_envelope, ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST};
@@ -40,17 +40,11 @@ impl NtupleReader {
     /// top-directory RNTuple once the anchor key is located.
     pub fn open_in(file: &FileReader, subdir: &str, name: &str) -> Result<NtupleReader> {
         let dir = file.subdir(subdir)?;
-        // Pick the highest cycle, matching `FileReader::key` / `object_in_keyed` and
-        // ROOT's rule that the newest cycle is current.
-        let key = dir
-            .keys
-            .iter()
-            .filter(|k| k.name == name && !k.is_deleted())
-            .max_by_key(|k| k.cycle)
-            .ok_or_else(|| Error::NotFound {
-                what: "key",
-                name: format!("{}/{name}", subdir.trim_end_matches('/')),
-            })?;
+        // The cycle `name` asks for, or the highest — `FileReader::key`'s rule.
+        let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
+            what: "key",
+            name: format!("{}/{name}", subdir.trim_end_matches('/')),
+        })?;
         // Clone out of the borrowed `dir` so the returned RNTuple owns nothing
         // tied to it.
         let key = key.clone();

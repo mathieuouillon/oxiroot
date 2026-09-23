@@ -63,9 +63,10 @@ pub use file::MmapSource;
 #[cfg(feature = "xrootd")]
 pub use file::XrootdSource;
 pub use file::{
-    compress_if_smaller, read_free, ByteSource, BytesSource, ContainerWriter, DirId, Directory,
-    FileHeader, FileReader, FileSource, FileWriter, FreeSegment, SubdirWriter, TDatime, TKey,
-    TUuid, BIG_FILE_VERSION, DATIME, FILE_VERSION, KSTART_BIG_FILE, MAGIC,
+    compress_if_smaller, find_key, read_free, split_cycle, ByteSource, BytesSource,
+    ContainerWriter, DirId, Directory, FileHeader, FileReader, FileSource, FileWriter, FreeSegment,
+    SubdirWriter, TDatime, TKey, TUuid, BIG_FILE_VERSION, DATIME, FILE_VERSION, KSTART_BIG_FILE,
+    MAGIC,
 };
 pub use object::{ObjHeader, ObjectRef, TagReader};
 pub use object_io::{

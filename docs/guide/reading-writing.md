@@ -35,6 +35,15 @@ let bytes: Vec<u8> = h.to_root_bytes();
 let same = TH1::read_root(&FileReader::open("hist.root")?, "pt")?;
 ```
 
+!!! note "Reading an older cycle"
+    Writing a name a file already holds keeps the old object under a lower
+    *cycle*. Every read takes a name — `FileReader::key`, `get_value`,
+    `read_root`, `TreeReader::open`, `NtupleReader::open` — and a plain name
+    reads the current (highest) cycle. Ask for an older one the way ROOT does,
+    with `"name;2"`; a name that carries a `;` of its own is left whole, and a
+    cycle the file does not hold is `Error::NotFound` rather than a silent
+    fallback. `oxroot ls` shows the cycles a file holds.
+
 !!! note "Names belong to the file, not the object"
     A histogram is just data. It carries a name only when you persist it —
     `.named("pt")` sets the file key, `.titled(...)` the ROOT title. Construct
