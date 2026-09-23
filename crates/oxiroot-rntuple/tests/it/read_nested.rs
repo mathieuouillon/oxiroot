@@ -45,7 +45,7 @@ fn check_nested(name: &str) {
     assert_eq!(
         field("vvi"),
         FieldValues::Nested {
-            offsets: vec![0, 1, 3, 6, 10],
+            offsets: vec![0, 0, 1, 3, 6, 10],
             items: Box::new(FieldValues::VecI32(vec![
                 vec![10], // entry 1
                 vec![20], // entry 2
@@ -68,7 +68,7 @@ fn check_nested(name: &str) {
     assert_eq!(
         field("vp"),
         FieldValues::Nested {
-            offsets: vec![0, 1, 3, 6, 10],
+            offsets: vec![0, 0, 1, 3, 6, 10],
             items: Box::new(FieldValues::Record(vec![
                 (
                     "_0".into(),

@@ -129,8 +129,10 @@ wrap it with `Field::new(name, column)`.
 `Column::Record` is a struct-of-arrays: named sub-fields, each with one value per
 record instance. A two-field record serializes as `std::pair`, more as
 `std::tuple`. `Column::Nested` is a collection whose element is itself a
-collection or a record — its cumulative `offsets` (one per entry) partition the
-flattened child column. Together they express `std::vector<MyStruct>`:
+collection or a record — its cumulative `offsets` partition the flattened child
+column: entry `i` spans `items[offsets[i]..offsets[i + 1]]`, so `offsets` leads
+with a `0` and holds one value more than there are entries, the same convention
+as a tree's jagged `offsets`. Together they express `std::vector<MyStruct>`:
 
 ```rust
 use oxiroot::prelude::*;
@@ -139,7 +141,7 @@ use oxiroot::prelude::*;
 let clusters = Field::new(
     "clusters",
     Column::Nested {
-        offsets: vec![0, 1, 3], // entry 0: none, entry 1: 1, entry 2: 2
+        offsets: vec![0, 0, 1, 3], // entry 0: none, entry 1: 1, entry 2: 2
         items: Box::new(Column::Record(vec![
             ("_0".into(), Column::I32(vec![10, 20, 21])),
             ("_1".into(), Column::F64(vec![1.5, 2.5, 3.5])),
@@ -300,8 +302,9 @@ let ntpl = NtupleReader::open(&file, "events")?;
 if let FieldValues::Nested { offsets, items } = ntpl.read_field(&file, "clusters")? {
     if let FieldValues::Record(fields) = *items {
         // `fields` is [("_0", I32([...])), ("_1", F64([...]))] — flattened.
-        // entry k spans offsets[k-1]..offsets[k] (offsets[-1] = 0).
-        println!("{} entries, {} record instances", offsets.len(), fields[0].1.len());
+        // entry k spans offsets[k]..offsets[k + 1], and offsets[0] is 0.
+        let entries = offsets.len() - 1;
+        println!("{entries} entries, {} record instances", fields[0].1.len());
     }
 }
 ```

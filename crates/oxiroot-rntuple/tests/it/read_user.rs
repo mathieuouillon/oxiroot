@@ -28,7 +28,7 @@ fn reads_user_class() {
     assert_eq!(
         ntpl.read_field(&file, "vhit").expect("vhit"),
         FieldValues::Nested {
-            offsets: vec![1, 3, 6],
+            offsets: vec![0, 1, 3, 6],
             items: Box::new(FieldValues::Record(vec![
                 ("id".into(), FieldValues::I32(vec![0, 0, 2, 0, 2, 4])),
                 (

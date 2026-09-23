@@ -39,7 +39,7 @@ fn one_shot_file_describes_the_anchor_and_user_classes_like_root() {
         Field::new(
             "vhit",
             Column::Nested {
-                offsets: vec![1, 3],
+                offsets: vec![0, 1, 3],
                 items: Box::new(hit(vec![0, 1, 2])),
             },
         ),

@@ -33,7 +33,9 @@ fn main() -> oxiroot::Result<()> {
     let clusters = Field::new(
         "clusters",
         Column::Nested {
-            offsets: vec![0, 1, 3], // entry 0: none, entry 1: 1, entry 2: 2
+            // A leading 0, then each entry's end: entry i spans
+            // items[offsets[i]..offsets[i + 1]].
+            offsets: vec![0, 0, 1, 3], // entry 0: none, entry 1: 1, entry 2: 2
             items: Box::new(Column::Record(vec![
                 ("_0".to_string(), Column::I32(vec![10, 20, 21])),
                 ("_1".to_string(), Column::F64(vec![1.5, 2.5, 3.5])),

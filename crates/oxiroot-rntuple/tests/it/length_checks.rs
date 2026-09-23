@@ -50,14 +50,25 @@ fn record_members_of_different_lengths_are_rejected() {
 #[test]
 fn collection_offsets_must_end_at_the_item_count() {
     let nested = Column::Nested {
-        offsets: vec![2, 3],
+        offsets: vec![0, 2, 3],
         items: Box::new(Column::VecF64(vec![vec![1.0], vec![2.0]])),
     };
     let err = write(&[Field::new("v", nested)]).unwrap_err();
     assert_eq!(err, mismatch("field \"v\" items", 3, 2));
 
+    // The offsets bound each entry, so they start at the first entry's start.
+    let no_zero = Column::Nested {
+        offsets: vec![1, 2],
+        items: Box::new(Column::VecF64(vec![vec![1.0], vec![2.0]])),
+    };
+    let err = write(&[Field::new("v", no_zero)]).unwrap_err();
+    assert!(
+        matches!(err, Error::InvalidInput(ref m) if m.contains("start with 0")),
+        "{err:?}"
+    );
+
     let decreasing = Column::Nested {
-        offsets: vec![2, 1],
+        offsets: vec![0, 2, 1],
         items: Box::new(Column::VecF64(vec![vec![1.0], vec![2.0]])),
     };
     let err = write(&[Field::new("v", decreasing)]).unwrap_err();
@@ -71,7 +82,7 @@ fn collection_offsets_must_end_at_the_item_count() {
         "m",
         "std::int32_t",
         "double",
-        vec![2],
+        vec![0, 2],
         Column::I32(vec![1, 2]),
         Column::F64(vec![0.5]),
     );

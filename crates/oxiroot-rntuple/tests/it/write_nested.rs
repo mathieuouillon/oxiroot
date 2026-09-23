@@ -36,7 +36,7 @@ fn writes_vector_of_vectors() {
     assert_eq!(
         ntpl.read_field(&file, "vvi").expect("vvi"),
         FieldValues::Nested {
-            offsets: vec![0, 1, 3],
+            offsets: vec![0, 0, 1, 3],
             items: Box::new(FieldValues::VecI32(vec![vec![1], vec![2], vec![3, 3]])),
         }
     );
@@ -46,7 +46,7 @@ fn writes_vector_of_vectors() {
 fn writes_vector_of_records() {
     // 3 entries of std::pair<int32,double>: [], [(10,1.5)], [(20,2.5),(21,3.5)].
     let vp = Column::Nested {
-        offsets: vec![0, 1, 3],
+        offsets: vec![0, 0, 1, 3],
         items: Box::new(Column::Record(vec![
             ("_0".to_string(), Column::I32(vec![10, 20, 21])),
             ("_1".to_string(), Column::F64(vec![1.5, 2.5, 3.5])),
@@ -58,7 +58,7 @@ fn writes_vector_of_records() {
     assert_eq!(
         ntpl.read_field(&file, "vp").expect("vp"),
         FieldValues::Nested {
-            offsets: vec![0, 1, 3],
+            offsets: vec![0, 0, 1, 3],
             items: Box::new(FieldValues::Record(vec![
                 ("_0".to_string(), FieldValues::I32(vec![10, 20, 21])),
                 ("_1".to_string(), FieldValues::F64(vec![1.5, 2.5, 3.5])),

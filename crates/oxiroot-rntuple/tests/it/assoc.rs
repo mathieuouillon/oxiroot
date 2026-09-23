@@ -95,7 +95,7 @@ fn writes_map_round_trip() {
     // Read back as a nested collection of key/value records.
     match ntpl.read_field(&file, "m").unwrap() {
         FieldValues::Nested { offsets, items } => {
-            assert_eq!(offsets, vec![2, 3]);
+            assert_eq!(offsets, vec![0, 2, 3]);
             assert_eq!(
                 *items,
                 FieldValues::Record(vec![

@@ -57,10 +57,15 @@ fn check_column(what: &str, col: &Column) -> Result<()> {
             Ok(())
         }
         Column::Nested { offsets, items } | Column::Assoc { offsets, items, .. } => {
+            // The offsets bound each entry, so they lead with a `0` and rise.
+            if offsets.first() != Some(&0) {
+                return Err(Error::InvalidInput(format!(
+                    "{what}: collection offsets must start with 0, the first entry's start"
+                )));
+            }
             if let Some(i) = offsets.windows(2).position(|w| w[1] < w[0]) {
                 return Err(Error::InvalidInput(format!(
-                    "{what}: collection offsets decrease at entry {}",
-                    i + 1
+                    "{what}: collection offsets decrease at entry {i}"
                 )));
             }
             let items_what = format!("{what} items");

@@ -3,6 +3,7 @@
 use oxiroot_io_core::{Error, Result};
 
 use super::lower::flatten;
+use crate::field::leading_zero;
 
 /// A column of data for one RNTuple field.
 #[non_exhaustive]
@@ -78,10 +79,13 @@ pub enum Column {
     Record(Vec<(String, Column)>),
     /// A collection whose element is itself a collection or record — e.g.
     /// `std::vector<std::vector<T>>` or `std::vector<MyStruct>`. The cumulative
-    /// `offsets` (one per entry) partition the flattened child `items`. The
-    /// `vec_vec_*` constructors build the common nested-vector cases for you.
+    /// `offsets` partition the flattened child `items`: entry `i` spans
+    /// `items[offsets[i]..offsets[i + 1]]`, so `offsets` holds one more value
+    /// than there are entries and starts with `0`, as [`crate::FieldValues::Nested`]
+    /// and the tree's `BranchValues` do. The `vec_vec_*` constructors build the
+    /// common nested-vector cases for you.
     Nested {
-        /// Cumulative element boundaries, one per entry.
+        /// Cumulative element boundaries: a leading `0`, then one per entry.
         offsets: Vec<u64>,
         /// The flattened child column.
         items: Box<Column>,
@@ -127,14 +131,14 @@ pub enum Column {
         members: Vec<(String, Column)>,
     },
     /// An associative container stored as a collection (`std::set<T>`,
-    /// `std::map<K, V>`, …): an Index offset column over `offsets` plus a single
+    /// `std::map<K, V>`, …): an Index offset column from `offsets` plus a single
     /// element child `_0` (`items` — a leaf for a set, a `Record` of key/value
     /// for a map). `type_name` is the full C++ container type written to the
     /// field record.
     Assoc {
         /// The C++ container type name (e.g. `"std::set<std::int32_t>"`).
         type_name: String,
-        /// Cumulative element boundaries, one per entry.
+        /// Cumulative element boundaries: a leading `0`, then one per entry.
         offsets: Vec<u64>,
         /// The flattened element child.
         items: Box<Column>,
@@ -185,12 +189,12 @@ impl Column {
             Column::TruncF32 { values, .. } => values.len(),
             Column::QuantF32 { values, .. } => values.len(),
             Column::Record(subs) => subs.first().map_or(0, |(_, c)| c.len()),
-            Column::Nested { offsets, .. } => offsets.len(),
+            Column::Nested { offsets, .. } => offsets.len().saturating_sub(1),
             Column::Variant { tags, .. } => tags.len(),
             Column::Array { len, items } => items.len().checked_div(*len).unwrap_or(0),
             Column::Bitset { len, bits } => bits.len().checked_div(*len).unwrap_or(0),
             Column::Object { members, .. } => members.first().map_or(0, |(_, c)| c.len()),
-            Column::Assoc { offsets, .. } => offsets.len(),
+            Column::Assoc { offsets, .. } => offsets.len().saturating_sub(1),
             Column::Optional { present, .. } => present.len(),
             Column::Atomic(inner) => inner.len(),
         }
@@ -259,7 +263,7 @@ field_ctors! {
 fn nested_vec<T: Clone>(data: Vec<Vec<Vec<T>>>, wrap: impl Fn(Vec<Vec<T>>) -> Column) -> Column {
     let (offsets, inner) = flatten(&data);
     Column::Nested {
-        offsets,
+        offsets: leading_zero(offsets),
         items: Box::new(wrap(inner)),
     }
 }
@@ -484,8 +488,9 @@ impl Field {
     /// A `std::map<K, V>` field from per-entry key/value pairs. `key_type` and
     /// `val_type` are the C++ element type spellings ROOT uses (e.g.
     /// `"std::int32_t"`, `"double"`); `keys` and `vals` are the flattened key and
-    /// value columns, partitioned per entry by `offsets`. On disk a map is a
-    /// collection of `std::pair<K, V>` records.
+    /// value columns, partitioned per entry by `offsets` — a leading `0`, then
+    /// each entry's cumulative end, as every other `offsets` here. On disk a map
+    /// is a collection of `std::pair<K, V>` records.
     pub fn map(
         name: impl Into<String>,
         key_type: &str,
@@ -509,7 +514,7 @@ impl Field {
     /// entry. The pairs are stored in the order given (ROOT re-sorts a real
     /// `std::map` by key on read).
     pub fn map_i32_f64(name: impl Into<String>, data: Vec<Vec<(i32, f64)>>) -> Field {
-        let mut offsets = Vec::with_capacity(data.len());
+        let mut offsets = Vec::with_capacity(data.len() + 1);
         let mut keys = Vec::new();
         let mut vals = Vec::new();
         for entry in &data {
@@ -519,6 +524,7 @@ impl Field {
             }
             offsets.push(keys.len() as u64);
         }
+        let offsets = leading_zero(offsets);
         Field::map(
             name,
             "std::int32_t",
@@ -540,7 +546,7 @@ macro_rules! set_ctors {
                     let (offsets, flat) = flatten(&data);
                     Field::new(name, Column::Assoc {
                         type_name: concat!("std::set<", $cxx, ">").to_string(),
-                        offsets,
+                        offsets: leading_zero(offsets),
                         items: Box::new(Column::$variant(flat)),
                     })
                 }
