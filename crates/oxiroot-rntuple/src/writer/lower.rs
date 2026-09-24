@@ -62,6 +62,12 @@ pub(super) fn flatten<T: Clone>(v: &[Vec<T>]) -> (Vec<u64>, Vec<T>) {
     (offsets, data)
 }
 
+/// An Index column holds one cumulative end per entry, where a collection
+/// column's public `offsets` lead with a `0`; drop it.
+fn on_disk_offsets(offsets: &[u64]) -> &[u64] {
+    offsets.get(1..).unwrap_or(&[])
+}
+
 /// Bit-pack `bits`-wide unsigned values LSB-first into little-endian bytes (the
 /// inverse of the reader's unpacking; used by the truncated/quantized reals).
 fn pack_uints(values: &[u64], bits: u16) -> Vec<u8> {
@@ -531,7 +537,8 @@ fn lower_column(name: &str, data: &Column) -> Node {
         }
         Column::Nested { offsets, items } => {
             let child = lower_column("_0", items);
-            collection_node(name, offsets, offsets.len(), child)
+            let ends = on_disk_offsets(offsets);
+            collection_node(name, ends, ends.len(), child)
         }
         Column::Optional {
             unique,
@@ -660,7 +667,8 @@ fn lower_column(name: &str, data: &Column) -> Node {
         } => {
             // Like a collection, but the field carries the associative type name
             // (std::set / std::map) instead of std::vector.
-            let mut node = collection_node(name, offsets, offsets.len(), lower_column("_0", items));
+            let ends = on_disk_offsets(offsets);
+            let mut node = collection_node(name, ends, ends.len(), lower_column("_0", items));
             node.type_name = type_name.clone();
             node
         }

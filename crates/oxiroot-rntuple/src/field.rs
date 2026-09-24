@@ -68,11 +68,13 @@ pub enum FieldValues {
     Record(Vec<(String, FieldValues)>),
     /// A collection whose element is itself a collection or a record — e.g.
     /// `std::vector<std::vector<T>>` or `std::vector<MyStruct>`. The cumulative
-    /// `offsets` (one per element of the enclosing level) partition the flattened
-    /// child `items`: element `k` spans `items[offsets[k-1]..offsets[k]]` (with
-    /// `offsets[-1] = 0`).
+    /// `offsets` partition the flattened child `items`: element `k` spans
+    /// `items[offsets[k]..offsets[k + 1]]`, so `offsets` holds one more value
+    /// than there are elements and starts with `0` — the same convention as the
+    /// tree's `BranchValues`.
     Nested {
-        /// Cumulative element boundaries, one per element of the enclosing level.
+        /// Cumulative element boundaries: a leading `0`, then one per element of
+        /// the enclosing level.
         offsets: Vec<u64>,
         /// The flattened child values, partitioned by `offsets`.
         items: Box<FieldValues>,
@@ -133,7 +135,7 @@ impl FieldValues {
             VecF64(v) => v.len(),
             VecStr(v) => v.len(),
             Record(fields) => fields.first().map_or(0, |(_, f)| f.len()),
-            Nested { offsets, .. } => offsets.len(),
+            Nested { offsets, .. } => offsets.len().saturating_sub(1),
             Variant { tags, .. } => tags.len(),
             Opt { present, .. } => present.len(),
         }
@@ -189,11 +191,12 @@ impl FieldValues {
                     f.truncate(n);
                 }
             }
-            // `offsets` is one cumulative end per entry; the child holds the
-            // flattened items, so keep only those before the `n`-th boundary.
+            // `offsets` bounds each entry, leading `0` included; the child
+            // holds the flattened items, so keep only those the first `n`
+            // entries span.
             Nested { offsets, items } => {
-                let items_len = if n == 0 { 0 } else { offsets[n - 1] as usize };
-                offsets.truncate(n);
+                let items_len = offsets.get(n).map_or(0, |&o| o as usize);
+                offsets.truncate(n + 1);
                 items.truncate(items_len);
             }
             // Alternatives are densely packed in entry order, so each keeps the
@@ -377,6 +380,15 @@ pub(crate) fn strings(offsets: &[u64], bytes: &[u8]) -> Result<FieldValues> {
     Ok(FieldValues::Str(out))
 }
 
+/// Prepend the leading `0` that [`FieldValues::Nested`] carries to on-disk
+/// offsets, which hold one cumulative end per element and no leading `0`.
+pub(crate) fn leading_zero(offsets: Vec<u64>) -> Vec<u64> {
+    let mut out = Vec::with_capacity(offsets.len() + 1);
+    out.push(0);
+    out.extend(offsets);
+    out
+}
+
 /// Group a collection's flattened child `items` by its cumulative `offsets`.
 /// Scalar and string children materialize into the ergonomic flat `Vec*`
 /// variants; a collection- or record-valued child is wrapped in
@@ -396,8 +408,10 @@ pub(crate) fn collect(offsets: Vec<u64>, items: FieldValues) -> Result<FieldValu
         F32(v) => VecF32(group(&offsets, &v)?),
         F64(v) => VecF64(group(&offsets, &v)?),
         Str(v) => VecStr(group(&offsets, &v)?),
+        // The flat variants above hold their elements grouped, so only this one
+        // exposes offsets — in the public form, with a leading `0`.
         other => Nested {
-            offsets,
+            offsets: leading_zero(offsets),
             items: Box::new(other),
         },
     })

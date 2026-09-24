@@ -124,6 +124,7 @@ pub enum BranchValues {
     /// `offsets` (one per entry, plus a leading `0`) partition the flattened
     /// `items`, whose own per-element values are the inner vectors. Entry `i`'s
     /// value is `items[offsets[i] .. offsets[i+1]]` — a list of inner vectors.
+    /// An RNTuple's `FieldValues::Nested` carries its offsets the same way.
     Nested {
         /// Cumulative per-entry boundaries into `items`, with a leading `0`.
         offsets: Vec<u64>,

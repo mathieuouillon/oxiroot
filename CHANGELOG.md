@@ -26,6 +26,19 @@ change the API.
   if there were no object there. `ObjHeader::back_ref` says where the object
   was written, for a reader that wants to follow it.
 
+### Changed
+
+- **One offset convention.** An RNTuple's `FieldValues::Nested` and the writer's
+  `Column::Nested` and `Column::Assoc` carry their cumulative `offsets` with a
+  leading `0`, as a tree's `BranchValues::Nested` and `Jagged` do: element `i`
+  spans `items[offsets[i]..offsets[i + 1]]`, and `offsets` holds one value more
+  than there are elements. They held one cumulative end per element and no
+  leading `0`, so the first element was the one you could not slice like the
+  rest, and the two halves of the workspace disagreed. Code that reads or builds
+  these offsets adds the leading `0`; the `vec_vec_*`, `set_*` and `map_*`
+  constructors do it for you, and a file's bytes are unchanged, since the Index
+  column on disk keeps holding one end per element.
+
 ### Fixed
 
 - A `TStreamerLoop` element carries its counter member's name, like a
