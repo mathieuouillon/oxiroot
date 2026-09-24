@@ -82,8 +82,8 @@ TF1 "myfunc"
 ```
 
 `--json` emits the same tree as nested JSON. A member the reader can't decode
-(memberwise STL, a class the file doesn't describe) is marked `<unsupported …>`
-rather than aborting the dump. The same decode is available in code via
+(a class the file doesn't describe) is marked `<unsupported …>` rather than
+aborting the dump. The same decode is available in code via
 `FileReader::get_value`.
 
 ## `stat` — file summary

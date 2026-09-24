@@ -22,6 +22,19 @@ pub struct ObjHeader {
     pub class_name: Option<String>,
     /// Absolute buffer offset one past the object, when a byte count was present.
     pub end: Option<usize>,
+    /// Where the object this slot points back at was written, when the slot held
+    /// a reference to an object already streamed in this buffer. The slot itself
+    /// has no body: a reader that wants the object reads it again from there.
+    pub back_ref: Option<ObjectRef>,
+}
+
+/// An object already streamed in this buffer, named by a later reference to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectRef {
+    /// The object's class.
+    pub class_name: String,
+    /// The buffer offset its body starts at (just past its own header).
+    pub pos: usize,
 }
 
 /// Read a NUL-terminated class name (the `kNewClassTag` path).
@@ -42,6 +55,7 @@ fn read_cstring(r: &mut RBuffer) -> Result<String> {
 /// [`read_header`](TagReader::read_header) for each embedded object.
 pub struct TagReader {
     refs: HashMap<i64, String>,
+    objects: HashMap<i64, ObjectRef>,
     seq: i64,
     keylen: i64,
 }
@@ -52,6 +66,7 @@ impl TagReader {
     pub fn new(keylen: usize) -> Self {
         TagReader {
             refs: HashMap::new(),
+            objects: HashMap::new(),
             seq: 0,
             keylen: keylen as i64,
         }
@@ -77,14 +92,21 @@ impl TagReader {
         };
 
         if tag & K_CLASS_MASK == 0 {
-            // Null (0), parent (1), or an object back-reference (a pointer to an
-            // already-streamed object — e.g. a split TBranchElement's fLeaves
-            // references its sub-branches' leaves). We don't resolve the pointer;
-            // the slot reads as "no object" and the caller skips it (the bare tag
-            // was already consumed, and any byte count drives the seek to `end`).
+            // Null (0), parent (1), or an object back-reference: a pointer to an
+            // object already streamed in this buffer (a split TBranchElement's
+            // fLeaves references its sub-branches' leaves; a TH2Poly's fBins
+            // references the bins its fCells grid wrote in full). The slot holds
+            // no body, so it reads as "no object"; `back_ref` says where the
+            // object it points at was written, for a reader that wants it.
+            let back_ref = if tag > 1 {
+                self.objects.get(&i64::from(tag)).cloned()
+            } else {
+                None
+            };
             Ok(ObjHeader {
                 class_name: None,
                 end,
+                back_ref,
             })
         } else if tag == K_NEW_CLASS_TAG {
             let classname = read_cstring(r)?;
@@ -97,9 +119,11 @@ impl TagReader {
                 self.seq += 1;
                 self.refs.insert(self.seq, classname.clone());
             }
+            self.map_object(beg, &classname, r.pos());
             Ok(ObjHeader {
                 class_name: Some(classname),
                 end,
+                back_ref: None,
             })
         } else {
             let refpos = (tag & !K_CLASS_MASK) as i64;
@@ -107,10 +131,26 @@ impl TagReader {
                 self.refs.get(&refpos).cloned().ok_or_else(|| {
                     Error::Format(format!("unknown class-tag reference {refpos}"))
                 })?;
+            self.map_object(beg, &classname, r.pos());
             Ok(ObjHeader {
                 class_name: Some(classname),
                 end,
+                back_ref: None,
             })
         }
+    }
+
+    /// Record an object that starts at `beg` (the offset of its header) and whose
+    /// body starts at `pos`, so that a later reference to it resolves. ROOT keys
+    /// an object by the same displacement it keys a class by, taken at the
+    /// header's first word rather than at the class tag.
+    fn map_object(&mut self, beg: usize, class_name: &str, pos: usize) {
+        self.objects.insert(
+            beg as i64 + self.keylen + K_MAP_OFFSET,
+            ObjectRef {
+                class_name: class_name.to_string(),
+                pos,
+            },
+        );
     }
 }

@@ -361,7 +361,12 @@ mod tests {
     fn leaf_ranges(bytes: Vec<u8>) -> Vec<(String, bool, i64)> {
         use oxiroot_io_core::Value;
         fn walk(v: &Value, out: &mut Vec<(String, bool, i64)>) {
-            if v.class().is_some_and(|c| c.starts_with("TLeaf")) {
+            // A branch's leaf list points back at the leaves the tree holds, so
+            // only the object itself carries the members; a reference to it does
+            // not.
+            if matches!(v, Value::Object { .. })
+                && v.class().is_some_and(|c| c.starts_with("TLeaf"))
+            {
                 let name = v.get("fName").and_then(Value::as_str).unwrap_or("");
                 if !out.iter().any(|(n, ..)| n == name) {
                     let range = v.get("fIsRange").and_then(Value::as_bool).unwrap();

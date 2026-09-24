@@ -5,6 +5,33 @@ Notable changes to oxiroot, by release. The format follows
 [Semantic Versioning](https://semver.org/): before 1.0, a minor release may
 change the API.
 
+## [Unreleased]
+
+### Added
+
+- **The generic reader decodes STL members.** A `std::vector`, `set`, `list`,
+  `deque` or `map` holding numbers, strings, `TArray`s, nested containers,
+  objects or pointers now decodes, whether ROOT streamed it objectwise or
+  memberwise (a column per member), and so does a `TStreamerLoop` array of
+  objects. `TF1`'s parameter-name map, `TEfficiency`'s per-bin beta parameters,
+  `TGraphMultiErrors`'s error arrays and draw attributes, and `TH2Poly`'s cell
+  grid were `Unsupported`; a `TH2Poly` read from a ROOT file now yields its
+  bins. The shape comes from the member's C++ type name, and the container's
+  byte count says whether that shape was right: a shape read wrong is reported
+  as `Unsupported`, never passed off as values.
+- `Value::Ref` — a slot holding an object written elsewhere in the same object,
+  naming the class it points at. ROOT streams a shared object once and points
+  at it from everywhere else it appears (a `TH2Poly`'s `fBins` points at the
+  bins its `fCells` grid holds in full); those slots read as `Null` before, as
+  if there were no object there. `ObjHeader::back_ref` says where the object
+  was written, for a reader that wants to follow it.
+
+### Fixed
+
+- A `TStreamerLoop` element carries its counter member's name, like a
+  `TStreamerBasicPointer`; it was parsed without one, so nothing could size the
+  array it describes.
+
 ## [0.2.0] — 2026-09-23
 
 A release of the follow-ups to the architecture review: errors a caller can act
