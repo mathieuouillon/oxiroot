@@ -120,8 +120,20 @@ info (a few small ranges).
   client). The server must honor `Range` requests (`Accept-Ranges: bytes`).
 - `root://` — the `xrootd` feature (pure `std::net`, no dependencies). It uses
   the credential-free `unix` security protocol, so it reads world-readable /
-  open data from servers that offer it (e.g. `root://eospublic.cern.ch`);
-  GSI/Kerberos/token security is not implemented.
+  open data from servers that offer it (e.g. `root://eospublic.cern.ch`, CERN's
+  anonymous open-data endpoint, which offers `krb5`, `gsi`, `sss` and `unix`);
+  GSI/Kerberos/token security is not implemented. A server that offers none of
+  what this client speaks is an error naming what it did offer.
+
+  The live checks against that endpoint are in the test suite but ignored by
+  default, since they need the network and CERN's public servers are slow from
+  outside CERN. They read a 966 MB ATLAS open-data sample — its tree's 7.5
+  million entries, and one branch over one entry window — in well under a
+  second, which is the proof that nothing downloads the file whole:
+
+  ```sh
+  cargo test -p oxiroot --features xrootd -- --ignored xrootd_live
+  ```
 
 Both features are off by default. The `oxroot` CLI accepts a URL anywhere it
 takes a path when built with the matching feature:
