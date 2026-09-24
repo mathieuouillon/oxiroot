@@ -4,6 +4,7 @@
 use std::error::Error;
 use std::path::Path;
 
+use oxiroot::file::find_key;
 use oxiroot::tree::LeafType;
 use oxiroot::FileReader;
 
@@ -94,11 +95,7 @@ pub fn locate_class(
             .clone()),
         Some(dir) => {
             let d = file.subdir(dir)?;
-            let key = d
-                .keys
-                .iter()
-                .filter(|k| k.name == name && !k.is_deleted())
-                .max_by_key(|k| k.cycle)
+            let key = find_key(&d.keys, name)
                 .ok_or_else(|| format!("no object named {name:?} in subdirectory {dir:?}"))?;
             Ok(key.class_name.clone())
         }

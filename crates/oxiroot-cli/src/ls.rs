@@ -1,5 +1,7 @@
 //! `oxroot ls` — list the objects (keys) in a file.
 
+use std::collections::{HashMap, HashSet};
+
 use clap::Args as ClapArgs;
 use oxiroot::file::TKey;
 use oxiroot::ntuple::NtupleReader;
@@ -52,6 +54,8 @@ pub fn run(args: Args, json: bool) -> CmdResult {
         &mut rows,
     );
 
+    name_ambiguous_cycles(&mut rows);
+
     if json {
         let array = Json::Array(
             rows.iter()
@@ -93,6 +97,26 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     }
     table.print();
     Ok(())
+}
+
+/// Name a key `name;cycle` when the directory holds more than one cycle of it,
+/// so the rows can be told apart and pasted straight into `dump` or `show`. A
+/// name with one cycle — nearly all of them — is left alone.
+fn name_ambiguous_cycles(rows: &mut [Row]) {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    for row in rows.iter() {
+        *seen.entry(row.name.as_str()).or_default() += 1;
+    }
+    let ambiguous: HashSet<String> = seen
+        .into_iter()
+        .filter(|&(_, n)| n > 1)
+        .map(|(name, _)| name.to_string())
+        .collect();
+    for row in rows.iter_mut() {
+        if ambiguous.contains(&row.name) {
+            row.name = format!("{};{}", row.name, row.cycle);
+        }
+    }
 }
 
 /// Append one [`Row`] per non-deleted key in `dir_path` (`""` for the root

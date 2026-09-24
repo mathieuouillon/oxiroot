@@ -3,6 +3,7 @@
 
 mod collection_streamers;
 mod container;
+mod cycles;
 mod decompress_error;
 mod errors;
 mod generic_read;

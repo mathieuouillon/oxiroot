@@ -13,7 +13,8 @@ cargo run -p oxiroot-cli -- <command> ...
 ```
 
 Objects are addressed as `file.root:name` (or `file.root:subdir/name`), the same
-convention uproot uses.
+convention uproot uses. A name reads the object's current (highest) cycle;
+`file.root:name;2` reads cycle 2, as ROOT's `Get("name;2")` does.
 
 ## `ls` — list objects
 
@@ -26,7 +27,9 @@ events  ROOT::RNTuple  columnar events           1      5000
 ```
 
 `-l` adds the cycle and (for `TTree`/RNTuple) the entry count; `-r` recurses one
-level into `TDirectory` subdirectories, prefixing names with `subdir/`.
+level into `TDirectory` subdirectories, prefixing names with `subdir/`. A name
+the directory holds several cycles of is listed as `name;cycle`, so the rows can
+be told apart and pasted into `show` or `dump`.
 
 ## `show` — structure of a TTree or RNTuple
 

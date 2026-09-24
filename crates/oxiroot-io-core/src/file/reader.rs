@@ -145,13 +145,10 @@ impl FileReader {
         &self.root_dir.keys
     }
 
-    /// Look up a key by name, returning the highest cycle if several share it.
+    /// Look up a key by name, returning the highest cycle if several share it —
+    /// or the cycle an explicit `"name;cycle"` asks for, as ROOT's `Get` does.
     pub fn key(&self, name: &str) -> Option<&TKey> {
-        self.root_dir
-            .keys
-            .iter()
-            .filter(|k| k.name == name && !k.is_deleted())
-            .max_by_key(|k| k.cycle)
+        find_key(&self.root_dir.keys, name)
     }
 
     /// Navigate into a subdirectory, returning its parsed [`Directory`] (with the
@@ -198,15 +195,10 @@ impl FileReader {
     /// streamed objects (e.g. `TH2Poly`'s bins) read from a subdirectory.
     pub fn object_in_keyed(&self, subdir: &str, name: &str) -> Result<(String, Vec<u8>, usize)> {
         let dir = self.subdir(subdir)?;
-        let key = dir
-            .keys
-            .iter()
-            .filter(|k| k.name == name && !k.is_deleted())
-            .max_by_key(|k| k.cycle)
-            .ok_or_else(|| Error::NotFound {
-                what: "key",
-                name: format!("{}/{name}", subdir.trim_end_matches('/')),
-            })?;
+        let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
+            what: "key",
+            name: format!("{}/{name}", subdir.trim_end_matches('/')),
+        })?;
         let payload = self.key_payload(key)?;
         let object =
             decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;
@@ -331,4 +323,39 @@ fn payload_in_window<'a>(win: &'a [u8], key: &TKey) -> Result<&'a [u8]> {
         as usize;
     win.get(start..start + len)
         .ok_or_else(|| Error::Format(format!("key {:?}: payload runs past record", key.name)))
+}
+
+/// Split a ROOT object name into the name and the cycle it asks for, ROOT's
+/// `"name;cycle"` form: `"h;2"` names cycle 2 of `h`, and a plain `"h"` names
+/// whichever cycle is current (the highest). The separator is the last `;`, and
+/// only when a cycle number follows it, so a name that carries a `;` of its own
+/// stays whole.
+///
+/// ```
+/// # use oxiroot_io_core::split_cycle;
+/// assert_eq!(split_cycle("h"), ("h", None));
+/// assert_eq!(split_cycle("h;2"), ("h", Some(2)));
+/// assert_eq!(split_cycle("a;b"), ("a;b", None));
+/// ```
+#[must_use]
+pub fn split_cycle(name: &str) -> (&str, Option<u16>) {
+    match name.rsplit_once(';') {
+        Some((stem, cycle)) => match cycle.parse::<u16>() {
+            Ok(cycle) => (stem, Some(cycle)),
+            Err(_) => (name, None),
+        },
+        None => (name, None),
+    }
+}
+
+/// The key `name` names among `keys`: the cycle it asks for, or the highest one.
+/// A deleted key is never returned, whether or not its cycle was asked for.
+#[must_use]
+pub fn find_key<'a>(keys: &'a [TKey], name: &str) -> Option<&'a TKey> {
+    let (stem, cycle) = split_cycle(name);
+    let mut named = keys.iter().filter(|k| k.name == stem && !k.is_deleted());
+    match cycle {
+        Some(cycle) => named.find(|k| k.cycle == cycle),
+        None => named.max_by_key(|k| k.cycle),
+    }
 }

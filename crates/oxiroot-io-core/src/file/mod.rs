@@ -22,7 +22,7 @@ pub use directory::Directory;
 pub use free::{read_free, FreeSegment};
 pub use header::{FileHeader, TUuid, BIG_FILE_VERSION, MAGIC};
 pub use key::{TDatime, TKey};
-pub use reader::FileReader;
+pub use reader::{find_key, split_cycle, FileReader};
 #[cfg(feature = "mmap")]
 pub use source::MmapSource;
 pub use source::{ByteSource, BytesSource, FileSource};

@@ -265,6 +265,10 @@ cargo run -p oxiroot --example analysis
       .write(Compression::Zstd(5))?;
   FileWriter::open("out.root")?.add(&extra).write(Compression::None)?; // append
   ```
+  Every read takes a key name, and a plain name reads the object's current
+  (highest) cycle. Ask for an older one as ROOT does, with `"name;2"` —
+  `FileReader::key`, `get_value`, `read_root`, `TreeReader::open`,
+  `NtupleReader::open` and `oxroot` all take it.
   Written files embed a `TStreamerInfo` list, so they are self-describing for any
   ROOT reader.
 
@@ -950,7 +954,6 @@ Grouped by the ROOT feature each fills.
   - **Arbitrary-depth `TDirectory` write** — the builder nests one level today.
   - **Delete / compact in update mode** — append mode ships; rewriting a key at
     a new cycle and purging old cycles (`TFile::Purge`) does not.
-  - **Read an object at an explicit cycle** (`name;N`).
 - **Axes** — **time axes** (`TAxis` `fTimeDisplay` / `fTimeFormat`) on histograms
   and graphs, for monitoring-style time series.
 - **`RDataFrame`-style analysis** *(far future)* — a lazy, columnar analysis
