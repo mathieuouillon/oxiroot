@@ -3,8 +3,10 @@
 //! A tiny in-process XRootD server speaks enough of the binary protocol —
 //! handshake, login, `unix` auth, open, fstat, read, close — to serve a fixture
 //! `.root` file, so the client is tested hermetically (no network). The wire
-//! framing mirrors what was verified against `root://eospublic.cern.ch`; the
-//! redirect + capability path is exercised by the `#[ignore]`d live test below.
+//! framing mirrors what was verified against `root://eospublic.cern.ch` — CERN's
+//! anonymous open-data endpoint, which offers `unix` auth among others — and the
+//! redirect, capability and lazy-read paths are exercised by the `#[ignore]`d
+//! live tests below, which read a real 966 MB sample without fetching it whole.
 #![cfg(feature = "xrootd")]
 
 use std::io::{Read, Write};
@@ -161,4 +163,40 @@ fn xrootd_live_eospublic() {
     assert!(f.size() > 100_000, "hsimple.root is ~400 KiB");
     let names: Vec<String> = f.keys().iter().map(|k| k.name.clone()).collect();
     assert!(names.contains(&"hpx".to_string()), "keys: {names:?}");
+}
+
+/// The same endpoint, but reading *data* out of a file far too large to fetch
+/// whole: an ATLAS open-data sample of 966 MB, where opening the file, reading
+/// the tree's metadata and reading one branch together touch only a few ranges.
+/// This is the check that the lazy path holds against a real server — a client
+/// that quietly downloaded the file would take minutes here rather than seconds.
+///
+/// `eospublic.cern.ch` is a manager node, so the read also goes through the
+/// redirect and the capability it hands back. Ignored by default, like the smoke
+/// test above; run it the same way.
+#[test]
+#[ignore]
+fn xrootd_live_eospublic_reads_a_tree() {
+    let url = "root://eospublic.cern.ch//eos/opendata/atlas/OutreachDatasets/\
+               2016-07-29/MC/mc_147770.Zee.root";
+    let url: String = url.chars().filter(|c| !c.is_whitespace()).collect();
+
+    let file = FileReader::open_url(&url).expect("open the ATLAS sample");
+    assert!(file.size() > 900_000_000, "the sample is about 966 MB");
+
+    let tree = TreeReader::open(&file, "mini").expect("the mini tree");
+    assert_eq!(tree.num_entries(), 7_500_000);
+    assert_eq!(tree.branch_names().len(), 46);
+
+    // One branch, one entry window: the leptons per event of a Z→ee sample,
+    // which are one or two.
+    let leptons = tree
+        .read_branch_range(&file, "lep_n", 0, 20)
+        .expect("read lep_n");
+    let counts = leptons.as_u32().expect("lep_n is a uint32 branch");
+    assert_eq!(counts.len(), 20);
+    assert!(
+        counts.iter().all(|&n| (1..=2).contains(&n)),
+        "a Z→ee event has one or two leptons: {counts:?}"
+    );
 }
