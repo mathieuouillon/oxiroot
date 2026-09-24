@@ -115,6 +115,7 @@ mod statbox;
 mod style;
 mod text;
 mod ticker;
+mod timeaxis;
 mod transform;
 
 pub use artists::{HistType, Marker, ParseHistTypeError, ParseMarkerError};
@@ -133,6 +134,7 @@ pub use norm::Norm;
 #[cfg(feature = "fit")]
 pub use statbox::{Corner, StatBox};
 pub use style::{Sides, Style, TickDir};
+pub use timeaxis::{format_time, TimeFormat};
 
 #[cfg(test)]
 mod tests {
@@ -740,6 +742,46 @@ mod tests {
             polylines_before + 1,
             "the model overlay should add exactly one curve polyline"
         );
+        assert!(svg.starts_with("<svg") && svg.ends_with("</svg>"));
+    }
+    /// A histogram whose axis is a time axis draws its labels as times: the
+    /// axes take the format from the data, and the ticks step in hours rather
+    /// than in decimals.
+    #[test]
+    #[cfg(feature = "hist")]
+    fn a_time_axis_is_picked_up_from_the_data_it_plots() {
+        let mut h = Hist::reg(24, 0.0, 86_400.0).double().named("rate");
+        h.xaxis.set_time_format("%H:%M%F2024-01-01 00:00:00");
+        h.fill(3600.0);
+
+        let mut ax = Axes::new();
+        ax.hist(&h);
+        let time = ax.x_time_format_for_test().expect("adopted from the data");
+        assert_eq!(time.format, "%H:%M");
+        assert_eq!(time.label(3600.0), "01:00");
+
+        // What the caller sets wins over what the data carries.
+        let mut ax = Axes::new();
+        ax.x_time_format("%d/%m").hist(&h);
+        assert_eq!(ax.x_time_format_for_test().unwrap().format, "%d/%m");
+
+        // A histogram with an ordinary axis stays numeric.
+        let plain = Hist::reg(4, 0.0, 4.0).double().named("plain");
+        let mut ax = Axes::new();
+        ax.hist(&plain);
+        assert!(ax.x_time_format_for_test().is_none());
+
+        // A graph takes it from its display frame, as ROOT stores it.
+        let mut frame = Hist::reg(2, 0.0, 7200.0).float().named("Graph");
+        frame.xaxis.set_time_format("%H:%M");
+        let mut g = TGraph::new(vec![0.0, 3600.0], vec![1.0, 2.0]).unwrap();
+        g.histogram = Some(frame);
+        let mut ax = Axes::new();
+        ax.errorbar(&g);
+        assert_eq!(ax.x_time_format_for_test().unwrap().format, "%H:%M");
+
+        // And it renders.
+        let svg = ax.to_svg_string();
         assert!(svg.starts_with("<svg") && svg.ends_with("</svg>"));
     }
 }

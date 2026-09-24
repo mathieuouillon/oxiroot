@@ -359,6 +359,34 @@ assert_eq!(h.xaxis.find_label("forward"), Some(3));
 the raw `Vec<String>`, `find_label` maps a label back to its bin, and
 `is_labelled` reports whether any label is set.
 
+## Time axes
+
+An axis whose values are times says so with `set_time_format`, ROOT's
+`fTimeDisplay` / `fTimeFormat`. The format is a `strftime` format, and `%F`
+after it names the epoch the values count from — exactly what ROOT writes:
+
+```rust
+use oxiroot::prelude::*;
+
+// One bin per hour of 2024-01-01, x in seconds from the start of that day.
+let mut h = Hist::reg(24, 0.0, 86_400.0).double().named("rate");
+h.xaxis.set_time_format("%H:%M%F2024-01-01 00:00:00");
+h.fill(3_600.0);
+
+assert!(h.xaxis.time_display);
+```
+
+ROOT and uproot read the axis back as a time axis, and so does oxiroot.
+`clear_time_format` turns it back into a numeric axis.
+
+A graph's axes live on its display frame (`graph.histogram`), which is where
+ROOT keeps them too, so a time axis on a graph is set on that frame.
+
+When [plotting](plotting.md), the axis is picked up on its own: the tick labels
+are drawn as dates and clock times, and the ticks step in seconds, minutes,
+hours or days rather than in decimals. `Axes::x_time_format` sets the same thing
+for data that carries no axis of its own.
+
 ## Writing and reading
 
 The `WriteRoot` trait writes any single object; `FileWriter` composes
