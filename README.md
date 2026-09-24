@@ -264,6 +264,11 @@ cargo run -p oxiroot --example analysis
       .dir("by_region", |d| d.add(&sig))  // a TDirectory per region; `dir` nests
       .write(Compression::Zstd(5))?;
   FileWriter::open("out.root")?.add(&extra).write(Compression::None)?; // append
+  FileWriter::open("out.root")?                 // update: drop and reclaim
+      .delete("scratch")                        // a name, or "h;1" for a cycle
+      .purge()                                  // keep each name's newest cycle
+      .compact()                                // rewrite without the dead space
+      .write(Compression::Zstd(5))?;
   ```
   Every read takes a key name, and a plain name reads the object's current
   (highest) cycle. Ask for an older one as ROOT does, with `"name;2"` —
@@ -951,8 +956,6 @@ Grouped by the ROOT feature each fills.
   the `xrootd` feature) with `unix` auth for public data, alongside HTTP(S) range
   reads (the `http` feature).
 - **`TFile` container**
-  - **Delete / compact in update mode** — append mode ships; rewriting a key at
-    a new cycle and purging old cycles (`TFile::Purge`) does not.
 - **`RDataFrame`-style analysis** *(far future)* — a lazy, columnar analysis
   front-end (`Define` / `Filter` / `Histo1D` / `Sum`, executed in one pass over a
   `TTree` or RNTuple, parallelised across clusters) built on the existing readers.

@@ -643,6 +643,26 @@ impl<W: Write + Seek> ContainerWriter<W> {
 
     /// The cycle a new key called `name` gets in `dir`: one past the highest
     /// cycle already there, so the new key is the one readers pick.
+    /// Drop the keys of directory `dir` that `keep` rejects, returning how many
+    /// went. The records they name stay where they are — the file does not
+    /// shrink — but the directory no longer lists them, so nothing reads them:
+    /// ROOT's `TFile::Delete`, without its free-list bookkeeping.
+    pub fn drop_keys(&mut self, dir: DirId, mut keep: impl FnMut(&TKey) -> bool) -> Result<usize> {
+        self.check_open(dir)?;
+        let keys = &mut self.dirs[dir.0].keys;
+        let before = keys.len();
+        keys.retain(|key| keep(key));
+        Ok(before - keys.len())
+    }
+
+    /// The keys directory `dir` currently lists.
+    pub fn keys(&self, dir: DirId) -> Result<&[TKey]> {
+        self.dirs
+            .get(dir.0)
+            .map(|d| d.keys.as_slice())
+            .ok_or_else(|| Error::InvalidInput(format!("{dir:?} does not belong to this file")))
+    }
+
     fn next_cycle(&self, dir: DirId, name: &str) -> u16 {
         self.dirs[dir.0]
             .keys

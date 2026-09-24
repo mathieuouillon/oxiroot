@@ -182,6 +182,28 @@ FileWriter::open("out.root")?
     .write(Compression::None)?;
 ```
 
+### Deleting, purging and compacting
+
+`FileWriter::open` also takes objects *out* of a file. `delete` drops a name (or
+one cycle of it, `"h;1"`), `purge` keeps only each name's current cycle — ROOT's
+`TFile::Purge` — and `compact` rewrites the file from what is left, so the space
+the rest held is given up:
+
+```rust
+FileWriter::open("out.root")?
+    .delete("scratch")   // every cycle of `scratch`
+    .delete("h;1")       // and the first cycle of `h`
+    .purge()             // then keep only the newest cycle of each name
+    .compact()           // and rewrite the file without the dead space
+    .write(Compression::Zstd(5))?;
+```
+
+Without `compact` the file does not shrink: the records stay where they are and
+the directory stops listing them, which is what ROOT's `TFile::Delete` does.
+Deleting a name the file does not hold is an error, not a quiet no-op. A `TTree`
+or an RNTuple writes records outside its own key, so compacting a file that
+holds one is refused — merge those with `hadd` instead.
+
 !!! warning "Append limitations"
     Append currently targets files of top-level objects. Updating into a file
     that already contains subdirectories or an RNTuple is rejected rather than

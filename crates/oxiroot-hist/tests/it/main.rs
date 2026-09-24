@@ -3,6 +3,7 @@
 
 mod analysis;
 mod collections;
+mod delete_purge;
 mod derive;
 mod dirs;
 mod fit;
