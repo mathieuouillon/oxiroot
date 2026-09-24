@@ -145,7 +145,7 @@ pub struct FileWriter {
     /// `Some` in append mode (the existing file bytes); `None` for a fresh file.
     existing: Option<Vec<u8>>,
     top: Entries,
-    dirs: Vec<(String, Entries)>,
+    dirs: Vec<DirNode>,
 }
 
 impl FileWriter {
@@ -203,10 +203,7 @@ impl FileWriter {
         name: impl Into<String>,
         build: impl FnOnce(SubdirWriter) -> SubdirWriter,
     ) -> FileWriter {
-        let dir = build(SubdirWriter {
-            entries: Entries::default(),
-        });
-        self.dirs.push((name.into(), dir.entries));
+        self.dirs.push(SubdirWriter::build(name, build));
         self
     }
 
@@ -236,12 +233,12 @@ impl FileWriter {
     fn build(&self, compression: Compression, threshold: u64) -> Result<Vec<u8>> {
         // Reject unnamed / clashing keys before writing — loudly, instead of
         // ROOT's silent shadow-on-read.
-        let subdir_names: Vec<&str> = self.dirs.iter().map(|(name, _)| name.as_str()).collect();
+        let subdir_names: Vec<&str> = self.dirs.iter().map(|d| d.name.as_str()).collect();
         self.top.check_names(&subdir_names, "the top directory")?;
         let mut streamers = self.top.streamers.clone();
-        for (name, dir) in &self.dirs {
-            dir.check_names(&[], &format!("subdirectory {name:?}"))?;
-            streamers.extend(&dir.streamers);
+        for dir in &self.dirs {
+            dir.check_names(&dir.name)?;
+            dir.collect_streamers(&mut streamers);
         }
         let file_name = self
             .path
@@ -253,10 +250,8 @@ impl FileWriter {
             // When appending to a file that has streamer info, only the generated
             // classes it lacks are added (readers know the histogram family).
             c.place_streamer_info(&[], streamers.classes())?;
-            for (name, entries) in &self.dirs {
-                let id = c.mkdir(DirId::TOP, name)?;
-                entries.place(c, id)?;
-                c.close_dir(id)?;
+            for dir in &self.dirs {
+                dir.place(c, DirId::TOP)?;
             }
             Ok(())
         };
@@ -277,6 +272,48 @@ impl FileWriter {
     }
 }
 
+/// One subdirectory in a file being composed: what it holds, and the
+/// subdirectories inside it.
+struct DirNode {
+    name: String,
+    entries: Entries,
+    dirs: Vec<DirNode>,
+}
+
+impl DirNode {
+    /// Check this directory's names and those of every directory below it,
+    /// naming each by the path a reader would use.
+    fn check_names(&self, path: &str) -> Result<()> {
+        let subdirs: Vec<&str> = self.dirs.iter().map(|d| d.name.as_str()).collect();
+        self.entries
+            .check_names(&subdirs, &format!("subdirectory {path:?}"))?;
+        for dir in &self.dirs {
+            dir.check_names(&format!("{path}/{}", dir.name))?;
+        }
+        Ok(())
+    }
+
+    /// Every streamer set in this directory and below it.
+    fn collect_streamers(&self, into: &mut StreamerSet) {
+        into.extend(&self.entries.streamers);
+        for dir in &self.dirs {
+            dir.collect_streamers(into);
+        }
+    }
+
+    /// Write this directory inside `parent`: its own objects, then the
+    /// directories inside it, which must exist before it closes.
+    fn place(&self, c: &mut ContainerWriter<Cursor<Vec<u8>>>, parent: DirId) -> Result<()> {
+        let id = c.mkdir(parent, &self.name)?;
+        self.entries.place(c, id)?;
+        for dir in &self.dirs {
+            dir.place(c, id)?;
+        }
+        c.close_dir(id)?;
+        Ok(())
+    }
+}
+
 /// A subdirectory (a `TDirectory`) being composed inside a [`FileWriter`]; see
 /// [`FileWriter::dir`]. The methods take and return `self`, so return the
 /// `SubdirWriter` from the `dir` closure.
@@ -289,6 +326,7 @@ impl FileWriter {
 #[must_use = "SubdirWriter methods consume self; return it from the closure"]
 pub struct SubdirWriter {
     entries: Entries,
+    dirs: Vec<DirNode>,
 }
 
 impl SubdirWriter {
@@ -303,5 +341,30 @@ impl SubdirWriter {
     pub fn put(mut self, object: impl WriteInto + 'static) -> SubdirWriter {
         self.entries.put(object);
         self
+    }
+
+    /// Add a `TDirectory` named `name` inside this one, holding what `build`
+    /// adds — the same call as [`FileWriter::dir`], so directories nest as deep
+    /// as you write them.
+    pub fn dir(
+        mut self,
+        name: impl Into<String>,
+        build: impl FnOnce(SubdirWriter) -> SubdirWriter,
+    ) -> SubdirWriter {
+        self.dirs.push(SubdirWriter::build(name, build));
+        self
+    }
+
+    /// Run `build` over a fresh subdirectory and take what it composed.
+    fn build(name: impl Into<String>, build: impl FnOnce(SubdirWriter) -> SubdirWriter) -> DirNode {
+        let dir = build(SubdirWriter {
+            entries: Entries::default(),
+            dirs: Vec::new(),
+        });
+        DirNode {
+            name: name.into(),
+            entries: dir.entries,
+            dirs: dir.dirs,
+        }
     }
 }

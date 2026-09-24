@@ -149,11 +149,26 @@ FileWriter::create("out.root")
     .write(Compression::Zstd(5))?;
 ```
 
-Read an object back from a subdirectory with `read_root_in`:
+`dir` nests: call it again inside the closure for a directory within a
+directory, as deep as the data is organised.
+
+```rust
+FileWriter::create("regions.root")
+    .dir("signal", |d| {
+        d.add(&h)
+            .dir("2018", |d| d.add(&prof))   // signal/2018
+            .dir("2017", |d| d.add(&prof))   // signal/2017
+    })
+    .write(Compression::Zstd(5))?;
+```
+
+Read an object back from a subdirectory with `read_root_in`, naming the path
+with `/`:
 
 ```rust
 let f = FileReader::open("out.root")?;
 let p = TProfile::read_root_in(&f, "by_region", "prof")?;
+let deep = TProfile::read_root_in(&FileReader::open("regions.root")?, "signal/2018", "prof")?;
 ```
 
 ### Appending

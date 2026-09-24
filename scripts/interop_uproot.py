@@ -39,9 +39,11 @@ TREE_TH_ID = [[1], [], [2, 3], [4], [5, 6, 7]]
 OTREE_OI = [10, 11, 12]
 OTREE_OJ = [[1.0, 2.0], [], [3.0]]
 OTREE_OS = ["x", "yy", "zzz"]
-# rust_multi.root (FileWriter): top-level mh + subdirectory sub/sh.
+# rust_multi.root (FileWriter): top-level mh, subdirectory sub/sh, and
+# sub/deep/deeper/dh2 three levels down.
 MULTI_MH = [5.0, 6.0, 7.0]
 MULTI_SH = [8.0, 9.0]
+MULTI_DH2 = [10.0, 11.0]
 # rust_append.root: base bh, then ah appended via FileWriter::open.
 APPEND_BH = [3.0, 1.0]
 APPEND_AH = [4.0]
@@ -117,6 +119,9 @@ def read(d: str) -> None:
     sh = list(mf["sub/sh"].values())
     if sh != MULTI_SH:
         _fail(f"rust multi sub/sh: got {sh}, want {MULTI_SH}")
+    dh2 = list(mf["sub/deep/deeper/dh2"].values())
+    if dh2 != MULTI_DH2:
+        _fail(f"rust multi sub/deep/deeper/dh2: got {dh2}, want {MULTI_DH2}")
 
     # rust_append.root — base `bh` plus the appended `ah` (FileWriter::open).
     af = uproot.open(os.path.join(d, "rust_append.root"))
@@ -129,7 +134,7 @@ def read(d: str) -> None:
 
     print(
         "uproot read Rust hist + RNTuple + TTree (incl. split vector<Hit>) "
-        "+ multi/subdir + append — values match"
+        "+ multi/nested subdirs + append — values match"
     )
 
 

@@ -13,7 +13,9 @@
 //!     tw = std::vector<double> (TBranchElement), th = split std::vector<Hit>
 //!     (Hit = {float x; float y; int id;}) read back as th.x/th.y/th.id.
 //!   - rust_multi.root (FileWriter, Rust → oracle): top-level TH1D "mh"
-//!     = [5,6,7] plus a subdirectory "sub" holding TH1D "sh" = [8,9].
+//!     = [5,6,7], a subdirectory "sub" holding TH1D "sh" = [8,9], and a
+//!     directory nested three deep, "sub/deep/deeper" holding TH1D "dh2"
+//!     = [10,11].
 //!   - rust_append.root (FileWriter create then open/append, Rust → oracle):
 //!     TH1D "bh" = [3,1] written first, TH1D "ah" = [4] appended afterwards.
 //!   - oracle_dirs.root (oracle → Rust, read via read_root + read_root_in):
@@ -63,9 +65,11 @@ const OTREE_OI: [i32; 3] = [10, 11, 12];
 const OTREE_OJ: [&[f64]; 3] = [&[1.0, 2.0], &[], &[3.0]];
 const OTREE_OS: [&str; 3] = ["x", "yy", "zzz"];
 const OTREE_OV: [&[f64]; 3] = [&[1.0], &[2.0, 3.0], &[]];
-/// `rust_multi.root` (FileWriter): top-level `mh` + subdirectory `sub/sh`.
+/// `rust_multi.root` (FileWriter): top-level `mh`, subdirectory `sub/sh`, and
+/// `sub/deep/deeper/dh2` three levels down.
 const MULTI_MH: [f64; 3] = [5.0, 6.0, 7.0];
 const MULTI_SH: [f64; 2] = [8.0, 9.0];
+const MULTI_DH2: [f64; 2] = [10.0, 11.0];
 /// `rust_append.root`: base `bh`, then `ah` appended via `FileWriter::open`.
 const APPEND_BH: [f64; 2] = [3.0, 1.0];
 const APPEND_AH: [f64; 1] = [4.0];
@@ -139,13 +143,16 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         Compression::None,
     )?;
 
-    // rust_multi.root — FileWriter: a top-level hist plus a
-    // subdirectory (`sub`) holding its own hist.
+    // rust_multi.root — FileWriter: a top-level hist, a subdirectory (`sub`)
+    // holding its own hist, and directories nested three deep inside it.
     let mh = hist("mh", &MULTI_MH);
     let sh = hist("sh", &MULTI_SH);
+    let dh2 = hist("dh2", &MULTI_DH2);
     FileWriter::create(dir.join("rust_multi.root"))
         .add(&mh)
-        .dir("sub", |d| d.add(&sh))
+        .dir("sub", |d| {
+            d.add(&sh).dir("deep", |d| d.dir("deeper", |d| d.add(&dh2)))
+        })
         .write(Compression::None)?;
 
     // rust_append.root — write one hist, then append a second via FileWriter::open

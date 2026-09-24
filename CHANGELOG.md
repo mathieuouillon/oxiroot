@@ -26,6 +26,11 @@ change the API.
   if there were no object there. `ObjHeader::back_ref` says where the object
   was written, for a reader that wants to follow it.
 
+- **Directories nest.** `FileWriter::dir` could only open a directory in the
+  top directory; `SubdirWriter::dir` opens one inside a subdirectory, so a file
+  can be organised as deep as its data is. A clash in a nested directory is
+  reported with the path that names it. ROOT and uproot read three-deep files
+  oxiroot writes, which the interop checks now cover.
 - **Read an object at an explicit cycle.** Writing a name a file already holds
   keeps the old object under a lower cycle; every read took the highest one and
   had no way to ask for another. A name now takes ROOT's `"name;2"` form
