@@ -27,6 +27,7 @@ mod read_subdir;
 mod read_vecstring;
 mod read_vector;
 mod read_vecvec;
+mod tree_index;
 mod write_multibasket;
 mod write_roundtrip;
 mod write_split;

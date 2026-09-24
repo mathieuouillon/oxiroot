@@ -55,7 +55,8 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
   old unsplit object branches (`TBranchObject`), `std::set`/`std::map` branches,
-  `TNtuple`/`TNtupleD`, **friend trees** (`AddFriend`, read entry-aligned), tree
+  `TNtuple`/`TNtupleD`, **friend trees** (`AddFriend`, entry-aligned or joined
+  on a `BuildIndex` key), tree
   aliases (`SetAlias`), and `TEntryList` selections; multi-basket via a
   bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
@@ -671,7 +672,10 @@ ax2.save("heatmap.svg")?;
 - `friends()` returns the friend trees attached with `TTree::AddFriend` (read
   from the persisted `fFriends` list). A friend is read **positionally** — entry
   *i* of the main tree pairs with entry *i* of the friend — so opening the friend
-  tree and reading its branches yields columns that line up by entry.
+  tree and reading its branches yields columns that line up by entry. A friend
+  built with `TTree::BuildIndex` is joined **by key** instead: `index()` reads
+  the persisted `fTreeIndex`, and `join_by_index` gives, for each entry of the
+  main tree, the friend entry carrying the same `(major, minor)` key.
 - `aliases()` / `alias(name)` return the `(name, expression)` shorthands defined
   with `TTree::SetAlias` (read from `fAliases`); oxiroot reads the expression
   strings but does not evaluate them. `TEntryList::open(file, name)` reads a
@@ -939,11 +943,6 @@ each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 Grouped by the ROOT feature each fills.
 
-- **`TTree`**
-  - **Index-based friend join** (`TTree::BuildIndex`) — read the persisted
-    `fTreeIndex` (`TTreeIndex`) so friends can be joined on a `(major, minor)`
-    key instead of by entry. (Positional friends — `AddFriend`, read
-    entry-aligned — already work.)
 - **RNTuple**
   - **A ROOT-C++-confirmed `std::map` write** — oxiroot already writes a
     spec-compliant `std::map` RNTuple that uproot reads and oxiroot round-trips

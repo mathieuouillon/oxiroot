@@ -47,6 +47,81 @@ pub struct TreeReader {
     /// `(alias, expression)` pairs set with `TTree::SetAlias` (read from
     /// `fAliases`); surfaced via [`TreeReader::aliases`] / [`TreeReader::alias`].
     aliases: Vec<(String, String)>,
+    /// The index built with `TTree::BuildIndex` (read from `fTreeIndex`);
+    /// surfaced via [`TreeReader::index`].
+    index: Option<TreeIndex>,
+}
+
+/// A tree's index (`TTree::BuildIndex`), persisted in its `fTreeIndex`: the
+/// `(major, minor)` keys, sorted, and the entry each one names. It is what lets
+/// a friend be joined on a key instead of by entry number — the friend's entries
+/// need not line up with, or even cover, the main tree's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeIndex {
+    /// The branch giving the major key (`fMajorName`, e.g. `"run"`).
+    major_name: String,
+    /// The branch giving the minor key (`fMinorName`, e.g. `"event"`).
+    minor_name: String,
+    /// The keys, ascending, as ROOT sorted them.
+    keys: Vec<(i64, i64)>,
+    /// `entries[i]` is the tree entry holding `keys[i]`.
+    entries: Vec<u64>,
+}
+
+impl TreeIndex {
+    /// Build an index from its parts (the persisted arrays, in ROOT's order).
+    pub(crate) fn new(
+        major_name: String,
+        minor_name: String,
+        keys: Vec<(i64, i64)>,
+        entries: Vec<u64>,
+    ) -> TreeIndex {
+        TreeIndex {
+            major_name,
+            minor_name,
+            keys,
+            entries,
+        }
+    }
+
+    /// The branch giving the major key (`fMajorName`).
+    #[must_use]
+    pub fn major_name(&self) -> &str {
+        &self.major_name
+    }
+
+    /// The branch giving the minor key (`fMinorName`), empty when the index has
+    /// only a major key.
+    #[must_use]
+    pub fn minor_name(&self) -> &str {
+        &self.minor_name
+    }
+
+    /// How many keys the index holds.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    /// Whether the index holds no keys.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+
+    /// The keys, ascending, with the entry each names.
+    pub fn iter(&self) -> impl Iterator<Item = ((i64, i64), u64)> + '_ {
+        self.keys.iter().copied().zip(self.entries.iter().copied())
+    }
+
+    /// The entry holding `(major, minor)`, or `None` when the index has no such
+    /// key — ROOT's `TTree::GetEntryNumberWithIndex`. The keys are sorted, so
+    /// this is a binary search.
+    #[must_use]
+    pub fn entry_of(&self, major: i64, minor: i64) -> Option<u64> {
+        let at = self.keys.binary_search(&(major, minor)).ok()?;
+        self.entries.get(at).copied()
+    }
 }
 
 /// A friend tree attached to a `TTree` via `TTree::AddFriend`, persisted in the
@@ -248,6 +323,83 @@ impl TreeReader {
     /// up by entry.
     pub fn friends(&self) -> &[Friend] {
         &self.friends
+    }
+
+    /// The index built with `TTree::BuildIndex`, read from the tree's
+    /// `fTreeIndex`, or `None` for a tree without one.
+    ///
+    /// The index maps a `(major, minor)` key to the entry holding it, which is
+    /// what [`join_by_index`](Self::join_by_index) joins a friend on.
+    pub fn index(&self) -> Option<&TreeIndex> {
+        self.index.as_ref()
+    }
+
+    /// For each entry of this tree, the entry of `friend` carrying the same
+    /// index key — ROOT's index-based friend join (`TTree::BuildIndex`, then
+    /// `AddFriend`). An entry whose key the friend does not hold is `None`.
+    ///
+    /// `friend` must carry an index, and this tree must hold the branches the
+    /// index names (`run` and `event`, say); both are read as integers. A friend
+    /// with no index, or a missing branch, is an error rather than a silent
+    /// positional join, which would pair the wrong entries.
+    ///
+    /// The mapping is what a caller permutes a friend column with:
+    ///
+    /// ```no_run
+    /// # use oxiroot_io_core::FileReader;
+    /// # use oxiroot_tree::{BranchValues, TreeReader};
+    /// # fn main() -> oxiroot_io_core::Result<()> {
+    /// # let (file, friend_file) = (FileReader::open("f.root")?, FileReader::open("f.root")?);
+    /// let main = TreeReader::open(&file, "main")?;
+    /// let friend = TreeReader::open(&friend_file, "fr")?;
+    /// let rows = main.join_by_index(&file, &friend, &friend_file)?;
+    ///
+    /// let BranchValues::F64(weights) = friend.read_branch(&friend_file, "weight")? else {
+    ///     unreachable!("weight is a double branch")
+    /// };
+    /// // One weight per entry of `main`, in `main`'s order.
+    /// let aligned: Vec<Option<f64>> = rows
+    ///     .iter()
+    ///     .map(|entry| entry.and_then(|e| weights.get(e as usize).copied()))
+    ///     .collect();
+    /// # let _ = aligned;
+    /// # Ok(()) }
+    /// ```
+    pub fn join_by_index(
+        &self,
+        file: &FileReader,
+        friend: &TreeReader,
+        friend_file: &FileReader,
+    ) -> Result<Vec<Option<u64>>> {
+        let index = friend.index().ok_or_else(|| {
+            Error::InvalidInput(format!(
+                "tree {:?} has no index to join on: build one with TTree::BuildIndex",
+                friend.name()
+            ))
+        })?;
+        let _ = friend_file;
+        let major = self.index_column(file, index.major_name())?;
+        let minor = match index.minor_name() {
+            "" => vec![0; major.len()],
+            name => self.index_column(file, name)?,
+        };
+        Ok(major
+            .iter()
+            .zip(&minor)
+            .map(|(&major, &minor)| index.entry_of(major, minor))
+            .collect())
+    }
+
+    /// Read branch `name` as the integers an index key is made of.
+    fn index_column(&self, file: &FileReader, name: &str) -> Result<Vec<i64>> {
+        let values = self.read_branch(file, name)?;
+        values.as_i64_vec().ok_or_else(|| {
+            Error::InvalidInput(format!(
+                "branch {name:?} of tree {:?} holds {:?} values, which are not index keys",
+                self.name(),
+                values.leaf_type()
+            ))
+        })
     }
 
     /// The `(alias, expression)` pairs defined with `TTree::SetAlias` (read from

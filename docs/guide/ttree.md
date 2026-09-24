@@ -271,6 +271,48 @@ for (name, why) in t.unsupported_branches() {
     `unsupported_branches`) rather than parsed at a guessed offset.
     `streamer_classes()` exposes the schema the file was written against.
 
+## Friends, and joining on an index
+
+A friend tree (`TTree::AddFriend`) is read **positionally**: entry *i* of the
+main tree pairs with entry *i* of the friend. `friends()` lists the friends a
+tree records, so opening them is all it takes.
+
+When the two trees are not entry-aligned — different order, or the friend
+covering only some events — ROOT joins them on a key instead, with
+`TTree::BuildIndex(major, minor)`. oxiroot reads that index and joins on it:
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::tree::BranchValues;
+
+let file = FileReader::open("events.root")?;
+let main = TreeReader::open(&file, "main")?;
+let friend = TreeReader::open(&file, "fr")?;
+
+// What the friend's index is on, and how many keys it holds.
+let index = friend.index().expect("the friend was built with BuildIndex");
+println!("{} + {}: {} keys", index.major_name(), index.minor_name(), index.len());
+
+// For each entry of `main`, the friend entry with the same key.
+let rows = main.join_by_index(&file, &friend, &file)?;
+
+let BranchValues::F64(weight) = friend.read_branch(&file, "weight")? else {
+    unreachable!("weight is a double branch")
+};
+// One weight per entry of `main`, in `main`'s order; `None` where the friend
+// has no such key.
+let aligned: Vec<Option<f64>> = rows
+    .iter()
+    .map(|entry| entry.and_then(|e| weight.get(e as usize).copied()))
+    .collect();
+# Ok::<(), oxiroot::Error>(())
+```
+
+`index()` gives the keys directly too (`entry_of(major, minor)` is ROOT's
+`GetEntryNumberWithIndex`, and `iter()` walks them in order). Joining a friend
+that carries no index is an error rather than a silent fall back to pairing by
+entry number, which would pair the wrong entries.
+
 ## Spanning files with `ChainReader`
 
 `ChainReader` reads a branch across several same-schema trees as one
