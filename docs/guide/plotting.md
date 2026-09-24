@@ -13,7 +13,7 @@ behind the **`plot` feature** and exposed as `oxiroot::plot`.
 ```toml
 [dependencies]
 # the `plot` feature is on by default:
-oxiroot = "0.2"
+oxiroot = "0.3"
 ```
 
 !!! note "How it works"
@@ -35,7 +35,7 @@ oxiroot = "0.2"
 
     ```toml
     [dependencies]
-    oxiroot-plot = { version = "0.2", default-features = false }
+    oxiroot-plot = { version = "0.3", default-features = false }
     ```
 
 ## API conventions

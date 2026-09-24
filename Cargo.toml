@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.95"
 license = "MIT"
@@ -22,24 +22,24 @@ all = "warn"
 [workspace.dependencies]
 # Internal crates. `version` must match `workspace.package.version` above: a
 # published crate's dependencies need one (`cargo publish` rejects bare paths).
-oxiroot-io-core = { path = "crates/oxiroot-io-core", version = "0.2.0" }
-oxiroot-compress = { path = "crates/oxiroot-compress", version = "0.2.0" }
-oxiroot-linalg = { path = "crates/oxiroot-linalg", version = "0.2.0" }
-oxiroot-rntuple = { path = "crates/oxiroot-rntuple", version = "0.2.0" }
-oxiroot-hist = { path = "crates/oxiroot-hist", version = "0.2.0" }
-oxiroot-hist-func = { path = "crates/oxiroot-hist-func", version = "0.2.0" }
-oxiroot-tree = { path = "crates/oxiroot-tree", version = "0.2.0" }
-oxiroot-stat = { path = "crates/oxiroot-stat", version = "0.2.0" }
-oxiroot-particle = { path = "crates/oxiroot-particle", version = "0.2.0" }
-oxiroot-formula = { path = "crates/oxiroot-formula", version = "0.2.0" }
-oxiroot-fit = { path = "crates/oxiroot-fit", version = "0.2.0" }
-oxiroot-plot = { path = "crates/oxiroot-plot", version = "0.2.0" }
-oxiroot-rex = { path = "crates/oxiroot-rex", version = "0.2.0" }
+oxiroot-io-core = { path = "crates/oxiroot-io-core", version = "0.3.0" }
+oxiroot-compress = { path = "crates/oxiroot-compress", version = "0.3.0" }
+oxiroot-linalg = { path = "crates/oxiroot-linalg", version = "0.3.0" }
+oxiroot-rntuple = { path = "crates/oxiroot-rntuple", version = "0.3.0" }
+oxiroot-hist = { path = "crates/oxiroot-hist", version = "0.3.0" }
+oxiroot-hist-func = { path = "crates/oxiroot-hist-func", version = "0.3.0" }
+oxiroot-tree = { path = "crates/oxiroot-tree", version = "0.3.0" }
+oxiroot-stat = { path = "crates/oxiroot-stat", version = "0.3.0" }
+oxiroot-particle = { path = "crates/oxiroot-particle", version = "0.3.0" }
+oxiroot-formula = { path = "crates/oxiroot-formula", version = "0.3.0" }
+oxiroot-fit = { path = "crates/oxiroot-fit", version = "0.3.0" }
+oxiroot-plot = { path = "crates/oxiroot-plot", version = "0.3.0" }
+oxiroot-rex = { path = "crates/oxiroot-rex", version = "0.3.0" }
 # The facade's batteries-included defaults are for applications; the in-repo
 # consumer (the CLI) opts in to what it needs. Default features must be turned
 # off here: a member's own `default-features = false` is ignored for an
 # inherited dependency.
-oxiroot = { path = "crates/oxiroot", version = "0.2.0", default-features = false }
+oxiroot = { path = "crates/oxiroot", version = "0.3.0", default-features = false }
 # `oxiroot_rex::font::backend::ttf_parser::TtfMathFont` exposes `ttf_parser`
 # types (`Face`, `GlyphId`, `cff::Matrix`), so oxiroot-plot and oxiroot-rex must
 # resolve the same version.
