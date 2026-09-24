@@ -5,7 +5,15 @@ Notable changes to oxiroot, by release. The format follows
 [Semantic Versioning](https://semver.org/): before 1.0, a minor release may
 change the API.
 
-## [Unreleased]
+## [0.3.0] — 2026-09-24
+
+A release about reading what a ROOT file actually holds, and about finishing the
+file container. The generic reader decodes the STL members it used to skip; a
+file's objects are reachable at any cycle; directories nest; update mode can
+take objects out and give back the space; axes keep their times; and a friend
+tree joins on a `BuildIndex` key rather than by entry number. The two column
+value types agree on one offset convention, which changes an API. Files written
+by 0.2.0 and by 0.3.0 read the same in ROOT, uproot and oxiroot.
 
 ### Added
 
@@ -217,6 +225,7 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/mathieuouillon/oxiroot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mathieuouillon/oxiroot/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mathieuouillon/oxiroot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mathieuouillon/oxiroot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mathieuouillon/oxiroot/releases/tag/v0.1.0

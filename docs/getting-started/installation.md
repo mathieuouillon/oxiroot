@@ -14,13 +14,13 @@ a histogram-only project never compiles the others.
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple — through the facade:
-oxiroot = "0.2"
+oxiroot = "0.3"
 
 # …or depend on just one crate:
-oxiroot-hist      = "0.2"  # histograms + graphs
-oxiroot-hist-func = "0.2"  # TF1/TF2/TF3
-oxiroot-tree      = "0.2"  # TTree
-oxiroot-rntuple   = "0.2"  # RNTuple
+oxiroot-hist      = "0.3"  # histograms + graphs
+oxiroot-hist-func = "0.3"  # TF1/TF2/TF3
+oxiroot-tree      = "0.3"  # TTree
+oxiroot-rntuple   = "0.3"  # RNTuple
 ```
 
 Then bring the common types into scope with the prelude:
@@ -48,10 +48,10 @@ just the lean, pure-Rust format core.
 ```toml
 [dependencies]
 # Batteries-included — fitting, plotting, mmap, and argmin all on:
-oxiroot = "0.2"
+oxiroot = "0.3"
 
 # …or the lean format core only (drops the extra dependencies):
-# oxiroot = { version = "0.2", default-features = false }
+# oxiroot = { version = "0.3", default-features = false }
 ```
 
 !!! tip "Leaner builds"
