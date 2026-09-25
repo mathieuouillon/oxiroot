@@ -5,6 +5,48 @@ Notable changes to oxiroot, by release. The format follows
 [Semantic Versioning](https://semver.org/): before 1.0, a minor release may
 change the API.
 
+## [Unreleased]
+
+### Changed
+
+- **Types are named as Rust, not as C++: the `T` prefix is gone.** The workspace
+  followed ROOT's C++ convention only halfway — the IO layer was already
+  idiomatic (`FileReader`, `TreeReader`, `Directory`, `Value`) while the data
+  model was not (`TH1`, `TAxis`, `TF1`, `TMatrixD`) — so nothing told a reader
+  which spelling a given type used. Every public type now reads as Rust, and
+  **every ROOT class name it models is a `#[doc(alias)]` on it**, so the API
+  docs' search box still answers `TH1`, `TProfile`, `TGraph`, `TF1`, `TKey`.
+
+  | was | is | | was | is |
+  |---|---|---|---|---|
+  | `TH1` `TH2` `TH3` | `Hist1D` `Hist2D` `Hist3D` | | `TKey` | `Key` |
+  | `TProfile` `TProfile2D` `TProfile3D` | `Profile1D` `Profile2D` `Profile3D` | | `TNamed` | `Named` |
+  | `TH2Poly` | `PolyHist` | | `TObjString` | `ObjString` |
+  | `THnSparse` | `SparseHist` | | `TMap` | `ObjMap` |
+  | `THStack` | `HistStack` | | `TParameter` | `Parameter` |
+  | `TMultiGraph` | `GraphStack` | | `TDatime` | `Datime` |
+  | `TGraph` `TGraph2D` | `Graph` `Graph2D` | | `TUuid` | `Uuid` |
+  | `TGraphMultiErrors` | `MultiErrorGraph` | | `TObjectHeader` | `ObjectBase` |
+  | `TEfficiency` | `Efficiency` | | `ObjHeader` | `RecordHeader` |
+  | `TAxis` | `Axis` | | `TEntryList` | `EntryList` |
+  | `TF1` `TF2` `TF3` | `Func1D` `Func2D` `Func3D` | | `TH1Core` | `HistBase` |
+  | `TMatrixD` `TMatrixDSym` | `Matrix` `SymMatrix` | | `H1` `H2` `H3` (builder) | `Build1D` `Build2D` `Build3D` |
+  | `TVectorD` | `Vector` | | | |
+
+  `TObjectHeader` (the streamed `TObject` base) and `ObjHeader` (a record's
+  byte-count/class-tag header) were two different things one letter apart, hence
+  the two names on the right. The free functions named after the record they
+  handle followed their type: `read_tnamed`/`write_tnamed` are now
+  `read_named`/`write_named`, and `read_tobject`/`write_tobject` are
+  `read_object_base`/`write_object_base`.
+
+- **Nothing changes on disk.** Class names are read from each file's
+  `TStreamerInfo` and were never type names: a `Hist1D` writes a `TH1D`,
+  `class_name()` reports the ROOT class an object came from, and the ROOT-C++
+  and uproot interop suites pass unchanged. The dynamic `Value` tree likewise
+  keeps ROOT's member names verbatim (`fName`, `fBins`, …) — they are data read
+  out of the file, not a naming choice.
+
 ## [0.3.0] — 2026-09-24
 
 A release about reading what a ROOT file actually holds, and about finishing the
