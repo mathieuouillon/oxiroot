@@ -127,19 +127,19 @@ fn main() {
     );
     println!("was seeded from the Huber fit so its narrow basin still converges.");
 
-    // --- Write the outlier-cleaned line as a persistable TF1, then read it back.
+    // --- Write the outlier-cleaned line as a persistable Func1D, then read it back.
     // The robust (Cauchy) fit is the trustworthy one — save its curve to a ROOT
     // file so it can be reused. The file lives in the temp dir and is deleted
     // before we return; nothing is left behind.
     let path = std::env::temp_dir().join("oxiroot_ex_robust_fit.root");
-    let fitted = TF1::new("robust_line", "[0]+[1]*x", xs[0], xs[n - 1])
+    let fitted = Func1D::new("robust_line", "[0]+[1]*x", xs[0], xs[n - 1])
         .expect("valid formula")
         .with_params(vec![cauchy.params[0], cauchy.params[1]]);
     fitted
         .write_root(&path, Compression::Zstd(5))
         .expect("write TF1");
     let f = FileReader::open(&path).expect("open file");
-    let back = TF1::read_root(&f, "robust_line").expect("read TF1");
+    let back = Func1D::read_root(&f, "robust_line").expect("read TF1");
     println!();
     println!(
         "wrote + read back the robust line as a TF1: y({:.1}) = {:.3}, y({:.1}) = {:.3}",

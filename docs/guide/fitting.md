@@ -31,7 +31,7 @@ dataset the `.fit(...)` methods for free.
 | `Model` | A named parametric fit function `f(x, params)` |
 | `FitResult` | Best-fit parameters, errors, covariance, chi-square |
 
-`TH1` and `TGraph` implement `FitData` (in `oxiroot-hist`, under the `fit`
+`Hist1D` and `Graph` implement `FitData` (in `oxiroot-hist`, under the `fit`
 feature), so histograms and graphs fit directly. `Points`, `&[Point]`,
 `[Point; N]`, and `Vec<Point>` also implement it, and you can implement it on
 your own type to fit anything.
@@ -68,7 +68,7 @@ println!(
 );
 ```
 
-The same `data.fit(&model)` call works on a `TGraph` or on raw points:
+The same `data.fit(&model)` call works on a `Graph` or on raw points:
 
 ```rust
 use oxiroot::prelude::*;
@@ -87,7 +87,7 @@ assert!((fit.params[1] - 2.0).abs() < 1e-6); // slope ≈ 2
 
 `Model` is a named parametric fit function `f(x, params)` with named parameters
 and optional per-parameter constraints. (The evaluable, persistable ROOT
-function object is [`TF1`](functions.md); `TF1::to_model()` converts one to a
+function object is [`Func1D`](functions.md); `Func1D::to_model()` converts one to a
 `Model` for fitting. It needs the `fit` feature of `oxiroot-hist-func`, which
 the facade's `fit` feature turns on.)
 

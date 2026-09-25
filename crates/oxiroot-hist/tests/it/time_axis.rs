@@ -1,7 +1,7 @@
-//! Time axes (`TAxis::fTimeDisplay` / `fTimeFormat`), which ROOT draws as dates
+//! Time axes (`Axis::fTimeDisplay` / `fTimeFormat`), which ROOT draws as dates
 //! and clock times rather than numbers.
 
-use oxiroot_hist::{FileWriter, Hist, ReadRoot, TGraph, WriteRoot, TH1};
+use oxiroot_hist::{FileWriter, Graph, Hist, Hist1D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 /// ROOT's own spelling: a `strftime` format, then the epoch after `%F`.
@@ -20,7 +20,7 @@ fn a_time_axis_survives_a_file() {
     // A graph carries its axes on its display frame, as ROOT stores them.
     let mut frame = Hist::reg(2, 0.0, 7_200.0).float().named("Graph");
     frame.xaxis.set_time_format(FORMAT);
-    let mut g = TGraph::new(vec![0.0, 3_600.0], vec![1.0, 2.0])
+    let mut g = Graph::new(vec![0.0, 3_600.0], vec![1.0, 2.0])
         .unwrap()
         .named("trend");
     g.histogram = Some(frame);
@@ -33,12 +33,12 @@ fn a_time_axis_survives_a_file() {
         .expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
-    let read = TH1::read_root(&f, "rate").expect("read hist");
+    let read = Hist1D::read_root(&f, "rate").expect("read hist");
     assert!(read.xaxis.time_display);
     assert_eq!(read.xaxis.time_format, FORMAT);
     assert_eq!(read, h);
 
-    let read = TGraph::read_root(&f, "trend").expect("read graph");
+    let read = Graph::read_root(&f, "trend").expect("read graph");
     let frame = read.histogram.as_ref().expect("display frame");
     assert!(frame.xaxis.time_display);
     assert_eq!(frame.xaxis.time_format, FORMAT);
@@ -53,7 +53,7 @@ fn an_ordinary_axis_stays_numeric() {
 
     let out = std::env::temp_dir().join("oxiroot_plain_axis.root");
     h.write_root(&out, Compression::None).expect("write");
-    let read = TH1::read_root(&FileReader::open(&out).unwrap(), "plain").unwrap();
+    let read = Hist1D::read_root(&FileReader::open(&out).unwrap(), "plain").unwrap();
     assert!(!read.xaxis.time_display);
     assert_eq!(read.xaxis.time_format, "");
 

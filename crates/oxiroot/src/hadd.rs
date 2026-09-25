@@ -23,11 +23,11 @@
 //! of:
 //!
 //! * **all histogram-family objects** — everything ROOT's `hadd` merges is
-//!   merged the same way (`TH1`/`TH2`/`TH3`, the profiles, `TH2Poly` and
-//!   `THnSparse` bin by bin, a `TEfficiency`'s histograms, a `THStack`'s
-//!   histograms by name, a `TParameter`'s value, and the graphs by appending
+//!   merged the same way (`Hist1D`/`Hist2D`/`Hist3D`, the profiles, `PolyHist` and
+//!   `SparseHist` bin by bin, an `Efficiency`'s histograms, a `HistStack`'s
+//!   histograms by name, a `Parameter`'s value, and the graphs by appending
 //!   their points); what it does not merge is copied from the first file
-//!   (`TF1`/`2`/`3`, `TGraph2D`, `TGraphMultiErrors`, `TMultiGraph`, strings,
+//!   (`Func1D`/`2`/`3`, `Graph2D`, `MultiErrorGraph`, `GraphStack`, strings,
 //!   maps, matrices); unknown classes are skipped and reported;
 //! * **a single `TTree`** (and nothing else) — entries concatenated;
 //! * **a single RNTuple** (and nothing else) — entries concatenated.

@@ -1,6 +1,6 @@
 //! Big-/little-endian read cursor for ROOT on-disk structures.
 //!
-//! ROOT's classic/TKey/streamer payloads are big-endian (network order); the
+//! ROOT's classic/Key/streamer payloads are big-endian (network order); the
 //! RNTuple anchor is big-endian while RNTuple envelope/page payloads are
 //! little-endian. Endianness is therefore explicit in every accessor name
 //! rather than carried as buffer state.

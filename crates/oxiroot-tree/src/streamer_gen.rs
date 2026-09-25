@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(seek.el_type, 56);
         assert_eq!(seek.count_name.as_deref(), Some("fMaxBaskets"));
 
-        // The TNamed base of TBranch is recorded with its base version.
+        // The Named base of TBranch is recorded with its base version.
         let named_base = &branch.elements[0];
         assert_eq!(named_base.name, "TNamed");
         assert_eq!(named_base.base_version, Some(1));

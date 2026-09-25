@@ -52,7 +52,7 @@ impl NtupleReader {
     }
 
     /// Read an RNTuple given its already-located anchor `key`.
-    fn open_from_key(file: &FileReader, key: &oxiroot_io_core::TKey) -> Result<NtupleReader> {
+    fn open_from_key(file: &FileReader, key: &oxiroot_io_core::Key) -> Result<NtupleReader> {
         if key.class_name != ANCHOR_CLASS {
             return Err(Error::WrongClass {
                 name: key.name.clone(),

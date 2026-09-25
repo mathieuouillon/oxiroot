@@ -1,6 +1,6 @@
-//! `TEntryList` — a persisted set of selected `TTree` entry numbers.
+//! `EntryList` — a persisted set of selected `TTree` entry numbers.
 //!
-//! A `TEntryList` is a standalone key (not part of a `TTree`). It records which
+//! An `EntryList` is a standalone key (not part of a `TTree`). It records which
 //! entries of a tree passed a selection, so an analysis can replay just those
 //! entries. The passing entries are stored in one or more `TEntryListBlock`s,
 //! each covering a fixed window of [`K_BLOCK_SIZE`] entries as a bitmap (bit *b*
@@ -10,25 +10,26 @@
 //! yet expanded.
 
 use oxiroot_io_core::{
-    decompress_payload, read_tnamed, read_tobject, Error, FileReader, RBuffer, Result, TagReader,
+    decompress_payload, read_named, read_object_base, Error, FileReader, RBuffer, Result, TagReader,
 };
 
 /// Entries per `TEntryListBlock` window (ROOT's `TEntryListBlock::kBlockSize`).
 const K_BLOCK_SIZE: u64 = 64000;
 
-/// A `TEntryList` read from a file: its name and the selected entry numbers, in
+/// An `EntryList` read from a file: its name and the selected entry numbers, in
 /// ascending order.
 #[derive(Debug, Clone)]
-pub struct TEntryList {
+#[doc(alias = "TEntryList")]
+pub struct EntryList {
     name: String,
     tree_name: String,
     file_name: String,
     entries: Vec<u64>,
 }
 
-impl TEntryList {
-    /// Open the `TEntryList` named `name` in `file`.
-    pub fn open(file: &FileReader, name: &str) -> Result<TEntryList> {
+impl EntryList {
+    /// Open the `EntryList` named `name` in `file`.
+    pub fn open(file: &FileReader, name: &str) -> Result<EntryList> {
         let key = file.key(name).ok_or_else(|| Error::NotFound {
             what: "key",
             name: name.to_string(),
@@ -82,13 +83,13 @@ impl TEntryList {
     }
 }
 
-/// Parse a decompressed `TEntryList` object (`keylen` is its key's header length).
-fn read_entry_list(object: &[u8], keylen: usize) -> Result<TEntryList> {
+/// Parse a decompressed `EntryList` object (`keylen` is its key's header length).
+fn read_entry_list(object: &[u8], keylen: usize) -> Result<EntryList> {
     let mut r = RBuffer::new(object);
     let mut tags = TagReader::new(keylen);
 
-    r.read_version()?; // TEntryList version header
-    let named = read_tnamed(&mut r)?; // fName, fTitle
+    r.read_version()?; // EntryList version header
+    let named = read_named(&mut r)?; // fName, fTitle
 
     // fLists (TList*): sub-lists for a multi-tree list; null for a single tree.
     // We don't expand sub-lists yet — step over it via the object header.
@@ -104,7 +105,7 @@ fn read_entry_list(object: &[u8], keylen: usize) -> Result<TEntryList> {
     let blocks = tags.read_header(&mut r)?;
     if blocks.class_name.is_some() {
         r.read_version()?; // the TObjArray's own version header
-        read_tobject(&mut r)?;
+        read_object_base(&mut r)?;
         r.string()?; // fName
         let size = r.be_i32()?.max(0);
         let _lower = r.be_i32()?; // fLowerBound
@@ -135,7 +136,7 @@ fn read_entry_list(object: &[u8], keylen: usize) -> Result<TEntryList> {
 
     entries.sort_unstable();
     entries.dedup();
-    Ok(TEntryList {
+    Ok(EntryList {
         name: named.name,
         tree_name,
         file_name,
@@ -147,7 +148,7 @@ fn read_entry_list(object: &[u8], keylen: usize) -> Result<TEntryList> {
 /// its passing entries — offset by `block_index * K_BLOCK_SIZE` — to `out`.
 fn read_block(r: &mut RBuffer, block_index: u64, out: &mut Vec<u64>) -> Result<()> {
     let vh = r.read_version()?; // TEntryListBlock version header
-    read_tobject(r)?;
+    read_object_base(r)?;
     let n_passed = r.be_i32()?.max(0) as usize;
     let n = r.be_i32()?.max(0) as usize; // number of UShort_t words in fIndices
     r.u8()?; // the counted-array "is present" flag

@@ -8,7 +8,7 @@
 //! It fills a histogram with simulated Z → μμ events and fits the mass peak with
 //! a Gaussian (both chi-square and binned maximum likelihood), then fits a peak
 //! sitting on a flat background with a custom closure model — and finally fits
-//! the *same* models to a `TGraph` and to raw `(x, y, σ)` points, showing the
+//! the *same* models to a `Graph` and to raw `(x, y, σ)` points, showing the
 //! one fitting API (`oxiroot::fit`) works on any 1-D data, not just histograms.
 
 #[cfg(not(feature = "fit"))]
@@ -116,14 +116,14 @@ fn main() {
         sig_bkg.eval(r.params[1])
     );
 
-    // --- 3. The SAME fitting API on a TGraph (an (x, y) scatter with errors). ---
+    // --- 3. The SAME fitting API on a Graph (an (x, y) scatter with errors). ----
     // e.g. a measured response vs threshold; fit a straight line `y = a + b·x`.
     let thr = [1.0, 2.0, 3.0, 4.0, 5.0];
     let resp: Vec<f64> = thr
         .iter()
         .map(|&x| 0.5 * x + 1.0 + rng.gauss(0.0, 0.03))
         .collect();
-    let graph = TGraph::with_errors(
+    let graph = Graph::with_errors(
         thr.to_vec(),
         resp,
         vec![0.0; thr.len()],

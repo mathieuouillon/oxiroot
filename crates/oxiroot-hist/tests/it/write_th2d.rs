@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH2};
+use oxiroot_hist::{Hist, Hist2D, ReadRoot, WriteRoot};
 use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
@@ -19,7 +19,7 @@ fn serializes_th2d_byte_identical_to_root() {
     assert!(key.is_uncompressed());
     let expected: Vec<u8> = f.key_payload(key).expect("payload").to_vec();
 
-    let h = TH2::read_root(&f, "h2").expect("read TH2D");
+    let h = Hist2D::read_root(&f, "h2").expect("read TH2D");
     let written = h.to_root_bytes();
 
     assert_eq!(written.len(), expected.len(), "serialized length differs");
@@ -54,14 +54,14 @@ fn create_fill_save_round_trips() {
     h.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write");
     let f = FileReader::open(&out).expect("reopen");
-    let h2 = TH2::read_root(&f, "h2").expect("read back");
+    let h2 = Hist2D::read_root(&f, "h2").expect("read back");
     assert_eq!(h2, h, "filled 2-D histogram must round-trip");
 }
 
 #[test]
 fn writes_a_zstd_compressed_th2d() {
     let f = FileReader::open(fixture("th2d_uncompressed.root")).expect("open fixture");
-    let h = TH2::read_root(&f, "h2").expect("read TH2D");
+    let h = Hist2D::read_root(&f, "h2").expect("read TH2D");
 
     let out = PathBuf::from("/tmp/rootrs_written_th2d_zstd.root");
     h.write_root(&out, oxiroot_io_core::Compression::Zstd(5))
@@ -70,6 +70,6 @@ fn writes_a_zstd_compressed_th2d() {
     let f2 = FileReader::open(&out).expect("reopen");
     let key = f2.key("h2").expect("h2 key");
     assert!(!key.is_uncompressed(), "object should be stored compressed");
-    let h2 = TH2::read_root(&f2, "h2").expect("read back compressed TH2D");
+    let h2 = Hist2D::read_root(&f2, "h2").expect("read back compressed TH2D");
     assert_eq!(h2, h, "compressed 2-D histogram must round-trip");
 }

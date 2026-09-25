@@ -1,7 +1,7 @@
 //! Reading an object member by member, following the file's `TStreamerInfo`.
 
 use oxiroot_io_core::{
-    read_tnamed, read_tobject, Error, RBuffer, Result, StreamerElement, StreamerRegistry,
+    read_named, read_object_base, Error, RBuffer, Result, StreamerElement, StreamerRegistry,
 };
 
 /// A scalar or array member captured while walking a class's streamer elements.
@@ -139,7 +139,7 @@ pub(super) fn walk_members(
     Ok(())
 }
 
-/// Read a base-class slot named `class`. `TObject`/`TNamed` are read with their
+/// Read a base-class slot named `class`. `TObject`/`Named` are read with their
 /// dedicated readers (the latter captures `fName`/`fTitle`); any other base is
 /// walked through its own streamer info when present, else skipped via its
 /// version byte count.
@@ -153,10 +153,10 @@ fn read_base(
 ) -> Result<()> {
     match class {
         "TObject" => {
-            read_tobject(r)?;
+            read_object_base(r)?;
         }
         "TNamed" => {
-            let named = read_tnamed(r)?;
+            let named = read_named(r)?;
             out.insert("fName".to_string(), MemberVal::Str(named.name));
             out.insert("fTitle".to_string(), MemberVal::Str(named.title));
         }

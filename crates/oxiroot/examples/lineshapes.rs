@@ -7,7 +7,7 @@
 //! cargo run -p oxiroot --example lineshapes --features fit
 //! ```
 
-// the prelude (Model/TH1/FitOptions) is only used by the fit at the very end
+// the prelude (Model/Hist1D/FitOptions) is only used by the fit at the very end
 #[cfg(feature = "fit")]
 use oxiroot::prelude::*;
 use oxiroot::stat;

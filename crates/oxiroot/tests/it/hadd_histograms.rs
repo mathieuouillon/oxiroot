@@ -44,14 +44,14 @@ const SET_B_3D: [Point3; 4] = [
     (5.0, 0.5, 0.5, 1.0, 2.0), // x overflow
 ];
 
-fn empty_2d() -> TProfile2D {
+fn empty_2d() -> Profile2D {
     Hist::reg(3, 0.0, 3.0)
         .reg(2, 0.0, 2.0)
         .profile()
         .named("p2")
 }
 
-fn empty_3d() -> TProfile3D {
+fn empty_3d() -> Profile3D {
     Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
@@ -59,19 +59,19 @@ fn empty_3d() -> TProfile3D {
         .named("p3")
 }
 
-fn fill_2d(p: &mut TProfile2D, points: &[Point2]) {
+fn fill_2d(p: &mut Profile2D, points: &[Point2]) {
     for &(x, y, z, w) in points {
         p.fill_weight(x, y, z, w);
     }
 }
 
-fn fill_3d(p: &mut TProfile3D, points: &[Point3]) {
+fn fill_3d(p: &mut Profile3D, points: &[Point3]) {
     for &(x, y, z, t, w) in points {
         p.fill_weight(x, y, z, t, w);
     }
 }
 
-fn profile_2d(sets: &[&[Point2]]) -> TProfile2D {
+fn profile_2d(sets: &[&[Point2]]) -> Profile2D {
     let mut p = empty_2d();
     for set in sets {
         fill_2d(&mut p, set);
@@ -79,7 +79,7 @@ fn profile_2d(sets: &[&[Point2]]) -> TProfile2D {
     p
 }
 
-fn profile_3d(sets: &[&[Point3]]) -> TProfile3D {
+fn profile_3d(sets: &[&[Point3]]) -> Profile3D {
     let mut p = empty_3d();
     for set in sets {
         fill_3d(&mut p, set);
@@ -119,8 +119,8 @@ fn file_merge_sums_2d_and_3d_profiles() {
     let result = (|| {
         let f = FileReader::open(&out)?;
         Ok::<_, Error>((
-            TProfile2D::read_root(&f, "p2")?,
-            TProfile3D::read_root(&f, "p3")?,
+            Profile2D::read_root(&f, "p2")?,
+            Profile3D::read_root(&f, "p3")?,
         ))
     })();
     for p in [&in1, &in2, &out] {
@@ -165,7 +165,7 @@ fn an_unreadable_profile_is_skipped_not_fatal() {
     let run = |inputs: [&std::path::Path; 2], out: &std::path::Path| {
         let files = inputs.map(|p| FileReader::open(p).unwrap());
         let outcome = merge_histogram_files(out, &files, Compression::None).unwrap();
-        let summed_h = TH1::read_root(&FileReader::open(out).unwrap(), "h").unwrap();
+        let summed_h = Hist1D::read_root(&FileReader::open(out).unwrap(), "h").unwrap();
         (outcome, summed_h)
     };
     // The bad object last, then first: either way the key is skipped whole.

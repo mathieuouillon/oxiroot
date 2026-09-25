@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use clap::Args as ClapArgs;
-use oxiroot::file::TKey;
+use oxiroot::file::Key;
 use oxiroot::ntuple::NtupleReader;
 use oxiroot::tree::TreeReader;
 use oxiroot::FileReader;
@@ -125,7 +125,7 @@ fn name_ambiguous_cycles(rows: &mut [Row]) {
 fn collect(
     file: &FileReader,
     dir_path: &str,
-    keys: &[TKey],
+    keys: &[Key],
     want_entries: bool,
     recursive: bool,
     depth: usize,

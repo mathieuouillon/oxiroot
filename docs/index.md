@@ -17,7 +17,7 @@ h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;
 
 // Read it back.
-let h = TH1::read_root(&FileReader::open("hist.root")?, "pt")?;
+let h = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;
 ```
 
 ## Why oxiroot
@@ -38,10 +38,10 @@ let h = TH1::read_root(&FileReader::open("hist.root")?, "pt")?;
 
 | Area | Read | Write |
 |------|:----:|:-----:|
-| Histograms `TH1`/`TH2`/`TH3` (every precision) | ✅ | ✅ |
-| Profiles `TProfile`/`TProfile2D`/`TProfile3D` | ✅ | ✅ |
-| `TEfficiency`, `THnSparse`, `TH2Poly` | ✅ | ✅ |
-| Graphs `TGraph`/`TGraphErrors`/`TGraphAsymmErrors` | ✅ | ✅ |
+| Histograms `Hist1D`/`Hist2D`/`Hist3D` (every precision) | ✅ | ✅ |
+| Profiles `Profile1D`/`Profile2D`/`Profile3D` | ✅ | ✅ |
+| `Efficiency`, `SparseHist`, `PolyHist` | ✅ | ✅ |
+| Graphs `Graph`/`TGraphErrors`/`TGraphAsymmErrors` | ✅ | ✅ |
 | `TTree` (scalars, arrays, strings, `std::vector`, split structs) | ✅ | ✅ |
 | RNTuple (scalars, strings, vectors, nested, records) | ✅ | ✅ |
 | Compression Zstd / zlib / LZ4 / LZMA | ✅ | ✅ |

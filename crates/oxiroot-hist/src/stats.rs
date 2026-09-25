@@ -3,7 +3,7 @@
 //! `GetEffectiveEntries`, `Reset`, … All are pure derivations from the already
 //! stored bin contents and statistical moment sums (no new on-disk state).
 
-use crate::{TProfile, TH1, TH2, TH3};
+use crate::{Hist1D, Hist2D, Hist3D, Profile1D};
 
 /// Population standard deviation along one axis from its moment sums
 /// (`sqrt(<x²> − <x>²)`), matching ROOT's `GetStdDev`. `0.0` for an empty axis.
@@ -42,7 +42,7 @@ fn extremum(contents: &[f64], cells: impl Iterator<Item = usize>, want_max: bool
     (best_cell, best_val)
 }
 
-impl TH1 {
+impl Hist1D {
     /// Standard deviation of the filled x distribution (ROOT `GetStdDev`, also
     /// exposed as `GetRMS`).
     pub fn std_dev(&self) -> f64 {
@@ -86,7 +86,7 @@ impl TH1 {
     }
 
     /// Linearly interpolate the bin content at `x` between adjacent bin centers
-    /// (ROOT `TH1::Interpolate`). Returns the first/last bin content when `x` is
+    /// (ROOT `Hist1D::Interpolate`). Returns the first/last bin content when `x` is
     /// at or beyond the first/last bin center.
     #[must_use]
     pub fn interpolate(&self, x: f64) -> f64 {
@@ -113,7 +113,7 @@ impl TH1 {
     }
 
     /// The `x` values where the cumulative bin-content distribution reaches each
-    /// probability in `probs` (ROOT `TH1::GetQuantiles`); `probs` should lie in
+    /// probability in `probs` (ROOT `Hist1D::GetQuantiles`); `probs` should lie in
     /// `[0, 1]`. Within a bin the inverse CDF is interpolated linearly across the
     /// bin's edges; a probability landing exactly on a cumulative bin boundary
     /// returns that bin's center, matching ROOT.
@@ -170,7 +170,7 @@ fn cells_2d(nx: usize, ny: usize) -> impl Iterator<Item = usize> {
     (1..=nx).flat_map(move |ix| (1..=ny).map(move |iy| ix + stride * iy))
 }
 
-impl TH2 {
+impl Hist2D {
     /// Standard deviation of the filled x distribution (ROOT `GetStdDev(1)`).
     pub fn std_dev_x(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwx, self.tsumwx2)
@@ -226,7 +226,7 @@ fn cells_3d(nx: usize, ny: usize, nz: usize) -> impl Iterator<Item = usize> {
     })
 }
 
-impl TH3 {
+impl Hist3D {
     /// Standard deviation of the filled x distribution.
     pub fn std_dev_x(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwx, self.tsumwx2)
@@ -293,7 +293,7 @@ impl TH3 {
     }
 }
 
-impl TProfile {
+impl Profile1D {
     /// Mean of the filled x distribution (ROOT `GetMean`).
     pub fn mean(&self) -> f64 {
         if self.tsumw == 0.0 {

@@ -203,7 +203,7 @@ use oxiroot::stat;
 
 fn correlate(path: &str) -> oxiroot::Result<f64> {
     let file = FileReader::open(path)?;          // oxiroot::Error
-    let h = TH1::read_root(&file, "h")?;
+    let h = Hist1D::read_root(&file, "h")?;
     let x: Vec<f64> = (1..=h.xaxis.nbins as usize).map(|i| h.bin_center(i)).collect();
     let y = &h.contents[1..=x.len()];
     let (r, _) = stat::pearsonr(&x, y)?;    // StatError, converted
@@ -371,5 +371,5 @@ whatever you need an interval for.
 The histogram [`chi2_test`/`kolmogorov_test`](histograms.md) and the fit
 [goodness-of-fit p-value](fitting.md) call straight into this crate
 (`chi_square_prob` is `gammaincc(ndf/2, χ²/2)`; `kolmogorov_prob` is ROOT's
-`TMath::KolmogorovProb`), so a p-value computed from a `TH1` and one computed
+`TMath::KolmogorovProb`), so a p-value computed from a `Hist1D` and one computed
 from a raw `&[f64]` use exactly the same numerics.

@@ -1,25 +1,26 @@
-//! `TEfficiency` — an efficiency (passed/total) plot. It holds two embedded
+//! `Efficiency` — an efficiency (passed/total) plot. It holds two embedded
 //! `TH1D` histograms (`passed` and `total`) plus the parameters ROOT uses to put
-//! a confidence interval on each bin's ratio. uproot cannot read `TEfficiency`
+//! a confidence interval on each bin's ratio. uproot cannot read a `TEfficiency`
 //! (its `vector<pair<double,double>>` member uses memberwise serialization), so
 //! ROOT C++ is the interop oracle here.
 
-use oxiroot_io_core::{read_tnamed, skip_versioned, FileReader, RBuffer, Result};
+use oxiroot_io_core::{read_named, skip_versioned, FileReader, RBuffer, Result};
 
 use crate::base::{object_bytes, object_bytes_in, BinContentType};
-use crate::th1::TH1;
+use crate::hist1d::Hist1D;
 
 /// An efficiency plot (ROOT `TEfficiency`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TEfficiency {
+#[doc(alias = "TEfficiency")]
+pub struct Efficiency {
     /// Name (`fName`).
     pub name: String,
     /// Title (`fTitle`).
     pub title: String,
     /// Numerator histogram — passed trials per bin (`fPassedHistogram`, a `TH1D`).
-    pub passed: TH1,
+    pub passed: Hist1D,
     /// Denominator histogram — total trials per bin (`fTotalHistogram`, a `TH1D`).
-    pub total: TH1,
+    pub total: Hist1D,
     /// Confidence level for the interval (`fConfLevel`).
     pub conf_level: f64,
     /// Statistic option (`fStatisticOption`; 0 = Clopper–Pearson, ROOT's default).
@@ -32,16 +33,16 @@ pub struct TEfficiency {
     pub beta_beta: f64,
 }
 
-impl TEfficiency {
+impl Efficiency {
     /// ROOT's default confidence level: one Gaussian sigma.
     pub const DEFAULT_CONF_LEVEL: f64 = 0.682689492137086;
 
-    /// Create an empty `TEfficiency` with `nbins` uniform x bins over `[xlo, xhi)`
+    /// Create an empty `Efficiency` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and ROOT's default interval parameters.
-    pub fn new(nbins: i32, xlo: f64, xhi: f64) -> TEfficiency {
-        let total = TH1::new(nbins, xlo, xhi).named("total");
-        let passed = TH1::new(nbins, xlo, xhi).named("passed");
-        TEfficiency {
+    pub fn new(nbins: i32, xlo: f64, xhi: f64) -> Efficiency {
+        let total = Hist1D::new(nbins, xlo, xhi).named("total");
+        let passed = Hist1D::new(nbins, xlo, xhi).named("passed");
+        Efficiency {
             name: String::new(),
             title: String::new(),
             passed,
@@ -55,7 +56,7 @@ impl TEfficiency {
     }
 
     /// Record one trial at `x`: always increments `total`, and `passed` too when
-    /// `passed == true` (ROOT's `TEfficiency::Fill`).
+    /// `passed == true` (ROOT's `Efficiency::Fill`).
     pub fn fill(&mut self, passed: bool, x: f64) {
         self.total.fill(x);
         if passed {
@@ -74,9 +75,9 @@ impl TEfficiency {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer) -> Result<TEfficiency> {
-        let te = r.read_version()?; // TEfficiency wrapper (v2)
-        let named = read_tnamed(r)?;
+    pub(crate) fn read(r: &mut RBuffer) -> Result<Efficiency> {
+        let te = r.read_version()?; // Efficiency wrapper (v2)
+        let named = read_named(r)?;
         skip_versioned(r)?; // TAttLine
         skip_versioned(r)?; // TAttFill
         skip_versioned(r)?; // TAttMarker
@@ -95,7 +96,7 @@ impl TEfficiency {
             r.seek(end)?;
         }
 
-        Ok(TEfficiency {
+        Ok(Efficiency {
             name: named.name,
             title: named.title,
             passed,
@@ -115,10 +116,10 @@ fn skip_byte_counted(r: &mut RBuffer) -> Result<()> {
     r.skip((bc & 0x3fff_ffff) as usize)
 }
 
-/// Read an embedded `TH1*` object pointer: `{byte count}{class tag}{TH1D object}`.
+/// Read an embedded `Hist1D*` object pointer: `{byte count}{class tag}{TH1D object}`.
 /// The tag is `kNewClassTag` + the class name on first use, or a class
 /// back-reference afterwards (the two histograms share the `TH1D` class).
-fn read_embedded_th1d(r: &mut RBuffer) -> Result<TH1> {
+fn read_embedded_th1d(r: &mut RBuffer) -> Result<Hist1D> {
     let _bc = r.be_i32()? as u32; // object byte count
     let tag = r.be_i32()? as u32; // class tag
     if tag == 0xFFFF_FFFF {
@@ -126,21 +127,21 @@ fn read_embedded_th1d(r: &mut RBuffer) -> Result<TH1> {
         while r.u8()? != 0 {}
     }
     // Otherwise `tag` was a class back-reference (already consumed).
-    TH1::read(r, BinContentType::F64)
+    Hist1D::read(r, BinContentType::F64)
 }
 
-/// Read a `TEfficiency` named `name` from `file`.
-pub(crate) fn read_tefficiency(file: &FileReader, name: &str) -> Result<TEfficiency> {
-    TEfficiency::read(&mut RBuffer::new(&object_bytes(file, name, "TEfficiency")?))
+/// Read an `Efficiency` named `name` from `file`.
+pub(crate) fn read_tefficiency(file: &FileReader, name: &str) -> Result<Efficiency> {
+    Efficiency::read(&mut RBuffer::new(&object_bytes(file, name, "TEfficiency")?))
 }
 
-/// Read a `TEfficiency` from subdirectory `subdir`.
+/// Read an `Efficiency` from subdirectory `subdir`.
 pub(crate) fn read_tefficiency_in(
     file: &FileReader,
     subdir: &str,
     name: &str,
-) -> Result<TEfficiency> {
-    TEfficiency::read(&mut RBuffer::new(&object_bytes_in(
+) -> Result<Efficiency> {
+    Efficiency::read(&mut RBuffer::new(&object_bytes_in(
         file,
         subdir,
         name,

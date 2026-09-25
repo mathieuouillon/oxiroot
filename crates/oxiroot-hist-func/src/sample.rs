@@ -1,12 +1,12 @@
-//! Sampling from a function's distribution (`TF1::GetRandom`).
+//! Sampling from a function's distribution (`Func1D::GetRandom`).
 
 use oxiroot_hist::Random;
 
-use crate::tf::TF1;
+use crate::func::Func1D;
 
-impl TF1 {
+impl Func1D {
     /// Draw a random `x` from the function's distribution over its range (ROOT's
-    /// `TF1::GetRandom`): the function is sampled on a fine grid to build a
+    /// `Func1D::GetRandom`): the function is sampled on a fine grid to build a
     /// cumulative, then inverse-transform sampled. Assumes `f ≥ 0` on the range.
     #[must_use]
     pub fn get_random(&self, rng: &mut Random) -> f64 {
@@ -27,8 +27,8 @@ mod tests {
 
     #[test]
     fn tf1_get_random_matches_the_function() {
-        // ROOT: TF1 gaus mean 3 sigma 0.8 → GetRandom mean≈3.00, std≈0.80.
-        let f = TF1::new("g", "gaus", 0.0, 10.0)
+        // ROOT: Func1D gaus mean 3 sigma 0.8 → GetRandom mean≈3.00, std≈0.80.
+        let f = Func1D::new("g", "gaus", 0.0, 10.0)
             .unwrap()
             .with_params(vec![1.0, 3.0, 0.8]);
         let mut rng = Random::seed(3);

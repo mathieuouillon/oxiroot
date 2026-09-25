@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use oxiroot_io_core::streamer_gen::{basic, streamer_info_list, Cls};
-use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, FileReader, TKey};
+use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, FileReader, Key};
 
 /// Build a file in the small form (`big = false`) or the big form.
 fn build(
@@ -180,7 +180,7 @@ fn described(f: &FileReader) -> Vec<String> {
 fn streamer_key_len(f: &FileReader) -> u16 {
     let h = f.header();
     let record = f.read_at(h.seek_info, h.nbytes_info as usize).unwrap();
-    TKey::read(&mut oxiroot_io_core::RBuffer::new(&record))
+    Key::read(&mut oxiroot_io_core::RBuffer::new(&record))
         .unwrap()
         .key_len
 }

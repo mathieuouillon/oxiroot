@@ -1,12 +1,12 @@
 //! Collections of objects stored under one key: [`ObjList`] (a ROOT `TList` or
-//! `TObjArray`) and [`TMap`] (a keyed object → object map). Build them from any
+//! `TObjArray`) and [`ObjMap`] (a keyed object → object map). Build them from any
 //! writable objects and, on read, pull the members back out by type with
-//! [`items`](ObjList::items) / [`get`](TMap::get).
+//! [`items`](ObjList::items) / [`get`](ObjMap::get).
 //!
 //! Members are serialized through ROOT's object protocol (each with a fresh class
 //! tag), so ROOT reads what oxiroot writes; reading uses [`TagReader`] so the
 //! class back-references ROOT emits for repeated member types resolve. (uproot
-//! reads `TList`/`TObjArray` but has no `TMap` model — see [`TMap`].)
+//! reads `TList`/`TObjArray` but has no `ObjMap` model — see [`ObjMap`].)
 
 use std::ops::Range;
 
@@ -15,13 +15,11 @@ use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
 use crate::object::TagReader;
 use crate::object_io::{object_bytes_any_keyed, ReadRoot, StreamerSet, WriteRoot};
-use crate::streamer::{read_tobject, write_object_any, write_tobject};
+use crate::streamer::{read_object_base, write_object_any, write_object_base};
 use crate::streamer_gen::{collect_stored, Cls};
 use crate::FileReader;
 
-use super::scalars::{
-    decode_tobjstring, decode_tparameter, member_classes, TObjString, TParameter,
-};
+use super::scalars::{decode_tobjstring, decode_tparameter, member_classes, ObjString, Parameter};
 
 /// Whether an [`ObjList`] serializes as a `TList` (ordered, with per-element
 /// options) or a `TObjArray` (an indexed array).
@@ -121,7 +119,7 @@ impl ObjList {
     }
 
     /// Decode every member that is a `T`, in order, skipping the rest. For
-    /// example `list.items::<TH1>()?` returns the histograms in the collection.
+    /// example `list.items::<Hist1D>()?` returns the histograms in the collection.
     pub fn items<T: FromMember>(&self) -> Result<Vec<T>> {
         self.members
             .iter()
@@ -148,7 +146,7 @@ impl WriteRoot for ObjList {
         match self.kind {
             ListKind::List => {
                 let obj = w.begin_object(5); // TList version 5
-                write_tobject(&mut w, 0);
+                write_object_base(&mut w, 0);
                 w.string(&self.name); // fName
                 w.be_i32(self.members.len() as i32); // nobjects
                 for (class, body) in &self.members {
@@ -159,7 +157,7 @@ impl WriteRoot for ObjList {
             }
             ListKind::Array => {
                 let obj = w.begin_object(3); // TObjArray version 3
-                write_tobject(&mut w, 0);
+                write_object_base(&mut w, 0);
                 w.string(&self.name); // fName
                 w.be_i32(self.members.len() as i32); // nobjects
                 w.be_i32(0); // fLowerBound
@@ -244,7 +242,7 @@ fn read_members(class: &str, object: &[u8], keylen: usize) -> Result<(String, Ve
     };
     let mut r = RBuffer::new(object);
     r.read_version()?; // TList v5 / TObjArray v3
-    read_tobject(&mut r)?;
+    read_object_base(&mut r)?;
     let name = r.string()?; // fName
     let n = r.be_i32()?.max(0);
     if kind == ListKind::Array {
@@ -320,7 +318,7 @@ fn read_back(file: &FileReader, key: &str, mut list: ObjList) -> ObjList {
     list
 }
 
-/// A type that can be decoded from an [`ObjList`] or [`TMap`] member's
+/// A type that can be decoded from an [`ObjList`] or [`ObjMap`] member's
 /// `(class, body)`. The crate that defines an object type implements it (the
 /// histogram and matrix crates do for theirs); [`ObjList::items`] uses it to
 /// pull members of one type out of a mixed collection.
@@ -330,75 +328,76 @@ pub trait FromMember: Sized {
     fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>>;
 }
 
-impl FromMember for TObjString {
+impl FromMember for ObjString {
     fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
         (class == "TObjString").then(|| decode_tobjstring("", class, bytes))
     }
 }
-impl FromMember for TParameter {
+impl FromMember for Parameter {
     fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
         class
             .starts_with("TParameter<")
             .then(|| decode_tparameter("", class, bytes))
     }
 }
-// --- TMap -------------------------------------------------------------------
+// --- ObjMap -----------------------------------------------------------------
 
-/// One side of a [`TMap`] pair: a member's `(class_name, streamed body)`.
+/// One side of a [`ObjMap`] pair: a member's `(class_name, streamed body)`.
 type MapEntry = (String, Vec<u8>);
 
-/// A `TMap` — ROOT's keyed map of object → object, stored under one key (the way
-/// ROOT keeps string-keyed metadata). Build it with [`TMap::insert`] (string
-/// keys) or [`TMap::add`] (any key object); read one back with
-/// [`TMap::read_root`](ReadRoot::read_root) and look values up by string key with
-/// [`get`](TMap::get).
+/// An `ObjMap` — ROOT's keyed map of object → object, stored under one key (the way
+/// ROOT keeps string-keyed metadata). Build it with [`ObjMap::insert`] (string
+/// keys) or [`ObjMap::add`] (any key object); read one back with
+/// [`ObjMap::read_root`](ReadRoot::read_root) and look values up by string key with
+/// [`get`](ObjMap::get).
 ///
 /// Like an [`ObjList`], a map read from a file keeps the streamer info that file
 /// stores for its keys' and values' classes, and takes its key's name if it has
 /// none of its own.
 ///
-/// Note: uproot has no `TMap` model, so a `TMap` is unreadable there (ROOT's own
+/// Note: uproot has no `TMap` model, so an `ObjMap` is unreadable there (ROOT's own
 /// `TMap`s share this). ROOT C++ reads what oxiroot writes, and oxiroot reads
 /// ROOT's `TMap`s.
 #[derive(Debug, Clone, Default)]
-pub struct TMap {
+#[doc(alias = "TMap")]
+pub struct ObjMap {
     name: String,
     pairs: Vec<(MapEntry, MapEntry)>,
-    /// The streamer info the entries added with [`add`](TMap::add) need.
+    /// The streamer info the entries added with [`add`](ObjMap::add) need.
     streamers: StreamerSet,
 }
 
 /// Two maps are equal when they hold the same entries.
-impl PartialEq for TMap {
+impl PartialEq for ObjMap {
     fn eq(&self, other: &Self) -> bool {
         (&self.name, &self.pairs) == (&other.name, &other.pairs)
     }
 }
 
-impl TMap {
+impl ObjMap {
     /// An empty map.
-    pub fn new() -> TMap {
-        TMap::default()
+    pub fn new() -> ObjMap {
+        ObjMap::default()
     }
 
     /// Set the key name this map is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> TMap {
+    pub fn named(mut self, name: impl Into<String>) -> ObjMap {
         self.name = name.into();
         self
     }
 
-    /// Insert a `value` under a string `key` (stored as a `TObjString`, the usual
+    /// Insert a `value` under a string `key` (stored as an `ObjString`, the usual
     /// map-key type).
     #[must_use]
-    pub fn insert(self, key: &str, value: &dyn WriteRoot) -> TMap {
-        let key_obj = TObjString::new(key);
+    pub fn insert(self, key: &str, value: &dyn WriteRoot) -> ObjMap {
+        let key_obj = ObjString::new(key);
         self.add(&key_obj, value)
     }
 
     /// Insert a `value` under an arbitrary object `key`.
     #[must_use]
-    pub fn add(mut self, key: &dyn WriteRoot, value: &dyn WriteRoot) -> TMap {
+    pub fn add(mut self, key: &dyn WriteRoot, value: &dyn WriteRoot) -> ObjMap {
         self.streamers.add(key);
         self.streamers.add(value);
         self.pairs.push((
@@ -421,7 +420,7 @@ impl TMap {
         self.pairs.is_empty()
     }
 
-    /// The string (`TObjString`) keys, in insertion order; keys of other types
+    /// The string (`ObjString`) keys, in insertion order; keys of other types
     /// are skipped.
     pub fn string_keys(&self) -> Vec<String> {
         self.pairs
@@ -439,7 +438,7 @@ impl TMap {
     }
 
     /// The value stored under the string `key`, decoded as `T` — `None` if no
-    /// entry has that `TObjString` key or its value is not a `T`.
+    /// entry has that `ObjString` key or its value is not a `T`.
     pub fn get<T: FromMember>(&self, key: &str) -> Option<Result<T>> {
         self.pairs.iter().find_map(|((kc, kb), (vc, vb))| {
             if kc != "TObjString" {
@@ -462,7 +461,7 @@ impl TMap {
     }
 }
 
-impl WriteRoot for TMap {
+impl WriteRoot for ObjMap {
     fn root_class(&self) -> String {
         "TMap".to_string()
     }
@@ -474,8 +473,8 @@ impl WriteRoot for TMap {
     }
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
-        let obj = w.begin_object(3); // TMap version 3
-        write_tobject(&mut w, 0);
+        let obj = w.begin_object(3); // ObjMap version 3
+        write_object_base(&mut w, 0);
         w.string(&self.name); // fName
         w.be_i32(self.pairs.len() as i32); // number of pairs
         for ((kc, kb), (vc, vb)) in &self.pairs {
@@ -512,7 +511,7 @@ fn read_entry(r: &mut RBuffer, tags: &mut TagReader, object: &[u8]) -> Result<Ma
     Ok(entry)
 }
 
-fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
+fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<ObjMap> {
     if class != "TMap" {
         return Err(Error::WrongClass {
             name: String::new(),
@@ -521,8 +520,8 @@ fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
         });
     }
     let mut r = RBuffer::new(object);
-    r.read_version()?; // TMap version
-    read_tobject(&mut r)?;
+    r.read_version()?; // ObjMap version
+    read_object_base(&mut r)?;
     let name = r.string()?; // fName
     let n = r.be_i32()?.max(0);
 
@@ -533,14 +532,14 @@ fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<TMap> {
         let value = read_entry(&mut r, &mut tags, object)?;
         pairs.push((key, value));
     }
-    Ok(TMap {
+    Ok(ObjMap {
         name,
         pairs,
         streamers: StreamerSet::default(),
     })
 }
 
-fn read_tmap(file: &FileReader, name: &str) -> Result<TMap> {
+fn read_tmap(file: &FileReader, name: &str) -> Result<ObjMap> {
     let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
     Ok(map_read_back(
         file,
@@ -549,7 +548,7 @@ fn read_tmap(file: &FileReader, name: &str) -> Result<TMap> {
     ))
 }
 
-fn read_tmap_in(file: &FileReader, subdir: &str, name: &str) -> Result<TMap> {
+fn read_tmap_in(file: &FileReader, subdir: &str, name: &str) -> Result<ObjMap> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     Ok(map_read_back(
         file,
@@ -560,7 +559,7 @@ fn read_tmap_in(file: &FileReader, subdir: &str, name: &str) -> Result<TMap> {
 
 /// `map`, read from `file` under the key `key`, ready to be written again; see
 /// [`read_back`].
-fn map_read_back(file: &FileReader, key: &str, mut map: TMap) -> TMap {
+fn map_read_back(file: &FileReader, key: &str, mut map: ObjMap) -> ObjMap {
     if map.name.is_empty() {
         map.name = key.to_string();
     }
@@ -583,7 +582,7 @@ impl ReadRoot for ObjList {
     }
 }
 
-impl ReadRoot for TMap {
+impl ReadRoot for ObjMap {
     fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         read_tmap(file, name)
     }

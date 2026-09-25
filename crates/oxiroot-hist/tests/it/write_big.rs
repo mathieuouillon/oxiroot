@@ -6,10 +6,10 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, ReadRoot, TH1, TH2};
+use oxiroot_hist::{FileWriter, Hist, Hist1D, Hist2D, ReadRoot};
 use oxiroot_io_core::FileReader;
 
-fn th1(name: &str) -> TH1 {
+fn th1(name: &str) -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named(name).titled("1-D");
     for x in [0.5, 1.5, 1.5, 3.5] {
         h.fill(x);
@@ -48,8 +48,8 @@ fn big_container_flat_round_trips() {
         .map(|k| (k.name.as_str(), k.class_name.as_str()))
         .collect();
     assert_eq!(keys, vec![("hx", "TH1D"), ("hxy", "TH2D")]);
-    assert_eq!(TH1::read_root(&f, "hx").expect("read hx"), h1);
-    assert_eq!(TH2::read_root(&f, "hxy").expect("read hxy"), h2);
+    assert_eq!(Hist1D::read_root(&f, "hx").expect("read hx"), h1);
+    assert_eq!(Hist2D::read_root(&f, "hxy").expect("read hxy"), h2);
 }
 
 #[test]
@@ -66,10 +66,10 @@ fn big_container_with_subdirs_round_trips() {
 
     let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
-    assert_eq!(TH1::read_root(&f, "top").expect("top"), top);
+    assert_eq!(Hist1D::read_root(&f, "top").expect("top"), top);
     // The histogram inside the big-format subdirectory reads back too.
     assert_eq!(
-        TH1::read_root_in(&f, "region_a", "inner").expect("inner"),
+        Hist1D::read_root_in(&f, "region_a", "inner").expect("inner"),
         inner
     );
 }
@@ -120,8 +120,8 @@ fn append_crossing_into_big_round_trips() {
     assert_eq!(f.header().units, 8);
     // Both the pre-existing (untouched, small on-disk) key and the appended one
     // read back through the big key list.
-    assert_eq!(TH1::read_root(&f, "h_first").expect("first"), first);
-    assert_eq!(TH1::read_root(&f, "h_second").expect("second"), second);
+    assert_eq!(Hist1D::read_root(&f, "h_first").expect("first"), first);
+    assert_eq!(Hist1D::read_root(&f, "h_second").expect("second"), second);
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn append_crossing_into_big_works_for_a_renamed_root_file() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
     let out = std::env::temp_dir().join("oxiroot_big_append_a_much_longer_file_name.root");
     std::fs::copy(fixture.join("th1d_uncompressed.root"), &out).expect("copy fixture");
-    let original = TH1::read_root(&FileReader::open(&out).unwrap(), "h1").expect("fixture h1");
+    let original = Hist1D::read_root(&FileReader::open(&out).unwrap(), "h1").expect("fixture h1");
 
     let extra = th1("extra");
     FileWriter::open(&out)
@@ -143,8 +143,8 @@ fn append_crossing_into_big_works_for_a_renamed_root_file() {
 
     let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
-    assert_eq!(TH1::read_root(&f, "h1").expect("h1"), original);
-    assert_eq!(TH1::read_root(&f, "extra").expect("extra"), extra);
+    assert_eq!(Hist1D::read_root(&f, "h1").expect("h1"), original);
+    assert_eq!(Hist1D::read_root(&f, "extra").expect("extra"), extra);
 }
 
 #[test]
@@ -168,8 +168,8 @@ fn append_to_already_big_file_round_trips() {
 
     let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
-    assert_eq!(TH1::read_root(&f, "a").expect("a"), a);
-    assert_eq!(TH1::read_root(&f, "b").expect("b"), b);
+    assert_eq!(Hist1D::read_root(&f, "a").expect("a"), a);
+    assert_eq!(Hist1D::read_root(&f, "b").expect("b"), b);
 }
 
 #[test]
@@ -195,11 +195,11 @@ fn append_crossing_into_big_preserves_existing_subdir() {
 
     let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
-    assert_eq!(TH1::read_root(&f, "top").expect("top"), top);
-    assert_eq!(TH1::read_root(&f, "extra").expect("extra"), extra);
+    assert_eq!(Hist1D::read_root(&f, "top").expect("top"), top);
+    assert_eq!(Hist1D::read_root(&f, "extra").expect("extra"), extra);
     // The untouched subdirectory (at its original offsets) still resolves.
     assert_eq!(
-        TH1::read_root_in(&f, "region", "inner").expect("inner"),
+        Hist1D::read_root_in(&f, "region", "inner").expect("inner"),
         inner
     );
 }

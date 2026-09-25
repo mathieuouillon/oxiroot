@@ -1,6 +1,6 @@
-//! `TKey` records and the `TDatime` timestamp.
+//! `Key` records and the `Datime` timestamp.
 //!
-//! Every object in a ROOT file is preceded by a `TKey` header that locates it
+//! Every object in a ROOT file is preceded by a `Key` header that locates it
 //! and names its class. Keys switch to 64-bit seek pointers once the key
 //! version exceeds 1000 (ROOT's large-file convention). Layout mirrors uproot's
 //! `_key_format_{small,big}`.
@@ -15,9 +15,10 @@ const KEY_BIG_VERSION: u16 = 1000;
 
 /// A ROOT `TDatime`: a 32-bit packed date/time (bit-fields, local time).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TDatime(pub u32);
+#[doc(alias = "TDatime")]
+pub struct Datime(pub u32);
 
-impl TDatime {
+impl Datime {
     /// Calendar year.
     pub fn year(self) -> u32 {
         (self.0 >> 26) + 1995
@@ -44,9 +45,10 @@ impl TDatime {
     }
 }
 
-/// A parsed `TKey` header.
+/// A parsed `Key` header.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TKey {
+#[doc(alias = "TKey")]
+pub struct Key {
     /// Total size of the key record (header + payload). Negative ⇒ deleted/free.
     pub nbytes: i32,
     /// Key version (`> 1000` ⇒ 64-bit seek pointers).
@@ -54,7 +56,7 @@ pub struct TKey {
     /// Uncompressed object length (`fObjLen`).
     pub obj_len: u32,
     /// Creation date/time.
-    pub datime: TDatime,
+    pub datime: Datime,
     /// Length of this key header in bytes (`fKeyLen`).
     pub key_len: u16,
     /// Cycle number (versioning of same-named keys).
@@ -71,15 +73,15 @@ pub struct TKey {
     pub title: String,
 }
 
-impl TKey {
+impl Key {
     /// Read a key header from `r`, leaving the cursor just past the header
     /// (exactly `key_len` bytes from where it started).
-    pub fn read(r: &mut RBuffer) -> Result<TKey> {
+    pub fn read(r: &mut RBuffer) -> Result<Key> {
         let start = r.pos();
         let nbytes = r.be_i32()?;
         let version = r.be_u16()?;
         let obj_len = r.be_u32()?;
-        let datime = TDatime(r.be_u32()?);
+        let datime = Datime(r.be_u32()?);
         let key_len = r.be_u16()?;
         let cycle = r.be_u16()?;
         let (seek_key, seek_pdir) = if version > KEY_BIG_VERSION {
@@ -93,7 +95,7 @@ impl TKey {
         // The header occupies exactly `key_len` bytes; realign for the caller.
         r.seek(start + key_len as usize)?;
 
-        Ok(TKey {
+        Ok(Key {
             nbytes,
             version,
             obj_len,
@@ -138,7 +140,7 @@ impl TKey {
 
     /// Length of the (possibly compressed) object payload on disk. Saturates to
     /// 0 for a malformed key whose `key_len` exceeds its total byte count
-    /// (rather than underflowing); [`payload`](TKey::payload) rejects such keys.
+    /// (rather than underflowing); [`payload`](Key::payload) rejects such keys.
     pub fn payload_len(&self) -> usize {
         self.total_bytes().saturating_sub(self.key_len as u32) as usize
     }
@@ -150,7 +152,7 @@ impl TKey {
     }
 
     /// Byte range of the (possibly compressed) object payload within the file.
-    /// Unvalidated — prefer [`payload`](TKey::payload), which bounds-checks
+    /// Unvalidated — prefer [`payload`](Key::payload), which bounds-checks
     /// against the actual buffer. Kept for callers operating on trusted data.
     pub fn payload_range(&self) -> Range<usize> {
         let start = self.seek_key as usize + self.key_len as usize;
@@ -160,7 +162,7 @@ impl TKey {
     /// Bounds-checked absolute offset of the record body (`fSeekKey + fKeyLen`)
     /// within a buffer of length `data_len`. Returns an error — never overflows
     /// `usize` — for a malformed key whose offset wraps or points past the
-    /// buffer. Use this (not [`payload_range`](TKey::payload_range)`.start`) to
+    /// buffer. Use this (not [`payload_range`](Key::payload_range)`.start`) to
     /// locate a key's body on any untrusted file.
     pub fn payload_start(&self, data_len: usize) -> Result<usize> {
         (self.seek_key as usize)
@@ -206,7 +208,7 @@ mod tests {
     fn datime_decodes_fields() {
         // 2021-03-17 12:34:56
         let packed = ((2021 - 1995) << 26) | (3 << 22) | (17 << 17) | (12 << 12) | (34 << 6) | 56;
-        let dt = TDatime(packed);
+        let dt = Datime(packed);
         assert_eq!(dt.year(), 2021);
         assert_eq!(dt.month(), 3);
         assert_eq!(dt.day(), 17);
@@ -215,12 +217,12 @@ mod tests {
         assert_eq!(dt.second(), 56);
     }
 
-    fn key_with(seek_key: u64, key_len: u16, nbytes: i32) -> TKey {
-        TKey {
+    fn key_with(seek_key: u64, key_len: u16, nbytes: i32) -> Key {
+        Key {
             nbytes,
             version: 1001, // big format: fSeekKey is a full 64-bit value
             obj_len: 0,
-            datime: TDatime(0),
+            datime: Datime(0),
             key_len,
             cycle: 1,
             seek_key,

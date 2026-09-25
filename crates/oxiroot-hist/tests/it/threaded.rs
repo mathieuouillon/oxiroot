@@ -2,14 +2,14 @@
 //! parallel fill must equal the serial fill (bin contents and entries exactly;
 //! moment sums to rounding, since summation order differs).
 
-use oxiroot_hist::{Hist, Mergeable, ThreadedHist, TH1};
+use oxiroot_hist::{Hist, Hist1D, Mergeable, ThreadedHist};
 
 fn data() -> Vec<f64> {
     // Deterministic, varied, all in-range over [0, 100).
     (0..1000).map(|i| ((i * 37) % 100) as f64 + 0.5).collect()
 }
 
-fn serial(data: &[f64]) -> TH1 {
+fn serial(data: &[f64]) -> Hist1D {
     let mut h = Hist::reg(100, 0.0, 100.0).double().named("h");
     for &x in data {
         h.fill(x);
@@ -77,7 +77,7 @@ fn fill_and_with_local_share_one_copy_per_thread() {
 
 #[test]
 fn threaded_fill_2d_merges() {
-    // The convenience `fill` exists for TH2/TH3/TProfile too (matching signatures).
+    // The convenience `fill` exists for Hist2D/Hist3D/Profile1D too (matching signatures).
     let acc = ThreadedHist::new(Hist::reg(4, 0.0, 4.0).reg(4, 0.0, 4.0).double().named("h2"));
     std::thread::scope(|s| {
         for _ in 0..3 {
@@ -92,16 +92,16 @@ fn threaded_fill_2d_merges() {
 #[test]
 fn merge_all_folds_or_none() {
     assert!(
-        TH1::merge_all(Vec::<TH1>::new()).unwrap().is_none(),
+        Hist1D::merge_all(Vec::<Hist1D>::new()).unwrap().is_none(),
         "empty → None"
     );
 
     let one = serial(&[0.5, 0.5]);
-    let merged = TH1::merge_all(vec![one.clone()]).unwrap().unwrap();
+    let merged = Hist1D::merge_all(vec![one.clone()]).unwrap().unwrap();
     assert_eq!(merged, one, "single item → itself");
 
-    let parts: Vec<TH1> = data().chunks(250).map(serial).collect();
-    let merged = TH1::merge_all(parts).unwrap().unwrap();
+    let parts: Vec<Hist1D> = data().chunks(250).map(serial).collect();
+    let merged = Hist1D::merge_all(parts).unwrap().unwrap();
     assert_eq!(
         merged.values(),
         serial(&data()).values(),
@@ -114,7 +114,7 @@ fn merge_rejects_mismatched_binning() {
     let a = Hist::reg(4, 0.0, 4.0).double().named("h");
     let b = Hist::reg(5, 0.0, 5.0).double().named("h");
     assert!(
-        TH1::merge_all(vec![a, b]).is_err(),
+        Hist1D::merge_all(vec![a, b]).is_err(),
         "incompatible binnings error"
     );
 }

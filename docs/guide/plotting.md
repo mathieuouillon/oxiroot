@@ -77,7 +77,7 @@ Plotting errors are `oxiroot::plot::Error`, and they convert into
 
 ## Histograms (mplhep style)
 
-`hist` draws a `TH1` as an mplhep staircase. `hist_with` takes a `HistOpts`
+`hist` draws a `Hist1D` as an mplhep staircase. `hist_with` takes a `HistOpts`
 builder for control over the type, error bars, color, fill, and legend label.
 
 | `HistType` | Look |
@@ -107,8 +107,8 @@ zero, the mplhep convention.
 
 ## Graphs and profiles
 
-`errorbar` draws a `TGraph` (plain, symmetric, or asymmetric errors) as data
-points; `profile` draws a `TProfile` at bin centers. `ErrorbarOpts` controls the
+`errorbar` draws a `Graph` (plain, symmetric, or asymmetric errors) as data
+points; `profile` draws a `Profile1D` at bin centers. `ErrorbarOpts` controls the
 marker, color, caps, and an optional connecting line.
 
 ```rust
@@ -122,7 +122,7 @@ ax.legend();
 
 ## 2-D histograms
 
-`hist2d`/`hist2d_with` render a `TH2` as a `pcolormesh`-style color grid with a
+`hist2d`/`hist2d_with` render a `Hist2D` as a `pcolormesh`-style color grid with a
 colorbar, using the real matplotlib `viridis`/`plasma` colormaps.
 
 ```rust
@@ -155,7 +155,7 @@ smooth line — the way to overlay an analytic curve on a histogram. To overlay 
 ```rust
 use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType};
 use oxiroot::prelude::*;   // the `plot` + `fit` features are on by default
-use oxiroot::fit::TF1;
+use oxiroot::fit::Func1D;
 
 // Fit a Gaussian to the histogram, then overlay the fitted curve.
 let model = Model::gaussian("gaus").estimate_from(&h);
@@ -393,7 +393,7 @@ and a ratio plot — each as PNG, SVG, and PDF (and the first at 220 DPI).
 ## See also
 
 - [Histograms](histograms.md) — the objects being plotted
-- [Graphs](graphs.md) — the `TGraph` family
+- [Graphs](graphs.md) — the `Graph` family
 - [Fitting](fitting.md) — fit a model to the same data
 - [Reading & writing files](reading-writing.md) — persist the histograms first
 ```

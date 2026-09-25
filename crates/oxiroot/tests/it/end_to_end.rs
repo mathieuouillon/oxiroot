@@ -36,11 +36,11 @@ fn writes_and_reads_a_mixed_object_file() {
     prof.fill(1.0, 5.0);
     prof.fill(1.0, 7.0);
 
-    let f = TF1::new("f", "[0]*sin([1]*x)", 0.0, 6.3)
+    let f = Func1D::new("f", "[0]*sin([1]*x)", 0.0, 6.3)
         .unwrap()
         .with_params(vec![2.0, 1.5]);
 
-    let mut g = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
+    let mut g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
     g.name = "g".into();
 
     FileWriter::create(tmp("mixed"))
@@ -50,23 +50,23 @@ fn writes_and_reads_a_mixed_object_file() {
         .add(&prof)
         .add(&f)
         .add(&g)
-        .add(&TObjString::new("skim v3").named("meta"))
+        .add(&ObjString::new("skim v3").named("meta"))
         .write(Compression::Zstd(5))
         .unwrap();
 
     // Every object reads back with its identity intact.
     let file = FileReader::open(tmp("mixed")).unwrap();
-    assert_eq!(TH1::read_root(&file, "pt").unwrap().integral(), 4.0);
+    assert_eq!(Hist1D::read_root(&file, "pt").unwrap().integral(), 4.0);
     assert_eq!(
-        TH1::read_root(&file, "hv").unwrap().edges(),
+        Hist1D::read_root(&file, "hv").unwrap().edges(),
         vec![0.0, 1.0, 2.0, 5.0, 10.0, 100.0]
     );
-    assert_eq!(TH2::read_root(&file, "h2").unwrap().integral(), 1.0);
-    assert!(TProfile::read_root(&file, "prof").is_ok());
-    let f_back = TF1::read_root(&file, "f").unwrap();
+    assert_eq!(Hist2D::read_root(&file, "h2").unwrap().integral(), 1.0);
+    assert!(Profile1D::read_root(&file, "prof").is_ok());
+    let f_back = Func1D::read_root(&file, "f").unwrap();
     assert!((f_back.eval(1.0) - f.eval(1.0)).abs() < 1e-9);
-    assert_eq!(TGraph::read_root(&file, "g").unwrap().len(), 3);
-    assert!(TObjString::read_root(&file, "meta").is_ok());
+    assert_eq!(Graph::read_root(&file, "g").unwrap().len(), 3);
+    assert!(ObjString::read_root(&file, "meta").is_ok());
 }
 
 #[test]
@@ -171,5 +171,5 @@ fn hadd_merges_histogram_files_end_to_end() {
     assert_eq!(report.merged, vec!["h".to_string()]);
 
     let file = FileReader::open(tmp("merged")).unwrap();
-    assert_eq!(TH1::read_root(&file, "h").unwrap().integral(), 4.0);
+    assert_eq!(Hist1D::read_root(&file, "h").unwrap().integral(), 4.0);
 }

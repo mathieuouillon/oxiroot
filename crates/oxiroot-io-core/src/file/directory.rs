@@ -2,12 +2,12 @@
 //!
 //! A directory record stores creation/modification times, a back-pointer to its
 //! own location, and `fSeekKeys`/`fNbytesKeys` locating its key list. The key
-//! list itself is a `TKey`-wrapped record whose payload is an `i32` count
-//! followed by that many `TKey` headers. Layout mirrors uproot's
+//! list itself is a `Key`-wrapped record whose payload is an `i32` count
+//! followed by that many `Key` headers. Layout mirrors uproot's
 //! `_directory_format_{small,big}`.
 
 use super::header::FileHeader;
-use super::key::TKey;
+use super::key::Key;
 use super::source::ByteSource;
 use crate::buffer::RBuffer;
 use crate::error::Result;
@@ -25,9 +25,9 @@ const DIR_RECORD_MAX: usize = 64;
 pub struct Directory {
     /// Directory version (`> 1000` ⇒ 64-bit seek pointers).
     pub version: i16,
-    /// Creation date/time (`fDatimeC`, raw packed `TDatime`).
+    /// Creation date/time (`fDatimeC`, raw packed `Datime`).
     pub datime_c: u32,
-    /// Last-modification date/time (`fDatimeM`, raw packed `TDatime`).
+    /// Last-modification date/time (`fDatimeM`, raw packed `Datime`).
     pub datime_m: u32,
     /// Size in bytes of the key-list record (`fNbytesKeys`).
     pub nbytes_keys: i32,
@@ -40,7 +40,7 @@ pub struct Directory {
     /// Offset of the key-list record (`fSeekKeys`).
     pub seek_keys: u64,
     /// The keys contained directly in this directory.
-    pub keys: Vec<TKey>,
+    pub keys: Vec<Key>,
 }
 
 impl Directory {
@@ -86,10 +86,10 @@ impl Directory {
     }
 }
 
-/// Read a directory's key list: a wrapping `TKey`, an `i32` count, then that
-/// many `TKey` headers. `nbytes_keys` (`fNbytesKeys`) is the exact on-disk size
+/// Read a directory's key list: a wrapping `Key`, an `i32` count, then that
+/// many `Key` headers. `nbytes_keys` (`fNbytesKeys`) is the exact on-disk size
 /// of the record, so exactly that window is fetched.
-fn read_keys(source: &dyn ByteSource, seek_keys: u64, nbytes_keys: i32) -> Result<Vec<TKey>> {
+fn read_keys(source: &dyn ByteSource, seek_keys: u64, nbytes_keys: i32) -> Result<Vec<Key>> {
     if seek_keys == 0 {
         return Ok(Vec::new());
     }
@@ -104,13 +104,13 @@ fn read_keys(source: &dyn ByteSource, seek_keys: u64, nbytes_keys: i32) -> Resul
     let win = source.read_at(seek_keys, want as usize)?;
     let mut r = RBuffer::new(&win);
 
-    // The record at `seek_keys` is itself a TKey; its payload is the key list.
-    let _wrapper = TKey::read(&mut r)?;
+    // The record at `seek_keys` is itself a Key; its payload is the key list.
+    let _wrapper = Key::read(&mut r)?;
     let nkeys = r.be_i32()?.max(0) as usize;
 
     let mut keys = Vec::with_capacity(nkeys.min(r.remaining()));
     for _ in 0..nkeys {
-        keys.push(TKey::read(&mut r)?);
+        keys.push(Key::read(&mut r)?);
     }
     Ok(keys)
 }

@@ -11,7 +11,7 @@ use crate::streamer_gen::StreamerInfoList;
 use crate::Compression;
 
 use super::container::{ContainerWriter, DirId, KSTART_BIG_FILE};
-use super::key::TKey;
+use super::key::Key;
 use super::reader::split_cycle;
 use super::reader::FileReader;
 
@@ -123,10 +123,10 @@ impl Entries {
 /// RNTuple):
 ///
 /// ```no_run
-/// use oxiroot_io_core::{Compression, FileWriter, TObjString, TParameter};
-/// let lumi = TParameter::f64("lumi", 137.5);
-/// let label = TObjString::new("2024 run").named("label");
-/// let cut = TParameter::f32("pt_min", 25.0);
+/// use oxiroot_io_core::{Compression, FileWriter, ObjString, Parameter};
+/// let lumi = Parameter::f64("lumi", 137.5);
+/// let label = ObjString::new("2024 run").named("label");
+/// let cut = Parameter::f32("pt_min", 25.0);
 /// FileWriter::create("out.root")
 ///     .add(&lumi)
 ///     .add(&label)
@@ -138,8 +138,8 @@ impl Entries {
 /// Append to an existing file with [`open`](FileWriter::open):
 ///
 /// ```no_run
-/// # use oxiroot_io_core::{Compression, FileWriter, TParameter};
-/// # let extra = TParameter::i32("extra", 3);
+/// # use oxiroot_io_core::{Compression, FileWriter, Parameter};
+/// # let extra = Parameter::i32("extra", 3);
 /// FileWriter::open("out.root")?.add(&extra).write(Compression::None)?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
@@ -301,8 +301,8 @@ impl FileWriter {
     /// Which of `keys` survive this builder's deletions and purge, in their
     /// original order. Errors on a name the file does not hold, so a typo is not
     /// silently a no-op.
-    fn surviving<'k>(&self, keys: &'k [TKey]) -> Result<Vec<&'k TKey>> {
-        let mut kept: Vec<&TKey> = keys.iter().filter(|k| !k.is_deleted()).collect();
+    fn surviving<'k>(&self, keys: &'k [Key]) -> Result<Vec<&'k Key>> {
+        let mut kept: Vec<&Key> = keys.iter().filter(|k| !k.is_deleted()).collect();
         for spec in &self.deleted {
             let (name, cycle) = split_cycle(spec);
             let before = kept.len();
@@ -464,7 +464,7 @@ struct CopiedDir {
 impl CopiedDir {
     /// Read `keys` — the surviving keys of the directory at `path` — and every
     /// directory below it, out of `file`.
-    fn read(file: &FileReader, keys: &[&TKey], path: &str) -> Result<CopiedDir> {
+    fn read(file: &FileReader, keys: &[&Key], path: &str) -> Result<CopiedDir> {
         let mut objects = Vec::new();
         let mut dirs = Vec::new();
         for key in keys {
@@ -475,7 +475,7 @@ impl CopiedDir {
                     format!("{path}/{}", key.name)
                 };
                 let sub = file.subdir(&below)?;
-                let live: Vec<&TKey> = sub.keys.iter().filter(|k| !k.is_deleted()).collect();
+                let live: Vec<&Key> = sub.keys.iter().filter(|k| !k.is_deleted()).collect();
                 dirs.push(CopiedDir::read(file, &live, &below)?);
                 continue;
             }

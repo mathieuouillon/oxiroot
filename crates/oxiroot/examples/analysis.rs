@@ -2,7 +2,7 @@
 //! bins), combine and normalize them (`*=`, `Index`, the `Histogram` trait),
 //! write them — into subdirectories and a flat heterogeneous file via the
 //! `FileWriter` (with a float-precision `TH1F`) — write a columnar event
-//! dataset, and read it back (`TH1::read_root`) — all readable by official ROOT
+//! dataset, and read it back (`Hist1D::read_root`) — all readable by official ROOT
 //! and uproot.
 //!
 //! Run with: `cargo run -p oxiroot --example analysis`
@@ -158,10 +158,10 @@ fn main() -> oxiroot::Result<()> {
     .write_root(&tree_path, Compression::Zstd(5))?;
     println!("wrote TTree   -> {}", tree_path.display());
 
-    // --- Read it all back (idiomatic `TH1::read_root`; subdir via `read_root_in`).
+    // --- Read it all back (idiomatic `Hist1D::read_root`; subdir via `read_root_in`).
     let f = FileReader::open(&hist_path)?;
-    let pt_back = TH1::read_root(&f, "pt")?;
-    let sig_back = TH1::read_root_in(&f, "signal", "pt")?;
+    let pt_back = Hist1D::read_root(&f, "pt")?;
+    let sig_back = Hist1D::read_root_in(&f, "signal", "pt")?;
     println!(
         "read back: pt has {} bins, signal/pt integral = {:.6}",
         pt_back.values().len(),

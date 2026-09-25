@@ -89,7 +89,7 @@ pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Vec<u8>, Compre
         return Ok(src.to_vec());
     }
 
-    // `uncompressed_len` comes from the file (an anchor 48-bit length or a TKey
+    // `uncompressed_len` comes from the file (an anchor 48-bit length or a Key
     // `fObjLen`), so it is untrusted. Cap the *initial* reservation so a forged
     // length cannot trigger a multi-GB allocation; the buffer still grows to fit
     // legitimately larger output, and the final length is checked below.

@@ -2,18 +2,18 @@
 //! holding another class, invalid input and an unsupported URL scheme.
 
 use oxiroot_io_core::{
-    object_bytes_any, Compression, Error, FileReader, FileWriter, ObjList, ParamValue, ReadRoot,
-    TObjString, TParameter,
+    object_bytes_any, Compression, Error, FileReader, FileWriter, ObjList, ObjString, ParamValue,
+    Parameter, ReadRoot,
 };
 
 /// A file with a string `s` and a list `l` at the top, and a string `t` in the
 /// subdirectory `sub`.
 fn file() -> FileReader {
-    let s = TObjString::new("hello").named("s");
+    let s = ObjString::new("hello").named("s");
     let l = ObjList::list()
         .named("l")
-        .add(&TObjString::new("a").named("a"));
-    let t = TObjString::new("there").named("t");
+        .add(&ObjString::new("a").named("a"));
+    let t = ObjString::new("there").named("t");
     let bytes = FileWriter::create("unused.root")
         .add(&s)
         .add(&l)
@@ -53,7 +53,7 @@ fn a_missing_key_or_subdirectory_is_not_found() {
 
 #[test]
 fn a_key_holding_another_class_is_the_wrong_class() {
-    let err = TObjString::read_root(&file(), "l").unwrap_err();
+    let err = ObjString::read_root(&file(), "l").unwrap_err();
     assert_eq!(
         err,
         Error::WrongClass {
@@ -71,7 +71,7 @@ fn invalid_input_says_so() {
     assert!(matches!(err, Error::InvalidInput(_)), "{err:?}");
 
     let err = FileWriter::create("unused.root")
-        .add(&TObjString::new("no name"))
+        .add(&ObjString::new("no name"))
         .to_bytes(Compression::None)
         .unwrap_err();
     assert!(
@@ -158,11 +158,11 @@ fn typed_errors_display_what_went_wrong() {
 
 #[test]
 fn parameters_of_different_types_do_not_add() {
-    let mut lumi = TParameter::f64("lumi", 1.5);
-    lumi.add(&TParameter::f64("lumi", 2.0)).unwrap();
+    let mut lumi = Parameter::f64("lumi", 1.5);
+    lumi.add(&Parameter::f64("lumi", 2.0)).unwrap();
     assert_eq!(lumi.value(), ParamValue::Double(3.5));
 
-    let err = lumi.add(&TParameter::i32("n", 1)).unwrap_err();
+    let err = lumi.add(&Parameter::i32("n", 1)).unwrap_err();
     assert!(
         matches!(&err, Error::InvalidInput(m) if m.contains("TParameter<int>")),
         "{err:?}"

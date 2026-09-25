@@ -4,7 +4,7 @@
 //!   cargo run -p oxiroot --example interop_matrix -- write <dir>
 //!
 //! Writes one small `.root` file per case (every histogram precision/dimension,
-//! TProfile, Sumw2, variable bins, multi-object/subdirs/append, every RNTuple
+//! Profile1D, Sumw2, variable bins, multi-object/subdirs/append, every RNTuple
 //! scalar+vector field type + multi-cluster, every TTree branch kind + scalar
 //! width + split `std::vector<Struct>`) **plus `manifest.json`** describing each
 //! case and its expected values. The oracle readers
@@ -123,7 +123,7 @@ fn jvi64_2(v: &[Vec<i64>]) -> J {
 // including TH*L's 2^40-scale contents that are infeasible to reach via fill()).
 // ---------------------------------------------------------------------------
 
-fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> TH1 {
+fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> Hist1D {
     let mut h = Hist::reg(nbins, xmin, xmax).double().named("h").titled("m");
     for (i, &c) in contents.iter().enumerate() {
         h.contents[i + 1] = c; // [0] is underflow
@@ -132,7 +132,7 @@ fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> TH1 {
     h
 }
 
-fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> TH2 {
+fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> Hist2D {
     let mut h = Hist::reg(nx, 0.0, nx as f64)
         .reg(ny, 0.0, ny as f64)
         .double()
@@ -151,7 +151,7 @@ fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> TH2 {
     h
 }
 
-fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> TH3 {
+fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> Hist3D {
     let mut h = Hist::reg(n, 0.0, n as f64)
         .reg(n, 0.0, n as f64)
         .reg(n, 0.0, n as f64)
@@ -174,7 +174,7 @@ fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> TH3 {
 
 /// One histogram case: write `h` with the precision writer for `class`, return
 /// the manifest entry. `values`/`edges` are pulled from the in-memory histogram.
-fn hist1_case(id: &'static str, class: &str, comp: Compression, h: &TH1, dir: &Path) -> J {
+fn hist1_case(id: &'static str, class: &str, comp: Compression, h: &Hist1D, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
@@ -224,7 +224,7 @@ fn hist1_case(id: &'static str, class: &str, comp: Compression, h: &TH1, dir: &P
     J::Obj(fields)
 }
 
-fn hist2_case(id: &'static str, class: &str, comp: Compression, h: &TH2, dir: &Path) -> J {
+fn hist2_case(id: &'static str, class: &str, comp: Compression, h: &Hist2D, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
@@ -275,7 +275,7 @@ fn hist2_case(id: &'static str, class: &str, comp: Compression, h: &TH2, dir: &P
     J::Obj(fields)
 }
 
-fn th2_bin_errors(h: &TH2) -> Vec<Vec<f64>> {
+fn th2_bin_errors(h: &Hist2D) -> Vec<Vec<f64>> {
     let nx = h.values().len();
     let ny = if nx > 0 { h.values()[0].len() } else { 0 };
     let stride = nx + 2;
@@ -288,7 +288,7 @@ fn th2_bin_errors(h: &TH2) -> Vec<Vec<f64>> {
         .collect()
 }
 
-fn hist3_case(id: &'static str, class: &str, comp: Compression, h: &TH3, dir: &Path) -> J {
+fn hist3_case(id: &'static str, class: &str, comp: Compression, h: &Hist3D, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
@@ -545,7 +545,7 @@ fn write(dir: &Path) {
         dir,
     ));
 
-    // --- Variable bin edges (TH1 + TH2 only; TH3 has no new_variable). ---
+    // --- Variable bin edges (Hist1D + Hist2D only; Hist3D has no new_variable). ---
     {
         let mut h = Hist::var(&[0.0, 1.0, 4.0, 10.0])
             .double()
@@ -608,7 +608,7 @@ fn write(dir: &Path) {
         cases.push(hist3_case("th3d_sumw2", "TH3D", none, &h, dir));
     }
 
-    // --- TProfile. ---
+    // --- Profile1D. ---
     {
         let mut p = Hist::reg(4, 0.0, 4.0).profile().named("p").titled("prof");
         p.fill(0.5, 10.0);

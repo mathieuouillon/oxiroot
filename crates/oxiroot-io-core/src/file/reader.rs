@@ -11,7 +11,7 @@ use bytes::Bytes;
 use super::directory::Directory;
 use super::free::{read_free, FreeSegment};
 use super::header::FileHeader;
-use super::key::TKey;
+use super::key::Key;
 use super::source::{ByteSource, BytesSource, FileSource};
 use crate::buffer::RBuffer;
 use crate::error::{decompress_payload, Error, Result};
@@ -141,13 +141,13 @@ impl FileReader {
     }
 
     /// The keys in the root directory.
-    pub fn keys(&self) -> &[TKey] {
+    pub fn keys(&self) -> &[Key] {
         &self.root_dir.keys
     }
 
     /// Look up a key by name, returning the highest cycle if several share it —
     /// or the cycle an explicit `"name;cycle"` asks for, as ROOT's `Get` does.
-    pub fn key(&self, name: &str) -> Option<&TKey> {
+    pub fn key(&self, name: &str) -> Option<&Key> {
         find_key(&self.root_dir.keys, name)
     }
 
@@ -192,7 +192,7 @@ impl FileReader {
 
     /// Like [`object_in`](Self::object_in) but also return the key's header
     /// length (`fKeyLen`), needed to resolve object-reference back-references in
-    /// streamed objects (e.g. `TH2Poly`'s bins) read from a subdirectory.
+    /// streamed objects (e.g. `PolyHist`'s bins) read from a subdirectory.
     pub fn object_in_keyed(&self, subdir: &str, name: &str) -> Result<(String, Vec<u8>, usize)> {
         let dir = self.subdir(subdir)?;
         let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
@@ -208,7 +208,7 @@ impl FileReader {
     /// Read a top-level object of **any** class into a dynamic [`Value`] tree,
     /// driven entirely by the file's `TStreamerInfo` — no typed model required.
     /// This is the generic reader behind rootls / rootprint-style inspection; use
-    /// it when you do not have (or do not want) a `TH1`/`TGraph`/… struct.
+    /// it when you do not have (or do not want) a `Hist1D`/`Graph`/… struct.
     ///
     /// A class the reader cannot decode comes back as [`Value::Unsupported`]
     /// rather than an error.
@@ -273,7 +273,7 @@ impl FileReader {
             return Ok(None);
         }
         let win = self.read_at(self.header.seek_info, self.header.nbytes_info as usize)?;
-        let key = TKey::read(&mut RBuffer::new(&win))?;
+        let key = Key::read(&mut RBuffer::new(&win))?;
         let payload = payload_in_window(&win, &key)?;
         let object = decompress_payload(payload, key.obj_len as usize, "streamer info")?;
         Ok(Some((object, key.key_len as usize)))
@@ -296,7 +296,7 @@ impl FileReader {
     /// Fetch a key's (possibly compressed) object payload — the `fNbytes −
     /// fKeyLen` bytes after its header. Bounds-checked against the file size;
     /// errors (never panics) on a malformed key.
-    pub fn key_payload(&self, key: &TKey) -> Result<Bytes> {
+    pub fn key_payload(&self, key: &Key) -> Result<Bytes> {
         let start = key.payload_start(self.size as usize)? as u64;
         let len = key
             .total_bytes()
@@ -323,7 +323,7 @@ impl ByteSource for FileReader {
 /// Slice a wrapping key's payload out of a window fetched at the key's own
 /// offset: the payload begins `fKeyLen` bytes into the record and runs for
 /// `fNbytes − fKeyLen` bytes. Bounds-checked against the window.
-fn payload_in_window<'a>(win: &'a [u8], key: &TKey) -> Result<&'a [u8]> {
+fn payload_in_window<'a>(win: &'a [u8], key: &Key) -> Result<&'a [u8]> {
     let start = key.key_len as usize;
     let len = key
         .total_bytes()
@@ -360,7 +360,7 @@ pub fn split_cycle(name: &str) -> (&str, Option<u16>) {
 /// The key `name` names among `keys`: the cycle it asks for, or the highest one.
 /// A deleted key is never returned, whether or not its cycle was asked for.
 #[must_use]
-pub fn find_key<'a>(keys: &'a [TKey], name: &str) -> Option<&'a TKey> {
+pub fn find_key<'a>(keys: &'a [Key], name: &str) -> Option<&'a Key> {
     let (stem, cycle) = split_cycle(name);
     let mut named = keys.iter().filter(|k| k.name == stem && !k.is_deleted());
     match cycle {

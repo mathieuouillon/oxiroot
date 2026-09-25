@@ -1,6 +1,6 @@
 //! Histogram arithmetic: scale, add (merge), multiply, divide, integral.
 //!
-//! These follow ROOT's `TH1::Scale`/`Add`/`Multiply`/`Divide` semantics,
+//! These follow ROOT's `Hist1D::Scale`/`Add`/`Multiply`/`Divide` semantics,
 //! including per-bin error (`Sumw2`) propagation. `add` with `c = 1` is the
 //! bin-by-bin merge used to combine outputs across parallel jobs (`hadd`).
 
@@ -9,9 +9,10 @@ use std::collections::HashMap;
 use oxiroot_io_core::{Error, Result};
 
 use crate::graph::GraphErrors;
-use crate::thnsparse::SparseBin;
+use crate::sparsehist::SparseBin;
 use crate::{
-    TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3,
+    Efficiency, Graph, Hist1D, Hist2D, Hist3D, PolyHist, Profile1D, Profile2D, Profile3D,
+    SparseHist,
 };
 
 /// Effective per-bin error² for `other`: its `fSumw2[i]` if tracked, else the
@@ -28,7 +29,7 @@ fn binning_mismatch(op: &str) -> Error {
     }
 }
 
-impl TH1 {
+impl Hist1D {
     /// Multiply all bin contents (and errors) by `c`. The mean is preserved.
     ///
     /// Turns on per-bin error tracking first, as ROOT's `Scale` does: once
@@ -50,7 +51,7 @@ impl TH1 {
     /// Add `c * other` into this histogram (a bin-by-bin merge when `c == 1`).
     /// Returns [`Error::BinningMismatch`] and makes no change if the binnings
     /// differ. Errors are tracked if either side tracks them (or `c != 1`).
-    pub fn add(&mut self, other: &TH1, c: f64) -> Result<()> {
+    pub fn add(&mut self, other: &Hist1D, c: f64) -> Result<()> {
         if !self.xaxis.same_binning(&other.xaxis) || self.contents.len() != other.contents.len() {
             return Err(binning_mismatch("add"));
         }
@@ -83,7 +84,7 @@ impl TH1 {
     /// Multiply bin-by-bin by `other`, propagating errors as ROOT does
     /// (`e² = e1²·c2² + e2²·c1²`). Returns [`Error::BinningMismatch`] if the
     /// binnings differ.
-    pub fn multiply(&mut self, other: &TH1) -> Result<()> {
+    pub fn multiply(&mut self, other: &Hist1D) -> Result<()> {
         if !self.xaxis.same_binning(&other.xaxis) || self.contents.len() != other.contents.len() {
             return Err(binning_mismatch("multiply"));
         }
@@ -102,7 +103,7 @@ impl TH1 {
     /// Divide bin-by-bin by `other` (0 where the denominator is 0), propagating
     /// errors as ROOT's default `e² = (e1²·c2² + e2²·c1²) / c2⁴`. Returns
     /// [`Error::BinningMismatch`] if the binnings differ.
-    pub fn divide(&mut self, other: &TH1) -> Result<()> {
+    pub fn divide(&mut self, other: &Hist1D) -> Result<()> {
         if !self.xaxis.same_binning(&other.xaxis) || self.contents.len() != other.contents.len() {
             return Err(binning_mismatch("divide"));
         }
@@ -125,7 +126,7 @@ impl TH1 {
     }
 }
 
-impl TH2 {
+impl Hist2D {
     /// Multiply all bin contents (and errors) by `c`.
     ///
     /// Turns on per-bin error tracking first, as ROOT's `Scale` does: once
@@ -149,7 +150,7 @@ impl TH2 {
 
     /// Add `c * other` into this histogram (merge when `c == 1`). Returns
     /// [`Error::BinningMismatch`] if the binnings differ.
-    pub fn add(&mut self, other: &TH2, c: f64) -> Result<()> {
+    pub fn add(&mut self, other: &Hist2D, c: f64) -> Result<()> {
         if !self.xaxis.same_binning(&other.xaxis)
             || !self.yaxis.same_binning(&other.yaxis)
             || self.contents.len() != other.contents.len()
@@ -187,7 +188,7 @@ impl TH2 {
     }
 }
 
-impl TH3 {
+impl Hist3D {
     /// Multiply all bin contents (and errors) by `c`.
     ///
     /// Turns on per-bin error tracking first, as ROOT's `Scale` does: once
@@ -215,7 +216,7 @@ impl TH3 {
 
     /// Add `c * other` into this histogram (merge when `c == 1`). Returns
     /// [`Error::BinningMismatch`] if the binnings differ.
-    pub fn add(&mut self, other: &TH3, c: f64) -> Result<()> {
+    pub fn add(&mut self, other: &Hist3D, c: f64) -> Result<()> {
         if !self.xaxis.same_binning(&other.xaxis)
             || !self.yaxis.same_binning(&other.yaxis)
             || !self.zaxis.same_binning(&other.zaxis)
@@ -357,19 +358,19 @@ macro_rules! impl_profile_add {
 }
 
 impl_profile_add!(
-    TProfile, "1-D",
+    Profile1D, "1-D",
     axes: [xaxis],
     value_sq: sumy2,
     moments: [tsumw, tsumwx, tsumwx2, tsumwy, tsumwy2],
 );
 impl_profile_add!(
-    TProfile2D, "2-D",
+    Profile2D, "2-D",
     axes: [xaxis, yaxis],
     value_sq: sumz2,
     moments: [tsumw, tsumwx, tsumwx2, tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2],
 );
 impl_profile_add!(
-    TProfile3D, "3-D",
+    Profile3D, "3-D",
     axes: [xaxis, yaxis, zaxis],
     value_sq: sumt2,
     moments: [
@@ -399,13 +400,13 @@ macro_rules! impl_scale_ops {
         }
     };
 }
-impl_scale_ops!(TH1);
-impl_scale_ops!(TH2);
-impl_scale_ops!(TH3);
+impl_scale_ops!(Hist1D);
+impl_scale_ops!(Hist2D);
+impl_scale_ops!(Hist3D);
 
 /// `h[cell]` reads, and `for &c in &h` iterates, bin contents by flat cell
 /// index — `0` is the first under/overflow cell, x varies fastest — the same
-/// indexing as [`TH1::bin_error`]. Both cover every cell, flow bins included.
+/// indexing as [`Hist1D::bin_error`]. Both cover every cell, flow bins included.
 macro_rules! impl_index_iter {
     ($ty:ty) => {
         impl std::ops::Index<usize> for $ty {
@@ -423,11 +424,11 @@ macro_rules! impl_index_iter {
         }
     };
 }
-impl_index_iter!(TH1);
-impl_index_iter!(TH2);
-impl_index_iter!(TH3);
+impl_index_iter!(Hist1D);
+impl_index_iter!(Hist2D);
+impl_index_iter!(Hist3D);
 
-impl std::fmt::Display for TH1 {
+impl std::fmt::Display for Hist1D {
     /// A one-line summary, e.g. `TH1D "pt": 100 bins [0, 100), entries=4096`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -443,7 +444,7 @@ impl std::fmt::Display for TH1 {
     }
 }
 
-impl std::fmt::Display for TH2 {
+impl std::fmt::Display for Hist2D {
     /// A one-line summary, e.g. `TH2D "h": 100x100 bins, entries=4096`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -458,7 +459,7 @@ impl std::fmt::Display for TH2 {
     }
 }
 
-impl std::fmt::Display for TH3 {
+impl std::fmt::Display for Hist3D {
     /// A one-line summary, e.g. `TH3D "h": 20x20x20 bins, entries=4096`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -475,7 +476,7 @@ impl std::fmt::Display for TH3 {
 }
 
 /// Uniform read access to a classic histogram's bins, implemented by
-/// [`TH1`]/[`TH2`]/[`TH3`] so generic code can work over any of them. (The
+/// [`Hist1D`]/[`Hist2D`]/[`Hist3D`] so generic code can work over any of them. (The
 /// mutating ops — `scale`/`add`/`integral` — stay inherent per type, since each
 /// also updates its own moment sums and dimension-specific in-range cells.)
 pub trait Histogram {
@@ -505,18 +506,18 @@ macro_rules! impl_histogram {
         }
     };
 }
-impl_histogram!(TH1);
-impl_histogram!(TH2);
-impl_histogram!(TH3);
+impl_histogram!(Hist1D);
+impl_histogram!(Hist2D);
+impl_histogram!(Hist3D);
 
-impl TEfficiency {
+impl Efficiency {
     /// Add `other`'s counts: its passed and its total histogram, bin by bin, as
-    /// ROOT's `TEfficiency::Add` and `hadd` do. The confidence level, statistic
+    /// ROOT's `Efficiency::Add` and `hadd` do. The confidence level, statistic
     /// option and weight stay as they are.
     ///
     /// Returns [`Error::BinningMismatch`] and makes no change if the binnings
     /// differ.
-    pub fn add(&mut self, other: &TEfficiency) -> Result<()> {
+    pub fn add(&mut self, other: &Efficiency) -> Result<()> {
         // Both first, so a mismatch leaves the efficiency untouched.
         let mut passed = self.passed.clone();
         let mut total = self.total.clone();
@@ -528,14 +529,14 @@ impl TEfficiency {
     }
 }
 
-impl TH2Poly {
+impl PolyHist {
     /// Add `c * other`: every bin's content, the nine overflow regions, the
-    /// entry count and the statistics sums, as ROOT's `TH2Poly::Add` and `hadd`
+    /// entry count and the statistics sums, as ROOT's `PolyHist::Add` and `hadd`
     /// do.
     ///
     /// Returns [`Error::BinningMismatch`] and makes no change unless the two
     /// hold the same bins, in the same order.
-    pub fn add(&mut self, other: &TH2Poly, c: f64) -> Result<()> {
+    pub fn add(&mut self, other: &PolyHist, c: f64) -> Result<()> {
         let same = self.bins.len() == other.bins.len()
             && (self.bins.iter())
                 .zip(&other.bins)
@@ -561,14 +562,14 @@ impl TH2Poly {
     }
 }
 
-impl THnSparse {
+impl SparseHist {
     /// Add `c * other`: the filled bins they share, the bins only `other` holds,
-    /// the entry count and the statistics sums, as ROOT's `THnSparse::Add` and
+    /// the entry count and the statistics sums, as ROOT's `SparseHist::Add` and
     /// `hadd` do.
     ///
     /// Returns [`Error::BinningMismatch`] and makes no change if the axes
     /// differ.
-    pub fn add(&mut self, other: &THnSparse, c: f64) -> Result<()> {
+    pub fn add(&mut self, other: &SparseHist, c: f64) -> Result<()> {
         let same = self.axes.len() == other.axes.len()
             && (self.axes.iter())
                 .zip(&other.axes)
@@ -601,14 +602,14 @@ impl THnSparse {
     }
 }
 
-impl TGraph {
-    /// Append `other`'s points, as ROOT's `TGraph::Merge` and `hadd` do: this
+impl Graph {
+    /// Append `other`'s points, as ROOT's `Graph::Merge` and `hadd` do: this
     /// graph's points keep their order and `other`'s follow, with their errors.
     /// The attached functions and the display frame stay as they are.
     ///
     /// Returns [`Error::InvalidInput`] and makes no change if the two carry
-    /// different kinds of error bars (a `TGraph` and a `TGraphErrors`, say).
-    pub fn append(&mut self, other: &TGraph) -> Result<()> {
+    /// different kinds of error bars (a `Graph` and a `TGraphErrors`, say).
+    pub fn append(&mut self, other: &Graph) -> Result<()> {
         match (&mut self.errors, &other.errors) {
             (GraphErrors::None, GraphErrors::None) => {}
             (

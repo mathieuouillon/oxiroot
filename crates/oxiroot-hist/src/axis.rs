@@ -1,12 +1,13 @@
-//! `TAxis` — a histogram axis.
+//! `Axis` — a histogram axis.
 
-use oxiroot_io_core::{read_tnamed, read_tobject, skip_versioned, Error, RBuffer, Result};
+use oxiroot_io_core::{read_named, read_object_base, skip_versioned, Error, RBuffer, Result};
 
 use crate::base::end_record;
 
-/// A ROOT histogram axis (`TAxis`).
+/// A histogram axis (ROOT's `TAxis`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TAxis {
+#[doc(alias = "TAxis")]
+pub struct Axis {
     /// Axis name (`fName`, e.g. "xaxis").
     pub name: String,
     /// Axis title (`fTitle`).
@@ -33,10 +34,10 @@ pub struct TAxis {
     pub time_format: String,
 }
 
-impl TAxis {
+impl Axis {
     /// Create a uniform axis of `nbins` bins over `[xmin, xmax)`.
-    pub fn new(name: &str, nbins: i32, xmin: f64, xmax: f64) -> TAxis {
-        TAxis {
+    pub fn new(name: &str, nbins: i32, xmin: f64, xmax: f64) -> Axis {
+        Axis {
             name: name.to_string(),
             title: String::new(),
             nbins,
@@ -54,14 +55,14 @@ impl TAxis {
     /// they are not strictly ascending; use [`try_variable`](Self::try_variable)
     /// for caller-supplied edges you would rather validate than trust.
     #[must_use]
-    pub fn variable(name: &str, edges: &[f64]) -> TAxis {
+    pub fn variable(name: &str, edges: &[f64]) -> Axis {
         Self::try_variable(name, edges).expect("invalid variable axis edges")
     }
 
     /// Like [`variable`](Self::variable), but returns an error instead of
     /// panicking when `edges` has fewer than two entries or is not strictly
     /// ascending — the fallible form for untrusted input.
-    pub fn try_variable(name: &str, edges: &[f64]) -> Result<TAxis> {
+    pub fn try_variable(name: &str, edges: &[f64]) -> Result<Axis> {
         if edges.len() < 2 {
             return Err(Error::InvalidInput(
                 "a variable axis needs at least two edges".to_string(),
@@ -72,7 +73,7 @@ impl TAxis {
                 "variable axis edges must be strictly ascending".to_string(),
             ));
         }
-        Ok(TAxis {
+        Ok(Axis {
             name: name.to_string(),
             title: String::new(),
             nbins: (edges.len() - 1) as i32,
@@ -87,7 +88,7 @@ impl TAxis {
 
     /// Find the bin for value `x`: 0 = underflow, `1..=nbins` = in range,
     /// `nbins + 1` = overflow. Handles uniform and variable-width axes. `NaN`
-    /// goes to overflow, matching ROOT's `TAxis::FindBin`.
+    /// goes to overflow, matching ROOT's `Axis::FindBin`.
     pub fn find_bin(&self, x: f64) -> usize {
         let n = self.nbins.max(0) as usize;
         if n == 0 {
@@ -121,26 +122,26 @@ impl TAxis {
     /// edge-by-edge (so a uniform axis and an equivalent variable one match)
     /// without allocating either edge array.
     #[must_use]
-    pub fn same_binning(&self, other: &TAxis) -> bool {
+    pub fn same_binning(&self, other: &Axis) -> bool {
         self.nbins == other.nbins
             && (0..=self.nbins.max(0) as usize).all(|i| self.edge(i) == other.edge(i))
     }
 
-    /// Read a `TAxis` from `r` (positioned at the axis's `{byte-count, version}`
+    /// Read an `Axis` from `r` (positioned at the axis's `{byte-count, version}`
     /// header), leaving the cursor at the axis's end.
     ///
     /// Class versions 6 to 10 are read (ROOT 3.02 onwards): version 7 added
     /// `fLabels`, version 8 `fBits2`, and version 10 `fModLabs`. Earlier versions
     /// used a hand-written streamer and are an error.
-    pub fn read(r: &mut RBuffer) -> Result<TAxis> {
-        let vh = r.read_version()?; // TAxis (e.g. version 10)
+    pub fn read(r: &mut RBuffer) -> Result<Axis> {
+        let vh = r.read_version()?; // Axis (e.g. version 10)
         if vh.version < 6 {
             return Err(Error::UnsupportedVersion {
                 class: "TAxis".to_string(),
                 version: i32::from(vh.version),
             });
         }
-        let named = read_tnamed(r)?; // TNamed base
+        let named = read_named(r)?; // Named base
         skip_versioned(r)?; // TAttAxis base (drawing attributes — not needed)
 
         let nbins = r.be_i32()?;
@@ -173,7 +174,7 @@ impl TAxis {
         // Skip the remainder (fModLabs) via the axis byte count.
         end_record(r, &vh, "TAxis")?;
 
-        Ok(TAxis {
+        Ok(Axis {
             name: named.name,
             title: named.title,
             nbins,
@@ -312,7 +313,7 @@ fn skip_class_tag(r: &mut RBuffer) -> Result<()> {
     Ok(())
 }
 
-/// Read the `fLabels` member: a `THashList*` of `TObjString`, each carrying its
+/// Read the `fLabels` member: a `THashList*` of `ObjString`, each carrying its
 /// 1-based bin number in `fUniqueID` and the label text in `fString`. Returns a
 /// `Vec` of length `nbins` (empty strings for unlabelled bins), or empty when
 /// the pointer is null (an ordinary numeric axis).
@@ -322,7 +323,7 @@ fn read_labels(r: &mut RBuffer, nbins: usize) -> Result<Vec<String>> {
     }
     skip_class_tag(r)?; // THashList class tag
     r.read_version()?; // THashList (a TList, version 5)
-    read_tobject(r)?;
+    read_object_base(r)?;
     let _name = r.string()?; // fName (empty)
     let size = r.be_i32()?.max(0) as usize;
 
@@ -331,9 +332,9 @@ fn read_labels(r: &mut RBuffer, nbins: usize) -> Result<Vec<String>> {
         if r.be_u32()? == 0 {
             continue; // null entry
         }
-        skip_class_tag(r)?; // TObjString class tag
-        let body = r.read_version()?; // TObjString body {byte count, version}
-        let obj = read_tobject(r)?; // fUniqueID = 1-based bin number
+        skip_class_tag(r)?; // ObjString class tag
+        let body = r.read_version()?; // ObjString body {byte count, version}
+        let obj = read_object_base(r)?; // fUniqueID = 1-based bin number
         let label = r.string()?; // fString
         let bin = obj.unique_id as usize;
         if (1..=nbins).contains(&bin) {

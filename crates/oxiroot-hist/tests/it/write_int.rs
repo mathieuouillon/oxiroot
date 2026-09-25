@@ -2,10 +2,10 @@
 //! then read back through our own reader. The /tmp files are also checked by
 //! uproot/ROOT C++ when run by hand.
 
-use oxiroot_hist::{BinContentType, Hist, ReadRoot, WriteRoot, TH1, TH2, TH3};
+use oxiroot_hist::{BinContentType, Hist, Hist1D, Hist2D, Hist3D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
-fn filled_th1() -> TH1 {
+fn filled_th1() -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("int");
     for (i, &n) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
         for _ in 0..(n as usize) {
@@ -15,11 +15,11 @@ fn filled_th1() -> TH1 {
     h
 }
 
-fn check_th1(out: &str, cls: &str, h: &TH1) {
+fn check_th1(out: &str, cls: &str, h: &Hist1D) {
     let f = FileReader::open(out).expect("reopen");
     assert_eq!(f.key("h").expect("key").class_name, cls);
     assert_eq!(
-        TH1::read_root(&f, "h").expect("read back").values(),
+        Hist1D::read_root(&f, "h").expect("read back").values(),
         h.values()
     );
 }
@@ -65,7 +65,7 @@ fn th2i_th3i_round_trip() {
         .expect("write");
     let f = FileReader::open(&out).expect("reopen");
     assert_eq!(f.key("h2").expect("key").class_name, "TH2I");
-    assert_eq!(TH2::read_root(&f, "h2").unwrap().values(), h2.values());
+    assert_eq!(Hist2D::read_root(&f, "h2").unwrap().values(), h2.values());
 
     let mut h3 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
@@ -81,5 +81,5 @@ fn th2i_th3i_round_trip() {
         .expect("write");
     let f = FileReader::open(&out).expect("reopen");
     assert_eq!(f.key("h3").expect("key").class_name, "TH3I");
-    assert_eq!(TH3::read_root(&f, "h3").unwrap().values(), h3.values());
+    assert_eq!(Hist3D::read_root(&f, "h3").unwrap().values(), h3.values());
 }

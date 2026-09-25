@@ -4,11 +4,11 @@
 
 use oxiroot_io_core::streamer_gen::{any, base, basic, Cls};
 use oxiroot_io_core::{
-    write_tnamed, Compression, FileReader, FileWriter, ObjList, ReadRoot, StreamerInfo, TMap,
-    TObjString, WBuffer, WriteRoot,
+    write_named, Compression, FileReader, FileWriter, ObjList, ObjMap, ObjString, ReadRoot,
+    StreamerInfo, WBuffer, WriteRoot,
 };
 
-/// An object of a class only this test knows: `MyEvent` (version 3), a `TNamed`
+/// An object of a class only this test knows: `MyEvent` (version 3), a `Named`
 /// with an `int` and a `MyHit` member. Its streamer info comes with it.
 struct MyEvent {
     name: String,
@@ -49,7 +49,7 @@ impl WriteRoot for MyEvent {
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
         let event = w.begin_object(3);
-        write_tnamed(&mut w, 0, &self.name, "");
+        write_named(&mut w, 0, &self.name, "");
         w.be_i32(7); // fRun
         let hit = w.begin_object(1);
         w.be_f64(2.5); // fHit.fE
@@ -83,7 +83,7 @@ fn a_list_read_back_still_describes_its_members() {
     let list = ObjList::list()
         .named("events")
         .add(&MyEvent { name: "e1".into() })
-        .add(&TObjString::new("note").named("n"));
+        .add(&ObjString::new("note").named("n"));
     list.write_root(&first, Compression::None).unwrap();
     let source = FileReader::open(&first).unwrap();
     let expected = described(&source, &["MyHit", "MyEvent"]);
@@ -115,14 +115,14 @@ fn a_list_read_back_still_describes_its_members() {
 #[test]
 fn a_map_read_back_still_describes_its_values() {
     let first = temp("map_a");
-    let map = TMap::new()
+    let map = ObjMap::new()
         .named("by_run")
         .insert("run7", &MyEvent { name: "e".into() });
     map.write_root(&first, Compression::None).unwrap();
     let source = FileReader::open(&first).unwrap();
     let expected = described(&source, &["MyHit", "MyEvent"]);
 
-    let back = TMap::read_root(&source, "by_run").unwrap();
+    let back = ObjMap::read_root(&source, "by_run").unwrap();
     let second = temp("map_b");
     FileWriter::create(&second)
         .add(&back)
@@ -201,7 +201,7 @@ fn a_list_stored_without_a_name_takes_its_key_name() {
         }
     }
     let path = temp("unnamed");
-    let list = ObjList::list().add(&TObjString::new("a").named("a"));
+    let list = ObjList::list().add(&ObjString::new("a").named("a"));
     Unnamed(list.to_root_bytes())
         .write_root(&path, Compression::None)
         .unwrap();

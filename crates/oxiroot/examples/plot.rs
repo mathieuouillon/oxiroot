@@ -15,7 +15,7 @@
 //!    mplhep style (in-pointing ticks, minors, all four sides), with a bold
 //!    `CMS Preliminary` experiment label and luminosity/energy above the frame,
 //!    a fitted Gaussian, and a ROOT-style fit stat box (with the `fit` feature).
-//! 3. `heatmap` — a 2-D TH2 as a viridis color mesh with a colorbar.
+//! 3. `heatmap` — a 2-D Hist2D as a viridis color mesh with a colorbar.
 //! 4. `ratio` — a main panel over a data/MC ratio panel sharing the x-axis.
 //! 5. `grid` — a 2×2 grid of panels sharing their axes, with a figure title.
 //! 6. `fit` — a fitted Gaussian with a ROOT-style stat box (the `fit` feature).
@@ -58,7 +58,7 @@ fn main() -> oxiroot::Result<()> {
         .map(|x| 2000.0 * (-0.5 * ((x - 91.0) / 7.5).powi(2)).exp())
         .collect();
     let dey: Vec<f64> = dy.iter().map(|y| y.sqrt().max(15.0)).collect();
-    let data = TGraph::with_errors(dx.clone(), dy.clone(), vec![5.0; dx.len()], dey)?.named("data");
+    let data = Graph::with_errors(dx.clone(), dy.clone(), vec![5.0; dx.len()], dey)?.named("data");
 
     // --- 1. Filled MC + data overlay, default matplotlib look. ---
     let mut ax = Axes::new();
@@ -109,7 +109,7 @@ fn main() -> oxiroot::Result<()> {
     hep.legend();
     save_both(&hep, &out, "mplhep")?;
 
-    // --- 3. A 2-D TH2 as a viridis heatmap with a colorbar. ---
+    // --- 3. A 2-D Hist2D as a viridis heatmap with a colorbar. ---
     let mut h2 = Hist::reg(40, -4.0, 4.0)
         .reg(40, -4.0, 4.0)
         .double()
@@ -162,8 +162,7 @@ fn main() -> oxiroot::Result<()> {
             }
         })
         .collect();
-    let rgraph =
-        TGraph::with_errors(dx.clone(), ratio_y, vec![0.0; dx.len()], ratio_ey)?.named("r");
+    let rgraph = Graph::with_errors(dx.clone(), ratio_y, vec![0.0; dx.len()], ratio_ey)?.named("r");
 
     let (fig, mut main, mut ratio) = ratio_subplots();
     main.hist_with(

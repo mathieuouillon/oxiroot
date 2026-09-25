@@ -1,13 +1,13 @@
 //! 3-D histograms (`TH3D`, `TH3F`).
 //!
-//! Streamed layout: `TH3x{ TH3{ TH1{ … }, TAtt3D, fTsumwy, fTsumwy2, fTsumwxy,
+//! Streamed layout: `TH3x{ Hist3D{ Hist1D{ … }, TAtt3D, fTsumwy, fTsumwy2, fTsumwxy,
 //! fTsumwz, fTsumwz2, fTsumwxz, fTsumwyz }, TArray }`. `TAtt3D` is an empty base
 //! (skipped via its byte count); the inline `TArray` holds the
 //! `(nx+2)*(ny+2)*(nz+2)` cells with x fastest, then y, then z.
 
 use oxiroot_io_core::{skip_versioned, Error, FileReader, RBuffer, Result};
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 use crate::base::{
     bin_content_type_of, cell_count, check_cells, histogram_object, histogram_object_in,
     read_tarray, read_th1_base, unsupported_version, BinContentType,
@@ -15,22 +15,23 @@ use crate::base::{
 
 /// A 3-D classic histogram (`TH3D` or `TH3F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TH3 {
+#[doc(alias = "TH3", alias = "TH3D", alias = "TH3F")]
+pub struct Hist3D {
     /// On-disk [`BinContentType`] (the class suffix); read the class name via
-    /// [`class_name`](TH3::class_name).
+    /// [`class_name`](Hist3D::class_name).
     pub(crate) bin_content_type: BinContentType,
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: TAxis,
+    pub xaxis: Axis,
     /// Y axis.
-    pub yaxis: TAxis,
+    pub yaxis: Axis,
     /// Z axis.
-    pub zaxis: TAxis,
+    pub zaxis: Axis,
     /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)*(nz+2)`). Read via
-    /// [`ncells`](TH3::ncells); `pub(crate)` so it cannot drift from `contents`.
+    /// [`ncells`](Hist3D::ncells); `pub(crate)` so it cannot drift from `contents`.
     pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub entries: f64,
@@ -59,20 +60,20 @@ pub struct TH3 {
     /// Bin contents including flow (length `ncells`, x fastest then y then z).
     pub contents: Vec<f64>,
     /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
-    /// turned on by [`TH3::sumw2`], [`TH3::scale`], or a weighted fill (see
-    /// [`TH1::fill_weight`](crate::TH1::fill_weight)).
+    /// turned on by [`Hist3D::sumw2`], [`Hist3D::scale`], or a weighted fill (see
+    /// [`Hist1D::fill_weight`](crate::Hist1D::fill_weight)).
     pub sumw2: Vec<f64>,
 }
 
-impl TH3 {
-    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<TH3> {
+impl Hist3D {
+    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Hist3D> {
         let th3x = r.read_version()?; // TH3x wrapper
-                                      // Class version 1 (ROOT 1) streamed the TH1 base, the bin array, then the
-                                      // TH3 members, with no TH3 record of their own.
+                                      // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
+                                      // Hist3D members, with no Hist3D record of their own.
         if th3x.version < 2 {
             return Err(unsupported_version("TH3", th3x.version));
         }
-        let th3 = r.read_version()?; // TH3 wrapper
+        let th3 = r.read_version()?; // Hist3D wrapper
 
         let c = read_th1_base(r)?;
         skip_versioned(r)?; // TAtt3D base (empty)
@@ -94,7 +95,7 @@ impl TH3 {
         check_cells("TH3 contents", contents.len(), cells, false)?;
         check_cells("TH3 fSumw2", c.sumw2.len(), cells, true)?;
 
-        Ok(TH3 {
+        Ok(Hist3D {
             bin_content_type,
             name: c.name,
             title: c.title,
@@ -167,15 +168,15 @@ impl TH3 {
         nz: i32,
         zlo: f64,
         zhi: f64,
-    ) -> TH3 {
+    ) -> Hist3D {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2);
-        TH3 {
+        Hist3D {
             bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
-            xaxis: TAxis::new("xaxis", nx, xlo, xhi),
-            yaxis: TAxis::new("yaxis", ny, ylo, yhi),
-            zaxis: TAxis::new("zaxis", nz, zlo, zhi),
+            xaxis: Axis::new("xaxis", nx, xlo, xhi),
+            yaxis: Axis::new("yaxis", ny, ylo, yhi),
+            zaxis: Axis::new("zaxis", nz, zlo, zhi),
             ncells,
             entries: 0.0,
             tsumw: 0.0,
@@ -194,7 +195,7 @@ impl TH3 {
         }
     }
 
-    /// Enable per-bin error tracking (ROOT's `Sumw2`); see [`crate::TH1::sumw2`].
+    /// Enable per-bin error tracking (ROOT's `Sumw2`); see [`crate::Hist1D::sumw2`].
     /// Returns `&mut self` so it can chain.
     pub fn sumw2(&mut self) -> &mut Self {
         if self.sumw2.len() != self.contents.len() {
@@ -210,14 +211,14 @@ impl TH3 {
     }
 
     /// The exact ROOT class name (`"TH3D"`/`"TH3F"`/…), derived from the stored
-    /// [`bin_content_type`](TH3::bin_content_type).
+    /// [`bin_content_type`](Hist3D::bin_content_type).
     #[must_use]
     pub fn class_name(&self) -> String {
         self.bin_content_type.class_name("TH3")
     }
 
     /// This histogram's on-disk [`BinContentType`] (the class suffix);
-    /// [`BinContentType::F64`] by default. See [`crate::TH1::bin_content_type`].
+    /// [`BinContentType::F64`] by default. See [`crate::Hist1D::bin_content_type`].
     #[must_use]
     pub fn bin_content_type(&self) -> BinContentType {
         self.bin_content_type
@@ -252,11 +253,11 @@ impl TH3 {
         self.fill_weight(x, y, z, 1.0);
     }
 
-    /// Fill `(x, y, z)` with weight `w`, matching ROOT's `TH3::Fill`: every fill
+    /// Fill `(x, y, z)` with weight `w`, matching ROOT's `Hist3D::Fill`: every fill
     /// counts toward `fEntries`, the cell (including flow) is incremented, and
     /// the moment sums accumulate only when all three coordinates are in range.
     pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, w: f64) {
-        // Before the contents change; see `TH1::fill_weight`.
+        // Before the contents change; see `Hist1D::fill_weight`.
         if w != 1.0 && self.sumw2.is_empty() {
             self.sumw2();
         }
@@ -320,15 +321,15 @@ impl TH3 {
 
 /// Read any 3-D histogram (`TH3D/F/I/S/C/L`), detecting the bin content type from the
 /// stored class.
-pub(crate) fn read_th3(file: &FileReader, name: &str) -> Result<TH3> {
+pub(crate) fn read_th3(file: &FileReader, name: &str) -> Result<Hist3D> {
     decode_th3(histogram_object(file, name, "TH3")?)
 }
 
 /// Read any 3-D histogram from subdirectory `subdir`.
-pub(crate) fn read_th3_in(file: &FileReader, subdir: &str, name: &str) -> Result<TH3> {
+pub(crate) fn read_th3_in(file: &FileReader, subdir: &str, name: &str) -> Result<Hist3D> {
     decode_th3(histogram_object_in(file, subdir, name, "TH3")?)
 }
 
-pub(crate) fn decode_th3((class, object): (String, Vec<u8>)) -> Result<TH3> {
-    TH3::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
+pub(crate) fn decode_th3((class, object): (String, Vec<u8>)) -> Result<Hist3D> {
+    Hist3D::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
 }

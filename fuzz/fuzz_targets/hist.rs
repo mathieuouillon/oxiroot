@@ -3,11 +3,11 @@
 //! collections): every reader must reject malformed bytes, never panic.
 use libfuzzer_sys::fuzz_target;
 use oxiroot_hist::{
-    ObjList, ReadRoot, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly, THStack,
-    THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D, TProfile3D, TH1,
-    TH2, TH3,
+    ObjList, ReadRoot, Efficiency, Graph, Graph2D, MultiErrorGraph, PolyHist, HistStack,
+    SparseHist, ObjMap, GraphStack, ObjString, Parameter, Profile1D, Profile2D, Profile3D, Hist1D,
+    Hist2D, Hist3D,
 };
-use oxiroot_hist_func::{TF1, TF2, TF3};
+use oxiroot_hist_func::{Func1D, Func2D, Func3D};
 use oxiroot_io_core::FileReader;
 
 /// Try every typed reader on `name`; each checks the key's class first, so the
@@ -17,9 +17,9 @@ fn read_all(f: &FileReader, name: &str) {
         ($($t:ty),+ $(,)?) => {$( let _ = <$t>::read_root(f, name); )+};
     }
     try_read!(
-        TH1, TH2, TH3, TProfile, TProfile2D, TProfile3D, TEfficiency, THnSparse, TH2Poly,
-        TGraph, TGraph2D, TGraphMultiErrors, TF1, TF2, TF3, ObjList, TMap, THStack, TMultiGraph,
-        TObjString, TParameter,
+        Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D, Efficiency, SparseHist, PolyHist,
+        Graph, Graph2D, MultiErrorGraph, Func1D, Func2D, Func3D, ObjList, ObjMap, HistStack, GraphStack,
+        ObjString, Parameter,
     );
 }
 
@@ -36,7 +36,7 @@ fuzz_target!(|data: &[u8]| {
     for (name, class) in &keys {
         read_all(&f, name);
         if class == "TDirectory" || class == "TDirectoryFile" {
-            let _ = TH1::read_root_in(&f, name, "h");
+            let _ = Hist1D::read_root_in(&f, name, "h");
         }
     }
 });

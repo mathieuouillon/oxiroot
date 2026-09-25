@@ -64,19 +64,19 @@ TTree "Events"  (10000 entries; showing 3)
 
 - **`TTree` / RNTuple** — the first `-n` entries as a column table; restrict the
   columns with `-b name1,name2`.
-- **`TH1`** — bin edges, contents, and errors, with `mean` / `std` / `integral`
-  in the header. `TH2`/`TH3` print a shape-and-stats summary rather than the full
+- **`Hist1D`** — bin edges, contents, and errors, with `mean` / `std` / `integral`
+  in the header. `Hist2D`/`Hist3D` print a shape-and-stats summary rather than the full
   grid.
-- **`TProfile`** — per-bin mean-y.
-- **`TGraph`** — the first `-n` points.
-- **`TF1` / `TF2` / `TF3`** — the formula, parameters, and (for `TF1`) range.
-- **`TObjString` / `TParameter`** — the stored value.
+- **`Profile1D`** — per-bin mean-y.
+- **`Graph`** — the first `-n` points.
+- **`Func1D` / `Func2D` / `Func3D`** — the formula, parameters, and (for `Func1D`) range.
+- **`ObjString` / `Parameter`** — the stored value.
 - **Any other class** — decoded generically from its `TStreamerInfo` into a
   member tree (rootprint-style), so an unknown class is *shown*, not refused:
 
 ```console
 $ oxroot dump file.root:someObject
-TF1 "myfunc"
+Func1D "myfunc"
   fFormula: TFormula
     fFormula: "[p0]*sin([p1]*x)+[p2]"
     fClingParameters: [3] 2, 1.5, 0.5

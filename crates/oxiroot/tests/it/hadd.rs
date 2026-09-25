@@ -8,7 +8,7 @@ fn tmp(name: &str) -> std::path::PathBuf {
 
 #[test]
 fn sums_histograms_and_copies_other_objects() {
-    // Two files, each a TH1 "h" (2 in-range fills) plus a TObjString "meta".
+    // Two files, each a Hist1D "h" (2 in-range fills) plus an ObjString "meta".
     for (tag, xs) in [("hist_a", [0.5, 1.5]), ("hist_b", [2.5, 3.5])] {
         let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("h");
         for x in xs {
@@ -16,7 +16,7 @@ fn sums_histograms_and_copies_other_objects() {
         }
         FileWriter::create(tmp(tag))
             .add(&h)
-            .add(&TObjString::new("provenance").named("meta"))
+            .add(&ObjString::new("provenance").named("meta"))
             .write(Compression::None)
             .unwrap();
     }
@@ -31,10 +31,10 @@ fn sums_histograms_and_copies_other_objects() {
 
     // The merged histogram is the bin-by-bin sum: 4 in-range entries total.
     let fo = FileReader::open(&out).unwrap();
-    let h = TH1::read_root(&fo, "h").unwrap();
+    let h = Hist1D::read_root(&fo, "h").unwrap();
     assert_eq!(h.integral(), 4.0);
     // The non-summable object was carried over verbatim.
-    assert!(TObjString::read_root(&fo, "meta").is_ok());
+    assert!(ObjString::read_root(&fo, "meta").is_ok());
 }
 
 #[test]

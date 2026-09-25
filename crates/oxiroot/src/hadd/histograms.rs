@@ -2,11 +2,11 @@
 //!
 //! [`merge_histogram_files`] combines several ROOT files whose keys are all
 //! histogram-family objects. Everything ROOT's `hadd` merges is merged the same
-//! way: `TH1`/`TH2`/`TH3`, the `TProfile`s, `TH2Poly` and `THnSparse` bin by
-//! bin, a `TEfficiency`'s passed and total histograms, a `THStack`'s histograms
-//! by name, a `TParameter`'s value, and the graphs by appending their points.
+//! way: `Hist1D`/`Hist2D`/`Hist3D`, the `Profile1D`s, `PolyHist` and `SparseHist` bin by
+//! bin, an `Efficiency`'s passed and total histograms, a `HistStack`'s histograms
+//! by name, a `Parameter`'s value, and the graphs by appending their points.
 //! What ROOT's `hadd` does not merge is copied from the first file that holds
-//! it: `TF1`/`TF2`/`TF3`, `TGraph2D`, `TGraphMultiErrors`, `TMultiGraph`,
+//! it: `Func1D`/`Func2D`/`Func3D`, `Graph2D`, `MultiErrorGraph`, `GraphStack`,
 //! strings, maps and matrices. (ROOT writes one key per input for those, which
 //! oxiroot cannot do: it rejects two objects of the same name in one directory.)
 //! Objects of a class oxiroot cannot read *and* write are skipped and listed in
@@ -22,21 +22,21 @@ use std::path::Path;
 
 use oxiroot_io_core::{Compression, Error, FileReader, Result};
 
-use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
+use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
 use oxiroot_hist::{
-    FileWriter, Mergeable, ReadRoot, TEfficiency, TGraph, TGraph2D, TGraphMultiErrors, TH2Poly,
-    THStack, THnSparse, TMap, TMultiGraph, TObjString, TParameter, TProfile, TProfile2D,
-    TProfile3D, WriteRoot, TH1, TH2, TH3,
+    Efficiency, FileWriter, Graph, Graph2D, GraphStack, Hist1D, Hist2D, Hist3D, HistStack,
+    Mergeable, MultiErrorGraph, ObjMap, ObjString, Parameter, PolyHist, Profile1D, Profile2D,
+    Profile3D, ReadRoot, SparseHist, WriteRoot,
 };
-use oxiroot_hist_func::{TF1, TF2, TF3};
+use oxiroot_hist_func::{Func1D, Func2D, Func3D};
 
 /// What [`merge_histogram_files`] did with each key: the names that were summed
 /// bin-by-bin, the names copied from the first file, and the `(name, reason)`
 /// pairs skipped because oxiroot cannot merge or reproduce that class.
 #[derive(Debug, Clone, Default)]
 pub struct HistMergeOutcome {
-    /// Keys summed across all inputs (`TH1`/`TH2`/`TH3` and the 1-, 2- and 3-D
+    /// Keys summed across all inputs (`Hist1D`/`Hist2D`/`Hist3D` and the 1-, 2- and 3-D
     /// profiles).
     pub summed: Vec<String>,
     /// Keys copied from the first file that holds them (not summed).
@@ -46,8 +46,8 @@ pub struct HistMergeOutcome {
 }
 
 /// The dimension of a summable histogram class (`TH1D` → 1, `TH2F` → 2,
-/// `TH3I` → 3), or `None` for anything else (including `TH2Poly`, `THnSparse`,
-/// and `THStack`, which are not summed here).
+/// `TH3I` → 3), or `None` for anything else (including `PolyHist`, `SparseHist`,
+/// and `HistStack`, which are not summed here).
 fn summable_hist_dim(class: &str) -> Option<u8> {
     let b = class.as_bytes();
     if b.len() == 4 && &b[..2] == b"TH" && matches!(b[3], b'C' | b'S' | b'I' | b'F' | b'D' | b'L') {
@@ -190,40 +190,40 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
 
     if let Some(dim) = summable_hist_dim(class) {
         return Ok(match dim {
-            1 => summed!(TH1),
-            2 => summed!(TH2),
-            _ => summed!(TH3),
+            1 => summed!(Hist1D),
+            2 => summed!(Hist2D),
+            _ => summed!(Hist3D),
         });
     }
 
     let built = match class {
-        "TProfile" => summed!(TProfile),
-        "TProfile2D" => summed!(TProfile2D),
-        "TProfile3D" => summed!(TProfile3D),
+        "TProfile" => summed!(Profile1D),
+        "TProfile2D" => summed!(Profile2D),
+        "TProfile3D" => summed!(Profile3D),
         // Summed, as ROOT's hadd does: the efficiency's two histograms, the
         // poly's bins, the sparse histogram's filled bins, the graphs' points
         // (appended), the stack's histograms by name, and the parameter's value.
-        "TEfficiency" => summed!(TEfficiency),
-        "TH2Poly" => summed!(TH2Poly),
-        "TGraph" | "TGraphErrors" | "TGraphAsymmErrors" => summed!(TGraph),
-        "THStack" => summed!(THStack),
-        c if c.starts_with("THnSparse") => summed!(THnSparse),
-        c if c.starts_with("TParameter") => summed!(TParameter),
+        "TEfficiency" => summed!(Efficiency),
+        "TH2Poly" => summed!(PolyHist),
+        "TGraph" | "TGraphErrors" | "TGraphAsymmErrors" => summed!(Graph),
+        "THStack" => summed!(HistStack),
+        c if c.starts_with("THnSparse") => summed!(SparseHist),
+        c if c.starts_with("TParameter") => summed!(Parameter),
         // Copied from the first file: ROOT's hadd does not merge these either.
         // It writes one key per input instead, which oxiroot cannot do, since
         // it rejects two objects of the same name in one directory.
-        "TF1" => copied!(TF1),
-        "TF2" => copied!(TF2),
-        "TF3" => copied!(TF3),
-        "TGraph2D" => copied!(TGraph2D),
+        "TF1" => copied!(Func1D),
+        "TF2" => copied!(Func2D),
+        "TF3" => copied!(Func3D),
+        "TGraph2D" => copied!(Graph2D),
         // ROOT 6.40's hadd crashes merging this one.
-        "TGraphMultiErrors" => copied!(TGraphMultiErrors),
-        "TObjString" => copied!(TObjString),
-        "TMultiGraph" => copied!(TMultiGraph),
-        "TMap" => copied!(TMap),
-        c if c.starts_with("TVectorT") => copied!(TVectorD),
-        c if c.starts_with("TMatrixTSym") => copied!(TMatrixDSym),
-        c if c.starts_with("TMatrixT") => copied!(TMatrixD),
+        "TGraphMultiErrors" => copied!(MultiErrorGraph),
+        "TObjString" => copied!(ObjString),
+        "TMultiGraph" => copied!(GraphStack),
+        "TMap" => copied!(ObjMap),
+        c if c.starts_with("TVectorT") => copied!(Vector),
+        c if c.starts_with("TMatrixTSym") => copied!(SymMatrix),
+        c if c.starts_with("TMatrixT") => copied!(Matrix),
         other => Built::Skipped(format!("class {other:?} is not mergeable by oxiroot")),
     };
     Ok(built)

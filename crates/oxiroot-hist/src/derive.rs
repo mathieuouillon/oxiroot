@@ -1,6 +1,6 @@
 //! Histograms derived from other histograms — ROOT's `Rebin`/`Rebin2D`/`Rebin3D`,
 //! `ProjectionX/Y/Z` & `Project3D`, `ProfileX/Y`, and `GetCumulative`. Each
-//! returns an existing histogram type (`TH1`/`TH2`/`TH3`/`TProfile`), so the
+//! returns an existing histogram type (`Hist1D`/`Hist2D`/`Hist3D`/`Profile1D`), so the
 //! results serialize through the normal write paths with no new on-disk format.
 //!
 //! Two correctness rules are baked into every operation here:
@@ -9,7 +9,7 @@
 //! - the result's statistical **moment sums** are set (not just the contents), so
 //!   `mean()`/`std_dev()` on the derived histogram are correct.
 
-use crate::{TAxis, TProfile, TH1, TH2, TH3};
+use crate::{Axis, Hist1D, Hist2D, Hist3D, Profile1D};
 
 /// Per-axis rebin map: returns `(new_nbins, old_cell -> new_cell)` of length
 /// `n + 2`. Underflow → underflow; in-range bin `i` → group `(i-1)/ng + 1`;
@@ -36,8 +36,8 @@ fn group_edges(edges: &[f64], ng: usize, newn: usize) -> Vec<f64> {
         .collect()
 }
 
-/// Copy a `TH2`'s entry count and x/y moment sums into another `TH2`.
-fn copy_th2_moments(src: &TH2, dst: &mut TH2) {
+/// Copy a `Hist2D`'s entry count and x/y moment sums into another `Hist2D`.
+fn copy_th2_moments(src: &Hist2D, dst: &mut Hist2D) {
     dst.entries = src.entries;
     dst.tsumw = src.tsumw;
     dst.tsumw2 = src.tsumw2;
@@ -48,13 +48,13 @@ fn copy_th2_moments(src: &TH2, dst: &mut TH2) {
     dst.tsumwxy = src.tsumwxy;
 }
 
-impl TH1 {
+impl Hist1D {
     /// Merge groups of `ngroup` adjacent bins into one (ROOT's `Rebin`). If
     /// `ngroup` does not divide the bin count, the leftover high bins fold into
     /// the overflow (as ROOT does). Contents and `Sumw2` sum per group; the
     /// statistical moments are unchanged (same fills, coarser bins).
     #[must_use]
-    pub fn rebin(&self, ngroup: usize) -> TH1 {
+    pub fn rebin(&self, ngroup: usize) -> Hist1D {
         let ng = ngroup.max(1);
         let n = self.xaxis.nbins.max(0) as usize;
         let newn = n / ng;
@@ -63,9 +63,9 @@ impl TH1 {
         let new_edges: Vec<f64> = (0..=newn).map(|k| edges[k * ng]).collect();
 
         let mut out = if new_edges.len() >= 2 {
-            TH1::new_variable(&new_edges)
+            Hist1D::new_variable(&new_edges)
         } else {
-            TH1::new(newn.max(1) as i32, edges[0], edges[n])
+            Hist1D::new(newn.max(1) as i32, edges[0], edges[n])
         }
         .named(self.name.clone())
         .titled(self.title.clone());
@@ -107,7 +107,7 @@ impl TH1 {
     /// moment sums are recomputed from the kept
     /// bins (their centres), so `mean`/`std_dev` describe the slice.
     #[must_use]
-    pub fn slice(&self, lo: f64, hi: f64) -> TH1 {
+    pub fn slice(&self, lo: f64, hi: f64) -> Hist1D {
         let n = self.xaxis.nbins.max(0) as usize;
         if n == 0 {
             return self.clone();
@@ -117,7 +117,7 @@ impl TH1 {
         let (ilo, ihi) = (ilo.min(ihi), ilo.max(ihi));
         let edges = self.xaxis.edges();
         let sub_edges: Vec<f64> = edges[ilo - 1..=ihi].to_vec();
-        let mut out = TH1::new_variable(&sub_edges)
+        let mut out = Hist1D::new_variable(&sub_edges)
             .named(self.name.clone())
             .titled(self.title.clone());
         out.bin_content_type = self.bin_content_type;
@@ -170,7 +170,7 @@ impl TH1 {
     /// variances it accumulates, as in ROOT; otherwise the result stays untracked
     /// and its errors are `√content`, which is right for counts.
     #[must_use]
-    pub fn cumulative(&self, forward: bool) -> TH1 {
+    pub fn cumulative(&self, forward: bool) -> Hist1D {
         let n = self.xaxis.nbins.max(0) as usize;
         let track = !self.sumw2.is_empty();
         let mut out = self.clone();
@@ -194,8 +194,8 @@ impl TH1 {
     }
 }
 
-/// Copy a `TH1`'s entry count and x-moment sums into another `TH1`.
-fn copy_th1_moments(src: &TH1, dst: &mut TH1) {
+/// Copy a `Hist1D`'s entry count and x-moment sums into another `Hist1D`.
+fn copy_th1_moments(src: &Hist1D, dst: &mut Hist1D) {
     dst.entries = src.entries;
     dst.tsumw = src.tsumw;
     dst.tsumw2 = src.tsumw2;
@@ -203,29 +203,29 @@ fn copy_th1_moments(src: &TH1, dst: &mut TH1) {
     dst.tsumwx2 = src.tsumwx2;
 }
 
-impl TH2 {
+impl Hist2D {
     /// Project onto the x axis by summing the in-range y bins (ROOT's
-    /// `ProjectionX`) → a `TH1` with this histogram's x binning. The x-moment
+    /// `ProjectionX`) → a `Hist1D` with this histogram's x binning. The x-moment
     /// sums carry over so `mean()`/`std_dev()` are correct.
     #[must_use]
-    pub fn projection_x(&self, name: &str) -> TH1 {
+    pub fn projection_x(&self, name: &str) -> Hist1D {
         self.project(name, true)
     }
 
     /// Project onto the y axis by summing the in-range x bins (ROOT's
-    /// `ProjectionY`) → a `TH1` with this histogram's y binning.
+    /// `ProjectionY`) → a `Hist1D` with this histogram's y binning.
     #[must_use]
-    pub fn projection_y(&self, name: &str) -> TH1 {
+    pub fn projection_y(&self, name: &str) -> Hist1D {
         self.project(name, false)
     }
 
-    fn project(&self, name: &str, onto_x: bool) -> TH1 {
+    fn project(&self, name: &str, onto_x: bool) -> Hist1D {
         let (nx, ny) = (self.nx(), self.ny());
         let stride = nx + 2;
         let axis = if onto_x { &self.xaxis } else { &self.yaxis };
         let (n_keep, n_sum) = if onto_x { (nx, ny) } else { (ny, nx) };
 
-        let mut out = TH1::new(n_keep as i32, axis.xmin, axis.xmax)
+        let mut out = Hist1D::new(n_keep as i32, axis.xmin, axis.xmax)
             .named(name)
             .titled(self.title.clone());
         out.xaxis = axis.clone();
@@ -260,28 +260,28 @@ impl TH2 {
         out
     }
 
-    /// Profile along x (ROOT's `ProfileX`) → a `TProfile` with this histogram's x
+    /// Profile along x (ROOT's `ProfileX`) → a `Profile1D` with this histogram's x
     /// binning, accumulating each y bin at its center.
     #[must_use]
-    pub fn profile_x(&self, name: &str) -> TProfile {
+    pub fn profile_x(&self, name: &str) -> Profile1D {
         self.profile(name, true)
     }
 
-    /// Profile along y (ROOT's `ProfileY`) → a `TProfile` with this histogram's y
+    /// Profile along y (ROOT's `ProfileY`) → a `Profile1D` with this histogram's y
     /// binning.
     #[must_use]
-    pub fn profile_y(&self, name: &str) -> TProfile {
+    pub fn profile_y(&self, name: &str) -> Profile1D {
         self.profile(name, false)
     }
 
-    fn profile(&self, name: &str, along_x: bool) -> TProfile {
+    fn profile(&self, name: &str, along_x: bool) -> Profile1D {
         let (nx, ny) = (self.nx(), self.ny());
         let stride = nx + 2;
         let keep_axis = if along_x { &self.xaxis } else { &self.yaxis };
         let other_axis = if along_x { &self.yaxis } else { &self.xaxis };
         let (n_keep, n_other) = if along_x { (nx, ny) } else { (ny, nx) };
 
-        let mut p = TProfile::new(n_keep as i32, keep_axis.xmin, keep_axis.xmax)
+        let mut p = Profile1D::new(n_keep as i32, keep_axis.xmin, keep_axis.xmax)
             .named(name)
             .titled(self.title.clone());
         p.xaxis = keep_axis.clone();
@@ -297,7 +297,7 @@ impl TH2 {
             }
         };
         // Each cell enters the profile with its content as the weight. A weighted
-        // TH2 must carry its own Σw² across (ROOT's `DoProfile` does), or the
+        // Hist2D must carry its own Σw² across (ROOT's `DoProfile` does), or the
         // profile's effective entries would assume unit weights.
         let track = !self.sumw2.is_empty();
         if track {
@@ -344,7 +344,7 @@ impl TH2 {
     /// Merge `ngx`×`ngy` blocks of adjacent bins into one (ROOT's `Rebin2D`).
     /// Contents and `Sumw2` sum per block; the moment sums are unchanged.
     #[must_use]
-    pub fn rebin2d(&self, ngx: usize, ngy: usize) -> TH2 {
+    pub fn rebin2d(&self, ngx: usize, ngy: usize) -> Hist2D {
         let (nx, ny) = (self.nx(), self.ny());
         let (ngx, ngy) = (ngx.clamp(1, nx.max(1)), ngy.clamp(1, ny.max(1)));
         let (newnx, mapx) = rebin_map(nx, ngx);
@@ -352,7 +352,7 @@ impl TH2 {
         let xedges = group_edges(&self.xaxis.edges(), ngx, newnx);
         let yedges = group_edges(&self.yaxis.edges(), ngy, newny);
 
-        let mut out = TH2::new_variable(&xedges, &yedges)
+        let mut out = Hist2D::new_variable(&xedges, &yedges)
             .named(self.name.clone())
             .titled(self.title.clone());
         out.bin_content_type = self.bin_content_type;
@@ -377,11 +377,11 @@ impl TH2 {
     }
 }
 
-impl TH3 {
+impl Hist3D {
     /// Merge `ngx`×`ngy`×`ngz` blocks of adjacent bins into one. Contents and
     /// `Sumw2` sum per block; the moment sums are unchanged.
     #[must_use]
-    pub fn rebin3d(&self, ngx: usize, ngy: usize, ngz: usize) -> TH3 {
+    pub fn rebin3d(&self, ngx: usize, ngy: usize, ngz: usize) -> Hist3D {
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let (ngx, ngy, ngz) = (
             ngx.clamp(1, nx.max(1)),
@@ -392,8 +392,8 @@ impl TH3 {
         let (newny, mapy) = rebin_map(ny, ngy);
         let (newnz, mapz) = rebin_map(nz, ngz);
 
-        // TH3 has no variable-bin constructor; build it and set the axes.
-        let mut out = TH3::new(
+        // Hist3D has no variable-bin constructor; build it and set the axes.
+        let mut out = Hist3D::new(
             newnx as i32,
             0.0,
             1.0,
@@ -407,9 +407,9 @@ impl TH3 {
         .named(self.name.clone())
         .titled(self.title.clone());
         out.bin_content_type = self.bin_content_type;
-        out.xaxis = TAxis::variable("xaxis", &group_edges(&self.xaxis.edges(), ngx, newnx));
-        out.yaxis = TAxis::variable("yaxis", &group_edges(&self.yaxis.edges(), ngy, newny));
-        out.zaxis = TAxis::variable("zaxis", &group_edges(&self.zaxis.edges(), ngz, newnz));
+        out.xaxis = Axis::variable("xaxis", &group_edges(&self.xaxis.edges(), ngx, newnx));
+        out.yaxis = Axis::variable("yaxis", &group_edges(&self.yaxis.edges(), ngy, newny));
+        out.zaxis = Axis::variable("zaxis", &group_edges(&self.zaxis.edges(), ngz, newnz));
         let track = !self.sumw2.is_empty();
         if track {
             out.sumw2 = vec![0.0; out.contents.len()];
@@ -450,23 +450,23 @@ impl TH3 {
     }
 
     /// Project onto the x axis, summing the in-range y and z bins (ROOT's
-    /// `Project3D("x")`) → a `TH1` carrying the x-moment sums.
+    /// `Project3D("x")`) → a `Hist1D` carrying the x-moment sums.
     #[must_use]
-    pub fn projection_x(&self, name: &str) -> TH1 {
+    pub fn projection_x(&self, name: &str) -> Hist1D {
         self.project_axis(name, 0)
     }
-    /// Project onto the y axis (sum x, z) → a `TH1`.
+    /// Project onto the y axis (sum x, z) → a `Hist1D`.
     #[must_use]
-    pub fn projection_y(&self, name: &str) -> TH1 {
+    pub fn projection_y(&self, name: &str) -> Hist1D {
         self.project_axis(name, 1)
     }
-    /// Project onto the z axis (sum x, y) → a `TH1`.
+    /// Project onto the z axis (sum x, y) → a `Hist1D`.
     #[must_use]
-    pub fn projection_z(&self, name: &str) -> TH1 {
+    pub fn projection_z(&self, name: &str) -> Hist1D {
         self.project_axis(name, 2)
     }
 
-    fn project_axis(&self, name: &str, keep: u8) -> TH1 {
+    fn project_axis(&self, name: &str, keep: u8) -> Hist1D {
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let (sx, sy) = (nx + 2, ny + 2);
         let cell = |ix: usize, iy: usize, iz: usize| ix + sx * (iy + sy * iz);
@@ -475,7 +475,7 @@ impl TH3 {
             1 => (&self.yaxis, ny),
             _ => (&self.zaxis, nz),
         };
-        let mut out = TH1::new(nkeep as i32, axis.xmin, axis.xmax)
+        let mut out = Hist1D::new(nkeep as i32, axis.xmin, axis.xmax)
             .named(name)
             .titled(self.title.clone());
         out.xaxis = axis.clone();
@@ -519,23 +519,23 @@ impl TH3 {
         out
     }
 
-    /// Project onto the x–y plane, summing the in-range z bins → a `TH2`.
+    /// Project onto the x–y plane, summing the in-range z bins → a `Hist2D`.
     #[must_use]
-    pub fn projection_xy(&self, name: &str) -> TH2 {
+    pub fn projection_xy(&self, name: &str) -> Hist2D {
         self.project_plane(name, 2)
     }
-    /// Project onto the x–z plane (sum y) → a `TH2`.
+    /// Project onto the x–z plane (sum y) → a `Hist2D`.
     #[must_use]
-    pub fn projection_xz(&self, name: &str) -> TH2 {
+    pub fn projection_xz(&self, name: &str) -> Hist2D {
         self.project_plane(name, 1)
     }
-    /// Project onto the y–z plane (sum x) → a `TH2`.
+    /// Project onto the y–z plane (sum x) → a `Hist2D`.
     #[must_use]
-    pub fn projection_yz(&self, name: &str) -> TH2 {
+    pub fn projection_yz(&self, name: &str) -> Hist2D {
         self.project_plane(name, 0)
     }
 
-    fn project_plane(&self, name: &str, drop: u8) -> TH2 {
+    fn project_plane(&self, name: &str, drop: u8) -> Hist2D {
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let (sx, sy) = (nx + 2, ny + 2);
         let cell = |ix: usize, iy: usize, iz: usize| ix + sx * (iy + sy * iz);
@@ -545,7 +545,7 @@ impl TH3 {
             1 => (&self.xaxis, nx, &self.zaxis, nz, ny),
             _ => (&self.yaxis, ny, &self.zaxis, nz, nx),
         };
-        let mut out = TH2::new(na as i32, axa.xmin, axa.xmax, nb as i32, axb.xmin, axb.xmax)
+        let mut out = Hist2D::new(na as i32, axa.xmin, axa.xmax, nb as i32, axb.xmin, axb.xmax)
             .named(name)
             .titled(self.title.clone());
         out.xaxis = axa.clone();

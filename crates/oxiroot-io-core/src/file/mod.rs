@@ -20,8 +20,8 @@ pub use container::{
 };
 pub use directory::Directory;
 pub use free::{read_free, FreeSegment};
-pub use header::{FileHeader, TUuid, BIG_FILE_VERSION, MAGIC};
-pub use key::{TDatime, TKey};
+pub use header::{FileHeader, Uuid, BIG_FILE_VERSION, MAGIC};
+pub use key::{Datime, Key};
 pub use reader::{find_key, split_cycle, FileReader};
 #[cfg(feature = "mmap")]
 pub use source::MmapSource;

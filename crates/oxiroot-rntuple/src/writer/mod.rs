@@ -6,7 +6,7 @@
 //! compression. [`NtupleWriter`] writes those same field types one cluster per
 //! batch, so a large dataset need not be held in memory at once. The header/page/
 //! page-list/footer envelopes are written as raw blobs at the offsets the anchor
-//! (and the page locators) point to; only the anchor is a `TKey`. Validated by
+//! (and the page locators) point to; only the anchor is a `Key`. Validated by
 //! reading the result back and by official ROOT / uproot.
 
 use std::io::{Cursor, Seek, Write};

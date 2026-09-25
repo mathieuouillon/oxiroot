@@ -1,7 +1,7 @@
 //! A dynamic value tree — the output of the generic, streamer-info-driven object
 //! reader ([`read_object`](crate::read_object::read_object)).
 //!
-//! Where the typed models (`TH1`, `TGraph`, …) decode a *known* class into a Rust
+//! Where the typed models (`Hist1D`, `Graph`, …) decode a *known* class into a Rust
 //! struct, [`Value`] represents *any* class: a tree of named members whose shape
 //! comes entirely from the file's `TStreamerInfo`. It is what powers rootls /
 //! rootprint-style inspection of arbitrary ROOT files.
@@ -10,7 +10,7 @@ use core::fmt;
 
 /// A dynamically-typed value decoded from a ROOT object.
 ///
-/// Where the typed models (`TH1`, `TGraph`, …) decode a *known* class into a Rust
+/// Where the typed models (`Hist1D`, `Graph`, …) decode a *known* class into a Rust
 /// struct, a `Value` represents *any* class: a tree of named members whose shape
 /// comes entirely from the file's `TStreamerInfo` (see
 /// [`read_object`](fn@crate::read_object)).
@@ -59,7 +59,7 @@ pub enum Value {
     },
     /// A slot holding an object that is written elsewhere in the same object:
     /// ROOT streams a shared object once and points at it from every other
-    /// place it appears (a `TH2Poly`'s `fBins` points at the bins its `fCells`
+    /// place it appears (a `PolyHist`'s `fBins` points at the bins its `fCells`
     /// grid holds in full). The value carries the class it points at; the object
     /// itself is in the tree where it was written.
     Ref {

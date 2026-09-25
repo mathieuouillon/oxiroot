@@ -1,15 +1,15 @@
 //! Classic ROOT histograms, profiles and graphs, read and written byte-for-byte
 //! as ROOT 6 does.
 //!
-//! - Histograms: [`TH1`], [`TH2`], [`TH3`] in every bin content type
+//! - Histograms: [`Hist1D`], [`Hist2D`], [`Hist3D`] in every bin content type
 //!   ([`BinContentType`]; the exact class is preserved in `class_name`), built
 //!   with [`Hist`].
-//! - Profiles: [`TProfile`], [`TProfile2D`], [`TProfile3D`].
-//! - [`TEfficiency`], [`THnSparse`] and [`TH2Poly`].
-//! - Graphs: [`TGraph`] (with its error variants), [`TGraph2D`] and
-//!   [`TGraphMultiErrors`]; the collections [`THStack`] and [`TMultiGraph`].
+//! - Profiles: [`Profile1D`], [`Profile2D`], [`Profile3D`].
+//! - [`Efficiency`], [`SparseHist`] and [`PolyHist`].
+//! - Graphs: [`Graph`] (with its error variants), [`Graph2D`] and
+//!   [`MultiErrorGraph`]; the collections [`HistStack`] and [`GraphStack`].
 //!
-//! The parametric functions (`TF1`/`TF2`/`TF3`) live in `oxiroot-hist-func`,
+//! The parametric functions (`Func1D`/`Func2D`/`Func3D`) live in `oxiroot-hist-func`,
 //! so a histogram-only build does not compile the formula engine; a graph's
 //! attached functions are plain [`GraphFunction`] records.
 //!
@@ -28,56 +28,56 @@ mod read;
 
 mod axis;
 mod derive;
+mod efficiency;
 #[cfg(feature = "fit")]
 mod fit;
+mod func_record;
 mod graph;
 mod graph2d;
-mod graphmultierrors;
+mod hist1d;
+mod hist2d;
+mod hist3d;
+mod multierrorgraph;
+mod polyhist;
+mod profile1d;
+mod profile2d;
+mod profile3d;
 mod sample;
+mod sparsehist;
 mod stats;
-mod tefficiency;
-mod tf1_record;
-mod th1;
-mod th2;
-mod th2poly;
-mod th3;
-mod thnsparse;
 mod threaded;
-mod tprofile;
-mod tprofile2d;
-mod tprofile3d;
 mod write;
 
 pub use oxiroot_io_core::Compression;
 
-pub use axis::TAxis;
+pub use axis::Axis;
 pub use base::BinContentType;
-pub use collections::{THStack, TMultiGraph};
+pub use collections::{GraphStack, HistStack};
 pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 #[cfg(feature = "fit")]
 pub use fit::{FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points};
-pub use graph::{GraphErrors, GraphFunction, TGraph};
-pub use graph2d::TGraph2D;
-pub use graphmultierrors::TGraphMultiErrors;
+pub use graph::{Graph, GraphErrors, GraphFunction};
+pub use graph2d::Graph2D;
+pub use multierrorgraph::MultiErrorGraph;
 // The generic objects live in `oxiroot-io-core`; re-exported so these paths keep
 // resolving.
+pub use efficiency::Efficiency;
+pub use hist1d::Hist1D;
+pub use hist2d::Hist2D;
+pub use hist3d::Hist3D;
 pub use ops::Histogram;
 pub use oxiroot_io_core::{
-    FromMember, ListKind, ObjList, ParamValue, TMap, TObjString, TParameter,
+    FromMember, ListKind, ObjList, ObjMap, ObjString, ParamValue, Parameter,
 };
-pub use quick::{Hist, H1, H2, H3};
+pub use polyhist::{PolyBin, PolyHist};
+pub use profile1d::{ErrorMode, Profile1D};
+pub use profile2d::Profile2D;
+pub use profile3d::Profile3D;
+pub use quick::{Build1D, Build2D, Build3D, Hist};
 pub use read::ReadRoot;
 pub use sample::Random;
-pub use tefficiency::TEfficiency;
-pub use th1::TH1;
-pub use th2::TH2;
-pub use th2poly::{PolyBin, TH2Poly};
-pub use th3::TH3;
-pub use thnsparse::{SparseBin, THnSparse};
+pub use sparsehist::{SparseBin, SparseHist};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;
 pub use threaded::{Mergeable, ThreadedHist};
-pub use tprofile::{ErrorMode, TProfile};
-pub use tprofile2d::TProfile2D;
-pub use tprofile3d::TProfile3D;
 pub use write::{hist_streamer_classes, FileWriter, SubdirWriter, WriteRoot};

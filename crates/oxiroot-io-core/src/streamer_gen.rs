@@ -19,7 +19,7 @@ use std::borrow::Cow;
 use crate::buffer::{Patch, RBuffer, WBuffer, K_BYTE_COUNT_MASK};
 use crate::error::Result;
 use crate::file::STREAMER_INFO_KEY_LEN;
-use crate::streamer::{read_tobject, write_tnamed, write_tobject};
+use crate::streamer::{read_object_base, write_named, write_object_base};
 use crate::streamer_info::{parse_stored_infos, StoredInfo};
 
 /// ROOT `fType` codes for an object/string member and the base-class slots.
@@ -84,7 +84,7 @@ enum Ek<'a> {
 /// ([`into_owned`](Cls::into_owned) detaches it from what it borrowed).
 #[derive(Clone, Debug)]
 pub struct Cls<'a> {
-    /// Class name (`fName`), e.g. `"TParameter<double>"`.
+    /// Class name (`fName`), e.g. `"Parameter<double>"`.
     pub name: Cow<'a, str>,
     /// On-disk class version.
     pub version: i32,
@@ -278,7 +278,7 @@ pub(crate) fn stored(element_class: String, name: String, body: Vec<u8>) -> El<'
     }
 }
 
-/// `fBits` ROOT writes for the embedded `TStreamerInfo`'s `TNamed`.
+/// `fBits` ROOT writes for the embedded `TStreamerInfo`'s `Named`.
 const SI_BITS: u32 = 0x0001_0000;
 
 /// The byte-count + `kNewClassTag` + class-name header ROOT writes before each
@@ -298,7 +298,7 @@ fn end_object_any(w: &mut WBuffer, bc: Patch) {
 /// Write the `TStreamerElement` v4 base common to every element subclass.
 fn write_element_base(w: &mut WBuffer, el: &El<'_>) {
     let se = w.begin_object(4); // TStreamerElement v4
-    write_tnamed(w, 0, &el.name, "");
+    write_named(w, 0, &el.name, "");
     w.be_i32(el.ty); // fType
     w.be_i32(el.size); // fSize
     w.be_i32(0); // fArrayLength
@@ -361,13 +361,13 @@ fn write_element(w: &mut WBuffer, el: &El<'_>, owner: &str, owner_version: i32) 
 fn write_info(w: &mut WBuffer, cls: &Cls<'_>) {
     let info_bc = begin_object_any(w, "TStreamerInfo");
     let si = w.begin_object(10); // TStreamerInfo v10
-    write_tnamed(w, SI_BITS, &cls.name, "");
+    write_named(w, SI_BITS, &cls.name, "");
     w.be_u32(cls.checksum);
     w.be_i32(cls.version);
 
     let oa_bc = begin_object_any(w, "TObjArray");
     let oa = w.begin_object(3); // TObjArray v3
-    write_tobject(w, 0);
+    write_object_base(w, 0);
     w.string(""); // fName
     w.be_i32(cls.elements.len() as i32);
     w.be_i32(0); // fLowerBound
@@ -389,7 +389,7 @@ pub fn streamer_info_list(classes: &[Cls<'_>]) -> Vec<u8> {
     let mut w = WBuffer::new();
 
     let list = w.begin_object(5); // TList v5
-    write_tobject(&mut w, 0);
+    write_object_base(&mut w, 0);
     w.string(""); // fName
     w.be_i32(classes.len() as i32); // nobjects
 
@@ -411,7 +411,7 @@ pub fn append_streamer_infos(base_list: &[u8], extra: &[Cls<'_>]) -> Result<Vec<
     // Parse the TList header to find the object-count field.
     let mut r = RBuffer::new(base_list);
     r.read_version()?; // [byte count][version]
-    read_tobject(&mut r)?; // TObject base
+    read_object_base(&mut r)?; // TObject base
     r.string()?; // fName
     let count_offset = r.pos();
     let count = r.be_i32()?; // nobjects
@@ -438,7 +438,7 @@ pub fn append_streamer_infos(base_list: &[u8], extra: &[Cls<'_>]) -> Result<Vec<
 
 /// Add the stored info for `class` (at `version` when the file has that one)
 /// to `out`, after the classes it depends on: its bases, and any class named
-/// in a member's type (a `TAxis`, a `vector<TLorentzVector>`, …).
+/// in a member's type (an `Axis`, a `vector<TLorentzVector>`, …).
 pub(crate) fn collect_stored(
     infos: &[StoredInfo],
     class: &str,

@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::ReadRoot;
-use oxiroot_hist_func::{TF1, TF2, TF3};
+use oxiroot_hist_func::{Func1D, Func2D, Func3D};
 use oxiroot_io_core::FileReader;
 
 /// Fixtures spanning the function layouts plus a few other classes, with one
@@ -29,10 +29,10 @@ fn fixture(name: &str) -> Vec<u8> {
 
 /// Try every reader; the point is that none panics regardless of the bytes.
 fn poke(f: &FileReader, name: &str) {
-    let _ = TF1::read_root(f, name);
-    let _ = TF2::read_root(f, name);
-    let _ = TF3::read_root(f, name);
-    let _ = TF1::read_root_in(f, "", name);
+    let _ = Func1D::read_root(f, name);
+    let _ = Func2D::read_root(f, name);
+    let _ = Func3D::read_root(f, name);
+    let _ = Func1D::read_root_in(f, "", name);
 }
 
 /// Stride that keeps each fixture to roughly `samples` probes regardless of size.

@@ -1,10 +1,10 @@
-//! TH2Poly: read a ROOT-written fixture, resolving the bins through ROOT's
+//! PolyHist: read a ROOT-written fixture, resolving the bins through ROOT's
 //! object-reference map (the bins are written full inside `fCells`, with
 //! back-references in `fBins`).
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, TH2Poly, WriteRoot};
+use oxiroot_hist::{PolyHist, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
@@ -15,11 +15,11 @@ fn fixture(name: &str) -> PathBuf {
 
 #[test]
 fn reads_root_written_th2poly() {
-    // Fixture `hp`: TH2Poly("hp","poly",0,2,0,2) with two unit-square bins,
+    // Fixture `hp`: PolyHist("hp","poly",0,2,0,2) with two unit-square bins,
     // AddBin(0,0,1,1) filled once (content 1) and AddBin(1,1,2,2) filled with
     // weight 3 (content 3).
     let f = FileReader::open(fixture("th2poly.root")).expect("open");
-    let h = TH2Poly::read_root(&f, "hp").expect("read");
+    let h = PolyHist::read_root(&f, "hp").expect("read");
 
     assert_eq!(h.name, "hp");
     assert_eq!(h.title, "poly");
@@ -47,7 +47,7 @@ fn reads_honeycomb_th2poly() {
     // map heavily: every bin must be read in full exactly once. Cross-checked
     // bit-for-bit against compiled ROOT C++ (`GetBins()` / `GetPolygon()`).
     let f = FileReader::open(fixture("th2poly_honeycomb.root")).expect("open");
-    let h = TH2Poly::read_root(&f, "hc").expect("read");
+    let h = PolyHist::read_root(&f, "hc").expect("read");
 
     assert_eq!(h.title, "honeycomb");
     assert_eq!(h.nbins(), 14);
@@ -75,10 +75,10 @@ fn reads_honeycomb_th2poly() {
 #[test]
 fn th2poly_round_trips() {
     for (file, name) in [("th2poly.root", "hp"), ("th2poly_honeycomb.root", "hc")] {
-        let h = TH2Poly::read_root(&FileReader::open(fixture(file)).unwrap(), name).unwrap();
+        let h = PolyHist::read_root(&FileReader::open(fixture(file)).unwrap(), name).unwrap();
         let out = std::env::temp_dir().join(format!("oxiroot_{name}.root"));
         h.write_root(&out, Compression::None).expect("write");
-        let back = TH2Poly::read_root(&FileReader::open(&out).unwrap(), name).unwrap();
+        let back = PolyHist::read_root(&FileReader::open(&out).unwrap(), name).unwrap();
         assert_eq!(back.bins, h.bins, "{name} bins changed across round-trip");
         assert_eq!(back.name, h.name);
         assert_eq!(back.title, h.title);
@@ -86,12 +86,12 @@ fn th2poly_round_trips() {
     }
 }
 
-/// Build a `TH2Poly` from scratch (rectangular + polygon bins, filled), write
+/// Build a `PolyHist` from scratch (rectangular + polygon bins, filled), write
 /// it, and read it back. (Cross-checked: ROOT C++ reads this file correctly,
 /// routing each fill to its bin via point-in-polygon, including the triangle.)
 #[test]
 fn th2poly_build_from_scratch() {
-    let mut h = TH2Poly::new(0.0, 3.0, 0.0, 3.0)
+    let mut h = PolyHist::new(0.0, 3.0, 0.0, 3.0)
         .named("scratch")
         .titled("built");
     assert_eq!(h.add_bin_rect(0.0, 0.0, 1.0, 1.0), 1);
@@ -105,7 +105,7 @@ fn th2poly_build_from_scratch() {
 
     let out = std::env::temp_dir().join("oxiroot_th2poly_scratch.root");
     h.write_root(&out, Compression::Zstd(5)).expect("write");
-    let back = TH2Poly::read_root(&FileReader::open(&out).unwrap(), "scratch").unwrap();
+    let back = PolyHist::read_root(&FileReader::open(&out).unwrap(), "scratch").unwrap();
 
     assert_eq!(back.nbins(), 3);
     assert_eq!(back.bin(1).unwrap().content, 1.0);

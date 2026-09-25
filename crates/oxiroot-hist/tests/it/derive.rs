@@ -1,10 +1,10 @@
 //! Tier-2 derived histograms: rebin, cumulative, projections, profiles. Checks
 //! contents, that moment sums propagate (so `mean`/`std_dev` stay correct), and
-//! that the derived `TH1`s round-trip through write→read.
+//! that the derived `Hist1D`s round-trip through write→read.
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH1, TH2, TH3};
+use oxiroot_hist::{Hist, Hist1D, Hist2D, Hist3D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
@@ -41,7 +41,7 @@ fn cumulative_forward_and_backward() {
     assert_eq!(h.cumulative(false).values(), &[10.0, 9.0, 7.0, 4.0]);
 }
 
-fn sample_th2() -> TH2 {
+fn sample_th2() -> Hist2D {
     // 2x2 over [0,2)². Cells (ix,iy): (1,1)=1,(1,2)=1,(2,1)=3,(2,2)=0.
     let mut h = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().named("h");
     h.fill(0.5, 0.5);
@@ -69,7 +69,7 @@ fn projection_x_sums_y_and_keeps_x_moments() {
     px.write_root(&out, Compression::None).expect("write");
     let f = FileReader::open(&out).expect("reopen");
     assert_eq!(
-        TH1::read_root(&f, "px").unwrap(),
+        Hist1D::read_root(&f, "px").unwrap(),
         px,
         "projection round-trips"
     );
@@ -131,12 +131,12 @@ fn rebin3d_sums_blocks() {
     assert_eq!(r.values()[0][0][0], 6.0, "all cells summed");
     assert_eq!(r.entries, h.entries);
 
-    // The rebinned TH3 has variable axes — confirm that round-trips on disk.
+    // The rebinned Hist3D has variable axes — confirm that round-trips on disk.
     let out = std::path::PathBuf::from("/tmp/oxiroot_rebin3d.root");
     r.write_root(&out, Compression::None).expect("write");
     let f = FileReader::open(&out).expect("reopen");
     assert_eq!(
-        TH3::read_root(&f, "h").unwrap(),
+        Hist3D::read_root(&f, "h").unwrap(),
         r,
         "variable-axis TH3 round-trips"
     );

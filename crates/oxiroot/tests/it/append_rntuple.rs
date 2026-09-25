@@ -49,7 +49,7 @@ fn appends_a_histogram_to_an_rntuple_file() {
         nt.read_field(&f, "n").unwrap(),
         FieldValues::I32(vec![1, 2, 3])
     );
-    assert_eq!(TH1::read_root(&f, "h").unwrap(), h, "appended histogram");
+    assert_eq!(Hist1D::read_root(&f, "h").unwrap(), h, "appended histogram");
 
     let _ = std::fs::remove_file(&out);
 }

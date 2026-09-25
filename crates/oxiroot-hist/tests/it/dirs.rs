@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, ReadRoot, TH1};
+use oxiroot_hist::{FileWriter, Hist, Hist1D, ReadRoot};
 use oxiroot_io_core::FileReader;
 
 #[test]
@@ -47,9 +47,9 @@ fn writes_histograms_into_subdirectories() {
     assert!(root_keys.contains(&("control", "TDirectory")));
 
     // The top-level histogram and both subdirectory histograms read back.
-    assert_eq!(TH1::read_root(&f, "top").unwrap(), top);
-    assert_eq!(TH1::read_root_in(&f, "signal", "mll").unwrap(), sr);
-    assert_eq!(TH1::read_root_in(&f, "control", "mll").unwrap(), cr);
+    assert_eq!(Hist1D::read_root(&f, "top").unwrap(), top);
+    assert_eq!(Hist1D::read_root_in(&f, "signal", "mll").unwrap(), sr);
+    assert_eq!(Hist1D::read_root_in(&f, "control", "mll").unwrap(), cr);
 
     // The subdirectory's own key list is navigable.
     let signal = f.subdir("signal").expect("signal dir");
@@ -94,12 +94,12 @@ fn writes_directories_nested_several_levels_deep() {
         .expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
-    assert_eq!(TH1::read_root(&f, "top").unwrap(), top);
-    assert_eq!(TH1::read_root_in(&f, "a", "in_a").unwrap(), a);
-    assert_eq!(TH1::read_root_in(&f, "a/b", "in_b").unwrap(), b);
-    assert_eq!(TH1::read_root_in(&f, "a/b/c", "in_c").unwrap(), c);
+    assert_eq!(Hist1D::read_root(&f, "top").unwrap(), top);
+    assert_eq!(Hist1D::read_root_in(&f, "a", "in_a").unwrap(), a);
+    assert_eq!(Hist1D::read_root_in(&f, "a/b", "in_b").unwrap(), b);
+    assert_eq!(Hist1D::read_root_in(&f, "a/b/c", "in_c").unwrap(), c);
     assert_eq!(
-        TH1::read_root_in(&f, "a/sibling", "in_sibling").unwrap(),
+        Hist1D::read_root_in(&f, "a/sibling", "in_sibling").unwrap(),
         sibling
     );
 

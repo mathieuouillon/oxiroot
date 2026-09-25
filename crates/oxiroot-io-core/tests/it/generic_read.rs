@@ -59,7 +59,7 @@ fn sweep_all_fixtures() {
 /// Locked assertions cross-checked against uproot.
 #[test]
 fn decoded_values_match_root() {
-    // TObjString.
+    // ObjString.
     let f = FileReader::open(fixture("persist_objs.root")).unwrap();
     let s = f.get_value("label").unwrap();
     assert_eq!(
@@ -67,7 +67,7 @@ fn decoded_values_match_root() {
         Some("hello world")
     );
 
-    // TParameter<double> / <int>.
+    // Parameter<double> / <int>.
     assert_eq!(
         f.get_value("lumi")
             .unwrap()
@@ -124,7 +124,7 @@ fn decoded_values_match_root() {
     assert_eq!(fx, [1.0, 2.0, 3.0, 4.0]);
     assert_eq!(fy, [10.0, 20.0, 30.0, 40.0]);
 
-    // TMap: three pairs, mixed value types, recursively decoded.
+    // ObjMap: three pairs, mixed value types, recursively decoded.
     let m = FileReader::open(fixture("tmap.root"))
         .unwrap()
         .get_value("meta")
@@ -149,7 +149,7 @@ fn decoded_values_match_root() {
     assert_eq!(its[0].class(), Some("TH1F"));
     assert_eq!(its[1].get("fString").and_then(Value::as_str), Some("hello"));
 
-    // TF1: the fitted formula string and cling parameters, nested in TFormula.
+    // Func1D: the fitted formula string and cling parameters, nested in TFormula.
     let f1 = FileReader::open(fixture("tf1.root"))
         .unwrap()
         .get_value("myfunc")
@@ -167,7 +167,7 @@ fn decoded_values_match_root() {
 fn reads_root_cpp_written_file() {
     let f = FileReader::open(fixture("rootcpp_objects.root")).unwrap();
 
-    // TObjString + TParameter<double> written by ROOT.
+    // ObjString + Parameter<double> written by ROOT.
     assert_eq!(
         f.get_value("note")
             .unwrap()
@@ -183,7 +183,7 @@ fn reads_root_cpp_written_file() {
         Some(2.5)
     );
 
-    // TList: a TNamed("a","alpha") then a TObjString("beta"), decoded member-wise.
+    // TList: a Named("a","alpha") then an ObjString("beta"), decoded member-wise.
     let list = f.get_value("mylist").unwrap();
     let items = list.get("items").and_then(Value::as_array).unwrap();
     assert_eq!(items.len(), 2);
@@ -197,7 +197,7 @@ fn reads_root_cpp_written_file() {
         Some("beta")
     );
 
-    // TH1D written by ROOT: nested TAxis with the 10 bins we booked.
+    // TH1D written by ROOT: nested Axis with the 10 bins we booked.
     let h = f.get_value("hpx").unwrap();
     assert_eq!(h.class(), Some("TH1D"));
     assert_eq!(
@@ -313,7 +313,7 @@ fn stl_members_decode_as_root_wrote_them() {
         Some(&[][..])
     );
 
-    // TEfficiency::fBeta_bin_params, a `vector<pair<double,double>>` streamed
+    // Efficiency::fBeta_bin_params, a `vector<pair<double,double>>` streamed
     // memberwise: every `first`, then every `second`. Bins 1 and 2 were set to
     // (2, 3) and (4, 5); the rest keep ROOT's (1, 1).
     let eff = f.get_value("eff").unwrap();
@@ -335,7 +335,7 @@ fn stl_members_decode_as_root_wrote_them() {
         vec![(1.0, 1.0), (2.0, 3.0), (4.0, 5.0), (1.0, 1.0), (1.0, 1.0)]
     );
 
-    // TGraphMultiErrors: `vector<TArrayD>` (objectwise) per y-error bar, and
+    // MultiErrorGraph: `vector<TArrayD>` (objectwise) per y-error bar, and
     // `vector<TAttFill>`/`vector<TAttLine>` (memberwise) per bar.
     let gme = f.get_value("gme").unwrap();
     let low: Vec<Vec<f64>> = gme
@@ -369,7 +369,7 @@ fn stl_members_decode_as_root_wrote_them() {
         .collect();
     assert_eq!(widths, vec![1, 3]);
 
-    // TH2Poly::fCells, a `TStreamerLoop` of `TList`s: ROOT writes each bin in
+    // PolyHist::fCells, a `TStreamerLoop` of `TList`s: ROOT writes each bin in
     // full in the first cell it falls in, so the grid holds both bins once.
     let poly = f.get_value("poly").unwrap();
     let cells = poly.get("fCells").and_then(Value::as_array).unwrap();

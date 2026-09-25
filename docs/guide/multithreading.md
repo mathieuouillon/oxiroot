@@ -1,7 +1,7 @@
 # Multithreaded fill
 
 `ThreadedHist` is the pure-`std` analog of ROOT's
-[`TThreadedObject<TH1>`](https://root.cern/doc/master/classROOT_1_1TThreadedObject.html):
+[`TThreadedObject<Hist1D>`](https://root.cern/doc/master/classROOT_1_1TThreadedObject.html):
 share one accumulator across threads, fill it from any of them, then merge the
 per-thread copies into a single histogram that is identical to a serial fill.
 This page covers `ThreadedHist`, the `Mergeable` trait (and its `merge_all`), and the
@@ -79,17 +79,17 @@ contended.
 | `merge()` | Consume the accumulator, returning the combined histogram (`Result<H>`). |
 
 The `fill` / `fill_weight` convenience methods are provided for every
-fillable type — `TH1`, `TH2`, `TH3` and the three profiles — with the matching
+fillable type — `Hist1D`, `Hist2D`, `Hist3D` and the three profiles — with the matching
 arity:
 
 | Type | `fill` | `fill_weight` |
 | --- | --- | --- |
-| `ThreadedHist<TH1>` | `fill(x)` | `fill_weight(x, w)` |
-| `ThreadedHist<TH2>` | `fill(x, y)` | `fill_weight(x, y, w)` |
-| `ThreadedHist<TH3>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
-| `ThreadedHist<TProfile>` | `fill(x, y)` | `fill_weight(x, y, w)` |
-| `ThreadedHist<TProfile2D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
-| `ThreadedHist<TProfile3D>` | `fill(x, y, z, t)` | `fill_weight(x, y, z, t, w)` |
+| `ThreadedHist<Hist1D>` | `fill(x)` | `fill_weight(x, w)` |
+| `ThreadedHist<Hist2D>` | `fill(x, y)` | `fill_weight(x, y, w)` |
+| `ThreadedHist<Hist3D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
+| `ThreadedHist<Profile1D>` | `fill(x, y)` | `fill_weight(x, y, w)` |
+| `ThreadedHist<Profile2D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
+| `ThreadedHist<Profile3D>` | `fill(x, y, z, t)` | `fill_weight(x, y, z, t, w)` |
 
 ### `with_local`
 
@@ -127,8 +127,8 @@ println!("filled across {} thread-local copies", hist.num_slots());
 
 ## The `Mergeable` trait
 
-`merge()` is built on the `Mergeable` trait, implemented for `TH1`, `TH2`, `TH3`,
-`TProfile`, `TProfile2D` and `TProfile3D`. `Mergeable::merge(&mut self, other)` is the bin-by-bin combine of
+`merge()` is built on the `Mergeable` trait, implemented for `Hist1D`, `Hist2D`, `Hist3D`,
+`Profile1D`, `Profile2D` and `Profile3D`. `Mergeable::merge(&mut self, other)` is the bin-by-bin combine of
 `add(other, 1.0)`; it returns
 [`Error::BinningMismatch`](../api/oxiroot/index.html) (leaving `self` unchanged)
 when the binnings differ.
@@ -141,8 +141,8 @@ binning-mismatch error from the first incompatible pair:
 use oxiroot::prelude::*;
 
 // Combine partial histograms (e.g. one per input file) into a single result.
-let partials: Vec<TH1> = load_partial_histograms();
-let total: Option<TH1> = TH1::merge_all(partials)?;
+let partials: Vec<Hist1D> = load_partial_histograms();
+let total: Option<Hist1D> = Hist1D::merge_all(partials)?;
 ```
 
 ## Data-parallel fill with `rayon`

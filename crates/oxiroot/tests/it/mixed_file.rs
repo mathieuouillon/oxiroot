@@ -3,7 +3,7 @@
 use oxiroot::prelude::*;
 use oxiroot::Error;
 
-fn hist() -> TH1 {
+fn hist() -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("pt");
     h.fill(0.5);
     h.fill(2.5);
@@ -24,14 +24,14 @@ fn histograms_trees_and_rntuples_share_a_file() {
         ))
         .put(Ntuple::new("ntuple", vec![Field::i32("x", vec![1, 2])]))
         .dir("cal", |d| {
-            d.add(&TParameter::f64("gain", 1.5))
+            d.add(&Parameter::f64("gain", 1.5))
                 .put(Tree::new("Pedestals", vec![Branch::i32("adc", vec![3, 4])]))
         })
         .write(Compression::Zstd(5))
         .unwrap();
 
     let f = FileReader::open(&path).unwrap();
-    assert_eq!(TH1::read_root(&f, "pt").unwrap(), hist());
+    assert_eq!(Hist1D::read_root(&f, "pt").unwrap(), hist());
     let tree = TreeReader::open(&f, "Events").unwrap();
     assert_eq!(
         tree.read_branch(&f, "energy").unwrap(),
@@ -49,7 +49,7 @@ fn histograms_trees_and_rntuples_share_a_file() {
         FieldValues::I32(vec![1, 2])
     );
     assert_eq!(
-        TParameter::read_root_in(&f, "cal", "gain")
+        Parameter::read_root_in(&f, "cal", "gain")
             .unwrap()
             .value()
             .as_f64(),
@@ -93,7 +93,7 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
         .write(Compression::None)
         .unwrap();
     let f = FileReader::open(&path).unwrap();
-    assert_eq!(TH1::read_root(&f, "pt").unwrap(), hist());
+    assert_eq!(Hist1D::read_root(&f, "pt").unwrap(), hist());
     assert_eq!(
         TreeReader::open(&f, "T")
             .unwrap()

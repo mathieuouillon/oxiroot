@@ -57,16 +57,16 @@ pub trait PointData {
 
 #[cfg(feature = "hist")]
 mod hist_impls {
-    use oxiroot_hist::{GraphErrors, TGraph, TProfile, TH1, TH2};
+    use oxiroot_hist::{Graph, GraphErrors, Hist1D, Hist2D, Profile1D};
 
     use super::{Hist1dData, Hist2dData, PointData};
 
-    impl Hist1dData for TH1 {
+    impl Hist1dData for Hist1D {
         fn edges(&self) -> Vec<f64> {
-            TH1::edges(self)
+            Hist1D::edges(self)
         }
         fn values(&self) -> Vec<f64> {
-            TH1::values(self).to_vec()
+            Hist1D::values(self).to_vec()
         }
         fn error(&self, i: usize) -> f64 {
             self.bin_error(i + 1)
@@ -78,19 +78,19 @@ mod hist_impls {
         }
     }
 
-    impl Hist1dData for TProfile {
+    impl Hist1dData for Profile1D {
         fn edges(&self) -> Vec<f64> {
-            TProfile::edges(self)
+            Profile1D::edges(self)
         }
         fn values(&self) -> Vec<f64> {
-            TProfile::values(self)
+            Profile1D::values(self)
         }
         fn error(&self, i: usize) -> f64 {
             self.bin_error(i + 1)
         }
     }
 
-    impl Hist2dData for TH2 {
+    impl Hist2dData for Hist2D {
         fn x_edges(&self) -> Vec<f64> {
             self.xaxis.edges()
         }
@@ -109,7 +109,7 @@ mod hist_impls {
         out
     }
 
-    impl PointData for TGraph {
+    impl PointData for Graph {
         fn xs(&self) -> Vec<f64> {
             self.x[..self.len()].to_vec()
         }

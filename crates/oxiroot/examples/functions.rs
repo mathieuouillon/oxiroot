@@ -1,4 +1,4 @@
-//! Standalone `TF1`/`TF2`/`TF3` functions: build several formula forms (a ROOT
+//! Standalone `Func1D`/`Func2D`/`Func3D` functions: build several formula forms (a ROOT
 //! `gaus` shortcut, `expo`, a `pol2` polynomial, and a hand-written expression),
 //! evaluate them in pure Rust (`eval`), do calculus (`integral`/`derivative`),
 //! scan a grid to find a peak and a crossing, then write them to a ROOT file and
@@ -14,16 +14,16 @@ fn main() -> oxiroot::Result<()> {
     // --- Four 1-D functions, one per formula flavour. --------------------------
     // A hand-written expression: a decaying sine. Parameters are [0], [1], …; the
     // free variable is `x`. `with_params` fills them in builder style.
-    let damped = TF1::new("damped", "[0]*exp(-[1]*x)*sin([2]*x)", 0.0, 10.0)?
+    let damped = Func1D::new("damped", "[0]*exp(-[1]*x)*sin([2]*x)", 0.0, 10.0)?
         .with_params(vec![5.0, 0.3, 2.0]);
 
     // ROOT's `gaus` shortcut expands to `[0]*exp(-0.5*((x-[1])/[2])^2)` — a
     // Gaussian with (constant, mean, sigma). The engine knows the parameter count.
-    let gauss = TF1::new("gauss", "gaus", -5.0, 5.0)?.with_params(vec![2.0, 0.5, 1.2]);
+    let gauss = Func1D::new("gauss", "gaus", -5.0, 5.0)?.with_params(vec![2.0, 0.5, 1.2]);
 
     // `expo` is `exp([0] + [1]*x)`; `pol2` is `[0] + [1]*x + [2]*x^2`.
-    let decay = TF1::new("decay", "expo", 0.0, 5.0)?.with_params(vec![1.0, -0.7]);
-    let parab = TF1::new("parab", "pol2", -3.0, 3.0)?.with_params(vec![1.0, -2.0, 1.0]);
+    let decay = Func1D::new("decay", "expo", 0.0, 5.0)?.with_params(vec![1.0, -0.7]);
+    let parab = Func1D::new("parab", "pol2", -3.0, 3.0)?.with_params(vec![1.0, -2.0, 1.0]);
 
     println!("Four TF1s (formula shown in ROOT's canonical [pN] form):");
     for f in [&damped, &gauss, &decay, &parab] {
@@ -94,9 +94,9 @@ fn main() -> oxiroot::Result<()> {
     );
 
     // --- 2-D and 3-D functions add the y (and z) variables. --------------------
-    let f2 =
-        TF2::new("f2", "[0]*sin(x) + [1]*y*y", -3.0, 3.0, -2.0, 2.0)?.with_params(vec![1.5, 0.7]);
-    let f3 = TF3::new("f3", "[0]*x + y*z", 0.0, 2.0, 0.0, 2.0, 0.0, 2.0)?.with_params(vec![2.0]);
+    let f2 = Func2D::new("f2", "[0]*sin(x) + [1]*y*y", -3.0, 3.0, -2.0, 2.0)?
+        .with_params(vec![1.5, 0.7]);
+    let f3 = Func3D::new("f3", "[0]*x + y*z", 0.0, 2.0, 0.0, 2.0, 0.0, 2.0)?.with_params(vec![2.0]);
     println!("\nHigher-dimensional functions:");
     println!(
         "  f2(1,1)   = {:.6}   (1.5·sin1 + 0.7·1)",
@@ -117,10 +117,10 @@ fn main() -> oxiroot::Result<()> {
         .write(Compression::Zstd(5))?;
     println!("\nwrote {}", out.display());
 
-    // --- Round-trip: read one TF1 back and confirm it evaluates identically. ---
-    // `TF1::read_root` re-parses the embedded TFormula and its parameters, so the
+    // --- Round-trip: read one Func1D back and confirm it evaluates identically. ---
+    // `Func1D::read_root` re-parses the embedded TFormula and its parameters, so the
     // decoded function reproduces `eval` to the bit at sampled points.
-    let g = TF1::read_root(&FileReader::open(&out)?, "gauss")?;
+    let g = Func1D::read_root(&FileReader::open(&out)?, "gauss")?;
     for &x in &[-2.0, -0.5, 0.5, 2.0] {
         assert!(
             (g.eval(x) - gauss.eval(x)).abs() < 1e-12,

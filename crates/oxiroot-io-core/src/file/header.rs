@@ -16,7 +16,8 @@ pub const BIG_FILE_VERSION: u32 = 1_000_000;
 
 /// A ROOT `TUUID`: a 16-bit version followed by 16 UUID bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TUuid {
+#[doc(alias = "TUUID")]
+pub struct Uuid {
     /// `TUUID` streamer version.
     pub version: u16,
     /// The 16 raw UUID bytes.
@@ -49,7 +50,7 @@ pub struct FileHeader {
     /// Size in bytes of the `TStreamerInfo` record (`fNbytesInfo`).
     pub nbytes_info: u32,
     /// File UUID.
-    pub uuid: TUuid,
+    pub uuid: Uuid,
 }
 
 impl FileHeader {
@@ -98,7 +99,7 @@ impl FileHeader {
             compress,
             seek_info,
             nbytes_info,
-            uuid: TUuid {
+            uuid: Uuid {
                 version: uuid_version,
                 bytes: uuid_bytes,
             },

@@ -1,14 +1,14 @@
 //! Adding and merging the 2-D and 3-D profiles (summing them across files is
 //! tested with the file merger, in the `oxiroot` crate).
 //!
-//! `add` and `Mergeable` used to exist only for `TH1`/`TH2`/`TH3`/`TProfile`, so a
-//! file merge copied `TProfile2D`/`TProfile3D` from the first input where ROOT's
+//! `add` and `Mergeable` used to exist only for `Hist1D`/`Hist2D`/`Hist3D`/`Profile1D`, so a
+//! file merge copied `Profile2D`/`Profile3D` from the first input where ROOT's
 //! `hadd` sums them. The defining property checked here is the one `Mergeable`
 //! documents: merging two profiles must give exactly the profile you would get by
 //! filling one with all of their data. Every value below is a small dyadic
 //! rational, so that equality is exact whatever order the sums happen in.
 
-use oxiroot_hist::{Hist, Mergeable, TProfile, TProfile2D, TProfile3D, ThreadedHist};
+use oxiroot_hist::{Hist, Mergeable, Profile1D, Profile2D, Profile3D, ThreadedHist};
 use oxiroot_io_core::Error;
 
 // --------------------------------------------------------------------- data
@@ -49,14 +49,14 @@ const SET_B_3D: [Point3; 4] = [
     (5.0, 0.5, 0.5, 1.0, 2.0), // x overflow
 ];
 
-fn empty_2d() -> TProfile2D {
+fn empty_2d() -> Profile2D {
     Hist::reg(3, 0.0, 3.0)
         .reg(2, 0.0, 2.0)
         .profile()
         .named("p2")
 }
 
-fn empty_3d() -> TProfile3D {
+fn empty_3d() -> Profile3D {
     Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
@@ -64,19 +64,19 @@ fn empty_3d() -> TProfile3D {
         .named("p3")
 }
 
-fn fill_2d(p: &mut TProfile2D, points: &[Point2]) {
+fn fill_2d(p: &mut Profile2D, points: &[Point2]) {
     for &(x, y, z, w) in points {
         p.fill_weight(x, y, z, w);
     }
 }
 
-fn fill_3d(p: &mut TProfile3D, points: &[Point3]) {
+fn fill_3d(p: &mut Profile3D, points: &[Point3]) {
     for &(x, y, z, t, w) in points {
         p.fill_weight(x, y, z, t, w);
     }
 }
 
-fn profile_2d(sets: &[&[Point2]]) -> TProfile2D {
+fn profile_2d(sets: &[&[Point2]]) -> Profile2D {
     let mut p = empty_2d();
     for set in sets {
         fill_2d(&mut p, set);
@@ -84,7 +84,7 @@ fn profile_2d(sets: &[&[Point2]]) -> TProfile2D {
     p
 }
 
-fn profile_3d(sets: &[&[Point3]]) -> TProfile3D {
+fn profile_3d(sets: &[&[Point3]]) -> Profile3D {
     let mut p = empty_3d();
     for set in sets {
         fill_3d(&mut p, set);
@@ -206,7 +206,7 @@ fn an_empty_value_squared_array_is_treated_as_zeros() {
     // And an empty array on the other side adds nothing.
     let mut c = Hist::reg(2, 0.0, 2.0).profile();
     c.fill(0.5, 2.0);
-    let mut d: TProfile = c.clone();
+    let mut d: Profile1D = c.clone();
     d.sumy2.clear();
     c.add(&d, 1.0).unwrap();
     assert_eq!(c.sumy2[1], 4.0);
@@ -216,12 +216,12 @@ fn an_empty_value_squared_array_is_treated_as_zeros() {
 
 #[test]
 fn merge_all_folds_2d_and_3d_profiles() {
-    let got = TProfile2D::merge_all([profile_2d(&[&SET_A_2D]), profile_2d(&[&SET_B_2D])])
+    let got = Profile2D::merge_all([profile_2d(&[&SET_A_2D]), profile_2d(&[&SET_B_2D])])
         .unwrap()
         .expect("two items");
     assert_eq!(got, profile_2d(&[&SET_A_2D, &SET_B_2D]));
 
-    let got = TProfile3D::merge_all([profile_3d(&[&SET_A_3D]), profile_3d(&[&SET_B_3D])])
+    let got = Profile3D::merge_all([profile_3d(&[&SET_A_3D]), profile_3d(&[&SET_B_3D])])
         .unwrap()
         .expect("two items");
     assert_eq!(got, profile_3d(&[&SET_A_3D, &SET_B_3D]));

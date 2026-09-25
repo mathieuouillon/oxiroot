@@ -1,12 +1,12 @@
 //! 2-D histograms (`TH2D`, `TH2F`).
 //!
-//! Streamed layout: `TH2x{ TH2{ TH1{ … }, fScalefactor, fTsumwy, fTsumwy2,
+//! Streamed layout: `TH2x{ Hist2D{ Hist1D{ … }, fScalefactor, fTsumwy, fTsumwy2,
 //! fTsumwxy }, TArray }`. The inline `TArray` holds the `(nx+2)*(ny+2)` cells
 //! with the x index varying fastest.
 
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 use crate::base::{
     bin_content_type_of, cell_count, check_cells, histogram_object, histogram_object_in,
     read_tarray, read_th1_base, unsupported_version, BinContentType,
@@ -14,22 +14,23 @@ use crate::base::{
 
 /// A 2-D classic histogram (`TH2D` or `TH2F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TH2 {
+#[doc(alias = "TH2", alias = "TH2D", alias = "TH2F")]
+pub struct Hist2D {
     /// On-disk [`BinContentType`] (the class suffix); read the class name via
-    /// [`class_name`](TH2::class_name).
+    /// [`class_name`](Hist2D::class_name).
     pub(crate) bin_content_type: BinContentType,
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: TAxis,
+    pub xaxis: Axis,
     /// Y axis.
-    pub yaxis: TAxis,
+    pub yaxis: Axis,
     /// Z axis (degenerate for 2-D).
-    pub zaxis: TAxis,
+    pub zaxis: Axis,
     /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)`). Read via
-    /// [`ncells`](TH2::ncells); `pub(crate)` so it cannot drift from `contents`.
+    /// [`ncells`](Hist2D::ncells); `pub(crate)` so it cannot drift from `contents`.
     pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub entries: f64,
@@ -50,20 +51,20 @@ pub struct TH2 {
     /// Bin contents including flow (length `ncells`, x fastest).
     pub contents: Vec<f64>,
     /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
-    /// turned on by [`TH2::sumw2`], [`TH2::scale`], or a weighted fill (see
-    /// [`TH1::fill_weight`](crate::TH1::fill_weight)).
+    /// turned on by [`Hist2D::sumw2`], [`Hist2D::scale`], or a weighted fill (see
+    /// [`Hist1D::fill_weight`](crate::Hist1D::fill_weight)).
     pub sumw2: Vec<f64>,
 }
 
-impl TH2 {
-    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<TH2> {
+impl Hist2D {
+    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Hist2D> {
         let th2x = r.read_version()?; // TH2x wrapper
-                                      // Class version 1 (ROOT 1) streamed the TH1 base, the bin array, then the
-                                      // TH2 members, with no TH2 record of their own.
+                                      // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
+                                      // Hist2D members, with no Hist2D record of their own.
         if th2x.version < 2 {
             return Err(unsupported_version("TH2", th2x.version));
         }
-        let th2 = r.read_version()?; // TH2 wrapper (TH1 base + TH2 members)
+        let th2 = r.read_version()?; // Hist2D wrapper (Hist1D base + Hist2D members)
 
         let c = read_th1_base(r)?;
         let _scalefactor = r.be_f64()?;
@@ -81,7 +82,7 @@ impl TH2 {
         check_cells("TH2 contents", contents.len(), cells, false)?;
         check_cells("TH2 fSumw2", c.sumw2.len(), cells, true)?;
 
-        Ok(TH2 {
+        Ok(Hist2D {
             bin_content_type,
             name: c.name,
             title: c.title,
@@ -127,15 +128,15 @@ impl TH2 {
     /// and `ny` bins over `[ylo, yhi)`. Internal primitive behind the public
     /// builder: [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).double()`.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> TH2 {
+    pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> Hist2D {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2);
-        TH2 {
+        Hist2D {
             bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
-            xaxis: TAxis::new("xaxis", nx, xlo, xhi),
-            yaxis: TAxis::new("yaxis", ny, ylo, yhi),
-            zaxis: TAxis::new("zaxis", 1, 0.0, 1.0),
+            xaxis: Axis::new("xaxis", nx, xlo, xhi),
+            yaxis: Axis::new("yaxis", ny, ylo, yhi),
+            zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
             ncells,
             entries: 0.0,
             tsumw: 0.0,
@@ -152,15 +153,15 @@ impl TH2 {
 
     /// Create an empty `TH2D` with variable bin edges on each axis. Internal
     /// primitive behind [`Hist::var`](crate::Hist::var)`(xedges).var(yedges).double()`.
-    pub(crate) fn new_variable(xedges: &[f64], yedges: &[f64]) -> TH2 {
+    pub(crate) fn new_variable(xedges: &[f64], yedges: &[f64]) -> Hist2D {
         let ncells = (xedges.len() as i32 + 1) * (yedges.len() as i32 + 1);
-        TH2 {
+        Hist2D {
             bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
-            xaxis: TAxis::variable("xaxis", xedges),
-            yaxis: TAxis::variable("yaxis", yedges),
-            zaxis: TAxis::new("zaxis", 1, 0.0, 1.0),
+            xaxis: Axis::variable("xaxis", xedges),
+            yaxis: Axis::variable("yaxis", yedges),
+            zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
             ncells,
             entries: 0.0,
             tsumw: 0.0,
@@ -175,7 +176,7 @@ impl TH2 {
         }
     }
 
-    /// Enable per-bin error tracking (ROOT's `Sumw2`); see [`crate::TH1::sumw2`].
+    /// Enable per-bin error tracking (ROOT's `Sumw2`); see [`crate::Hist1D::sumw2`].
     /// Returns `&mut self` so it can chain.
     pub fn sumw2(&mut self) -> &mut Self {
         if self.sumw2.len() != self.contents.len() {
@@ -191,14 +192,14 @@ impl TH2 {
     }
 
     /// The exact ROOT class name (`"TH2D"`/`"TH2F"`/…), derived from the stored
-    /// [`bin_content_type`](TH2::bin_content_type).
+    /// [`bin_content_type`](Hist2D::bin_content_type).
     #[must_use]
     pub fn class_name(&self) -> String {
         self.bin_content_type.class_name("TH2")
     }
 
     /// This histogram's on-disk [`BinContentType`] (the class suffix);
-    /// [`BinContentType::F64`] by default. See [`crate::TH1::bin_content_type`].
+    /// [`BinContentType::F64`] by default. See [`crate::Hist1D::bin_content_type`].
     #[must_use]
     pub fn bin_content_type(&self) -> BinContentType {
         self.bin_content_type
@@ -233,12 +234,12 @@ impl TH2 {
         self.fill_weight(x, y, 1.0);
     }
 
-    /// Fill `(x, y)` with weight `w`, matching ROOT's `TH2::Fill` semantics:
+    /// Fill `(x, y)` with weight `w`, matching ROOT's `Hist2D::Fill` semantics:
     /// every fill counts toward `fEntries`, the cell (including flow) is
     /// incremented, but the statistical moment sums accumulate only when both
     /// coordinates land in range (`fgStatOverflows` defaults to off).
     pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) {
-        // Before the contents change; see `TH1::fill_weight`.
+        // Before the contents change; see `Hist1D::fill_weight`.
         if w != 1.0 && self.sumw2.is_empty() {
             self.sumw2();
         }
@@ -287,15 +288,15 @@ impl TH2 {
 
 /// Read any 2-D histogram (`TH2D/F/I/S/C/L`), detecting the bin content type from the
 /// stored class.
-pub(crate) fn read_th2(file: &FileReader, name: &str) -> Result<TH2> {
+pub(crate) fn read_th2(file: &FileReader, name: &str) -> Result<Hist2D> {
     decode_th2(histogram_object(file, name, "TH2")?)
 }
 
 /// Read any 2-D histogram from subdirectory `subdir`.
-pub(crate) fn read_th2_in(file: &FileReader, subdir: &str, name: &str) -> Result<TH2> {
+pub(crate) fn read_th2_in(file: &FileReader, subdir: &str, name: &str) -> Result<Hist2D> {
     decode_th2(histogram_object_in(file, subdir, name, "TH2")?)
 }
 
-pub(crate) fn decode_th2((class, object): (String, Vec<u8>)) -> Result<TH2> {
-    TH2::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
+pub(crate) fn decode_th2((class, object): (String, Vec<u8>)) -> Result<Hist2D> {
+    Hist2D::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
 }

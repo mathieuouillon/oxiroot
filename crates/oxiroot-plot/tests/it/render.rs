@@ -8,8 +8,8 @@
 #![cfg(feature = "hist")]
 
 #[cfg(feature = "png")]
-use oxiroot_hist::TProfile;
-use oxiroot_hist::{Hist, TGraph, TH1, TH2};
+use oxiroot_hist::Profile1D;
+use oxiroot_hist::{Graph, Hist, Hist1D, Hist2D};
 #[cfg(feature = "png")]
 use oxiroot_plot::Norm;
 #[cfg(feature = "png")]
@@ -21,7 +21,7 @@ use oxiroot_plot::{
 
 // --- deterministic fixtures (a tiny LCG → reproducible bytes, no rng dep) ---
 
-fn gauss_hist() -> TH1 {
+fn gauss_hist() -> Hist1D {
     let mut h = Hist::reg(40, 50.0, 130.0)
         .double()
         .named("mass")
@@ -41,19 +41,19 @@ fn gauss_hist() -> TH1 {
     h
 }
 
-fn graph() -> TGraph {
+fn graph() -> Graph {
     let x: Vec<f64> = (0..8).map(|i| 55.0 + 10.0 * i as f64).collect();
     let y: Vec<f64> = x
         .iter()
         .map(|v| 1000.0 * (-0.5 * ((v - 90.0) / 9.0).powi(2)).exp())
         .collect();
     let e: Vec<f64> = y.iter().map(|v| v.sqrt().max(5.0)).collect();
-    TGraph::with_errors(x.clone(), y, vec![5.0; x.len()], e)
+    Graph::with_errors(x.clone(), y, vec![5.0; x.len()], e)
         .unwrap()
         .named("data")
 }
 
-fn th2() -> TH2 {
+fn th2() -> Hist2D {
     let mut h = Hist::reg(20, -3.0, 3.0)
         .reg(20, -3.0, 3.0)
         .double()
@@ -69,7 +69,7 @@ fn th2() -> TH2 {
 }
 
 #[cfg(feature = "png")]
-fn profile() -> TProfile {
+fn profile() -> Profile1D {
     let mut p = Hist::reg(10, 0.0, 10.0).profile().named("p");
     for i in 0..400 {
         let x = (i % 10) as f64 + 0.5;
@@ -346,7 +346,7 @@ fn all_histtypes_render() {
 fn graph_profile_plot_and_function_render() {
     // symmetric + asymmetric error graphs
     let sym = graph();
-    let asym = TGraph::with_asymm_errors(
+    let asym = Graph::with_asymm_errors(
         vec![1.0, 2.0, 3.0],
         vec![3.0, 4.0, 3.5],
         vec![0.1, 0.1, 0.1],
@@ -418,7 +418,7 @@ fn hist2d_leaves_empty_bins_as_background() {
     // A fully-filled mesh draws every cell; a mostly-empty one draws far fewer,
     // because empty bins (no data) are not painted — they show the page
     // background instead of the colormap's value-0 color.
-    let rects = |h: &TH2| {
+    let rects = |h: &Hist2D| {
         let mut ax = Axes::new();
         ax.hist2d(h);
         occurrences(&ax.to_svg_string(), "<rect")

@@ -3,7 +3,7 @@
 //! `oxiroot-plot` renders histograms and graphs to **SVG, PNG, and PDF** with a
 //! matplotlib-like API and an mplhep-style histogram look — no ROOT, no
 //! matplotlib, no system fonts. It draws the `oxiroot-hist` types
-//! (`TH1`/`TH2`/`TGraph`/`TProfile`, the `hist` feature) and any other data that
+//! (`Hist1D`/`Hist2D`/`Graph`/`Profile1D`, the `hist` feature) and any other data that
 //! implements [`Hist1dData`], [`Hist2dData`] or [`PointData`].
 //! Everything is drawn through one backend-independent draw IR that fans out
 //! to a tiny-skia raster (PNG), a hand-written SVG, and a hand-written PDF, so
@@ -17,12 +17,12 @@
 //!
 //! # What it can draw
 //!
-//! - **Histograms** — [`Axes::hist`]/[`Axes::hist_with`] draw a `TH1` as an mplhep
+//! - **Histograms** — [`Axes::hist`]/[`Axes::hist_with`] draw a `Hist1D` as an mplhep
 //!   staircase ([`HistType::Step`]/`Fill`/`Band`/`Errorbar`) with `√N`/Sumw2
 //!   error bars.
-//! - **Graphs & profiles** — [`Axes::errorbar`] (`TGraph`, any error variant) and
-//!   [`Axes::profile`] (`TProfile`); [`Axes::plot`] for raw `(x, y)`.
-//! - **2-D histograms** — [`Axes::hist2d`]/[`Axes::hist2d_with`] render a `TH2` as
+//! - **Graphs & profiles** — [`Axes::errorbar`] (`Graph`, any error variant) and
+//!   [`Axes::profile`] (`Profile1D`); [`Axes::plot`] for raw `(x, y)`.
+//! - **2-D histograms** — [`Axes::hist2d`]/[`Axes::hist2d_with`] render a `Hist2D` as
 //!   a color mesh with a colorbar and the real matplotlib `viridis`/`plasma`
 //!   [`Colormap`]s. [`Hist2dOpts::log`] (or [`Hist2dOpts::norm`] with a [`Norm`])
 //!   switches to a log / symlog color scale with a decade colorbar, like
@@ -47,14 +47,14 @@
 //! ```no_run
 //! # #[cfg(feature = "hist")] {
 //! use oxiroot_plot::{Axes, Color, ErrorbarOpts, HistOpts, HistType};
-//! use oxiroot_hist::{Hist, TGraph};
+//! use oxiroot_hist::{Hist, Graph};
 //!
 //! let mut mc = Hist::reg(50, 0.0, 100.0).double().named("mc");
 //! mc.sumw2();
 //! for x in [40.0, 48.0, 50.0, 52.0, 60.0] {
 //!     mc.fill(x);
 //! }
-//! let data = TGraph::with_errors(vec![50.0], vec![3.0], vec![0.0], vec![1.7]).unwrap().named("d");
+//! let data = Graph::with_errors(vec![50.0], vec![3.0], vec![0.0], vec![1.7]).unwrap().named("d");
 //!
 //! let mut ax = Axes::new();
 //! ax.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
@@ -72,10 +72,10 @@
 //! ```no_run
 //! # #[cfg(feature = "hist")] {
 //! use oxiroot_plot::{ratio_subplots, Color, ErrorbarOpts, HistOpts, HistType};
-//! use oxiroot_hist::{Hist, TGraph};
+//! use oxiroot_hist::{Hist, Graph};
 //!
 //! let mc = Hist::reg(50, 0.0, 100.0).double().named("mc");
-//! let ratio_points = TGraph::with_errors(vec![50.0], vec![1.0], vec![0.0], vec![0.1]).unwrap().named("r");
+//! let ratio_points = Graph::with_errors(vec![50.0], vec![1.0], vec![0.0], vec![0.1]).unwrap().named("r");
 //!
 //! let (fig, mut main, mut ratio) = ratio_subplots();
 //! main.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));
@@ -143,7 +143,7 @@ mod tests {
     // the tests reach them through `crate::` (still accessible in-crate).
     use crate::{draw, mathtext, render, text};
     #[cfg(feature = "hist")]
-    use oxiroot_hist::{Hist, TGraph, TH1};
+    use oxiroot_hist::{Graph, Hist, Hist1D};
 
     /// `groups` render to a PNG, or, without the `png` feature, to the error
     /// that names it; they render to an SVG either way.
@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[cfg(feature = "hist")]
-    fn gauss_hist() -> TH1 {
+    fn gauss_hist() -> Hist1D {
         let mut seed = 0x2545_F491_4F6C_DD1Du64;
         let mut next = move || {
             seed = seed
@@ -241,7 +241,7 @@ mod tests {
             .map(|x| 1500.0 * (-0.5 * ((x - 90.0) / 9.0).powi(2)).exp())
             .collect();
         let e: Vec<f64> = y.iter().map(|v| v.sqrt().max(10.0)).collect();
-        let g = TGraph::with_errors(x.clone(), y, vec![6.0; x.len()], e)
+        let g = Graph::with_errors(x.clone(), y, vec![6.0; x.len()], e)
             .unwrap()
             .named("g");
         let mut ax = Axes::new();
@@ -669,7 +669,7 @@ mod tests {
             .map(|i| 0.5 * (edges[i] + edges[i + 1]))
             .collect();
         let ones: Vec<f64> = centers.iter().map(|_| 1.0).collect();
-        let r = TGraph::with_errors(
+        let r = Graph::with_errors(
             centers.clone(),
             ones,
             vec![0.0; centers.len()],
@@ -774,7 +774,7 @@ mod tests {
         // A graph takes it from its display frame, as ROOT stores it.
         let mut frame = Hist::reg(2, 0.0, 7200.0).float().named("Graph");
         frame.xaxis.set_time_format("%H:%M");
-        let mut g = TGraph::new(vec![0.0, 3600.0], vec![1.0, 2.0]).unwrap();
+        let mut g = Graph::new(vec![0.0, 3600.0], vec![1.0, 2.0]).unwrap();
         g.histogram = Some(frame);
         let mut ax = Axes::new();
         ax.errorbar(&g);

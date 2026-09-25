@@ -1,6 +1,6 @@
 //! Reading and writing ROOT `TTree` — the classic columnar store.
 //!
-//! A `TTree` holds `TBranch`es, each storing its values in `TBasket`s (`TKey`s)
+//! A `TTree` holds `TBranch`es, each storing its values in `TBasket`s (`Key`s)
 //! described by `TLeaf`s. This crate reads and writes: primitive scalars
 //! (`bool`/`int`/`float`/… and unsigned variants), fixed-size arrays (`x[N]`),
 //! variable-length arrays (`x[n]`, via `fEntryOffset`), `TLeafC` strings,
@@ -19,7 +19,7 @@ mod value;
 mod writer;
 
 pub use chain::ChainReader;
-pub use entrylist::TEntryList;
+pub use entrylist::EntryList;
 pub use merge::{append_trees, concat_trees};
 pub use reader::{Friend, TreeIndex, TreeReader};
 pub use value::{BranchValues, Jagged, LeafType};

@@ -1,7 +1,7 @@
 //! Histogram sampling and smoothing: draw random values from a histogram's or
-//! a closure's distribution (`TH1::GetRandom` / `FillRandom`) and smooth a
-//! histogram (`TH1::Smooth`). [`Random::sample_binned`] is the shared
-//! inverse-CDF draw, also used by `TF1::get_random` in `oxiroot-hist-func`.
+//! a closure's distribution (`Hist1D::GetRandom` / `FillRandom`) and smooth a
+//! histogram (`Hist1D::Smooth`). [`Random::sample_binned`] is the shared
+//! inverse-CDF draw, also used by `Func1D::get_random` in `oxiroot-hist-func`.
 //!
 //! Sampling needs a uniform random source. oxiroot has no global RNG (no
 //! `gRandom`), so a small dependency-free [`Random`] is provided; seed it for
@@ -17,7 +17,7 @@
 //! assert!((drawn.mean() - src.mean()).abs() < 0.1);
 //! ```
 
-use crate::th1::TH1;
+use crate::hist1d::Hist1D;
 
 /// A small seedable pseudo-random generator (SplitMix64), yielding `f64` in
 /// `[0, 1)` — oxiroot's `TRandom`. Dependency-free and reproducible — seed it
@@ -129,13 +129,13 @@ fn sample_cdf(cdf: &[f64], edges: &[f64], r: f64) -> f64 {
     }
 }
 
-impl TH1 {
+impl Hist1D {
     /// Draw a random `x` from the histogram's distribution (ROOT's `GetRandom`):
     /// the bin contents define the density, a bin is chosen with probability
     /// proportional to its content, and `x` is interpolated within it. Returns
     /// the axis lower edge for an empty histogram.
     ///
-    /// For many draws, prefer [`fill_random`](TH1::fill_random) (it builds the
+    /// For many draws, prefer [`fill_random`](Hist1D::fill_random) (it builds the
     /// cumulative once).
     #[must_use]
     pub fn get_random(&self, rng: &mut Random) -> f64 {
@@ -145,8 +145,8 @@ impl TH1 {
     }
 
     /// Fill this histogram with `n` values drawn from `source`'s distribution
-    /// (ROOT's `FillRandom(TH1*, n)`). Efficient: the cumulative is built once.
-    pub fn fill_random(&mut self, source: &TH1, n: usize, rng: &mut Random) {
+    /// (ROOT's `FillRandom(Hist1D*, n)`). Efficient: the cumulative is built once.
+    pub fn fill_random(&mut self, source: &Hist1D, n: usize, rng: &mut Random) {
         let edges = source.xaxis.edges();
         if let Some(cdf) = build_cdf(source.values()) {
             for _ in 0..n {
@@ -156,7 +156,7 @@ impl TH1 {
     }
 
     /// Fill this histogram with `n` values drawn from a function `f` over this
-    /// histogram's range (ROOT's `FillRandom(TF1*, n)`): `f` is sampled at the
+    /// histogram's range (ROOT's `FillRandom(Func1D*, n)`): `f` is sampled at the
     /// bin centres to form the density.
     pub fn fill_random_fn<F: Fn(f64) -> f64>(&mut self, f: F, n: usize, rng: &mut Random) {
         let nbins = self.xaxis.nbins.max(0) as usize;
@@ -172,7 +172,7 @@ impl TH1 {
     }
 
     /// Smooth the in-range bin contents `ntimes` with ROOT's `353QH, twice`
-    /// algorithm (`TH1::Smooth`). A no-op for fewer than 3 bins.
+    /// algorithm (`Hist1D::Smooth`). A no-op for fewer than 3 bins.
     pub fn smooth(&mut self, ntimes: usize) {
         let nbins = self.xaxis.nbins.max(0) as usize;
         if nbins < 3 {
@@ -194,7 +194,7 @@ fn median(n: usize, hh: &[f64]) -> f64 {
     v[n / 2]
 }
 
-/// ROOT's `TH1::SmoothArray` — the `353QH, twice` smoother, applied `ntimes`.
+/// ROOT's `Hist1D::SmoothArray` — the `353QH, twice` smoother, applied `ntimes`.
 /// Ported faithfully (running medians 3/5/3, quadratic interpolation on flat
 /// segments, a Hanning running mean, then a twice pass over the residuals).
 fn smooth_array(xx: &mut [f64], ntimes: usize) {

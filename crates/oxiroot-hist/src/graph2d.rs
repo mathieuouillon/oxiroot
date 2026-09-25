@@ -1,19 +1,20 @@
-//! `TGraph2D` — an (x, y, z) scatter of points for 3-D surface/scatter display.
+//! `Graph2D` — an (x, y, z) scatter of points for 3-D surface/scatter display.
 //!
-//! On disk (v1): `TNamed`, `TAttLine`, `TAttFill`, `TAttMarker`, then the scalars
+//! On disk (v1): `Named`, `TAttLine`, `TAttFill`, `TAttMarker`, then the scalars
 //! `fNpoints`/`fNpx`/`fNpy`/`fMaxIter`, the `fX`/`fY`/`fZ` `double* //[fNpoints]`
 //! arrays, `fMinimum`/`fMaximum`/`fMargin`/`fZout`, an `fFunctions` list, and the
 //! `fUserHisto` flag. We keep the point data and write ROOT's display defaults
-//! for the rest (an empty `fFunctions`, like [`TGraph`](crate::TGraph)); the
+//! for the rest (an empty `fFunctions`, like [`Graph`](crate::Graph)); the
 //! `fHistogram` display frame is transient in ROOT and not persisted.
 
-use oxiroot_io_core::{read_tnamed, skip_versioned, Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{read_named, skip_versioned, Error, FileReader, RBuffer, Result};
 
 use crate::base::{check_len, object_bytes_any};
 
 /// An (x, y, z) graph (ROOT `TGraph2D`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TGraph2D {
+#[doc(alias = "TGraph2D")]
+pub struct Graph2D {
     /// Graph name (`fName`).
     pub name: String,
     /// Graph title (`fTitle`).
@@ -26,15 +27,15 @@ pub struct TGraph2D {
     pub z: Vec<f64>,
 }
 
-impl TGraph2D {
-    /// Create a `TGraph2D` from paired `x`/`y`/`z` points.
+impl Graph2D {
+    /// Create a `Graph2D` from paired `x`/`y`/`z` points.
     ///
     /// # Errors
     /// [`Error::LengthMismatch`] if `y` or `z` is not as long as `x`.
-    pub fn new(x: Vec<f64>, y: Vec<f64>, z: Vec<f64>) -> Result<TGraph2D> {
+    pub fn new(x: Vec<f64>, y: Vec<f64>, z: Vec<f64>) -> Result<Graph2D> {
         check_len("TGraph2D y", x.len(), y.len())?;
         check_len("TGraph2D z", x.len(), z.len())?;
-        Ok(TGraph2D {
+        Ok(Graph2D {
             name: String::new(),
             title: String::new(),
             x,
@@ -64,7 +65,7 @@ fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
     (0..n).map(|_| r.be_f64()).collect()
 }
 
-fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<TGraph2D> {
+fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<Graph2D> {
     if class != "TGraph2D" {
         return Err(Error::WrongClass {
             name: name.to_string(),
@@ -73,8 +74,8 @@ fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<TGraph2D> {
         });
     }
     let mut r = RBuffer::new(object);
-    let base = r.read_version()?; // TGraph2D v1
-    let named = read_tnamed(&mut r)?;
+    let base = r.read_version()?; // Graph2D v1
+    let named = read_named(&mut r)?;
     skip_versioned(&mut r)?; // TAttLine
     skip_versioned(&mut r)?; // TAttFill
     skip_versioned(&mut r)?; // TAttMarker
@@ -88,7 +89,7 @@ fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<TGraph2D> {
     if let Some(end) = base.end {
         r.seek(end)?; // skip fMinimum/fMaximum/fMargin/fZout/fFunctions/fUserHisto
     }
-    Ok(TGraph2D {
+    Ok(Graph2D {
         name: named.name,
         title: named.title,
         x,
@@ -97,14 +98,14 @@ fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<TGraph2D> {
     })
 }
 
-/// Read a `TGraph2D` named `name`.
-pub(crate) fn read_tgraph2d(file: &FileReader, name: &str) -> Result<TGraph2D> {
+/// Read a `Graph2D` named `name`.
+pub(crate) fn read_tgraph2d(file: &FileReader, name: &str) -> Result<Graph2D> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tgraph2d(name, &class, &object)
 }
 
-/// Read a `TGraph2D` from subdirectory `subdir`.
-pub(crate) fn read_tgraph2d_in(file: &FileReader, subdir: &str, name: &str) -> Result<TGraph2D> {
+/// Read a `Graph2D` from subdirectory `subdir`.
+pub(crate) fn read_tgraph2d_in(file: &FileReader, subdir: &str, name: &str) -> Result<Graph2D> {
     let (class, object) = file.object_in(subdir, name)?;
     decode_tgraph2d(name, &class, &object)
 }

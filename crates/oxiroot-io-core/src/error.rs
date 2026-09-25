@@ -50,7 +50,7 @@ pub enum Error {
         name: String,
     },
     /// A key holds a different class than the one asked for: reading a `TH2F` as
-    /// a `TH1`, say.
+    /// a `Hist1D`, say.
     WrongClass {
         /// The key's name (its path, in a subdirectory); empty if unknown.
         name: String,
@@ -118,7 +118,7 @@ pub enum Error {
     /// fill's values and weights, a tree's branches, an RNTuple's fields, …
     /// Nothing was changed or written.
     LengthMismatch {
-        /// What has the wrong length, e.g. `TGraph y` or `branch "pt"`.
+        /// What has the wrong length, e.g. `Graph y` or `branch "pt"`.
         what: String,
         /// The length it must have (that of the input it is paired with).
         expected: usize,

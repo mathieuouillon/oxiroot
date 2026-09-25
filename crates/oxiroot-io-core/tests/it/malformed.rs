@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{FileReader, TDatime, TKey, WBuffer};
+use oxiroot_io_core::{Datime, FileReader, Key, WBuffer};
 
 fn fixture(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -69,11 +69,11 @@ fn single_byte_flips_never_panic() {
 
 #[test]
 fn tkey_payload_rejects_inconsistent_headers() {
-    let base = TKey {
+    let base = Key {
         nbytes: 100,
         version: 4,
         obj_len: 50,
-        datime: TDatime(0),
+        datime: Datime(0),
         key_len: 32,
         cycle: 1,
         seek_key: 0,
@@ -85,21 +85,21 @@ fn tkey_payload_rejects_inconsistent_headers() {
     let data = vec![0u8; 64];
 
     // key_len > |nbytes| would underflow payload_len — must Err, not panic.
-    let bad_len = TKey {
+    let bad_len = Key {
         key_len: 200,
         ..base.clone()
     };
     assert!(bad_len.payload(&data).is_err());
 
     // seek_key + key_len + payload runs past the buffer — must Err.
-    let past_end = TKey {
+    let past_end = Key {
         seek_key: 1_000_000,
         ..base.clone()
     };
     assert!(past_end.payload(&data).is_err());
 
     // A consistent key inside the buffer succeeds.
-    let ok = TKey {
+    let ok = Key {
         nbytes: 40,
         key_len: 32,
         seek_key: 0,
@@ -118,7 +118,7 @@ fn decompress_huge_declared_length_errors_without_ooming() {
     assert!(oxiroot_compress::decompress(&crafted, 1usize << 40).is_err());
 }
 
-/// Write a payload-less `TKey` header, small or big (64-bit seeks).
+/// Write a payload-less `Key` header, small or big (64-bit seeks).
 fn key_header(w: &mut WBuffer, class: &str, name: &str, seek_key: u64, big: bool) {
     let seek_len = if big { 8 } else { 4 };
     let key_len = 18 + 2 * seek_len + (1 + class.len()) + (1 + name.len()) + 1;
@@ -205,7 +205,7 @@ fn subdir_rejects_overflowing_big_directory_key() {
     assert!(k.seek_key > u64::MAX - 16, "fSeekKey near u64::MAX");
 
     // Navigating into it must Err — not overflow-panic (debug) or wrap to a
-    // bogus small offset (release) in FileReader::subdir -> TKey::payload_start.
+    // bogus small offset (release) in FileReader::subdir -> Key::payload_start.
     assert!(
         f.subdir("d").is_err(),
         "subdir must reject the overflowing directory key"

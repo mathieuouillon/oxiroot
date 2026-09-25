@@ -77,7 +77,7 @@ const APPEND_AH: [f64; 1] = [4.0];
 const DIRS_DH: [f64; 2] = [2.0, 4.0];
 const DIRS_RH: [f64; 3] = [3.0, 6.0, 9.0];
 
-fn canonical_hist() -> TH1 {
+fn canonical_hist() -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("interop");
     // Fill bin i (0-based) with i+1 entries at its center, giving contents
     // [1, 2, 3, 4] without relying on direct field mutation.
@@ -93,7 +93,7 @@ fn canonical_hist() -> TH1 {
 /// A `TH1D` with `contents.len()` unit bins over `[0, n)` whose in-range bin `i`
 /// holds `contents[i]` (one weighted fill per bin). Used for the directory /
 /// multi-object / append fixtures.
-fn hist(name: &str, contents: &[f64]) -> TH1 {
+fn hist(name: &str, contents: &[f64]) -> Hist1D {
     let n = contents.len() as i32;
     let mut h = Hist::reg(n, 0.0, n as f64)
         .double()
@@ -176,7 +176,7 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
 fn read(dir: &Path) -> oxiroot::Result<()> {
     // Histogram written by the ROOT oracle.
     let f = FileReader::open(dir.join("oracle_hist.root"))?;
-    let h = TH1::read_root(&f, "h")?;
+    let h = Hist1D::read_root(&f, "h")?;
     assert_close("hist bin contents", h.values(), &HIST_BINS);
     println!("read oracle_hist.root — bin contents match");
 
@@ -187,10 +187,10 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
     // read_root) and a hist inside subdirectory `region` (`rh`, via
     // read_root_in). Both ROOT C++ and uproot produce it.
     let f = FileReader::open(dir.join("oracle_dirs.root"))?;
-    assert_close("dirs dh", TH1::read_root(&f, "dh")?.values(), &DIRS_DH);
+    assert_close("dirs dh", Hist1D::read_root(&f, "dh")?.values(), &DIRS_DH);
     assert_close(
         "dirs region/rh",
-        TH1::read_root_in(&f, "region", "rh")?.values(),
+        Hist1D::read_root_in(&f, "region", "rh")?.values(),
         &DIRS_RH,
     );
     println!("read oracle_dirs.root — top-level + subdirectory (read_root_in) match");

@@ -1,7 +1,7 @@
 # Histograms
 
-oxiroot provides the classic ROOT histogram family — `TH1`/`TH2`/`TH3` in every
-precision, profiles, and the specialised `TEfficiency`/`THnSparse`/`TH2Poly`
+oxiroot provides the classic ROOT histogram family (`TH1`/`TH2`/`TH3`) — `Hist1D`/`Hist2D`/`Hist3D` in every
+precision, profiles, and the specialised `Efficiency`/`SparseHist`/`PolyHist`
 types — as plain Rust structs you fill, transform, and read or write to ROOT
 files. This page covers construction, filling, arithmetic, statistics, derived
 histograms, compatibility tests, and persistence. (ROOT 7 `RHist` has no
@@ -46,10 +46,10 @@ let variable = Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0]).double();
 ```
 
 Chain another `reg`/`var` per axis for higher dimensions:
-`Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double()` is a `TH2`, and a third
-`.reg(nz, zlo, zhi)` makes it a `TH3`. `reg` and `var` mix freely on any axis, so
+`Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double()` is a `Hist2D`, and a third
+`.reg(nz, zlo, zhi)` makes it a `Hist3D`. `reg` and `var` mix freely on any axis, so
 `Hist::var(xedges).var(yedges).double()` gives variable bins on both axes of a
-`TH2`, and a variable axis works on `TH3` too.
+`Hist2D`, and a variable axis works on `Hist3D` too.
 
 ## Filling
 
@@ -68,7 +68,7 @@ for &(x, w) in &[(5.0, 1.2), (15.0, 0.8), (35.0, 1.5)] {
 }
 ```
 
-`TH2`/`TH3` add coordinates: `h2.fill(x, y)` / `h2.fill_weight(x, y, w)` and
+`Hist2D`/`Hist3D` add coordinates: `h2.fill(x, y)` / `h2.fill_weight(x, y, w)` and
 `h3.fill(x, y, z)` / `h3.fill_weight(x, y, z, w)`.
 
 ### Per-bin errors with `sumw2`
@@ -100,7 +100,7 @@ underflow, `1..=nbins` are in range.
 
 ## Bin content type and class names
 
-A `TH1`/`TH2`/`TH3` keeps its bin contents as `f64` in memory regardless of
+A `Hist1D`/`Hist2D`/`Hist3D` keeps its bin contents as `f64` in memory regardless of
 their on-disk type. The class suffix (`D`/`F`/`I`/`S`/`C`/`L`) is a typed
 [`BinContentType`](../api/oxiroot/index.html) value chosen by the builder's storage
 finalizer: `double()` → `TH1D`, `float()` → `TH1F`, `int32()` → `TH1I`,
@@ -134,21 +134,21 @@ Every type below reads and writes through the same `WriteRoot`/`ReadRoot` traits
 
 | Type | Class(es) | Construct with |
 | --- | --- | --- |
-| `TH1` | `TH1D/F/I/S/C/L` | `Hist::reg(nbins, xmin, xmax).double()`, `Hist::var(edges).double()` |
-| `TH2` | `TH2D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double()`, `Hist::var(xe).var(ye).double()` |
-| `TH3` | `TH3D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).double()` |
-| `TProfile` | `TProfile` | `Hist::reg(nbins, xlo, xhi).profile()` |
-| `TProfile2D` | `TProfile2D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).profile()` |
-| `TProfile3D` | `TProfile3D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).profile()` |
-| `TEfficiency` | `TEfficiency` | `TEfficiency::new(nbins, xlo, xhi)`, then `fill(passed, x)` |
-| `THnSparse` | `THnSparseT<TArrayD>` | `THnSparse::new(&[(nbins, lo, hi), …])`, then `fill(&coords)` |
-| `TH2Poly` | `TH2Poly` | `TH2Poly::new(xlow, xup, ylow, yup)`, then `add_bin`/`add_bin_rect` |
+| `Hist1D` | `TH1D/F/I/S/C/L` | `Hist::reg(nbins, xmin, xmax).double()`, `Hist::var(edges).double()` |
+| `Hist2D` | `TH2D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double()`, `Hist::var(xe).var(ye).double()` |
+| `Hist3D` | `TH3D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).double()` |
+| `Profile1D` | `Profile1D` | `Hist::reg(nbins, xlo, xhi).profile()` |
+| `Profile2D` | `Profile2D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).profile()` |
+| `Profile3D` | `Profile3D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).profile()` |
+| `Efficiency` | `Efficiency` | `Efficiency::new(nbins, xlo, xhi)`, then `fill(passed, x)` |
+| `SparseHist` | `THnSparseT<TArrayD>` | `SparseHist::new(&[(nbins, lo, hi), …])`, then `fill(&coords)` |
+| `PolyHist` | `PolyHist` | `PolyHist::new(xlow, xup, ylow, yup)`, then `add_bin`/`add_bin_rect` |
 
 Profiles store per-bin sums of `w·y` and `w·y²`; the profiled value of a bin is
 `sum / entries`. The per-bin error follows the profile's typed
 [`ErrorMode`](../api/oxiroot/index.html) (`Mean`, `Spread`, `SpreadI`, `SpreadG`,
-mapping ROOT's `fErrorMode`). `TProfile2D::fill(x, y, z)` profiles `z` against
-`(x, y)`; `TProfile3D::fill(x, y, z, t)` profiles `t`.
+mapping ROOT's `fErrorMode`). `Profile2D::fill(x, y, z)` profiles `z` against
+`(x, y)`; `Profile3D::fill(x, y, z, t)` profiles `t`.
 
 ```rust
 use oxiroot::prelude::*;
@@ -159,7 +159,7 @@ prof.fill(1.5, 125.1);
 let profiled = prof.values(); // sum / entries per in-range bin
 ```
 
-`TEfficiency` wraps a passed/total pair of `TH1D`s; `TH2Poly` supports
+`Efficiency` wraps a passed/total pair of `TH1D`s; `PolyHist` supports
 arbitrary-shape polygon bins (`add_bin(&xs, &ys)`) and axis-aligned rectangles
 (`add_bin_rect(xmin, ymin, xmax, ymax)`), both returning the new bin number.
 
@@ -173,13 +173,13 @@ stay inherent and fallible; the infallible `scale` is also exposed as `*`/`*=`.
 | --- | --- | --- |
 | scale | `h.scale(c)` | also `h *= c` and `h * c`; the mean is preserved |
 | add / merge | `h.add(&other, c)?` | adds `c·other`; `c = 1` is the bin-by-bin `hadd` merge |
-| multiply | `h.multiply(&other)?` | `TH1` only |
-| divide | `h.divide(&other)?` | `TH1` only; `0` where the denominator is `0` |
+| multiply | `h.multiply(&other)?` | `Hist1D` only |
+| divide | `h.divide(&other)?` | `Hist1D` only; `0` where the denominator is `0` |
 | integral | `h.integral()` | sum of the in-range bins (excludes flow) |
 
 `add`, `multiply`, and `divide` return `Error::BinningMismatch` and make no
-change if the binnings differ. `add` is implemented for `TH1`/`TH2`/`TH3` and
-for `TProfile`/`TProfile2D`/`TProfile3D`, which merge their per-bin weight sums
+change if the binnings differ. `add` is implemented for `Hist1D`/`Hist2D`/`Hist3D` and
+for `Profile1D`/`Profile2D`/`Profile3D`, which merge their per-bin weight sums
 correctly. For a profile, as in ROOT, a negative `c` flips the profiled values
 but keeps the weights non-negative, so `p.add(&q, -1.0)` subtracts `q`'s
 values.
@@ -199,7 +199,7 @@ signal *= 1.0 / signal.integral().max(1.0); // normalize to unit area
 
 `h[cell]` reads a bin content by flat cell index (`0` is the first under/overflow
 cell, x varies fastest); `for &c in &h` iterates every cell. The shared
-`Histogram` trait abstracts over `TH1`/`TH2`/`TH3` with `contents()`,
+`Histogram` trait abstracts over `Hist1D`/`Hist2D`/`Hist3D` with `contents()`,
 `entries()`, `sum()` (every cell, flow included), and `is_empty()`. Every
 histogram implements `Display` for a one-line summary.
 
@@ -218,8 +218,8 @@ new on-disk state.
 
 | Accessor | Meaning |
 | --- | --- |
-| `mean()` | mean of the in-range fills (`TH2`/`TH3` use `mean_x`/`mean_y`/`mean_z`) |
-| `std_dev()` | standard deviation, ROOT `GetStdDev`/`GetRMS` (`TH2`/`TH3`: `std_dev_x`/`_y`/`_z`) |
+| `mean()` | mean of the in-range fills (`Hist2D`/`Hist3D` use `mean_x`/`mean_y`/`mean_z`) |
+| `std_dev()` | standard deviation, ROOT `GetStdDev`/`GetRMS` (`Hist2D`/`Hist3D`: `std_dev_x`/`_y`/`_z`) |
 | `maximum()` / `minimum()` | largest / smallest in-range bin content |
 | `maximum_bin()` / `minimum_bin()` | bin index of the extremum |
 | `find_bin(x)` | bin holding `x` (0 = underflow, `nbins+1` = overflow) |
@@ -244,7 +244,7 @@ let mid = mass.interpolate(50.0);                 // content at x = 50
     ROOT's tie-handling quirk where a probability landing on a cumulative bin
     boundary returns that bin's center.
 
-The underlying axis is exposed as `xaxis`/`yaxis`/`zaxis` ([`TAxis`](../api/oxiroot/index.html)),
+The underlying axis is exposed as `xaxis`/`yaxis`/`zaxis` ([`Axis`](../api/oxiroot/index.html)),
 with `edges()`, the O(1) `edge(i)`, `find_bin(x)`, and the same
 `bin_center`/`bin_width`/`bin_low_edge` helpers.
 
@@ -257,22 +257,22 @@ source tracks it.
 
 | Operation | From → to | Description |
 | --- | --- | --- |
-| `rebin(ngroup)` | `TH1` → `TH1` | merge `ngroup` adjacent bins; leftovers fold into overflow |
-| `rebin2d(ngx, ngy)` | `TH2` → `TH2` | merge `ngx`×`ngy` blocks |
-| `rebin3d(ngx, ngy, ngz)` | `TH3` → `TH3` | merge `ngx`×`ngy`×`ngz` blocks |
-| `cumulative(forward)` | `TH1` → `TH1` | running sum, forward or reverse |
-| `projection_x(name)` / `projection_y(name)` | `TH2` → `TH1` | sum the other axis |
-| `projection_x/y/z(name)` | `TH3` → `TH1` | sum the other two axes |
-| `projection_xy/xz/yz(name)` | `TH3` → `TH2` | sum the dropped axis |
-| `profile_x(name)` / `profile_y(name)` | `TH2` → `TProfile` | profile along an axis |
+| `rebin(ngroup)` | `Hist1D` → `Hist1D` | merge `ngroup` adjacent bins; leftovers fold into overflow |
+| `rebin2d(ngx, ngy)` | `Hist2D` → `Hist2D` | merge `ngx`×`ngy` blocks |
+| `rebin3d(ngx, ngy, ngz)` | `Hist3D` → `Hist3D` | merge `ngx`×`ngy`×`ngz` blocks |
+| `cumulative(forward)` | `Hist1D` → `Hist1D` | running sum, forward or reverse |
+| `projection_x(name)` / `projection_y(name)` | `Hist2D` → `Hist1D` | sum the other axis |
+| `projection_x/y/z(name)` | `Hist3D` → `Hist1D` | sum the other two axes |
+| `projection_xy/xz/yz(name)` | `Hist3D` → `Hist2D` | sum the dropped axis |
+| `profile_x(name)` / `profile_y(name)` | `Hist2D` → `Profile1D` | profile along an axis |
 
 ```rust
 use oxiroot::prelude::*;
 
 let coarse = fine.rebin(4);                 // group every 4 bins
 let cdf = fine.cumulative(true);            // forward running sum
-let px = corr.projection_x("px");           // TH2 → TH1
-let prof = corr.profile_x("pfx");           // TH2 → TProfile
+let px = corr.projection_x("px");           // Hist2D → Hist1D
+let prof = corr.profile_x("pfx");           // Hist2D → Profile1D
 ```
 
 ## Sampling and smoothing
@@ -299,13 +299,13 @@ resampled.fill_random(&source, 100_000, &mut rng);
 
 // …or draw from a function over the histogram's range:
 resampled.fill_random_fn(|x| (-0.5 * x * x).exp(), 100_000, &mut rng);
-let g = TF1::new("g", "gaus", -5.0, 5.0)?.with_params(vec![1.0, 0.0, 1.0]);
-let y = g.get_random(&mut rng);             // TF1::GetRandom
+let g = Func1D::new("g", "gaus", -5.0, 5.0)?.with_params(vec![1.0, 0.0, 1.0]);
+let y = g.get_random(&mut rng);             // Func1D::GetRandom
 # Ok::<(), oxiroot::Error>(())
 ```
 
 `smooth(ntimes)` applies ROOT's `353QH, twice` smoother to the in-range bins
-(bit-for-bit matching `TH1::Smooth`):
+(bit-for-bit matching `Hist1D::Smooth`):
 
 ```rust
 use oxiroot::prelude::*;
@@ -316,7 +316,7 @@ h.smooth(2);
 
 ## Compatibility tests
 
-`TH1` supports ROOT's `Chi2Test` and `KolmogorovTest`, returning ROOT-matched
+`Hist1D` supports ROOT's `Chi2Test` and `KolmogorovTest`, returning ROOT-matched
 p-values. Both require identical binning and otherwise return
 `Error::BinningMismatch`.
 
@@ -340,7 +340,7 @@ carries `prob` and `distance`.
 
 ## Labelled (alphanumeric) axes
 
-A `TAxis` can carry alphanumeric bin labels (`fLabels`), which round-trip through
+An `Axis` can carry alphanumeric bin labels (`fLabels`), which round-trip through
 ROOT files in both directions.
 
 ```rust
@@ -449,12 +449,12 @@ FileWriter::open("out.root")?
 use oxiroot::prelude::*;
 
 let f = FileReader::open("out.root")?;
-let h = TH1::read_root(&f, "pt")?;            // any of TH1D/F/I/S/C/L
-let sig = TH1::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
+let h = Hist1D::read_root(&f, "pt")?;            // any of TH1D/F/I/S/C/L
+let sig = Hist1D::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
 ```
 
 `read_root` auto-detects the on-disk precision (every `TH1D/F/I/S/C/L` reads into
-a `TH1`, with the exact class preserved in `class_name()`); contents are widened
+a `Hist1D`, with the exact class preserved in `class_name()`); contents are widened
 to `f64`. `read_root_in(file, dir, name)` reads from a subdirectory written via
 `FileWriter::dir`.
 
@@ -466,9 +466,9 @@ See [Compression](compression.md) for the codec options and
 Fitting and multithreaded fills have dedicated pages:
 
 - Fit a parametric model (`gaussian`/`exponential`/`polynomial`, or a closure) to
-  any 1-D data — `TH1` and `TGraph` implement `FitData` — via `.fit(&model)`.
+  any 1-D data — `Hist1D` and `Graph` implement `FitData` — via `.fit(&model)`.
   Requires the `fit` feature. See [Fitting](fitting.md).
-- `ThreadedHist` is the pure-Rust analog of ROOT's `TThreadedObject<TH1>`: share
+- `ThreadedHist` is the pure-Rust analog of ROOT's `TThreadedObject<Hist1D>`: share
   `&hist`, call `hist.fill(x)` from any thread, then `hist.merge()`. See
   [Multithreading](multithreading.md).
 

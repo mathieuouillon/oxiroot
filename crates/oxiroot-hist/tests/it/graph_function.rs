@@ -1,11 +1,11 @@
-//! A `TGraph` carrying a fitted function (`fFunctions`): read ROOT's `TF1`/
+//! A `Graph` carrying a fitted function (`fFunctions`): read ROOT's `TF1`/
 //! `TFormula`, round-trip it, and build one from scratch. Cross-checked against
 //! compiled ROOT C++ and uproot, which both read the oxiroot-written file and
 //! re-evaluate the formula (`Eval(2) == 5` for `[0]+[1]*x` with params `1, 2`).
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{GraphFunction, ReadRoot, TGraph, WriteRoot};
+use oxiroot_hist::{Graph, GraphFunction, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
@@ -14,12 +14,12 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// ROOT's `graph_function.root` holds a `TGraph` "gfit" with one `TF1` "line"
-/// (`[0]+[1]*x`, params `1, 2`) attached. We parse the `TF1`/`TFormula` faithfully.
+/// ROOT's `graph_function.root` holds a `Graph` "gfit" with one `Func1D` "line"
+/// (`[0]+[1]*x`, params `1, 2`) attached. We parse the `Func1D`/`TFormula` faithfully.
 #[test]
 fn reads_root_graph_function() {
     let f = FileReader::open(fixture("graph_function.root")).expect("open");
-    let g = TGraph::read_root(&f, "gfit").expect("read gfit");
+    let g = Graph::read_root(&f, "gfit").expect("read gfit");
     assert_eq!(g.title, "fitted");
     assert_eq!(g.x, vec![0.0, 1.0, 2.0, 3.0, 4.0]);
     assert_eq!(g.y, vec![1.0, 3.0, 5.0, 7.0, 9.0]);
@@ -37,7 +37,7 @@ fn reads_root_graph_function() {
     assert_eq!(fun.ndf, 0);
 
     // The plain graphs in graphs.root carry no functions.
-    let g0 = TGraph::read_root(&FileReader::open(fixture("graphs.root")).unwrap(), "g").unwrap();
+    let g0 = Graph::read_root(&FileReader::open(fixture("graphs.root")).unwrap(), "g").unwrap();
     assert!(g0.functions.is_empty());
 }
 
@@ -46,10 +46,10 @@ fn reads_root_graph_function() {
 #[test]
 fn graph_function_round_trips_from_root() {
     let f = FileReader::open(fixture("graph_function.root")).expect("open");
-    let g = TGraph::read_root(&f, "gfit").expect("read");
+    let g = Graph::read_root(&f, "gfit").expect("read");
     let out = std::env::temp_dir().join("oxiroot_graph_function_rt.root");
     g.write_root(&out, Compression::None).expect("write");
-    let back = TGraph::read_root(&FileReader::open(&out).unwrap(), "gfit").unwrap();
+    let back = Graph::read_root(&FileReader::open(&out).unwrap(), "gfit").unwrap();
     assert_eq!(back, g, "round-trip changed the graph/function");
     let _ = std::fs::remove_file(&out);
 }
@@ -58,7 +58,7 @@ fn graph_function_round_trips_from_root() {
 /// and round-trips. `new` normalizes the `[0]`-form formula to `[pN]` form.
 #[test]
 fn graph_function_built_from_scratch() {
-    let g = TGraph::new(vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![1.0, 3.0, 5.0, 7.0, 9.0])
+    let g = Graph::new(vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![1.0, 3.0, 5.0, 7.0, 9.0])
         .unwrap()
         .named("gfit")
         .titled("fitted")
@@ -76,7 +76,7 @@ fn graph_function_built_from_scratch() {
 
     let out = std::env::temp_dir().join("oxiroot_graph_function_scratch.root");
     g.write_root(&out, Compression::Zstd(3)).expect("write");
-    let back = TGraph::read_root(&FileReader::open(&out).unwrap(), "gfit").unwrap();
+    let back = Graph::read_root(&FileReader::open(&out).unwrap(), "gfit").unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
@@ -84,7 +84,7 @@ fn graph_function_built_from_scratch() {
 /// Several functions can be attached and all round-trip in order.
 #[test]
 fn multiple_functions_round_trip() {
-    let g = TGraph::new(vec![0.0, 1.0], vec![0.0, 1.0])
+    let g = Graph::new(vec![0.0, 1.0], vec![0.0, 1.0])
         .unwrap()
         .named("g")
         .with_function(GraphFunction::new(
@@ -98,7 +98,7 @@ fn multiple_functions_round_trip() {
 
     let out = std::env::temp_dir().join("oxiroot_graph_multifn.root");
     g.write_root(&out, Compression::None).expect("write");
-    let back = TGraph::read_root(&FileReader::open(&out).unwrap(), "g").unwrap();
+    let back = Graph::read_root(&FileReader::open(&out).unwrap(), "g").unwrap();
     assert_eq!(back.functions.len(), 2);
     assert_eq!(back.functions[0].name, "lin");
     assert_eq!(back.functions[1].name, "sq");

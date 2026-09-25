@@ -2,9 +2,9 @@
 //!
 //! Read and write [RNTuple](oxiroot_rntuple) (ROOT's columnar event-data
 //! format), classic [`TTree`](oxiroot_tree), the [histogram](oxiroot_hist)
-//! family (`TH1`/`TH2`/`TH3`, `TProfile`/`2D`/`3D`, `TEfficiency`, `THnSparse`,
-//! `TH2Poly`), and [graphs](oxiroot_hist::TGraph) (`TGraph`/`TGraphErrors`/
-//! `TGraphAsymmErrors`, plus `TGraph2D` and `TGraphMultiErrors`) in the ROOT (`TFile`) container, with no C++/libROOT
+//! family (`Hist1D`/`Hist2D`/`Hist3D`, `Profile1D`/`2D`/`3D`, `Efficiency`, `SparseHist`,
+//! `PolyHist`), and [graphs](oxiroot_hist::Graph) (`Graph`/`TGraphErrors`/
+//! `TGraphAsymmErrors`, plus `Graph2D` and `MultiErrorGraph`) in the ROOT (`TFile`) container, with no C++/libROOT
 //! dependency. Files written here are read by official ROOT and uproot, and
 //! vice versa.
 //!
@@ -29,16 +29,24 @@
 //!
 //! # Naming
 //!
-//! Types that read a file end in `Reader` ([`FileReader`],
-//! [`TreeReader`](tree::TreeReader), [`NtupleReader`](ntuple::NtupleReader),
-//! [`ChainReader`](tree::ChainReader)), and types that write one end in
-//! `Writer` ([`FileWriter`](file::FileWriter), [`TreeWriter`](tree::TreeWriter),
-//! [`NtupleWriter`](ntuple::NtupleWriter)). The rest is in-memory data:
-//! histograms and graphs keep their ROOT class names (`TH1`, `TGraph`, …), and
-//! a [`Tree`](tree::Tree) or [`Ntuple`](ntuple::Ntuple) holds a whole tree or
-//! RNTuple to write in one go. ROOT's names for the readers and writers
-//! (`TFile`, `TTree`, `RNTuple`, `TChain`) are doc aliases, so searching the
-//! docs for them finds these types.
+//! Types are named as Rust, not as C++: no `T` prefix. Types that read a file
+//! end in `Reader` ([`FileReader`], [`TreeReader`](tree::TreeReader),
+//! [`NtupleReader`](ntuple::NtupleReader), [`ChainReader`](tree::ChainReader)),
+//! and types that write one end in `Writer` ([`FileWriter`](file::FileWriter),
+//! [`TreeWriter`](tree::TreeWriter), [`NtupleWriter`](ntuple::NtupleWriter)).
+//! The rest is in-memory data named for what it is —
+//! [`Hist1D`](hist::Hist1D), [`Profile1D`](hist::Profile1D),
+//! [`Graph`](hist::Graph), [`Func1D`](hist::Func1D) — and a
+//! [`Tree`](tree::Tree) or [`Ntuple`](ntuple::Ntuple) holds a whole tree or
+//! RNTuple to write in one go.
+//!
+//! Every ROOT class name is a doc alias of the type that models it, so searching
+//! the docs for `TH1`, `TProfile`, `TGraph`, `TF1`, `TFile`, `TTree`, `TChain`
+//! or `RNTuple` lands on the right page. None of this touches the file: a
+//! `Hist1D` still reads and writes a `TH1D`, and `class_name()` reports the ROOT
+//! class it came from. ROOT's own spelling survives in one place in the API —
+//! the dynamic [`Value`] tree, whose member keys (`fName`, `fBins`, …) are the
+//! file's own field names, read from its `TStreamerInfo`.
 //!
 //! The flat [`prelude`] covers the common read/write surface; the [`hist`],
 //! [`ntuple`], [`tree`], [`compress`], and [`file`](mod@file) modules expose
@@ -62,14 +70,14 @@ pub mod compress {
 }
 
 /// Classic ROOT histograms, profiles, graphs and functions —
-/// `TH1`/`TH2`/`TH3`/`TProfile`/`TGraph`/`TF1`… (from `oxiroot-hist` and
+/// `Hist1D`/`Hist2D`/`Hist3D`/`Profile1D`/`Graph`/`Func1D`… (from `oxiroot-hist` and
 /// `oxiroot-hist-func`).
 pub mod hist {
     pub use oxiroot_hist::*;
-    pub use oxiroot_hist_func::{TF1, TF2, TF3};
+    pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
 }
 
-/// ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym` (from
+/// ROOT linear-algebra objects — `Vector`/`Matrix`/`SymMatrix` (from
 /// `oxiroot-linalg`), with byte-exact ROOT read/write.
 pub mod linalg {
     pub use oxiroot_linalg::*;
@@ -106,7 +114,7 @@ pub mod particle {
 /// Curve fitting for any 1-D data — histograms, graphs, or custom points (from
 /// `oxiroot-fit`). The [`FitData`](oxiroot_fit::FitData) trait + the blanket
 /// [`FitExt`](oxiroot_fit::FitExt) give `data.fit(&model)` to every dataset;
-/// `hist`'s `TH1`/`TGraph` implement `FitData` (under the `fit` feature).
+/// `hist`'s `Hist1D`/`Graph` implement `FitData` (under the `fit` feature).
 #[cfg(feature = "fit")]
 pub mod fit {
     pub use oxiroot_fit::*;
@@ -114,7 +122,7 @@ pub mod fit {
 
 /// Plotting — render histograms and graphs to SVG/PNG with a matplotlib-like
 /// API and an mplhep histogram style (from `oxiroot-plot`). `Axes::hist`/
-/// `errorbar`/`hist2d` draw `TH1`/`TGraph`/`TH2`; `$…$` labels are typeset as
+/// `errorbar`/`hist2d` draw `Hist1D`/`Graph`/`Hist2D`; `$…$` labels are typeset as
 /// LaTeX math. Enabled by the `plot` feature.
 #[cfg(feature = "plot")]
 pub mod plot {
@@ -131,8 +139,8 @@ pub mod prelude {
     // `Error` and `Result` are deliberately not here: a glob import would shadow
     // `std::result::Result`. Name them as `oxiroot::Error` / `oxiroot::Result`.
     pub use oxiroot_io_core::{
-        Compression, FileReader, FileWriter, FromMember, ListKind, ObjList, ParamValue, ReadRoot,
-        SubdirWriter, TMap, TObjString, TParameter, WriteInto, WriteRoot,
+        Compression, FileReader, FileWriter, FromMember, ListKind, ObjList, ObjMap, ObjString,
+        ParamValue, Parameter, ReadRoot, SubdirWriter, WriteInto, WriteRoot,
     };
 
     pub use crate::hadd::{merge_files, MergeKind, MergeReport, Merger};
@@ -144,20 +152,20 @@ pub mod prelude {
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     pub use oxiroot_hist::{
-        BinContentType, Chi2TestKind, Chi2TestResult, ErrorMode, GraphErrors, GraphFunction, Hist,
-        Histogram, KsTestResult, Mergeable, PolyBin, Random, SparseBin, TAxis, TEfficiency, TGraph,
-        TGraph2D, TGraphMultiErrors, TH2Poly, THStack, THnSparse, TMultiGraph, TProfile,
-        TProfile2D, TProfile3D, ThreadedHist, TH1, TH2, TH3,
+        Axis, BinContentType, Chi2TestKind, Chi2TestResult, Efficiency, ErrorMode, Graph, Graph2D,
+        GraphErrors, GraphFunction, GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack, Histogram,
+        KsTestResult, Mergeable, MultiErrorGraph, PolyBin, PolyHist, Profile1D, Profile2D,
+        Profile3D, Random, SparseBin, SparseHist, ThreadedHist,
     };
-    pub use oxiroot_hist_func::{TF1, TF2, TF3};
-    pub use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
+    pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
+    pub use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
     pub use oxiroot_rntuple::{
         write_rntuple_file, Column, Field, FieldValues, Ntuple, NtupleReader, NtupleWriter,
     };
 
     pub use oxiroot_tree::{
-        write_tree_file, write_tree_file_baskets, Branch, BranchValues, ChainReader, Friend,
-        Jagged, LeafType, SplitMember, TEntryList, Tree, TreeIndex, TreeReader, TreeWriter,
+        write_tree_file, write_tree_file_baskets, Branch, BranchValues, ChainReader, EntryList,
+        Friend, Jagged, LeafType, SplitMember, Tree, TreeIndex, TreeReader, TreeWriter,
     };
 }

@@ -1,9 +1,9 @@
 //! Integration test for integer-typed histograms (TArrayC/S/I/L64), read via
-//! `TH1::read_root` which detects the bin content type from the stored class.
+//! `Hist1D::read_root` which detects the bin content type from the stored class.
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, TH1};
+use oxiroot_hist::{Hist1D, ReadRoot};
 use oxiroot_io_core::FileReader;
 
 fn open(name: &str) -> FileReader {
@@ -51,7 +51,7 @@ fn reads_integer_histograms() {
     ];
 
     for (file, key, class, expected) in cases {
-        let h = TH1::read_root(&open(file), key).expect("read integer TH1");
+        let h = Hist1D::read_root(&open(file), key).expect("read integer TH1");
         assert_eq!(h.class_name(), class, "{file}");
         assert_eq!(h.xaxis.nbins, 5, "{file}");
         assert_eq!(h.values(), expected, "{file}: bin contents");
@@ -60,8 +60,8 @@ fn reads_integer_histograms() {
 
 #[test]
 fn th1_read_root_rejects_wrong_dimension() {
-    // th2f holds a TH2F; asking for a TH1 must fail rather than mis-read.
-    let err = TH1::read_root(&open("th2f_uncompressed.root"), "h2f").unwrap_err();
+    // th2f holds a TH2F; asking for a Hist1D must fail rather than mis-read.
+    let err = Hist1D::read_root(&open("th2f_uncompressed.root"), "h2f").unwrap_err();
     assert!(
         matches!(&err, oxiroot_io_core::Error::WrongClass { found, .. } if found == "TH2F"),
         "{err:?}"

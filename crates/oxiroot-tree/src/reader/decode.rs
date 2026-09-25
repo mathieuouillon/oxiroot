@@ -248,7 +248,7 @@ fn entry_regions_variable(baskets: &[Basket]) -> Result<Vec<&[u8]>> {
 /// entry's whole object (`[className][version][members]`); walk the object class
 /// and collect `om.member`, typed by `leaf_type`. Decoding is registry-free —
 /// the object class's elements are carried on `om`, and base classes other than
-/// `TObject`/`TNamed` degrade to a byte-count skip.
+/// `TObject`/`Named` degrade to a byte-count skip.
 fn decode_object_members(
     leaf_type: LeafType,
     om: &ObjectMember,
