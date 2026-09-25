@@ -3,11 +3,11 @@
 //! and round-trip through a real file.
 
 use oxiroot_hist::{
-    BinContentType, Compression, FileWriter, Hist, ReadRoot, TProfile, WriteRoot, TH1, TH2,
+    BinContentType, Compression, FileWriter, Hist, Hist1D, Hist2D, Profile1D, ReadRoot, WriteRoot,
 };
 use oxiroot_io_core::FileReader;
 
-fn sample() -> TH1 {
+fn sample() -> Hist1D {
     let mut h = Hist::reg(10, 0.0, 10.0).double().named("h").titled("title");
     h.sumw2();
     for i in 0..10 {
@@ -38,7 +38,7 @@ fn write_root_then_read_root_round_trips() {
         .expect("write_root");
 
     let f = FileReader::open(&path).expect("open");
-    let back = TH1::read_root(&f, "h").expect("read_root");
+    let back = Hist1D::read_root(&f, "h").expect("read_root");
     assert_eq!(back.values(), h.values());
     assert_eq!(back.name, "h");
     assert_eq!(back.class_name(), "TH1D");
@@ -50,14 +50,14 @@ fn float_precision_round_trips_as_th1f() {
     let path = std::env::temp_dir().join("oxiroot_traitapi_hf.root");
     h.write_root(&path, Compression::None).expect("write");
     let f = FileReader::open(&path).expect("open");
-    let back = TH1::read_root(&f, "h").expect("read");
+    let back = Hist1D::read_root(&f, "h").expect("read");
     assert_eq!(back.class_name(), "TH1F"); // bin content type preserved on round-trip
 }
 
 #[test]
 fn write_root_file_handles_heterogeneous_objects() {
     // The new multi-object writer takes any mix of writable types via &dyn —
-    // not just TH1/TH2/TH3 as the old Hist enum did.
+    // not just Hist1D/Hist2D/Hist3D as the old Hist enum did.
     let h1 = Hist::reg(5, 0.0, 5.0).double().named("h1");
     let h2 = Hist::reg(4, 0.0, 4.0).reg(4, 0.0, 4.0).double().named("h2");
     let p = Hist::reg(5, 0.0, 5.0).profile().named("p");
@@ -70,7 +70,7 @@ fn write_root_file_handles_heterogeneous_objects() {
         .expect("write multi-object file");
 
     let f = FileReader::open(&path).expect("open");
-    assert!(TH1::read_root(&f, "h1").is_ok());
-    assert!(TH2::read_root(&f, "h2").is_ok());
-    assert!(TProfile::read_root(&f, "p").is_ok());
+    assert!(Hist1D::read_root(&f, "h1").is_ok());
+    assert!(Hist2D::read_root(&f, "h2").is_ok());
+    assert!(Profile1D::read_root(&f, "p").is_ok());
 }

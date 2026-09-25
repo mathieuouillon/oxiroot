@@ -5,7 +5,7 @@
 //! streamer-info record, and the switch between the 32-bit ("small") and 64-bit
 //! ("big") forms. Format writers (histograms, `TTree`, RNTuple) only decide what
 //! goes where: [`place_key`](ContainerWriter::place_key) stores an object under
-//! a `TKey`, and [`place_blob`](ContainerWriter::place_blob) stores raw bytes that
+//! a `Key`, and [`place_blob`](ContainerWriter::place_blob) stores raw bytes that
 //! something else points at by absolute offset (RNTuple pages, `TTree` baskets).
 //!
 //! The writer streams to any `Write + Seek` sink and back-patches the header and
@@ -21,8 +21,8 @@ use crate::streamer_gen::{append_streamer_infos, streamer_info_list, Cls};
 use crate::streamer_info::{parse_streamer_info, StreamerRegistry};
 use crate::Compression;
 
-use super::header::{TUuid, BIG_FILE_VERSION, MAGIC};
-use super::key::{TDatime, TKey};
+use super::header::{Uuid, BIG_FILE_VERSION, MAGIC};
+use super::key::{Datime, Key};
 use super::reader::FileReader;
 
 /// `fVersion` of a new small-form file (ROOT 6.24's format). The big form adds
@@ -96,7 +96,7 @@ enum HeaderUpdate {
     Rewrite {
         version: u32,
         compress: u32,
-        uuid: TUuid,
+        uuid: Uuid,
     },
 }
 
@@ -109,7 +109,7 @@ struct DirState {
     /// Offset of the directory's `TDirectory` record.
     record: u64,
     /// The directory's keys, listed in its key list when it is closed.
-    keys: Vec<TKey>,
+    keys: Vec<Key>,
     open: bool,
 }
 
@@ -132,9 +132,9 @@ struct DirState {
 /// use oxiroot_io_core::{Compression, ContainerWriter, DirId, FileReader};
 ///
 /// let bytes = ContainerWriter::build("demo.root", Compression::None, u64::MAX, |c| {
-///     c.place_key(DirId::TOP, "TObjString", "note", "", b"payload")?;
+///     c.place_key(DirId::TOP, "ObjString", "note", "", b"payload")?;
 ///     let sub = c.mkdir(DirId::TOP, "sub")?;
-///     c.place_key(sub, "TObjString", "inner", "", b"more")?;
+///     c.place_key(sub, "ObjString", "inner", "", b"more")?;
 ///     c.close_dir(sub)
 /// })?;
 /// let f = FileReader::from_bytes(bytes)?;
@@ -295,7 +295,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         let header_update = if big {
             // Everything after the top directory's name and title belongs to its
             // record; the big form needs its full width there.
-            let name_key = TKey::read(&mut RBuffer::new(
+            let name_key = Key::read(&mut RBuffer::new(
                 &file.read_at(header.begin, header.nbytes_name as usize)?,
             ))?;
             let name_title_len = header
@@ -647,7 +647,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// went. The records they name stay where they are — the file does not
     /// shrink — but the directory no longer lists them, so nothing reads them:
     /// ROOT's `TFile::Delete`, without its free-list bookkeeping.
-    pub fn drop_keys(&mut self, dir: DirId, mut keep: impl FnMut(&TKey) -> bool) -> Result<usize> {
+    pub fn drop_keys(&mut self, dir: DirId, mut keep: impl FnMut(&Key) -> bool) -> Result<usize> {
         self.check_open(dir)?;
         let keys = &mut self.dirs[dir.0].keys;
         let before = keys.len();
@@ -656,7 +656,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
     }
 
     /// The keys directory `dir` currently lists.
-    pub fn keys(&self, dir: DirId) -> Result<&[TKey]> {
+    pub fn keys(&self, dir: DirId) -> Result<&[Key]> {
         self.dirs
             .get(dir.0)
             .map(|d| d.keys.as_slice())
@@ -790,7 +790,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         end: u64,
         version: u32,
         compress: u32,
-        uuid: TUuid,
+        uuid: Uuid,
         keys_seek: u64,
         keys_nbytes: u32,
     ) -> Result<()> {
@@ -921,7 +921,7 @@ fn describes(listed: &[(String, i32)], class: &Cls<'_>) -> bool {
 fn read_existing_info(file: &FileReader) -> Result<ExistingInfo> {
     let header = file.header();
     let record = file.read_at(header.seek_info, header.nbytes_info as usize)?;
-    let key_len = TKey::read(&mut RBuffer::new(&record))?.key_len;
+    let key_len = Key::read(&mut RBuffer::new(&record))?.key_len;
     let list = file
         .streamer_info_object()?
         .ok_or_else(|| Error::Format("no streamer-info record".to_string()))?;
@@ -937,7 +937,7 @@ fn read_existing_info(file: &FileReader) -> Result<ExistingInfo> {
 /// small or big form: ROOT's own title when that fits, otherwise the same text
 /// cut or space-padded to length. `None` when no title can.
 fn streamer_info_title(key_len: u16, big: bool) -> Option<String> {
-    let without_title = TKey::header_len(STREAMER_INFO_CLASS, STREAMER_INFO_NAME, "", big);
+    let without_title = Key::header_len(STREAMER_INFO_CLASS, STREAMER_INFO_NAME, "", big);
     // The empty title above already counts its one-byte length prefix.
     let len = usize::from(key_len).checked_sub(without_title)?;
     if len >= 255 {
@@ -953,7 +953,7 @@ fn streamer_info_title(key_len: u16, big: bool) -> Option<String> {
 /// A key header records its own length in 16 bits, which bounds the combined
 /// length of its class, name and title.
 fn check_key_strings(class: &str, name: &str, title: &str) -> Result<()> {
-    let len = TKey::header_len(class, name, title, true);
+    let len = Key::header_len(class, name, title, true);
     if len > usize::from(u16::MAX) {
         return Err(Error::InvalidInput(format!(
             "key {:?}: class, name and title total {len} bytes, more than a ROOT key header can hold",
@@ -983,9 +983,9 @@ fn new_key(
     seek_pdir: u64,
     cycle: u16,
     big: bool,
-) -> TKey {
+) -> Key {
     let key_len = key_len_fmt(class, name, title, big);
-    TKey {
+    Key {
         nbytes: (u32::from(key_len) + payload_len) as i32,
         version: if big {
             KEY_VERSION_SMALL + 1000
@@ -993,7 +993,7 @@ fn new_key(
             KEY_VERSION_SMALL
         },
         obj_len,
-        datime: TDatime(DATIME),
+        datime: Datime(DATIME),
         key_len,
         cycle,
         seek_key: seek,
@@ -1006,10 +1006,10 @@ fn new_key(
 
 /// Length of a key header, which [`check_key_strings`] has bounded to 16 bits.
 fn key_len_fmt(class: &str, name: &str, title: &str, big: bool) -> u16 {
-    TKey::header_len(class, name, title, big) as u16
+    Key::header_len(class, name, title, big) as u16
 }
 
-/// Write a `TKey` header (no payload) in the small or big form. `obj_len` is the
+/// Write a `Key` header (no payload) in the small or big form. `obj_len` is the
 /// uncompressed object size; `payload_len` the stored size.
 #[allow(clippy::too_many_arguments)]
 fn write_key_header_fmt(

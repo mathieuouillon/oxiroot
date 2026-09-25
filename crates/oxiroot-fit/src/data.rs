@@ -108,7 +108,7 @@ impl FitData for [Point] {
 }
 
 /// Fit methods for any [`FitData`]. Implemented for all of them by a blanket
-/// impl, so `data.fit(&model)` works for a `TH1`, a `TGraph`, or [`Points`]
+/// impl, so `data.fit(&model)` works for a `Hist1D`, a `Graph`, or [`Points`]
 /// alike. Bring it into scope (`use oxiroot_fit::FitExt;`, or the `oxiroot`
 /// prelude) to call these.
 pub trait FitExt: FitData {

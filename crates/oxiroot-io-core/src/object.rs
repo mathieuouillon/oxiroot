@@ -17,7 +17,7 @@ const K_CLASS_MASK: u32 = 0x8000_0000;
 const K_MAP_OFFSET: i64 = 2;
 
 /// The outcome of reading an object's `{byte-count, class-tag}` header.
-pub struct ObjHeader {
+pub struct RecordHeader {
     /// The resolved class name, or `None` for a null/parent slot.
     pub class_name: Option<String>,
     /// Absolute buffer offset one past the object, when a byte count was present.
@@ -74,7 +74,7 @@ impl TagReader {
 
     /// Read a `ReadObjectAny`-style header, resolving the class name and the
     /// object's end offset. Leaves the cursor at the object body.
-    pub fn read_header(&mut self, r: &mut RBuffer) -> Result<ObjHeader> {
+    pub fn read_header(&mut self, r: &mut RBuffer) -> Result<RecordHeader> {
         let beg = r.pos();
         let bcnt_raw = r.be_u32()?;
 
@@ -94,7 +94,7 @@ impl TagReader {
         if tag & K_CLASS_MASK == 0 {
             // Null (0), parent (1), or an object back-reference: a pointer to an
             // object already streamed in this buffer (a split TBranchElement's
-            // fLeaves references its sub-branches' leaves; a TH2Poly's fBins
+            // fLeaves references its sub-branches' leaves; a PolyHist's fBins
             // references the bins its fCells grid wrote in full). The slot holds
             // no body, so it reads as "no object"; `back_ref` says where the
             // object it points at was written, for a reader that wants it.
@@ -103,7 +103,7 @@ impl TagReader {
             } else {
                 None
             };
-            Ok(ObjHeader {
+            Ok(RecordHeader {
                 class_name: None,
                 end,
                 back_ref,
@@ -120,7 +120,7 @@ impl TagReader {
                 self.refs.insert(self.seq, classname.clone());
             }
             self.map_object(beg, &classname, r.pos());
-            Ok(ObjHeader {
+            Ok(RecordHeader {
                 class_name: Some(classname),
                 end,
                 back_ref: None,
@@ -132,7 +132,7 @@ impl TagReader {
                     Error::Format(format!("unknown class-tag reference {refpos}"))
                 })?;
             self.map_object(beg, &classname, r.pos());
-            Ok(ObjHeader {
+            Ok(RecordHeader {
                 class_name: Some(classname),
                 end,
                 back_ref: None,

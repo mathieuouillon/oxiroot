@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{ReadRoot, TH2};
+use oxiroot_hist::{Hist2D, ReadRoot};
 use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
@@ -15,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 #[test]
 fn reads_th2d_uncompressed() {
     let f = FileReader::open(fixture("th2d_uncompressed.root")).expect("open fixture");
-    let h = TH2::read_root(&f, "h2").expect("read TH2D");
+    let h = Hist2D::read_root(&f, "h2").expect("read TH2D");
 
     assert_eq!(h.name, "h2");
     assert_eq!(h.nx(), 3);

@@ -71,7 +71,7 @@ pub struct RNTupleAnchor {
 }
 
 impl RNTupleAnchor {
-    /// Parse and checksum-verify the anchor from the decompressed TKey object
+    /// Parse and checksum-verify the anchor from the decompressed Key object
     /// bytes (which begin with ROOT's object header).
     pub fn read(object: &[u8]) -> Result<RNTupleAnchor> {
         let mut r = RBuffer::new(object);

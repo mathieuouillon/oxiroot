@@ -20,12 +20,12 @@ use crate::{Compression, FileReader};
 
 /// Read a ROOT object of this type from an open file by key name, auto-detecting
 /// the on-disk precision where one applies (`TH1D`/`F`/`I`/`S`/`C`/`L` all read
-/// into a `TH1`). This is the way to read any single object:
+/// into a `Hist1D`). This is the way to read any single object:
 ///
 /// ```ignore
 /// let f = FileReader::open("in.root")?;
-/// let h = TH1::read_root(&f, "h")?;               // any of TH1D/F/I/S/C/L
-/// let s = TH1::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
+/// let h = Hist1D::read_root(&f, "h")?;               // any of TH1D/F/I/S/C/L
+/// let s = Hist1D::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
 /// ```
 pub trait ReadRoot: Sized {
     /// Read the object stored under key `name` in the file's top directory.
@@ -43,7 +43,7 @@ pub trait ReadRoot: Sized {
 /// [`streamer_classes`](WriteRoot::streamer_classes); every file that stores the
 /// object embeds that description, so uproot can model it.
 pub trait WriteRoot {
-    /// The ROOT class name written for this object (e.g. `"TH1D"`, `"TProfile"`).
+    /// The ROOT class name written for this object (e.g. `"TH1D"`, `"Profile1D"`).
     fn root_class(&self) -> String;
     /// The object's key name (`fName`).
     fn root_name(&self) -> &str;
@@ -218,8 +218,8 @@ pub fn object_bytes_any(file: &FileReader, name: &str) -> Result<(String, Vec<u8
 
 /// Like [`object_bytes_any`], but also return the key's header length, needed by
 /// the object-reference map ([`crate::object::TagReader`]) to resolve the class
-/// back-references inside a collection (a `THStack`'s `TList` of histograms, a
-/// `TMultiGraph`'s `TList` of graphs).
+/// back-references inside a collection (a `HistStack`'s `TList` of histograms, a
+/// `GraphStack`'s `TList` of graphs).
 pub fn object_bytes_any_keyed(file: &FileReader, name: &str) -> Result<(String, Vec<u8>, usize)> {
     let key = file.key(name).ok_or_else(|| Error::NotFound {
         what: "key",

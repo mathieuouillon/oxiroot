@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH1};
+use oxiroot_hist::{Hist, Hist1D, ReadRoot, WriteRoot};
 use oxiroot_io_core::FileReader;
 
 #[test]
@@ -34,7 +34,7 @@ fn merge_then_scale_matches_root() {
     a.write_root(&out, oxiroot_io_core::Compression::None)
         .expect("write");
     let f = FileReader::open(&out).expect("reopen");
-    assert_eq!(TH1::read_root(&f, "h").unwrap(), a, "round-trips");
+    assert_eq!(Hist1D::read_root(&f, "h").unwrap(), a, "round-trips");
 }
 
 #[test]
@@ -132,8 +132,8 @@ fn tprofile_merge_and_bin_error_match_root() {
     assert!(wrong.add(&a, 1.0).is_err(), "different binning rejected");
 }
 
-/// Regression: `TProfile::add` scaled Σw·y² by `c²` while every other weighted
-/// sum — and `TH2::add`'s identical `tsumwy2` line — scales by `c`. Σw·y² is
+/// Regression: `Profile1D::add` scaled Σw·y² by `c²` while every other weighted
+/// sum — and `Hist2D::add`'s identical `tsumwy2` line — scales by `c`. Σw·y² is
 /// linear in the weight, so `c` is correct. Invisible at `c == 1` (the merge
 /// path), which is why no existing test caught it.
 #[test]
@@ -251,12 +251,12 @@ fn profile_add_at_unit_scale_is_unchanged() {
 /// they merge the same way, and refuse an incompatible partner.
 mod merges {
     use oxiroot_hist::{
-        GraphFunction, Hist, Mergeable, TEfficiency, TGraph, TH2Poly, THStack, THnSparse,
+        Efficiency, Graph, GraphFunction, Hist, HistStack, Mergeable, PolyHist, SparseHist,
     };
     use oxiroot_io_core::Error;
 
-    fn poly() -> TH2Poly {
-        let mut p = TH2Poly::new(0.0, 2.0, 0.0, 2.0);
+    fn poly() -> PolyHist {
+        let mut p = PolyHist::new(0.0, 2.0, 0.0, 2.0);
         p.add_bin_rect(0.0, 0.0, 1.0, 1.0);
         p.add_bin_rect(1.0, 1.0, 2.0, 2.0);
         p
@@ -264,9 +264,9 @@ mod merges {
 
     #[test]
     fn an_efficiency_sums_passed_and_total() {
-        let mut a = TEfficiency::new(2, 0.0, 2.0).named("e");
+        let mut a = Efficiency::new(2, 0.0, 2.0).named("e");
         a.fill(true, 0.5);
-        let mut b = TEfficiency::new(2, 0.0, 2.0).named("e");
+        let mut b = Efficiency::new(2, 0.0, 2.0).named("e");
         b.fill(false, 0.5);
         b.fill(true, 1.5);
         a.merge(&b).unwrap();
@@ -274,7 +274,7 @@ mod merges {
         assert_eq!(a.total.integral(), 3.0);
 
         // A different binning changes nothing.
-        let other = TEfficiency::new(3, 0.0, 3.0).named("e");
+        let other = Efficiency::new(3, 0.0, 3.0).named("e");
         assert!(matches!(
             a.merge(&other),
             Err(Error::BinningMismatch { .. })
@@ -297,7 +297,7 @@ mod merges {
         assert_eq!(a.entries, 3.0);
 
         // Different polygons change nothing.
-        let mut other = TH2Poly::new(0.0, 2.0, 0.0, 2.0);
+        let mut other = PolyHist::new(0.0, 2.0, 0.0, 2.0);
         other.add_bin_rect(0.0, 0.0, 2.0, 2.0);
         assert!(matches!(
             a.merge(&other),
@@ -308,9 +308,9 @@ mod merges {
 
     #[test]
     fn a_sparse_histogram_sums_shared_bins_and_keeps_the_rest() {
-        let mut a = THnSparse::new(&[(4, 0.0, 4.0)]).named("sp");
+        let mut a = SparseHist::new(&[(4, 0.0, 4.0)]).named("sp");
         a.fill(&[0.5]).unwrap();
-        let mut b = THnSparse::new(&[(4, 0.0, 4.0)]).named("sp");
+        let mut b = SparseHist::new(&[(4, 0.0, 4.0)]).named("sp");
         b.fill(&[0.5]).unwrap();
         b.fill(&[2.5]).unwrap();
         a.merge(&b).unwrap();
@@ -322,7 +322,7 @@ mod merges {
         assert_eq!(a.bins.iter().map(|x| x.content).sum::<f64>(), 3.0);
         assert_eq!(a.entries, 3.0);
 
-        let other = THnSparse::new(&[(2, 0.0, 2.0)]).named("sp");
+        let other = SparseHist::new(&[(2, 0.0, 2.0)]).named("sp");
         assert!(matches!(
             a.merge(&other),
             Err(Error::BinningMismatch { .. })
@@ -331,11 +331,11 @@ mod merges {
 
     #[test]
     fn graphs_append_their_points_and_errors() {
-        let mut a = TGraph::with_errors(vec![1.0], vec![2.0], vec![0.1], vec![0.2])
+        let mut a = Graph::with_errors(vec![1.0], vec![2.0], vec![0.1], vec![0.2])
             .unwrap()
             .named("g")
             .with_function(GraphFunction::new("f", "[0]*x", vec![1.0], 0.0, 1.0));
-        let b = TGraph::with_errors(
+        let b = Graph::with_errors(
             vec![3.0, 4.0],
             vec![5.0, 6.0],
             vec![0.3, 0.4],
@@ -348,7 +348,7 @@ mod merges {
         assert_eq!(a.functions.len(), 1, "the attached function is kept");
 
         // Different error bars change nothing.
-        let plain = TGraph::new(vec![9.0], vec![9.0]).unwrap();
+        let plain = Graph::new(vec![9.0], vec![9.0]).unwrap();
         assert!(matches!(a.merge(&plain), Err(Error::InvalidInput(_))));
         assert_eq!(a.x.len(), 3);
     }
@@ -361,8 +361,8 @@ mod merges {
         again.fill(0.5);
         let other = Hist::reg(2, 0.0, 2.0).double().named("two");
 
-        let mut a = THStack::new().named("st").add(first);
-        let b = THStack::new().named("st").add(again).add(other);
+        let mut a = HistStack::new().named("st").add(first);
+        let b = HistStack::new().named("st").add(again).add(other);
         a.merge(&b).unwrap();
         assert_eq!(a.hists().len(), 2, "the new histogram is appended");
         assert_eq!(a.hists()[0].integral(), 2.0, "the shared one is summed");

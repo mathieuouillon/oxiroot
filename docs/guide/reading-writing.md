@@ -32,7 +32,7 @@ h.write_root("hist.root", Compression::Zstd(5))?;
 let bytes: Vec<u8> = h.to_root_bytes();
 
 // Read it back by key name.
-let same = TH1::read_root(&FileReader::open("hist.root")?, "pt")?;
+let same = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;
 ```
 
 !!! note "Reading an older cycle"
@@ -53,7 +53,7 @@ let same = TH1::read_root(&FileReader::open("hist.root")?, "pt")?;
 
 ## Any class: the generic reader
 
-The typed readers (`TH1::read_root`, …) need a Rust model for the class. When you
+The typed readers (`Hist1D::read_root`, …) need a Rust model for the class. When you
 just want to *inspect* an object — including a class oxiroot has no model for —
 `FileReader::get_value` decodes it generically, driven entirely by the file's
 `TStreamerInfo`, into a dynamic [`Value`](../api/oxiroot/enum.Value.html) tree:
@@ -66,7 +66,7 @@ let h = f.get_value("pt")?; // a TH1D, decoded from streamer info alone
 
 assert_eq!(h.class(), Some("TH1D"));
 assert_eq!(h.get("fTitle").and_then(Value::as_str), Some("transverse momentum"));
-// Members nest: fXaxis is a TAxis object, fArray is the bin-content array.
+// Members nest: fXaxis is an Axis object, fArray is the bin-content array.
 let nbins = h.get("fXaxis").and_then(|a| a.get("fNbins")).and_then(Value::as_i64);
 let bins = h.get("fArray").and_then(Value::as_array);
 
@@ -104,7 +104,7 @@ let f = FileReader::open_url("https://example.org/data/big.root")?;
 // Remote, over CERN's XRootD protocol (the `xrootd` feature):
 let f = FileReader::open_url("root://eospublic.cern.ch//eos/root-eos/hsimple.root")?;
 
-let h = oxiroot::hist::TH1::read_root(&f, "hpx")?; // fetches only that key's bytes
+let h = oxiroot::hist::Hist1D::read_root(&f, "hpx")?; // fetches only that key's bytes
 # Ok::<(), oxiroot::Error>(())
 ```
 
@@ -150,7 +150,7 @@ a chosen compression.
 
 ```rust
 let prof = Hist::reg(5, 0.0, 5.0).profile().named("prof").titled("<pt> per region");
-let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("res");
+let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("res");
 
 FileWriter::create("out.root")
     .add(&h)                               // any &dyn WriteRoot: hist, profile, graph…
@@ -179,8 +179,8 @@ with `/`:
 
 ```rust
 let f = FileReader::open("out.root")?;
-let p = TProfile::read_root_in(&f, "by_region", "prof")?;
-let deep = TProfile::read_root_in(&FileReader::open("regions.root")?, "signal/2018", "prof")?;
+let p = Profile1D::read_root_in(&f, "by_region", "prof")?;
+let deep = Profile1D::read_root_in(&FileReader::open("regions.root")?, "signal/2018", "prof")?;
 ```
 
 ### Appending
@@ -261,7 +261,7 @@ caller can handle a missing object differently from a corrupt file:
 | Variant | Means |
 | --- | --- |
 | `NotFound { what, name }` | No key, subdirectory, branch or field of that name |
-| `WrongClass { name, found, expected }` | The key holds another class: a `TH2F` read as a `TH1`, say |
+| `WrongClass { name, found, expected }` | The key holds another class: a `TH2F` read as a `Hist1D`, say |
 | `UnsupportedVersion { class, version }` | A class version oxiroot cannot decode, such as one written by a ROOT release older than streamer info |
 | `MissingStreamerInfo { class }` | The file has no `TStreamerInfo` for a class it needs to decode |
 | `ChecksumMismatch { what, .. }` | An RNTuple checksum does not match its data: the data is corrupt |
@@ -279,7 +279,7 @@ use oxiroot::prelude::*;
 use oxiroot::Error;
 
 let file = FileReader::open("hist.root")?;
-match TH1::read_root(&file, "h") {
+match Hist1D::read_root(&file, "h") {
     Ok(h) => println!("{} entries", h.entries()),
     Err(Error::NotFound { .. }) => println!("no object named h"),
     Err(Error::WrongClass { found, .. }) => println!("h is a {found}, not a 1-D histogram"),
@@ -298,6 +298,6 @@ see [ROOT / uproot interop](interop.md).
 ## See also
 
 - [Histograms](histograms.md) — the object model and construction
-- [Graphs](graphs.md) — the `TGraph` family
+- [Graphs](graphs.md) — the `Graph` family
 - [Compression](compression.md) — codec choices and trade-offs
 - [ROOT / uproot interop](interop.md) — cross-language round-trips

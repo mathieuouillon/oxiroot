@@ -13,10 +13,10 @@ and `oxiroot-rex`, an internal part of `oxiroot-plot`.
 | [`oxiroot-io-core`](../api/oxiroot_io_core/index.html) | `TFile` container, buffer primitives, streamer + object-reference engine, the `WriteRoot`/`ReadRoot` object framework, `Error` |
 | [`oxiroot-compress`](../api/oxiroot_compress/index.html) | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | [`oxiroot-rntuple`](../api/oxiroot_rntuple/index.html) | RNTuple reader/writer (spec v1.0.0.0) |
-| [`oxiroot-hist`](../api/oxiroot_hist/index.html) | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
-| [`oxiroot-hist-func`](../api/oxiroot_hist_func/index.html) | `TF1`/`TF2`/`TF3` parametric functions on `oxiroot-formula`, with ROOT read/write |
+| [`oxiroot-hist`](../api/oxiroot_hist/index.html) | Histograms, profiles, `Efficiency`/`SparseHist`/`PolyHist`, and the `Graph` family |
+| [`oxiroot-hist-func`](../api/oxiroot_hist_func/index.html) | `Func1D`/`Func2D`/`Func3D` parametric functions on `oxiroot-formula`, with ROOT read/write |
 | [`oxiroot-formula`](../api/oxiroot_formula/index.html) | Dependency-free `TFormula` expression engine: parse, evaluate, integrate, differentiate |
-| [`oxiroot-linalg`](../api/oxiroot_linalg/index.html) | ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym`, with byte-exact ROOT read/write |
+| [`oxiroot-linalg`](../api/oxiroot_linalg/index.html) | ROOT linear-algebra objects — `Vector`/`Matrix`/`SymMatrix` (`TVectorD`/`TMatrixD`/`TMatrixDSym`), with byte-exact ROOT read/write |
 | [`oxiroot-tree`](../api/oxiroot_tree/index.html) | Classic `TTree` read/write |
 | [`oxiroot-fit`](../api/oxiroot_fit/index.html) | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | [`oxiroot-stat`](../api/oxiroot_stat/index.html) | Dependency-free special functions (incomplete gamma, Kolmogorov) shared by hist + fit |
@@ -31,7 +31,7 @@ crates (`rntuple`, `hist`, `tree`, `linalg`); the `WriteRoot`/`ReadRoot` object
 framework lives in `io-core`, so each format crate registers its own objects.
 `stat` and `formula` are dependency-free leaves: `stat` is shared by `hist`
 (compatibility tests) and `fit` (goodness-of-fit), and `formula` by `hist-func`
-(the `TF1`/`TF2`/`TF3` functions) and `fit` (formula models). Keeping the
+(the `Func1D`/`Func2D`/`Func3D` functions) and `fit` (formula models). Keeping the
 functions in `hist-func` means a histogram-only build never compiles the formula
 engine. `fit` is optional and only pulled in by the `fit` feature.
 

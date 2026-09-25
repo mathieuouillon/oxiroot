@@ -1,7 +1,7 @@
-//! `TH2Poly` — a 2-D histogram whose bins are arbitrary polygons rather than a
+//! `PolyHist` — a 2-D histogram whose bins are arbitrary polygons rather than a
 //! regular grid.
 //!
-//! On disk a `TH2Poly` (v3) is a `TH2` base (bounding-box axes + global
+//! On disk a `PolyHist` (v3) is a `Hist2D` base (bounding-box axes + global
 //! statistics) followed by a spatial lookup grid (`fCells`) and the master bin
 //! list (`fBins`). The polygon bins (`TH2PolyBin`) are **written in full the
 //! first time they appear inside `fCells`**; every later reference — in another
@@ -15,7 +15,7 @@
 //! `{byte-count, version}` header, then `fNCells` inline `TList` objects. Each
 //! cell `TList` holds object pointers to the `TH2PolyBin`s overlapping that
 //! cell, so walking `fCells` collects every bin exactly once (the first, full
-//! occurrence). Each bin's `fPoly` is a `TGraph` giving the polygon vertices.
+//! occurrence). Each bin's `fPoly` is a `Graph` giving the polygon vertices.
 //!
 //! **Writing** (via the [`WriteRoot`](crate::WriteRoot) trait) takes the
 //! simpler-but-valid route: the bins are written in full inside `fBins` and the
@@ -26,13 +26,13 @@
 //! both layouts — when `fCells` yields no bins it falls back to reading `fBins`.
 
 use oxiroot_io_core::{
-    read_tobject, skip_versioned, Error, FileReader, RBuffer, Result, TagReader,
+    read_object_base, skip_versioned, Error, FileReader, RBuffer, Result, TagReader,
 };
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 use crate::base::{check_len, object_bytes_keyed, read_th1_base};
 
-/// One polygon bin of a [`TH2Poly`] (ROOT `TH2PolyBin`).
+/// One polygon bin of a [`PolyHist`] (ROOT `TH2PolyBin`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolyBin {
     /// ROOT bin number (`fNumber`, 1-based in fill order).
@@ -49,9 +49,9 @@ pub struct PolyBin {
     pub xmax: f64,
     /// Bounding-box maximum y (`fYmax`).
     pub ymax: f64,
-    /// Polygon vertex x coordinates (`fPoly`'s `TGraph` `fX`).
+    /// Polygon vertex x coordinates (`fPoly`'s `Graph` `fX`).
     pub x: Vec<f64>,
-    /// Polygon vertex y coordinates (`fPoly`'s `TGraph` `fY`).
+    /// Polygon vertex y coordinates (`fPoly`'s `Graph` `fY`).
     pub y: Vec<f64>,
 }
 
@@ -77,15 +77,16 @@ impl PolyBin {
 
 /// A 2-D histogram with arbitrary polygon bins (ROOT `TH2Poly`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TH2Poly {
+#[doc(alias = "TH2Poly")]
+pub struct PolyHist {
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis (the bins' overall bounding box).
-    pub xaxis: TAxis,
+    pub xaxis: Axis,
     /// Y axis (the bins' overall bounding box).
-    pub yaxis: TAxis,
+    pub yaxis: Axis,
     /// Number of entries (`fEntries`).
     pub entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -108,16 +109,16 @@ pub struct TH2Poly {
     pub bins: Vec<PolyBin>,
 }
 
-impl TH2Poly {
-    /// Create an empty `TH2Poly` over the bounding box `[xlow, xup] × [ylow, yup]`,
-    /// matching ROOT's `TH2Poly(name, title, xlow, xup, ylow, yup)` constructor.
+impl PolyHist {
+    /// Create an empty `PolyHist` over the bounding box `[xlow, xup] × [ylow, yup]`,
+    /// matching ROOT's `PolyHist(name, title, xlow, xup, ylow, yup)` constructor.
     /// Add bins with [`add_bin`](Self::add_bin) / [`add_bin_rect`](Self::add_bin_rect).
-    pub fn new(xlow: f64, xup: f64, ylow: f64, yup: f64) -> TH2Poly {
-        TH2Poly {
+    pub fn new(xlow: f64, xup: f64, ylow: f64, yup: f64) -> PolyHist {
+        PolyHist {
             name: String::new(),
             title: String::new(),
-            xaxis: TAxis::new("xaxis", 100, xlow, xup),
-            yaxis: TAxis::new("yaxis", 100, ylow, yup),
+            xaxis: Axis::new("xaxis", 100, xlow, xup),
+            yaxis: Axis::new("yaxis", 100, ylow, yup),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -219,17 +220,17 @@ impl TH2Poly {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer, keylen: usize) -> Result<TH2Poly> {
+    pub(crate) fn read(r: &mut RBuffer, keylen: usize) -> Result<PolyHist> {
         let mut tags = TagReader::new(keylen);
 
-        let top = r.read_version()?; // TH2Poly v3
-        let th2 = r.read_version()?; // TH2 v5 base
-        let core = read_th1_base(r)?; // TH1 base (name/title/axes/stats)
+        let top = r.read_version()?; // PolyHist v3
+        let th2 = r.read_version()?; // Hist2D v5 base
+        let core = read_th1_base(r)?; // Hist1D base (name/title/axes/stats)
         let _scalefactor = r.be_f64()?;
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;
         let tsumwxy = r.be_f64()?;
-        // Defensive: realign to the end of the TH2 base record.
+        // Defensive: realign to the end of the Hist2D base record.
         if let Some(end) = th2.end {
             r.seek(end)?;
         }
@@ -272,7 +273,7 @@ impl TH2Poly {
 
         bins.sort_by_key(|b| b.number);
         bins.dedup_by_key(|b| b.number);
-        Ok(TH2Poly {
+        Ok(PolyHist {
             name: core.name,
             title: core.title,
             xaxis: core.xaxis,
@@ -292,7 +293,7 @@ impl TH2Poly {
 }
 
 /// Ray-casting point-in-polygon test over vertices `(x[i], y[i])`. Used by
-/// [`TH2Poly::fill_weight`] to find the bin containing a point.
+/// [`PolyHist::fill_weight`] to find the bin containing a point.
 fn point_in_polygon(x: &[f64], y: &[f64], px: f64, py: f64) -> bool {
     let n = x.len().min(y.len());
     if n < 3 {
@@ -324,7 +325,7 @@ fn read_bool_pointer_array(r: &mut RBuffer, n: usize) -> Result<()> {
 /// back-references (resolved to "no object" — skipped).
 fn read_cell(r: &mut RBuffer, tags: &mut TagReader, bins: &mut Vec<PolyBin>) -> Result<()> {
     let tlist = r.read_version()?; // TList v5
-    read_tobject(r)?;
+    read_object_base(r)?;
     let _name = r.string()?; // fName (empty)
     let size = r.be_i32()?.max(0);
     for _ in 0..size {
@@ -346,10 +347,10 @@ fn read_cell(r: &mut RBuffer, tags: &mut TagReader, bins: &mut Vec<PolyBin>) -> 
 /// Read a `TH2PolyBin` body, after its object-pointer header was consumed.
 fn read_polybin(r: &mut RBuffer, tags: &mut TagReader) -> Result<PolyBin> {
     r.read_version()?; // TH2PolyBin v1
-    read_tobject(r)?;
+    read_object_base(r)?;
     let _changed = r.u8()?; // fChanged
     let number = r.be_i32()?; // fNumber
-    let (x, y) = read_poly_graph(r, tags)?; // fPoly (a TGraph)
+    let (x, y) = read_poly_graph(r, tags)?; // fPoly (a Graph)
     let area = r.be_f64()?;
     let content = r.be_f64()?;
     let xmin = r.be_f64()?;
@@ -369,7 +370,7 @@ fn read_polybin(r: &mut RBuffer, tags: &mut TagReader) -> Result<PolyBin> {
     })
 }
 
-/// Read a `TH2PolyBin`'s `fPoly` (a `TGraph` object pointer) and return the
+/// Read a `TH2PolyBin`'s `fPoly` (a `Graph` object pointer) and return the
 /// polygon's `(fX, fY)` vertices, then seek past the rest of the graph.
 fn read_poly_graph(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Vec<f64>, Vec<f64>)> {
     let header = tags.read_header(r)?;
@@ -380,8 +381,8 @@ fn read_poly_graph(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Vec<f64>, V
         }
         return Ok((Vec::new(), Vec::new()));
     }
-    let _graph = r.read_version()?; // TGraph v5
-    skip_versioned(r)?; // TNamed
+    let _graph = r.read_version()?; // Graph v5
+    skip_versioned(r)?; // Named
     skip_versioned(r)?; // TAttLine
     skip_versioned(r)?; // TAttFill
     skip_versioned(r)?; // TAttMarker
@@ -401,14 +402,14 @@ fn read_poly_graph(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Vec<f64>, V
     Ok((x, y))
 }
 
-/// Read a `TH2Poly` named `name` from `file`.
-pub(crate) fn read_th2poly(file: &FileReader, name: &str) -> Result<TH2Poly> {
+/// Read a `PolyHist` named `name` from `file`.
+pub(crate) fn read_th2poly(file: &FileReader, name: &str) -> Result<PolyHist> {
     let (object, keylen) = object_bytes_keyed(file, name, "TH2Poly")?;
     decode_th2poly(name, &object, keylen)
 }
 
-/// Read a `TH2Poly` from subdirectory `subdir`.
-pub(crate) fn read_th2poly_in(file: &FileReader, subdir: &str, name: &str) -> Result<TH2Poly> {
+/// Read a `PolyHist` from subdirectory `subdir`.
+pub(crate) fn read_th2poly_in(file: &FileReader, subdir: &str, name: &str) -> Result<PolyHist> {
     let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
     if class != "TH2Poly" {
         return Err(Error::WrongClass {
@@ -420,7 +421,7 @@ pub(crate) fn read_th2poly_in(file: &FileReader, subdir: &str, name: &str) -> Re
     decode_th2poly(name, &object, keylen)
 }
 
-fn decode_th2poly(name: &str, object: &[u8], keylen: usize) -> Result<TH2Poly> {
-    TH2Poly::read(&mut RBuffer::new(object), keylen)
+fn decode_th2poly(name: &str, object: &[u8], keylen: usize) -> Result<PolyHist> {
+    PolyHist::read(&mut RBuffer::new(object), keylen)
         .map_err(|e| e.context(format_args!("reading TH2Poly {name:?}")))
 }

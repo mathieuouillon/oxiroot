@@ -88,7 +88,7 @@ oxiroot decodes **and encodes every codec ROOT writes except the legacy `CS`**.
 | LZMA (XZ)    | `XZ`      | yes    | yes         |
 | old ROOT     | `CS`      | no     | no          |
 
-Reading is fully automatic: a `TKey`'s payload (or an RNTuple page) carries its
+Reading is fully automatic: a `Key`'s payload (or an RNTuple page) carries its
 own algorithm tag, so the reader picks the codec per block. Uncompressed
 payloads — written with `Compression::None` or where the compressed form would
 not be smaller — pass through directly.
@@ -166,7 +166,7 @@ assert_eq!(back, payload);
 | `split_settings(settings)`            | Split back into `(algo, level)`                    |
 
 `decompress` needs the expected uncompressed length (ROOT stores it in the
-enclosing `TKey` or RNTuple anchor) and validates the produced size against it,
+enclosing `Key` or RNTuple anchor) and validates the produced size against it,
 returning a `CompressError` on any truncation or size mismatch. For normal
 file IO you never call these directly — `write_root` / `FileReader::open` apply them
 for you from the `Compression` value.

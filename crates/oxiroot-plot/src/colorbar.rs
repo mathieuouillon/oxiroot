@@ -1,4 +1,4 @@
-//! Colorbar rendering for the TH2 heatmap.
+//! Colorbar rendering for the Hist2D heatmap.
 
 use crate::cmap::Colormap;
 use crate::draw::{DrawCommand, DrawGroup, Rect, Stroke};

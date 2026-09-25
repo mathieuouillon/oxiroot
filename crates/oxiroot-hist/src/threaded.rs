@@ -3,7 +3,7 @@
 //!
 //! ROOT fills histograms across threads by giving each thread a private copy and
 //! merging them at the end. oxiroot is set up for exactly this: every histogram
-//! type is [`Clone`] plain data, and [`add(other, 1.0)`](crate::TH1::add) is an
+//! type is [`Clone`] plain data, and [`add(other, 1.0)`](crate::Hist1D::add) is an
 //! *exact* reduction — it combines bin contents, per-bin `Sumw2`, the entry
 //! count, and every statistical moment sum. So a parallel fill is just "clone per
 //! thread, fill locally without locking, merge at the end", and the merged
@@ -22,10 +22,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::ThreadId;
 
-use oxiroot_io_core::{Result, TParameter};
+use oxiroot_io_core::{Parameter, Result};
 
 use crate::{
-    TEfficiency, TGraph, TH2Poly, THnSparse, TProfile, TProfile2D, TProfile3D, TH1, TH2, TH3,
+    Efficiency, Graph, Hist1D, Hist2D, Hist3D, PolyHist, Profile1D, Profile2D, Profile3D,
+    SparseHist,
 };
 
 /// Histograms that combine into one — the reduction behind in-memory merges
@@ -66,22 +67,22 @@ macro_rules! impl_mergeable {
         }
     )+};
 }
-impl_mergeable!(TH1, TH2, TH3, TProfile, TProfile2D, TProfile3D, TH2Poly, THnSparse);
+impl_mergeable!(Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D, PolyHist, SparseHist);
 
-impl Mergeable for TEfficiency {
+impl Mergeable for Efficiency {
     fn merge(&mut self, other: &Self) -> Result<()> {
         self.add(other)
     }
 }
 
-impl Mergeable for TGraph {
+impl Mergeable for Graph {
     /// Appends `other`'s points, the way ROOT's `hadd` merges graphs.
     fn merge(&mut self, other: &Self) -> Result<()> {
         self.append(other)
     }
 }
 
-impl Mergeable for TParameter {
+impl Mergeable for Parameter {
     /// Adds the two values, the way ROOT's `hadd` merges parameters.
     fn merge(&mut self, other: &Self) -> Result<()> {
         self.add(other)
@@ -89,7 +90,7 @@ impl Mergeable for TParameter {
 }
 
 /// A multithreaded fill accumulator — the pure-Rust analog of ROOT's
-/// `TThreadedObject<TH1>`.
+/// `TThreadedObject<Hist1D>`.
 ///
 /// Hold one *template* histogram (a binning prototype, normally **empty**), share
 /// `&ThreadedHist` across threads, and call [`fill`](ThreadedHist::fill) from any
@@ -202,7 +203,7 @@ impl<H: Mergeable> ThreadedHist<H> {
 
 /// ROOT-style `Fill`: route to the calling thread's private copy, creating it on
 /// first use. The headline convenience over [`with_local`](ThreadedHist::with_local).
-impl ThreadedHist<TH1> {
+impl ThreadedHist<Hist1D> {
     /// Fill the calling thread's copy with `x` (weight 1).
     pub fn fill(&self, x: f64) {
         self.with_local(|h| h.fill(x));
@@ -213,7 +214,7 @@ impl ThreadedHist<TH1> {
     }
 }
 
-impl ThreadedHist<TH2> {
+impl ThreadedHist<Hist2D> {
     /// Fill the calling thread's copy at `(x, y)` (weight 1).
     pub fn fill(&self, x: f64, y: f64) {
         self.with_local(|h| h.fill(x, y));
@@ -224,7 +225,7 @@ impl ThreadedHist<TH2> {
     }
 }
 
-impl ThreadedHist<TH3> {
+impl ThreadedHist<Hist3D> {
     /// Fill the calling thread's copy at `(x, y, z)` (weight 1).
     pub fn fill(&self, x: f64, y: f64, z: f64) {
         self.with_local(|h| h.fill(x, y, z));
@@ -235,7 +236,7 @@ impl ThreadedHist<TH3> {
     }
 }
 
-impl ThreadedHist<TProfile> {
+impl ThreadedHist<Profile1D> {
     /// Fill the calling thread's copy at `(x, y)` (weight 1).
     pub fn fill(&self, x: f64, y: f64) {
         self.with_local(|h| h.fill(x, y));
@@ -246,7 +247,7 @@ impl ThreadedHist<TProfile> {
     }
 }
 
-impl ThreadedHist<TProfile2D> {
+impl ThreadedHist<Profile2D> {
     /// Profile `z` at `(x, y)` in the calling thread's copy (weight 1).
     pub fn fill(&self, x: f64, y: f64, z: f64) {
         self.with_local(|h| h.fill(x, y, z));
@@ -257,7 +258,7 @@ impl ThreadedHist<TProfile2D> {
     }
 }
 
-impl ThreadedHist<TProfile3D> {
+impl ThreadedHist<Profile3D> {
     /// Profile `t` at `(x, y, z)` in the calling thread's copy (weight 1).
     pub fn fill(&self, x: f64, y: f64, z: f64, t: f64) {
         self.with_local(|h| h.fill(x, y, z, t));

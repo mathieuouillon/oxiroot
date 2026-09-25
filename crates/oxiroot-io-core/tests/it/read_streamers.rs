@@ -43,7 +43,7 @@ fn parses_streamer_registry() {
     assert_eq!(reg.get("TAxis").unwrap().class_version, 10);
     assert_eq!(reg.get("TH1D").unwrap().checksum, 4189148831);
 
-    // TH1D's streamer is two base classes: TH1 and TArrayD.
+    // TH1D's streamer is two base classes: Hist1D and TArrayD.
     let th1d = reg.get("TH1D").unwrap();
     let bases: Vec<(&str, &str)> = th1d
         .elements
@@ -55,7 +55,7 @@ fn parses_streamer_registry() {
         vec![("TStreamerBase", "TH1"), ("TStreamerBase", "TArrayD")]
     );
 
-    // A basic-type member inside TAxis (fNbins) should be present and typed.
+    // A basic-type member inside Axis (fNbins) should be present and typed.
     let taxis = reg.get("TAxis").unwrap();
     let fnbins = taxis
         .elements

@@ -2,7 +2,7 @@
 //! to stay ROOT-compatible (the builder output round-trips through the writer
 //! and ROOT C++ reads the axis label — checked out of band).
 
-use oxiroot_hist::{Hist, ReadRoot, WriteRoot, TH1};
+use oxiroot_hist::{Hist, Hist1D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
@@ -101,8 +101,8 @@ fn batch_fill_and_uhi_slicing() {
 
 #[test]
 fn profile_finalizer_builds_a_tprofile() {
-    use oxiroot_hist::TProfile;
-    // hist's Mean storage on a 1-D axis -> TProfile.
+    use oxiroot_hist::Profile1D;
+    // hist's Mean storage on a 1-D axis -> Profile1D.
     let mut p = Hist::reg(4, 0.0, 4.0)
         .name("prof")
         .label("x [cm]")
@@ -112,10 +112,10 @@ fn profile_finalizer_builds_a_tprofile() {
     assert_eq!(p.values()[0], 15.0); // the mean of (10, 20)
     assert_eq!(p.xaxis.title, "x [cm]");
 
-    // It is an ordinary TProfile and writes to ROOT.
+    // It is an ordinary Profile1D and writes to ROOT.
     let out = std::env::temp_dir().join("oxiroot_quick_profile.root");
     p.write_root(&out, Compression::None).unwrap();
-    let back = TProfile::read_root(&FileReader::open(&out).unwrap(), "prof").unwrap();
+    let back = Profile1D::read_root(&FileReader::open(&out).unwrap(), "prof").unwrap();
     assert_eq!(back.values()[0], 15.0);
     let _ = std::fs::remove_file(&out);
 }
@@ -133,7 +133,7 @@ fn builder_output_round_trips_through_root() {
     h.write_root(&out, Compression::None).unwrap();
 
     let f = FileReader::open(&out).unwrap();
-    let back = TH1::read_root(&f, "pt").unwrap();
+    let back = Hist1D::read_root(&f, "pt").unwrap();
     assert_eq!(back.x_label(), "$p_T$ [GeV]"); // axis label survives ROOT
     assert_eq!(back.values(), &[2.0, 3.0, 0.0, 0.0]);
     assert_eq!(back.variances(), vec![4.0, 9.0, 0.0, 0.0]); // Sumw2 survives
@@ -158,7 +158,7 @@ fn variable_axis_takes_arbitrary_irregular_edges() {
     let out = std::env::temp_dir().join("oxiroot_quick_varbins.root");
     h.write_root(&out, Compression::None).unwrap();
     let f = FileReader::open(&out).unwrap();
-    let back = TH1::read_root(&f, "hv").unwrap();
+    let back = Hist1D::read_root(&f, "hv").unwrap();
     assert_eq!(back.edges(), edges);
     assert_eq!(back.values(), &[1.0, 1.0, 2.0, 1.0, 3.0]);
     let _ = std::fs::remove_file(&out);

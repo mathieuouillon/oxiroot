@@ -1,11 +1,11 @@
 //! 1-D histograms (`TH1D`, `TH1F`).
 //!
-//! Streamed layout: `TH1x{ TH1{ … }, TArray }`. The `TH1` base is shared via
+//! Streamed layout: `TH1x{ Hist1D{ … }, TArray }`. The `Hist1D` base is shared via
 //! the crate's `base` module; the inline `TArray` holds the bin contents.
 
 use oxiroot_io_core::{FileReader, RBuffer, Result};
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 use crate::base::{
     bin_content_type_of, cell_count, check_cells, check_len, histogram_object, histogram_object_in,
     read_th1_object, BinContentType,
@@ -13,9 +13,10 @@ use crate::base::{
 
 /// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TH1 {
+#[doc(alias = "TH1", alias = "TH1D", alias = "TH1F")]
+pub struct Hist1D {
     /// On-disk [`BinContentType`] (the class suffix). Read the class name via
-    /// [`class_name`](TH1::class_name); `pub(crate)` so the type stays a
+    /// [`class_name`](Hist1D::class_name); `pub(crate)` so the type stays a
     /// typed value rather than a free-form string.
     pub(crate) bin_content_type: BinContentType,
     /// Histogram name (`fName`).
@@ -23,13 +24,13 @@ pub struct TH1 {
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: TAxis,
+    pub xaxis: Axis,
     /// Y axis (degenerate for 1-D).
-    pub yaxis: TAxis,
+    pub yaxis: Axis,
     /// Z axis (degenerate for 1-D).
-    pub zaxis: TAxis,
+    pub zaxis: Axis,
     /// Total cells, including under/overflow (`fNcells = nbins + 2`). Read it
-    /// through [`ncells`](TH1::ncells); `pub(crate)` so it cannot drift from
+    /// through [`ncells`](Hist1D::ncells); `pub(crate)` so it cannot drift from
     /// `contents` via outside mutation.
     pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
@@ -45,25 +46,25 @@ pub struct TH1 {
     /// Bin contents including under/overflow (length `ncells`).
     pub contents: Vec<f64>,
     /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
-    /// turned on, by [`TH1::sumw2`], [`TH1::scale`], or the first
-    /// [`fill_weight`](TH1::fill_weight) with a weight other than 1. When
+    /// turned on, by [`Hist1D::sumw2`], [`Hist1D::scale`], or the first
+    /// [`fill_weight`](Hist1D::fill_weight) with a weight other than 1. When
     /// present, `bin_error = sqrt(sumw2[bin])`.
     pub sumw2: Vec<f64>,
 }
 
-impl TH1 {
+impl Hist1D {
     /// Create an empty `TH1D` with `nbins` uniform bins over `[xmin, xmax)`.
     /// Internal primitive behind the public builder: construct histograms with
     /// [`Hist::reg`](crate::Hist::reg)`(nbins, xmin, xmax).double()`.
-    pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> TH1 {
+    pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> Hist1D {
         let cells = (nbins.max(0) as usize) + 2;
-        TH1 {
+        Hist1D {
             bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
-            xaxis: TAxis::new("xaxis", nbins, xmin, xmax),
-            yaxis: TAxis::new("yaxis", 1, 0.0, 1.0),
-            zaxis: TAxis::new("zaxis", 1, 0.0, 1.0),
+            xaxis: Axis::new("xaxis", nbins, xmin, xmax),
+            yaxis: Axis::new("yaxis", 1, 0.0, 1.0),
+            zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
             ncells: cells as i32,
             entries: 0.0,
             tsumw: 0.0,
@@ -78,15 +79,15 @@ impl TH1 {
     /// Create an empty `TH1D` with variable bin edges (`edges` = the `nbins + 1`
     /// boundaries, ascending). Internal primitive behind the public builder:
     /// construct variable-axis histograms with [`Hist::var`](crate::Hist::var)`(edges).double()`.
-    pub(crate) fn new_variable(edges: &[f64]) -> TH1 {
+    pub(crate) fn new_variable(edges: &[f64]) -> Hist1D {
         let cells = edges.len() + 1; // (edges.len() - 1) bins + 2 flow
-        TH1 {
+        Hist1D {
             bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
-            xaxis: TAxis::variable("xaxis", edges),
-            yaxis: TAxis::new("yaxis", 1, 0.0, 1.0),
-            zaxis: TAxis::new("zaxis", 1, 0.0, 1.0),
+            xaxis: Axis::variable("xaxis", edges),
+            yaxis: Axis::new("yaxis", 1, 0.0, 1.0),
+            zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
             ncells: cells as i32,
             entries: 0.0,
             tsumw: 0.0,
@@ -100,7 +101,7 @@ impl TH1 {
 
     /// Enable per-bin error tracking (ROOT's `Sumw2`): allocate the `fSumw2`
     /// array and seed it from the current contents, after which every fill also
-    /// accumulates `weight^2`. Weighted fills and [`scale`](TH1::scale) turn it
+    /// accumulates `weight^2`. Weighted fills and [`scale`](Hist1D::scale) turn it
     /// on by themselves, so this is only needed to track a unit-weight
     /// histogram. Returns `&mut self` so it can chain (`h.sumw2().fill(x)`).
     pub fn sumw2(&mut self) -> &mut Self {
@@ -128,14 +129,14 @@ impl TH1 {
     }
 
     /// The exact ROOT class name (`"TH1D"`/`"TH1F"`/…), derived from the stored
-    /// [`bin_content_type`](TH1::bin_content_type).
+    /// [`bin_content_type`](Hist1D::bin_content_type).
     #[must_use]
     pub fn class_name(&self) -> String {
         self.bin_content_type.class_name("TH1")
     }
 
     /// This histogram's on-disk [`BinContentType`] — the class suffix
-    /// (`TH1`**`D`**/`F`/`I`/`S`/`C`/`L`). [`BinContentType::F64`] by default.
+    /// (`Hist1D`**`D`**/`F`/`I`/`S`/`C`/`L`). [`BinContentType::F64`] by default.
     #[must_use]
     pub fn bin_content_type(&self) -> BinContentType {
         self.bin_content_type
@@ -190,7 +191,7 @@ impl TH1 {
     }
 
     /// Fill many values at once (scikit-hep `hist`'s `h.fill(array)`):
-    /// equivalent to [`fill`](TH1::fill) on each.
+    /// equivalent to [`fill`](Hist1D::fill) on each.
     pub fn fill_many(&mut self, xs: &[f64]) {
         for &x in xs {
             self.fill_weight(x, 1.0);
@@ -219,12 +220,12 @@ impl TH1 {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<TH1> {
+    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Hist1D> {
         let (c, contents) = read_th1_object(r, bin_content_type)?;
         let cells = cell_count(&[c.xaxis.nbins])?;
         check_cells("TH1 contents", contents.len(), cells, false)?;
         check_cells("TH1 fSumw2", c.sumw2.len(), cells, true)?;
-        Ok(TH1 {
+        Ok(Hist1D {
             bin_content_type,
             name: c.name,
             title: c.title,
@@ -268,7 +269,7 @@ impl TH1 {
     }
 
     /// Per-in-range-bin variances (scikit-hep `hist`'s `.variances`). With
-    /// [`sumw2`](TH1::sumw2) on these are the stored sums of squared weights;
+    /// [`sumw2`](Hist1D::sumw2) on these are the stored sums of squared weights;
     /// otherwise the bin content (the Poisson variance ROOT assumes for an
     /// unweighted histogram), i.e. `bin_error(i+1)²`.
     #[must_use]
@@ -287,7 +288,7 @@ impl TH1 {
     }
 
     /// Per-in-range-bin uncertainties — `√variance`, the error bars. The
-    /// companion to [`values`](TH1::values) (`hist` exposes this as
+    /// companion to [`values`](Hist1D::values) (`hist` exposes this as
     /// `np.sqrt(h.variances())`).
     #[must_use]
     pub fn errors(&self) -> Vec<f64> {
@@ -389,15 +390,15 @@ impl TH1 {
 
 /// Read any 1-D histogram (`TH1D/F/I/S/C/L`), detecting the bin content type
 /// from the stored class.
-pub(crate) fn read_th1(file: &FileReader, name: &str) -> Result<TH1> {
+pub(crate) fn read_th1(file: &FileReader, name: &str) -> Result<Hist1D> {
     decode_th1(histogram_object(file, name, "TH1")?)
 }
 
 /// Read any 1-D histogram from subdirectory `subdir`.
-pub(crate) fn read_th1_in(file: &FileReader, subdir: &str, name: &str) -> Result<TH1> {
+pub(crate) fn read_th1_in(file: &FileReader, subdir: &str, name: &str) -> Result<Hist1D> {
     decode_th1(histogram_object_in(file, subdir, name, "TH1")?)
 }
 
-pub(crate) fn decode_th1((class, object): (String, Vec<u8>)) -> Result<TH1> {
-    TH1::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
+pub(crate) fn decode_th1((class, object): (String, Vec<u8>)) -> Result<Hist1D> {
+    Hist1D::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
 }

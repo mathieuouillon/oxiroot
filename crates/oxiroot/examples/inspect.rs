@@ -2,13 +2,13 @@
 //! (bundled fixtures) and walk their key lists — printing each top-level object's
 //! class, on-disk size, cycle and name, then descending one level into any
 //! `TDirectory` — using only the `FileReader` introspection surface (`keys()`,
-//! `subdir()`, and the `TKey` fields). Reads fixtures; writes nothing.
+//! `subdir()`, and the `Key` fields). Reads fixtures; writes nothing.
 //!
 //! ```sh
 //! cargo run -p oxiroot --example inspect
 //! ```
 
-use oxiroot::file::TKey;
+use oxiroot::file::Key;
 use oxiroot::prelude::*;
 use oxiroot::Value;
 
@@ -36,7 +36,7 @@ fn human_size(bytes: u64) -> String {
 
 /// Print one `ls`-style line for a key, indented by `depth` levels: the columns
 /// are class, on-disk size, cycle, then `name  "title"`.
-fn print_key(key: &TKey, depth: usize) {
+fn print_key(key: &Key, depth: usize) {
     let indent = "  ".repeat(depth);
     // `total_bytes()` is the whole record (key header + payload) as stored on
     // disk; a title (fTitle) is optional, so only show it when present.
@@ -58,7 +58,7 @@ fn print_key(key: &TKey, depth: usize) {
 /// and return `(object_count, total_on_disk_bytes)`.
 fn walk(file: &FileReader) -> (usize, u64) {
     let (mut count, mut bytes) = (0usize, 0u64);
-    // `keys()` yields the raw `TKey` records of the root directory; a negative
+    // `keys()` yields the raw `Key` records of the root directory; a negative
     // byte count marks freed space, so skip those, exactly as the CLI does.
     for key in file.keys().iter().filter(|k| !k.is_deleted()) {
         print_key(key, 0);
@@ -140,7 +140,7 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Generic object reader: decode ANY class from its TStreamerInfo. -------
     // `get_value` returns a dynamic `Value` tree driven entirely by the file's
-    // `TStreamerInfo` — no typed model (TH1/TGraph/…) required. This is what lets
+    // `TStreamerInfo` — no typed model (Hist1D/Graph/…) required. This is what lets
     // oxiroot inspect arbitrary classes (rootprint-style); an undecodable member
     // becomes `Value::Unsupported` instead of failing.
     let file = FileReader::open(concat!(

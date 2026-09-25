@@ -1,6 +1,6 @@
-//! `TEfficiency` — a trigger turn-on curve. For many simulated events we draw a
+//! `Efficiency` — a trigger turn-on curve. For many simulated events we draw a
 //! transverse momentum `pT`, decide pass/fail against a logistic acceptance
-//! `p(pT) = 1 / (1 + exp(-(pT - x50)/w))`, and let `TEfficiency` accumulate the
+//! `p(pT) = 1 / (1 + exp(-(pT - x50)/w))`, and let `Efficiency` accumulate the
 //! per-bin passed/total ratio. We print the recovered efficiency, put a
 //! Clopper–Pearson confidence interval on one bin with `oxiroot::stat`, then
 //! write the object to a ROOT file and read it straight back.
@@ -34,7 +34,7 @@ fn main() -> oxiroot::Result<()> {
 
     // 20 uniform bins over the pT range the trigger turns on in.
     let (nbins, pt_lo, pt_hi) = (20, 0.0, 60.0);
-    let mut eff = TEfficiency::new(nbins, pt_lo, pt_hi)
+    let mut eff = Efficiency::new(nbins, pt_lo, pt_hi)
         .named("trig_turnon")
         .titled("trigger turn-on;p_{T} [GeV];#epsilon");
 
@@ -72,7 +72,7 @@ fn main() -> oxiroot::Result<()> {
     }
 
     // --- Clopper–Pearson interval on the bin straddling the 50% point. ---------
-    // `TEfficiency` stores ROOT's default 68.27% Clopper–Pearson recipe; here we
+    // `Efficiency` stores ROOT's default 68.27% Clopper–Pearson recipe; here we
     // reproduce that interval directly from the bin's passed/total counts with
     // the stats library, and report the efficiency with asymmetric errors.
     let mid_bin = ((x50 - pt_lo) / stride).floor() as usize + 1;
@@ -89,9 +89,9 @@ fn main() -> oxiroot::Result<()> {
         eff.conf_level * 100.0,
     );
 
-    // --- Write the TEfficiency to a ROOT file, then read it back. --------------
+    // --- Write the Efficiency to a ROOT file, then read it back. ---------------
     // Temp file, named for this example, removed before we return — no litter.
-    // (uproot cannot read TEfficiency, but ROOT C++ and oxiroot itself can.)
+    // (uproot cannot read Efficiency, but ROOT C++ and oxiroot itself can.)
     let path = std::env::temp_dir().join("oxiroot_ex_efficiency.root");
     FileWriter::create(&path)
         .add(&eff)
@@ -99,7 +99,7 @@ fn main() -> oxiroot::Result<()> {
     println!("\nwrote TEfficiency -> {}", path.display());
 
     let file = FileReader::open(&path)?;
-    let back = TEfficiency::read_root(&file, "trig_turnon")?;
+    let back = Efficiency::read_root(&file, "trig_turnon")?;
     println!(
         "read back `{}`: {} total trials, mid-bin eff = {:.4} (matches: {})",
         back.name,

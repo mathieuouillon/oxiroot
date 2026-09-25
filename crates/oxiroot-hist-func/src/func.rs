@@ -1,11 +1,11 @@
-//! The function types: [`TF1`], [`TF2`] and [`TF3`], their evaluation, and the
+//! The function types: [`Func1D`], [`Func2D`] and [`Func3D`], their evaluation, and the
 //! shared [`FuncCore`] (name, formula, parameters, fit metadata).
 
 use oxiroot_formula::{derivative, integrate, Formula};
 use oxiroot_hist::GraphFunction;
 use oxiroot_io_core::{Error, Result};
 
-/// The data shared by [`TF1`]/[`TF2`]/[`TF3`]: a name and title, the parsed
+/// The data shared by [`Func1D`]/[`Func2D`]/[`Func3D`]: a name and title, the parsed
 /// formula, the parameter values, and the fit-result metadata ROOT stores
 /// (`fParErrors`/`fParMin`/`fParMax`/`fChisquare`/`fNDF`).
 #[derive(Debug, Clone, PartialEq)]
@@ -40,7 +40,7 @@ impl FuncCore {
         })
     }
 
-    /// The `TF1` record ROOT stores for this function over `[xmin, xmax]`.
+    /// The `Func1D` record ROOT stores for this function over `[xmin, xmax]`.
     pub(crate) fn record(&self, xmin: f64, xmax: f64) -> GraphFunction {
         GraphFunction {
             name: self.name.clone(),
@@ -57,7 +57,7 @@ impl FuncCore {
         }
     }
 
-    /// Parse a `TF1` record's formula back into a function core.
+    /// Parse a `Func1D` record's formula back into a function core.
     pub(crate) fn from_record(f: GraphFunction) -> Result<FuncCore> {
         let formula = Formula::parse(&f.formula).map_err(|e| {
             Error::Unsupported(format!("formula {:?} does not parse: {e}", f.formula))
@@ -76,7 +76,7 @@ impl FuncCore {
     }
 }
 
-/// The accessors and parameter mutators common to `TF1`/`TF2`/`TF3`.
+/// The accessors and parameter mutators common to `Func1D`/`Func2D`/`Func3D`.
 macro_rules! accessors {
     () => {
         /// The key name (`fName`).
@@ -138,22 +138,23 @@ macro_rules! accessors {
     };
 }
 
-/// A `TF1` — a 1-D parametric function `f(x; p)`.
+/// A `Func1D` — a 1-D parametric function `f(x; p)`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TF1 {
+#[doc(alias = "TF1")]
+pub struct Func1D {
     pub(crate) core: FuncCore,
     pub(crate) xmin: f64,
     pub(crate) xmax: f64,
 }
 
-impl TF1 {
-    /// Build a `TF1` named `name` from a ROOT `formula` over `[xmin, xmax]`, with
+impl Func1D {
+    /// Build a `Func1D` named `name` from a ROOT `formula` over `[xmin, xmax]`, with
     /// all parameters initialised to zero.
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
-    pub fn new(name: &str, formula: &str, xmin: f64, xmax: f64) -> Result<TF1> {
-        Ok(TF1 {
+    pub fn new(name: &str, formula: &str, xmin: f64, xmax: f64) -> Result<Func1D> {
+        Ok(Func1D {
             core: FuncCore::build(name, formula)?,
             xmin,
             xmax,
@@ -162,14 +163,14 @@ impl TF1 {
 
     /// Set all parameter values (a builder; `[0], [1], …`).
     #[must_use]
-    pub fn with_params(mut self, params: Vec<f64>) -> TF1 {
+    pub fn with_params(mut self, params: Vec<f64>) -> Func1D {
         self.set_params(&params);
         self
     }
 
     /// Set the key name this function is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> TF1 {
+    pub fn named(mut self, name: impl Into<String>) -> Func1D {
         self.core.name = name.into();
         self
     }
@@ -181,14 +182,14 @@ impl TF1 {
     }
 
     /// The definite integral `∫ₐᵇ f(x) dx` (adaptive Gauss–Kronrod), as
-    /// `TF1::Integral`.
+    /// `Func1D::Integral`.
     #[must_use]
     pub fn integral(&self, a: f64, b: f64) -> f64 {
         integrate(|x| self.eval(x), a, b)
     }
 
     /// The derivative `f'(x)` (Richardson central difference), as
-    /// `TF1::Derivative`.
+    /// `Func1D::Derivative`.
     #[must_use]
     pub fn derivative(&self, x: f64) -> f64 {
         derivative(|x| self.eval(x), x)
@@ -202,18 +203,18 @@ impl TF1 {
         (self.xmin, self.xmax)
     }
 
-    /// This function as the `TF1` record a graph's `fFunctions` list holds, for
+    /// This function as the `Func1D` record a graph's `fFunctions` list holds, for
     /// example to attach it to a graph with
-    /// [`TGraph::with_function`](oxiroot_hist::TGraph::with_function). The
+    /// [`Graph::with_function`](oxiroot_hist::Graph::with_function). The
     /// record's `formula` is the canonical `[pN]` form.
     ///
     /// ```
-    /// use oxiroot_hist::TGraph;
-    /// use oxiroot_hist_func::TF1;
-    /// let f = TF1::new("line", "[0]+[1]*x", 0.0, 2.0)
+    /// use oxiroot_hist::Graph;
+    /// use oxiroot_hist_func::Func1D;
+    /// let f = Func1D::new("line", "[0]+[1]*x", 0.0, 2.0)
     ///     .unwrap()
     ///     .with_params(vec![1.0, 2.0]);
-    /// let g = TGraph::new(vec![0.0, 1.0], vec![1.0, 3.0])?.with_function(f.to_graph_function());
+    /// let g = Graph::new(vec![0.0, 1.0], vec![1.0, 3.0])?.with_function(f.to_graph_function());
     /// assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
     /// # Ok::<(), oxiroot_io_core::Error>(())
     /// ```
@@ -222,15 +223,15 @@ impl TF1 {
         self.core.record(self.xmin, self.xmax)
     }
 
-    /// Rebuild a `TF1` from a `TF1` record, such as a function read from a
-    /// graph's [`functions`](oxiroot_hist::TGraph::functions), so it can be
+    /// Rebuild a `Func1D` from a `Func1D` record, such as a function read from a
+    /// graph's [`functions`](oxiroot_hist::Graph::functions), so it can be
     /// evaluated. The range is the record's `xmin`/`xmax`.
     ///
     /// # Errors
     /// Returns an error if the record's formula is not a valid expression.
-    pub fn from_graph_function(function: GraphFunction) -> Result<TF1> {
+    pub fn from_graph_function(function: GraphFunction) -> Result<Func1D> {
         let (xmin, xmax) = (function.xmin, function.xmax);
-        Ok(TF1 {
+        Ok(Func1D {
             core: FuncCore::from_record(function)?,
             xmin,
             xmax,
@@ -239,12 +240,12 @@ impl TF1 {
 }
 
 #[cfg(feature = "fit")]
-impl TF1 {
+impl Func1D {
     /// Convert to a fittable [`Model`](oxiroot_fit::Model), seeded with this
     /// function's current parameters — so `data.fit(&tf1.to_model())` fits data
     /// to this function's shape. Requires the `fit` feature.
     ///
-    /// The model evaluates the same formula as [`eval`](TF1::eval). Its
+    /// The model evaluates the same formula as [`eval`](Func1D::eval). Its
     /// parameter names come from the title when the title is a formula with the
     /// same number of parameters (so `gaus` keeps its named parameters);
     /// otherwise, as for a read function whose title is free text, from the
@@ -263,9 +264,10 @@ impl TF1 {
     }
 }
 
-/// A `TF2` — a 2-D parametric function `f(x, y; p)`.
+/// A `Func2D` — a 2-D parametric function `f(x, y; p)`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TF2 {
+#[doc(alias = "TF2")]
+pub struct Func2D {
     pub(crate) core: FuncCore,
     pub(crate) xmin: f64,
     pub(crate) xmax: f64,
@@ -273,8 +275,8 @@ pub struct TF2 {
     pub(crate) ymax: f64,
 }
 
-impl TF2 {
-    /// Build a `TF2` from a formula in `x` and `y` over `[xmin, xmax] × [ymin, ymax]`.
+impl Func2D {
+    /// Build a `Func2D` from a formula in `x` and `y` over `[xmin, xmax] × [ymin, ymax]`.
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
@@ -286,8 +288,8 @@ impl TF2 {
         xmax: f64,
         ymin: f64,
         ymax: f64,
-    ) -> Result<TF2> {
-        Ok(TF2 {
+    ) -> Result<Func2D> {
+        Ok(Func2D {
             core: FuncCore::build(name, formula)?,
             xmin,
             xmax,
@@ -298,13 +300,13 @@ impl TF2 {
 
     /// Set all parameter values (a builder).
     #[must_use]
-    pub fn with_params(mut self, params: Vec<f64>) -> TF2 {
+    pub fn with_params(mut self, params: Vec<f64>) -> Func2D {
         self.set_params(&params);
         self
     }
     /// Set the key name this function is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> TF2 {
+    pub fn named(mut self, name: impl Into<String>) -> Func2D {
         self.core.name = name.into();
         self
     }
@@ -324,9 +326,10 @@ impl TF2 {
     }
 }
 
-/// A `TF3` — a 3-D parametric function `f(x, y, z; p)`.
+/// A `Func3D` — a 3-D parametric function `f(x, y, z; p)`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TF3 {
+#[doc(alias = "TF3")]
+pub struct Func3D {
     pub(crate) core: FuncCore,
     pub(crate) xmin: f64,
     pub(crate) xmax: f64,
@@ -336,8 +339,8 @@ pub struct TF3 {
     pub(crate) zmax: f64,
 }
 
-impl TF3 {
-    /// Build a `TF3` from a formula in `x`, `y`, `z` over the given box.
+impl Func3D {
+    /// Build a `Func3D` from a formula in `x`, `y`, `z` over the given box.
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
@@ -351,8 +354,8 @@ impl TF3 {
         ymax: f64,
         zmin: f64,
         zmax: f64,
-    ) -> Result<TF3> {
-        Ok(TF3 {
+    ) -> Result<Func3D> {
+        Ok(Func3D {
             core: FuncCore::build(name, formula)?,
             xmin,
             xmax,
@@ -365,13 +368,13 @@ impl TF3 {
 
     /// Set all parameter values (a builder).
     #[must_use]
-    pub fn with_params(mut self, params: Vec<f64>) -> TF3 {
+    pub fn with_params(mut self, params: Vec<f64>) -> Func3D {
         self.set_params(&params);
         self
     }
     /// Set the key name this function is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> TF3 {
+    pub fn named(mut self, name: impl Into<String>) -> Func3D {
         self.core.name = name.into();
         self
     }

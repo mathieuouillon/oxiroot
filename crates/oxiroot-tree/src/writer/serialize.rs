@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use oxiroot_io_core::{
-    write_tnamed, write_tobject, CountToken, Patch, TKey, WBuffer, K_BYTE_COUNT_MASK,
+    write_named, write_object_base, CountToken, Key, Patch, WBuffer, K_BYTE_COUNT_MASK,
 };
 
 use super::baskets::BasketRec;
@@ -76,12 +76,12 @@ pub(super) fn build_tree_object(
     // must use the same keylen so a jagged leaf's `fLeafCount` reference lands on
     // the count leaf. The wrapping key is wider in the big (64-bit) container form,
     // so the keylen — and thus every baked reference — depends on `big`.
-    let keylen = TKey::header_len("TTree", tree_name, "", big) as u32;
+    let keylen = Key::header_len("TTree", tree_name, "", big) as u32;
     let mut refs: LeafRefs = HashMap::new();
 
     let mut w = WBuffer::new();
     let tree = w.begin_object(20); // TTree v20
-    write_tnamed(&mut w, OBJ_BITS, tree_name, "");
+    write_named(&mut w, OBJ_BITS, tree_name, "");
     write_attline(&mut w);
     write_attfill(&mut w);
     write_attmarker(&mut w);
@@ -125,7 +125,7 @@ pub(super) fn build_tree_object(
 /// The `TObjArray` header (`{version} TObject name fSize fLowerBound`).
 fn obj_array_header(w: &mut WBuffer, size: usize) -> CountToken {
     let tok = w.begin_object(3); // TObjArray v3
-    write_tobject(w, 0);
+    write_object_base(w, 0);
     w.string("");
     w.be_i32(size as i32);
     w.be_i32(0); // fLowerBound
@@ -233,7 +233,7 @@ fn write_leaf_element(
 ) {
     let outer = w.begin_object(1); // TLeafElement v1
     let base = w.begin_object(2); // TLeaf v2
-    write_tnamed(w, OBJ_BITS, name, title);
+    write_named(w, OBJ_BITS, name, title);
     w.be_i32(1); // fLen
     w.be_i32(len_type); // fLenType
     w.be_i32(0); // fOffset
@@ -276,7 +276,7 @@ fn write_split_parent(
 
     let te = w.begin_object(10); // TBranchElement v10
     let tb = w.begin_object(13); // TBranch v13
-    write_tnamed(w, OBJ_BITS, &branch.name, &counter);
+    write_named(w, OBJ_BITS, &branch.name, &counter);
     write_attfill(w);
     w.be_i32(0); // fCompress
     w.be_i32(32000); // fBasketSize
@@ -369,7 +369,7 @@ fn write_split_sub(
 
     let te = w.begin_object(10); // TBranchElement v10
     let tb = w.begin_object(13); // TBranch v13
-    write_tnamed(w, OBJ_BITS, &name, &title);
+    write_named(w, OBJ_BITS, &name, &title);
     write_attfill(w);
     w.be_i32(0); // fCompress
     w.be_i32(32000); // fBasketSize
@@ -394,7 +394,7 @@ fn write_split_sub(
     let lbc = begin_object_any(w, "TLeafElement");
     let outer = w.begin_object(1); // TLeafElement v1
     let base = w.begin_object(2); // TLeaf v2
-    write_tnamed(w, OBJ_BITS, &name, &title);
+    write_named(w, OBJ_BITS, &name, &title);
     w.be_i32(1); // fLen
     w.be_i32(size); // fLenType (element width in bytes)
     w.be_i32(0); // fOffset
@@ -483,7 +483,7 @@ fn write_branch(
     let max_baskets = (group.len() as i32).max(10);
 
     let tok = w.begin_object(13); // TBranch v13
-    write_tnamed(w, OBJ_BITS, &branch.name, &title);
+    write_named(w, OBJ_BITS, &branch.name, &title);
     write_attfill(w);
     w.be_i32(0); // fCompress
     w.be_i32(32000); // fBasketSize
@@ -569,7 +569,7 @@ fn write_leaf(w: &mut WBuffer, branch: &Branch, refs: &LeafRefs) {
     if branch.stl_vector() {
         let outer = w.begin_object(1); // TLeafElement v1
         let base = w.begin_object(2); // TLeaf v2
-        write_tnamed(w, OBJ_BITS, &branch.name, &branch.name);
+        write_named(w, OBJ_BITS, &branch.name, &branch.name);
         w.be_i32(1); // fLen
         w.be_i32(0); // fLenType
         w.be_i32(0); // fOffset
@@ -614,7 +614,7 @@ fn write_leaf(w: &mut WBuffer, branch: &Branch, refs: &LeafRefs) {
     };
     let outer = w.begin_object(1); // TLeafX v1
     let base = w.begin_object(2); // TLeaf v2
-    write_tnamed(w, OBJ_BITS, &branch.name, &title);
+    write_named(w, OBJ_BITS, &branch.name, &title);
     w.be_i32(f_len); // fLen
     w.be_i32(f_len_type); // fLenType
     w.be_i32(0); // fOffset

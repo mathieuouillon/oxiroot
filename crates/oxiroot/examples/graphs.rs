@@ -1,9 +1,9 @@
 //! The graph family as first-class ROOT objects: build a cross-section
 //! measurement as a `TGraphErrors` (symmetric y errors), an asymmetric-error
-//! variant, a 2-D parameter scan as a `TGraph2D`, and two datasets drawn
-//! together as a `TMultiGraph` — write them all into ONE ROOT file with the
+//! variant, a 2-D parameter scan as a `Graph2D`, and two datasets drawn
+//! together as a `GraphStack` — write them all into ONE ROOT file with the
 //! `FileWriter`, then read one graph back point-by-point
-//! (`TGraph::read_root`). The file is readable by official ROOT and uproot.
+//! (`Graph::read_root`). The file is readable by official ROOT and uproot.
 //! (Fitting a graph is shown in `fit.rs`; this is about the objects themselves.)
 //!
 //! ```sh
@@ -22,7 +22,7 @@ fn main() -> oxiroot::Result<()> {
     let energy = vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
     let sigma = vec![12.4, 18.9, 22.1, 20.3, 15.7, 9.8];
     let sigma_err = vec![1.1, 1.3, 1.5, 1.4, 1.2, 0.9];
-    let xsec = TGraph::with_errors(
+    let xsec = Graph::with_errors(
         energy.clone(),
         sigma.clone(),
         vec![0.0; energy.len()], // ex: energy is exact
@@ -30,7 +30,7 @@ fn main() -> oxiroot::Result<()> {
     )?
     .named("xsec")
     .titled("cross-section vs energy");
-    // `class_name` reflects the error variant we chose: no errors -> "TGraph",
+    // `class_name` reflects the error variant we chose: no errors -> "Graph",
     // symmetric -> "TGraphErrors", asymmetric (below) -> "TGraphAsymmErrors".
     println!(
         "xsec: {} ({} points), class {}",
@@ -44,7 +44,7 @@ fn main() -> oxiroot::Result<()> {
     // eyh): the low then high error for x, then the low then high error for y.
     let ey_low: Vec<f64> = sigma_err.iter().map(|e| e * 0.8).collect(); // tighter below
     let ey_high: Vec<f64> = sigma_err.iter().map(|e| e * 1.5).collect(); // looser above
-    let xsec_asym = TGraph::with_asymm_errors(
+    let xsec_asym = Graph::with_asymm_errors(
         energy.clone(),
         sigma.clone(),
         vec![0.0; energy.len()], // exl
@@ -60,8 +60,8 @@ fn main() -> oxiroot::Result<()> {
         xsec_asym.class_name(),
     );
 
-    // --- 3. A 2-D scan over (mass, width) with a likelihood z, as a TGraph2D. --
-    // A TGraph2D is an (x, y, z) scatter — here a small grid of trial points and
+    // --- 3. A 2-D scan over (mass, width) with a likelihood z, as a Graph2D. ---
+    // A Graph2D is an (x, y, z) scatter — here a small grid of trial points and
     // the value of some objective (e.g. a negative log-likelihood) at each.
     let (mut sx, mut sy, mut sz): (Vec<f64>, Vec<f64>, Vec<f64>) =
         (Vec::new(), Vec::new(), Vec::new());
@@ -73,16 +73,16 @@ fn main() -> oxiroot::Result<()> {
             sz.push((m - 91.0).powi(2) + 4.0 * (w - 2.5).powi(2));
         }
     }
-    let scan = TGraph2D::new(sx, sy, sz)?
+    let scan = Graph2D::new(sx, sy, sz)?
         .named("scan")
         .titled("-lnL scan over (mass, width)");
     println!("scan: TGraph2D with {} grid points", scan.len());
 
-    // --- 4. Two datasets drawn in one frame, as a TMultiGraph. -----------------
+    // --- 4. Two datasets drawn in one frame, as a GraphStack. ------------------
     // A multigraph just holds several TGraphs so they share a frame/legend when
     // drawn. Give the members their own names so a reader can tell them apart.
-    let data = TGraph::new(energy.clone(), sigma.clone())?.named("data");
-    let theory = TGraph::new(
+    let data = Graph::new(energy.clone(), sigma.clone())?.named("data");
+    let theory = Graph::new(
         energy.clone(),
         // A smooth "prediction" curve to overlay on the points.
         energy
@@ -91,7 +91,7 @@ fn main() -> oxiroot::Result<()> {
             .collect(),
     )?
     .named("theory");
-    let comparison = TMultiGraph::new()
+    let comparison = GraphStack::new()
         .named("comparison")
         .titled("data vs theory")
         .add(data)
@@ -113,12 +113,12 @@ fn main() -> oxiroot::Result<()> {
         .write(Compression::Zstd(5))?;
     println!("\nwrote 4 graphs -> {}", path.display());
 
-    // --- Read one graph back and print its points (idiomatic TGraph::read_root).
+    // --- Read one graph back and print its points (idiomatic Graph::read_root).
     let f = FileReader::open(&path)?;
-    let back = TGraph::read_root(&f, "xsec")?;
+    let back = Graph::read_root(&f, "xsec")?;
     println!("read back `{}` ({} points):", back.name, back.len());
     // The error arrays live in the `errors` enum; pull the y errors out for the
-    // symmetric variant we wrote (they are empty for a plain TGraph).
+    // symmetric variant we wrote (they are empty for a plain Graph).
     let ey: &[f64] = match &back.errors {
         GraphErrors::Symmetric { ey, .. } => ey,
         _ => &[],
@@ -133,7 +133,7 @@ fn main() -> oxiroot::Result<()> {
     }
 
     // The multigraph round-trips too: read it and count its members.
-    let mg = TMultiGraph::read_root(&f, "comparison")?;
+    let mg = GraphStack::read_root(&f, "comparison")?;
     println!(
         "read back multigraph `{}`: {} member graphs ({})",
         mg.name(),

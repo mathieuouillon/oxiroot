@@ -1,7 +1,7 @@
-//! `TGraphMultiErrors` — an (x, y) graph with asymmetric x errors and *several*
+//! `MultiErrorGraph` — an (x, y) graph with asymmetric x errors and *several*
 //! independent layers of asymmetric y errors (e.g. statistical + systematic).
 //!
-//! On disk (v1): a full `TGraph` base (v5), then `fNYErrors`, `fSumErrorsMode`,
+//! On disk (v1): a full `Graph` base (v5), then `fNYErrors`, `fSumErrorsMode`,
 //! the `fExL`/`fExH` `double* //[fNpoints]` arrays, the `fEyL`/`fEyH`
 //! `vector<TArrayD>` (one `TArrayD` per y-error layer, streamed *objectwise*),
 //! and finally `fAttFill`/`fAttLine` (`vector<TAttFill>`/`vector<TAttLine>`,
@@ -12,14 +12,15 @@
 //! Note: uproot cannot decode the memberwise attribute vectors, so this class is
 //! cross-checked against compiled ROOT C++ only.
 
-use oxiroot_io_core::{read_tnamed, skip_versioned, Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{read_named, skip_versioned, Error, FileReader, RBuffer, Result};
 
 use crate::base::{check_len, object_bytes_any};
 
 /// An (x, y) graph with asymmetric x errors and one or more layers of asymmetric
 /// y errors (ROOT `TGraphMultiErrors`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TGraphMultiErrors {
+#[doc(alias = "TGraphMultiErrors")]
+pub struct MultiErrorGraph {
     /// Graph name (`fName`).
     pub name: String,
     /// Graph title (`fTitle`).
@@ -41,8 +42,8 @@ pub struct TGraphMultiErrors {
     pub sum_errors_mode: i32,
 }
 
-impl TGraphMultiErrors {
-    /// Create a `TGraphMultiErrors` with x errors and a first y-error layer.
+impl MultiErrorGraph {
+    /// Create a `MultiErrorGraph` with x errors and a first y-error layer.
     /// Add further y-error layers with [`add_y_error`](Self::add_y_error).
     ///
     /// # Errors
@@ -55,14 +56,14 @@ impl TGraphMultiErrors {
         ex_high: Vec<f64>,
         ey_low: Vec<f64>,
         ey_high: Vec<f64>,
-    ) -> Result<TGraphMultiErrors> {
+    ) -> Result<MultiErrorGraph> {
         let n = x.len();
         check_len("TGraphMultiErrors y", n, y.len())?;
         check_len("TGraphMultiErrors ex_low", n, ex_low.len())?;
         check_len("TGraphMultiErrors ex_high", n, ex_high.len())?;
         check_len("TGraphMultiErrors ey_low", n, ey_low.len())?;
         check_len("TGraphMultiErrors ey_high", n, ey_high.len())?;
-        Ok(TGraphMultiErrors {
+        Ok(MultiErrorGraph {
             name: String::new(),
             title: String::new(),
             x,
@@ -128,7 +129,7 @@ fn read_vector_tarrayd(r: &mut RBuffer) -> Result<Vec<Vec<f64>>> {
     Ok(layers)
 }
 
-fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<TGraphMultiErrors> {
+fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<MultiErrorGraph> {
     if class != "TGraphMultiErrors" {
         return Err(Error::WrongClass {
             name: name.to_string(),
@@ -137,9 +138,9 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<TG
         });
     }
     let mut r = RBuffer::new(object);
-    let outer = r.read_version()?; // TGraphMultiErrors v1
-    let base = r.read_version()?; // TGraph v5 base
-    let named = read_tnamed(&mut r)?;
+    let outer = r.read_version()?; // MultiErrorGraph v1
+    let base = r.read_version()?; // Graph v5 base
+    let named = read_named(&mut r)?;
     skip_versioned(&mut r)?; // TAttLine
     skip_versioned(&mut r)?; // TAttFill
     skip_versioned(&mut r)?; // TAttMarker
@@ -147,7 +148,7 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<TG
     let x = read_basic_array(&mut r, npoints)?;
     let y = read_basic_array(&mut r, npoints)?;
     if let Some(end) = base.end {
-        r.seek(end)?; // skip the TGraph base trailer (fFunctions/fHistogram/…)
+        r.seek(end)?; // skip the Graph base trailer (fFunctions/fHistogram/…)
     }
     let _n_y_errors = r.be_i32()?;
     let sum_errors_mode = r.be_i32()?;
@@ -158,7 +159,7 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<TG
     if let Some(end) = outer.end {
         r.seek(end)?; // skip fAttFill/fAttLine (display attributes)
     }
-    Ok(TGraphMultiErrors {
+    Ok(MultiErrorGraph {
         name: named.name,
         title: named.title,
         x,
@@ -171,18 +172,18 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<TG
     })
 }
 
-/// Read a `TGraphMultiErrors` named `name`.
-pub(crate) fn read_tgraphmultierrors(file: &FileReader, name: &str) -> Result<TGraphMultiErrors> {
+/// Read a `MultiErrorGraph` named `name`.
+pub(crate) fn read_tgraphmultierrors(file: &FileReader, name: &str) -> Result<MultiErrorGraph> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tgraphmultierrors(name, &class, &object)
 }
 
-/// Read a `TGraphMultiErrors` from subdirectory `subdir`.
+/// Read a `MultiErrorGraph` from subdirectory `subdir`.
 pub(crate) fn read_tgraphmultierrors_in(
     file: &FileReader,
     subdir: &str,
     name: &str,
-) -> Result<TGraphMultiErrors> {
+) -> Result<MultiErrorGraph> {
     let (class, object) = file.object_in(subdir, name)?;
     decode_tgraphmultierrors(name, &class, &object)
 }

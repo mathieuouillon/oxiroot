@@ -1,4 +1,4 @@
-//! [`TObjString`] (ROOT's "collectable string") and [`TParameter`] (a named
+//! [`ObjString`] (ROOT's "collectable string") and [`Parameter`] (a named
 //! scalar — a luminosity, an event count, …): small objects stored under their
 //! own keys. Both read and write byte-for-byte as ROOT serializes them, so ROOT
 //! and uproot read what oxiroot writes and vice versa.
@@ -6,31 +6,32 @@
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
 use crate::object_io::{object_bytes_any, ReadRoot, WriteRoot};
-use crate::streamer::{read_tobject, write_tobject};
+use crate::streamer::{read_object_base, write_object_base};
 use crate::streamer_gen::{base, basic, strf, Cls};
 use crate::FileReader;
 
-/// `fBits` ROOT writes for a `TParameter`'s embedded `TObject` (`TObjString`'s is
+/// `fBits` ROOT writes for a `Parameter`'s embedded `TObject` (`ObjString`'s is
 /// `0`). Cosmetic, but matched so written files equal ROOT's byte-for-byte.
 const PARAM_BITS: u32 = 0x0020_0000;
 
-// --- TObjString -------------------------------------------------------------
+// --- ObjString --------------------------------------------------------------
 
-/// A `TObjString` — ROOT's wrapper for a single `TString`, stored under a key
-/// (e.g. a metadata label). Build with [`TObjString::new`] then
-/// [`named`](TObjString::named); write it through a file builder
+/// An `ObjString` — ROOT's wrapper for a single `TString`, stored under a key
+/// (e.g. a metadata label). Build with [`ObjString::new`] then
+/// [`named`](ObjString::named); write it through a file builder
 /// or [`write_root`](WriteRoot::write_root).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TObjString {
+#[doc(alias = "TObjString")]
+pub struct ObjString {
     name: String,
     value: String,
 }
 
-impl TObjString {
-    /// A `TObjString` holding `value` (give it a key name with
+impl ObjString {
+    /// An `ObjString` holding `value` (give it a key name with
     /// [`named`](Self::named) before writing).
-    pub fn new(value: impl Into<String>) -> TObjString {
-        TObjString {
+    pub fn new(value: impl Into<String>) -> ObjString {
+        ObjString {
             name: String::new(),
             value: value.into(),
         }
@@ -38,7 +39,7 @@ impl TObjString {
 
     /// Set the key name this string is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> TObjString {
+    pub fn named(mut self, name: impl Into<String>) -> ObjString {
         self.name = name.into();
         self
     }
@@ -54,7 +55,7 @@ impl TObjString {
     }
 }
 
-impl WriteRoot for TObjString {
+impl WriteRoot for ObjString {
     fn root_class(&self) -> String {
         "TObjString".to_string()
     }
@@ -62,13 +63,13 @@ impl WriteRoot for TObjString {
         &self.name
     }
     fn root_title(&self) -> &str {
-        // ROOT records the TObjString class description as the key title.
+        // ROOT records the ObjString class description as the key title.
         "Collectable string class"
     }
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
-        let obj = w.begin_object(1); // TObjString version 1
-        write_tobject(&mut w, 0);
+        let obj = w.begin_object(1); // ObjString version 1
+        write_object_base(&mut w, 0);
         w.string(&self.value); // fString
         w.end_object(obj);
         w.into_vec()
@@ -78,7 +79,7 @@ impl WriteRoot for TObjString {
     }
 }
 
-pub(crate) fn decode_tobjstring(name: &str, class: &str, object: &[u8]) -> Result<TObjString> {
+pub(crate) fn decode_tobjstring(name: &str, class: &str, object: &[u8]) -> Result<ObjString> {
     if class != "TObjString" {
         return Err(Error::WrongClass {
             name: name.to_string(),
@@ -87,33 +88,33 @@ pub(crate) fn decode_tobjstring(name: &str, class: &str, object: &[u8]) -> Resul
         });
     }
     let mut r = RBuffer::new(object);
-    r.read_version()?; // TObjString version
-    read_tobject(&mut r)?; // TObject base
+    r.read_version()?; // ObjString version
+    read_object_base(&mut r)?; // TObject base
     let value = r.string()?; // fString
-    Ok(TObjString {
+    Ok(ObjString {
         name: name.to_string(),
         value,
     })
 }
 
-// --- TParameter<T> ----------------------------------------------------------
+// --- Parameter<T> -----------------------------------------------------------
 
-/// The scalar a [`TParameter`] holds, tagged with its C++ type (which selects the
-/// `TParameter<…>` class name and the value's on-disk width).
+/// The scalar a [`Parameter`] holds, tagged with its C++ type (which selects the
+/// `Parameter<…>` class name and the value's on-disk width).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ParamValue {
-    /// `TParameter<double>`.
+    /// `Parameter<double>`.
     Double(f64),
-    /// `TParameter<float>`.
+    /// `Parameter<float>`.
     Float(f32),
-    /// `TParameter<int>`.
+    /// `Parameter<int>`.
     Int(i32),
-    /// `TParameter<long long>` (a 64-bit integer; ROOT's `Long64_t`).
+    /// `Parameter<long long>` (a 64-bit integer; ROOT's `Long64_t`).
     Long64(i64),
 }
 
 impl ParamValue {
-    /// The C++ type name ROOT uses in the `TParameter<…>` class name. `Long64_t`
+    /// The C++ type name ROOT uses in the `Parameter<…>` class name. `Long64_t`
     /// demangles to `long long` on disk (matching ROOT's own key class and
     /// streamer-info names, so uproot resolves the class).
     fn type_name(&self) -> &'static str {
@@ -144,34 +145,35 @@ impl ParamValue {
     }
 }
 
-/// A `TParameter<T>` — a named scalar value stored under a key, the way ROOT
+/// A `Parameter<T>` — a named scalar value stored under a key, the way ROOT
 /// stashes a luminosity, an event count, or a cut threshold alongside histograms.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TParameter {
+#[doc(alias = "TParameter")]
+pub struct Parameter {
     name: String,
     value: ParamValue,
 }
 
-impl TParameter {
-    /// A `TParameter<double>` named `name`.
-    pub fn f64(name: impl Into<String>, value: f64) -> TParameter {
-        TParameter::new(name, ParamValue::Double(value))
+impl Parameter {
+    /// A `Parameter<double>` named `name`.
+    pub fn f64(name: impl Into<String>, value: f64) -> Parameter {
+        Parameter::new(name, ParamValue::Double(value))
     }
-    /// A `TParameter<float>` named `name`.
-    pub fn f32(name: impl Into<String>, value: f32) -> TParameter {
-        TParameter::new(name, ParamValue::Float(value))
+    /// A `Parameter<float>` named `name`.
+    pub fn f32(name: impl Into<String>, value: f32) -> Parameter {
+        Parameter::new(name, ParamValue::Float(value))
     }
-    /// A `TParameter<int>` named `name`.
-    pub fn i32(name: impl Into<String>, value: i32) -> TParameter {
-        TParameter::new(name, ParamValue::Int(value))
+    /// A `Parameter<int>` named `name`.
+    pub fn i32(name: impl Into<String>, value: i32) -> Parameter {
+        Parameter::new(name, ParamValue::Int(value))
     }
-    /// A `TParameter<Long64_t>` (64-bit integer) named `name`.
-    pub fn i64(name: impl Into<String>, value: i64) -> TParameter {
-        TParameter::new(name, ParamValue::Long64(value))
+    /// A `Parameter<Long64_t>` (64-bit integer) named `name`.
+    pub fn i64(name: impl Into<String>, value: i64) -> Parameter {
+        Parameter::new(name, ParamValue::Long64(value))
     }
 
-    fn new(name: impl Into<String>, value: ParamValue) -> TParameter {
-        TParameter {
+    fn new(name: impl Into<String>, value: ParamValue) -> Parameter {
+        Parameter {
             name: name.into(),
             value,
         }
@@ -181,12 +183,12 @@ impl TParameter {
     pub fn name(&self) -> &str {
         &self.name
     }
-    /// Add `other`'s value to this one, as ROOT's `TParameter<T>::Merge` and
+    /// Add `other`'s value to this one, as ROOT's `Parameter<T>::Merge` and
     /// `hadd` do. The name stays as it is.
     ///
     /// Returns [`Error::InvalidInput`] and makes no change if the two hold
-    /// different types (a `TParameter<int>` and a `TParameter<double>`, say).
-    pub fn add(&mut self, other: &TParameter) -> Result<()> {
+    /// different types (a `Parameter<int>` and a `Parameter<double>`, say).
+    pub fn add(&mut self, other: &Parameter) -> Result<()> {
         self.value = match (self.value, other.value) {
             (ParamValue::Double(a), ParamValue::Double(b)) => ParamValue::Double(a + b),
             (ParamValue::Float(a), ParamValue::Float(b)) => ParamValue::Float(a + b),
@@ -209,7 +211,7 @@ impl TParameter {
     }
 }
 
-impl WriteRoot for TParameter {
+impl WriteRoot for Parameter {
     fn root_class(&self) -> String {
         format!("TParameter<{}>", self.value.type_name())
     }
@@ -220,12 +222,12 @@ impl WriteRoot for TParameter {
         ""
     }
     fn to_root_bytes(&self) -> Vec<u8> {
-        // [version 2][TObject][fName][fVal] — ROOT's TParameter omits the TNamed
+        // [version 2][TObject][fName][fVal] — ROOT's Parameter omits the Named
         // version header and fTitle.
         let mut w = WBuffer::new();
-        let obj = w.begin_object(2); // TParameter version 2
-        write_tobject(&mut w, PARAM_BITS);
-        w.string(&self.name); // fName (TNamed)
+        let obj = w.begin_object(2); // Parameter version 2
+        write_object_base(&mut w, PARAM_BITS);
+        w.string(&self.name); // fName (Named)
         self.value.write(&mut w); // fVal
         w.end_object(obj);
         w.into_vec()
@@ -235,7 +237,7 @@ impl WriteRoot for TParameter {
     }
 }
 
-pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Result<TParameter> {
+pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Result<Parameter> {
     let type_name = class
         .strip_prefix("TParameter<")
         .and_then(|s| s.strip_suffix('>'))
@@ -245,8 +247,8 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
             expected: "TParameter".to_string(),
         })?;
     let mut r = RBuffer::new(object);
-    r.read_version()?; // TParameter version
-    read_tobject(&mut r)?; // TObject base
+    r.read_version()?; // Parameter version
+    read_object_base(&mut r)?; // TObject base
     let _fname = r.string()?; // fName (use the key name for consistency)
     let value = match type_name {
         "double" => ParamValue::Double(r.be_f64()?),
@@ -259,17 +261,17 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
             )))
         }
     };
-    Ok(TParameter {
+    Ok(Parameter {
         name: name.to_string(),
         value,
     })
 }
 
 // ROOT C++ has these classes compiled in, but uproot models a templated
-// `TParameter<…>` only from its streamer, so files that store them embed these
+// `Parameter<…>` only from its streamer, so files that store them embed these
 // entries. Checksums and versions are ROOT's own (see `scripts/gen_*.cpp`).
 
-/// The `TStreamerInfo` of `TObjString`.
+/// The `TStreamerInfo` of `ObjString`.
 fn tobjstring_class() -> Cls<'static> {
     Cls {
         name: "TObjString".into(),
@@ -279,7 +281,7 @@ fn tobjstring_class() -> Cls<'static> {
     }
 }
 
-/// The `TStreamerInfo` of the `TParameter<…>` holding `value`'s type.
+/// The `TStreamerInfo` of the `Parameter<…>` holding `value`'s type.
 fn tparameter_class(value: ParamValue) -> Cls<'static> {
     let (checksum, ty, size) = match value {
         ParamValue::Double(_) => (1_968_899_544, 8, 8),
@@ -314,35 +316,27 @@ pub(crate) fn member_classes(class: &str) -> Vec<Cls<'static>> {
     }
 }
 
-pub(crate) fn read_tobjstring(file: &FileReader, name: &str) -> Result<TObjString> {
+pub(crate) fn read_tobjstring(file: &FileReader, name: &str) -> Result<ObjString> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tobjstring(name, &class, &object)
 }
 
-pub(crate) fn read_tobjstring_in(
-    file: &FileReader,
-    subdir: &str,
-    name: &str,
-) -> Result<TObjString> {
+pub(crate) fn read_tobjstring_in(file: &FileReader, subdir: &str, name: &str) -> Result<ObjString> {
     let (class, object) = file.object_in(subdir, name)?;
     decode_tobjstring(name, &class, &object)
 }
 
-pub(crate) fn read_tparameter(file: &FileReader, name: &str) -> Result<TParameter> {
+pub(crate) fn read_tparameter(file: &FileReader, name: &str) -> Result<Parameter> {
     let (class, object) = object_bytes_any(file, name)?;
     decode_tparameter(name, &class, &object)
 }
 
-pub(crate) fn read_tparameter_in(
-    file: &FileReader,
-    subdir: &str,
-    name: &str,
-) -> Result<TParameter> {
+pub(crate) fn read_tparameter_in(file: &FileReader, subdir: &str, name: &str) -> Result<Parameter> {
     let (class, object) = file.object_in(subdir, name)?;
     decode_tparameter(name, &class, &object)
 }
 
-impl ReadRoot for TObjString {
+impl ReadRoot for ObjString {
     fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         read_tobjstring(file, name)
     }
@@ -351,7 +345,7 @@ impl ReadRoot for TObjString {
     }
 }
 
-impl ReadRoot for TParameter {
+impl ReadRoot for Parameter {
     fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         read_tparameter(file, name)
     }

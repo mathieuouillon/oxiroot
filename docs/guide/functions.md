@@ -1,26 +1,26 @@
-# Functions (`TF1`/`TF2`/`TF3`)
+# Functions (`Func1D`/`Func2D`/`Func3D`)
 
-A **function** is a formula, its parameter values, and a range. oxiroot's `TF1`
-(1-D), `TF2` (2-D), and `TF3` (3-D) are ROOT's parametric functions: they
+A **function** is a formula, its parameter values, and a range. oxiroot's `Func1D`
+(1-D), `Func2D` (2-D), and `Func3D` (3-D) are ROOT's parametric functions: they
 evaluate in pure Rust — `eval`, `integral`, `derivative` — and read and write as
 ordinary ROOT `TF1`/`TF2`/`TF3` keys (each embeds a `TFormula`), so ROOT C++ and
 uproot read what oxiroot writes and vice versa.
 
 The functions live in the `oxiroot-hist-func` crate and are re-exported as
-`oxiroot::hist::{TF1, TF2, TF3}` and in the prelude. The expression engine
+`oxiroot::hist::{Func1D, Func2D, Func3D}` and in the prelude. The expression engine
 behind them is the dependency-free
 [`oxiroot-formula`](../reference/crates.md) crate; the same engine powers
 [`Model::from_formula`](fitting.md) so any formula is also fittable.
 
 ## Building and evaluating
 
-Construct a `TF1` from a name, a formula, and an `[xmin, xmax]` range, then set
+Construct a `Func1D` from a name, a formula, and an `[xmin, xmax]` range, then set
 the parameters:
 
 ```rust
 use oxiroot::prelude::*;
 
-let f = TF1::new("f", "[0]*sin([1]*x) + [2]", 0.0, 6.283)?
+let f = Func1D::new("f", "[0]*sin([1]*x) + [2]", 0.0, 6.283)?
     .with_params(vec![2.0, 1.5, 0.5]);
 
 f.eval(1.0);                       // 2*sin(1.5) + 0.5  = 2.494990
@@ -30,18 +30,18 @@ f.derivative(1.0);                // 3*cos(1.5)        = 0.212212
 ```
 
 `integral` is an adaptive Gauss–Kronrod quadrature and `derivative` a
-Richardson-extrapolated central difference, matching `TF1::Integral` /
-`TF1::Derivative` to ~10 significant figures.
+Richardson-extrapolated central difference, matching `Func1D::Integral` /
+`Func1D::Derivative` to ~10 significant figures.
 
-`TF2`/`TF3` add coordinates — the formula gains `y` (and `z`):
+`Func2D`/`Func3D` add coordinates — the formula gains `y` (and `z`):
 
 ```rust
 use oxiroot::prelude::*;
-let f2 = TF2::new("f2", "[0]*sin(x) + [1]*y*y", -3.0, 3.0, -2.0, 2.0)?
+let f2 = Func2D::new("f2", "[0]*sin(x) + [1]*y*y", -3.0, 3.0, -2.0, 2.0)?
     .with_params(vec![1.5, 0.7]);
 f2.eval(1.0, 1.0);                            // 1.5*sin(1) + 0.7
 
-let f3 = TF3::new("f3", "[0]*x + y*z", 0.0, 2.0, 0.0, 2.0, 0.0, 2.0)?
+let f3 = Func3D::new("f3", "[0]*x + y*z", 0.0, 2.0, 0.0, 2.0, 0.0, 2.0)?
     .with_params(vec![2.0]);
 f3.eval(1.0, 1.0, 1.0);                       // 3.0
 # Ok::<(), oxiroot::Error>(())
@@ -69,7 +69,7 @@ supports:
 
 ```rust
 use oxiroot::prelude::*;
-let g = TF1::new("g", "gaus", -5.0, 5.0)?.with_params(vec![2.0, 0.0, 1.0]);
+let g = Func1D::new("g", "gaus", -5.0, 5.0)?.with_params(vec![2.0, 0.0, 1.0]);
 assert_eq!(g.eval(0.0), 2.0);
 # Ok::<(), oxiroot::Error>(())
 ```
@@ -89,41 +89,41 @@ other object — [Reading & writing](reading-writing.md):
 
 ```rust
 use oxiroot::prelude::*;
-let f = TF1::new("resp", "[0]*exp(-[1]*x)", 0.0, 5.0)?.with_params(vec![10.0, 0.5]);
-f.write_root("func.root", Compression::None)?;             // a standalone TF1 key
-let back = TF1::read_root(&FileReader::open("func.root")?, "resp")?;
+let f = Func1D::new("resp", "[0]*exp(-[1]*x)", 0.0, 5.0)?.with_params(vec![10.0, 0.5]);
+f.write_root("func.root", Compression::None)?;             // a standalone Func1D key
+let back = Func1D::read_root(&FileReader::open("func.root")?, "resp")?;
 assert!((back.eval(2.0) - f.eval(2.0)).abs() < 1e-12);
 # Ok::<(), oxiroot::Error>(())
 ```
 
 They also go into a multi-object file or a subdirectory via the `FileWriter`
 builder, and a graph's attached fitted functions (`fFunctions`) use the same
-`TF1`/`TFormula` serialization — see [Graphs](graphs.md).
+`Func1D`/`TFormula` serialization — see [Graphs](graphs.md).
 
-A `TF1` and a graph's `GraphFunction` are the same ROOT record, so they convert
+A `Func1D` and a graph's `GraphFunction` are the same ROOT record, so they convert
 both ways: `to_graph_function()` attaches a function to a graph, and
-`TF1::from_graph_function` turns an attached function back into something you
+`Func1D::from_graph_function` turns an attached function back into something you
 can evaluate:
 
 ```rust
 use oxiroot::prelude::*;
-let f = TF1::new("line", "[0]+[1]*x", 0.0, 2.0)?.with_params(vec![1.0, 2.0]);
-let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.1, 2.9, 5.2])?
+let f = Func1D::new("line", "[0]+[1]*x", 0.0, 2.0)?.with_params(vec![1.0, 2.0]);
+let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.1, 2.9, 5.2])?
     .named("g")
     .with_function(f.to_graph_function());
-let attached = TF1::from_graph_function(g.functions[0].clone())?;
+let attached = Func1D::from_graph_function(g.functions[0].clone())?;
 assert_eq!(attached.eval(1.5), f.eval(1.5));
 # Ok::<(), oxiroot::Error>(())
 ```
 
-ROOT C++ and uproot both read oxiroot's `TF1`, `TF2`, and `TF3` and re-evaluate
-them: oxiroot embeds the `TF1`/`TF2`/`TF3`/`TFormula` `TStreamerInfo` (including
+ROOT C++ and uproot both read oxiroot's `Func1D`, `Func2D`, and `Func3D` and re-evaluate
+them: oxiroot embeds the `Func1D`/`Func2D`/`Func3D`/`TFormula` `TStreamerInfo` (including
 the `std::vector<double>`/`std::map` members) so uproot builds a model for each.
 
 ## Fitting to a function's shape
 
 To fit data to a formula, build a [`Model`](fitting.md) from it — either directly
-with `Model::from_formula`, or from an existing `TF1` with `to_model()` (the
+with `Model::from_formula`, or from an existing `Func1D` with `to_model()` (the
 `fit` feature of `oxiroot` or `oxiroot-hist-func`) — and fit any histogram,
 graph, or point set:
 

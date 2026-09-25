@@ -2,38 +2,38 @@
 //!
 //! Reproduces the exact byte layout ROOT writes (validated by byte-comparison
 //! against a ROOT-written fixture), filling the data-bearing members from a
-//! [`TH1`] and the cosmetic/auxiliary members with ROOT's defaults.
+//! [`Hist1D`] and the cosmetic/auxiliary members with ROOT's defaults.
 
 use std::sync::LazyLock;
 
 use oxiroot_io_core::streamer_gen::{Cls, StreamerInfoList};
-use oxiroot_io_core::{write_tnamed, write_tobject, TObjString, WBuffer};
+use oxiroot_io_core::{write_named, write_object_base, ObjString, WBuffer};
 // The object framework (the `WriteRoot` trait and `FileWriter`) lives
 // in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, FileWriter, SubdirWriter}`
 // and the in-crate `crate::write::WriteRoot` path keep resolving.
 pub use oxiroot_io_core::{FileWriter, SubdirWriter, WriteRoot};
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 use crate::base::BinContentType;
-use crate::graph::{GraphErrors, GraphFunction, TGraph};
-use crate::graph2d::TGraph2D;
-use crate::graphmultierrors::TGraphMultiErrors;
-use crate::tefficiency::TEfficiency;
-use crate::th1::TH1;
-use crate::th2::TH2;
-use crate::th2poly::{PolyBin, TH2Poly};
-use crate::th3::TH3;
-use crate::thnsparse::THnSparse;
-use crate::tprofile::TProfile;
-use crate::tprofile2d::TProfile2D;
-use crate::tprofile3d::TProfile3D;
+use crate::efficiency::Efficiency;
+use crate::graph::{Graph, GraphErrors, GraphFunction};
+use crate::graph2d::Graph2D;
+use crate::hist1d::Hist1D;
+use crate::hist2d::Hist2D;
+use crate::hist3d::Hist3D;
+use crate::multierrorgraph::MultiErrorGraph;
+use crate::polyhist::{PolyBin, PolyHist};
+use crate::profile1d::Profile1D;
+use crate::profile2d::Profile2D;
+use crate::profile3d::Profile3D;
+use crate::sparsehist::SparseHist;
 
 /// The streamer info ROOT 6 writes for the histogram family, captured from a
 /// ROOT-written file (`scripts/gen_hist_streamers.cpp`): the histogram,
 /// profile, efficiency, sparse and graph classes this crate writes, with their
 /// bases and members' classes — including the `THnSparseArrayChunk` and
-/// `TArrayD` a filled sparse histogram holds — plus `TF1`, `TFormula` and
-/// `TF1Parameters` (a graph's attached functions). `TF2`/`TF3` are not in it;
+/// `TArrayD` a filled sparse histogram holds — plus `Func1D`, `TFormula` and
+/// `TF1Parameters` (a graph's attached functions). `Func2D`/`Func3D` are not in it;
 /// `oxiroot-hist-func` generates those.
 static HIST_INFO: LazyLock<StreamerInfoList> = LazyLock::new(|| {
     StreamerInfoList::parse(HIST_STREAMER_INFO)
@@ -43,25 +43,25 @@ static HIST_INFO: LazyLock<StreamerInfoList> = LazyLock::new(|| {
 /// The captured descriptions of `classes` and of every class they depend on,
 /// for [`WriteRoot::streamer_classes`]. A histogram-family type asks for its
 /// own class, plus any class it holds behind a base-class pointer or in a list
-/// (a `TEfficiency`'s `TH1D`s, say), so a file describes only the classes it
+/// (an `Efficiency`'s `TH1D`s, say), so a file describes only the classes it
 /// holds.
 #[must_use]
 pub fn hist_streamer_classes(classes: &[&str]) -> Vec<Cls<'static>> {
     HIST_INFO.classes_for(classes)
 }
 
-/// `TObjString`'s description, when any of `axes` carries bin labels: they are
-/// stored as a `THashList` of `TObjString`s, and the captured list does not
-/// describe `TObjString`.
-fn label_classes<'a>(axes: impl IntoIterator<Item = &'a TAxis>) -> Vec<Cls<'static>> {
+/// `ObjString`'s description, when any of `axes` carries bin labels: they are
+/// stored as a `THashList` of `ObjString`s, and the captured list does not
+/// describe `ObjString`.
+fn label_classes<'a>(axes: impl IntoIterator<Item = &'a Axis>) -> Vec<Cls<'static>> {
     if axes.into_iter().any(|a| !a.labels.is_empty()) {
-        TObjString::new("").streamer_classes()
+        ObjString::new("").streamer_classes()
     } else {
         Vec::new()
     }
 }
 
-/// `TH1`/`TH2`/`TH3` serialize with the bin content type carried by their `class_name`;
+/// `Hist1D`/`Hist2D`/`Hist3D` serialize with the bin content type carried by their `class_name`;
 /// the macro picks the right `write_th{1,2,3}{d,f,i,s,c,l}` for the suffix.
 macro_rules! impl_write_root_hist {
     ($ty:ty, $d:ident, $f:ident, $i:ident, $s:ident, $c:ident, $l:ident) => {
@@ -95,9 +95,15 @@ macro_rules! impl_write_root_hist {
         }
     };
 }
-impl_write_root_hist!(TH1, write_th1d, write_th1f, write_th1i, write_th1s, write_th1c, write_th1l);
-impl_write_root_hist!(TH2, write_th2d, write_th2f, write_th2i, write_th2s, write_th2c, write_th2l);
-impl_write_root_hist!(TH3, write_th3d, write_th3f, write_th3i, write_th3s, write_th3c, write_th3l);
+impl_write_root_hist!(
+    Hist1D, write_th1d, write_th1f, write_th1i, write_th1s, write_th1c, write_th1l
+);
+impl_write_root_hist!(
+    Hist2D, write_th2d, write_th2f, write_th2i, write_th2s, write_th2c, write_th2l
+);
+impl_write_root_hist!(
+    Hist3D, write_th3d, write_th3f, write_th3i, write_th3s, write_th3c, write_th3l
+);
 
 /// A fixed-class writable type (profiles, efficiency, sparse, poly):
 /// `root_class` is a constant and `to_root_bytes` delegates to its serializer.
@@ -127,24 +133,24 @@ macro_rules! impl_write_root_fixed {
         }
     };
 }
-impl_write_root_fixed!(TProfile, "TProfile", tprofile_to_bytes, [], [xaxis]);
+impl_write_root_fixed!(Profile1D, "TProfile", tprofile_to_bytes, [], [xaxis]);
 impl_write_root_fixed!(
-    TProfile2D,
+    Profile2D,
     "TProfile2D",
     tprofile2d_to_bytes,
     [],
     [xaxis, yaxis]
 );
 impl_write_root_fixed!(
-    TProfile3D,
+    Profile3D,
     "TProfile3D",
     tprofile3d_to_bytes,
     [],
     [xaxis, yaxis, zaxis]
 );
-// Its passed and total histograms, held as `TH1*`.
+// Its passed and total histograms, held as `Hist1D*`.
 impl_write_root_fixed!(
-    TEfficiency,
+    Efficiency,
     "TEfficiency",
     tefficiency_to_bytes,
     ["TH1D"],
@@ -152,7 +158,7 @@ impl_write_root_fixed!(
 );
 // Its axes and its chunks, held in `TObjArray`s.
 impl_write_root_fixed!(
-    THnSparse,
+    SparseHist,
     "THnSparseT<TArrayD>",
     thnsparse_to_bytes,
     ["TAxis", "THnSparseArrayChunk"],
@@ -160,14 +166,14 @@ impl_write_root_fixed!(
 );
 // Its bins, held in a `TList`, each with its polygon as a `TObject*`.
 impl_write_root_fixed!(
-    TH2Poly,
+    PolyHist,
     "TH2Poly",
     th2poly_to_bytes,
     ["TH2PolyBin", "TGraph"],
     []
 );
 
-impl WriteRoot for TGraph {
+impl WriteRoot for Graph {
     fn root_class(&self) -> String {
         self.class_name().to_string()
     }
@@ -181,7 +187,7 @@ impl WriteRoot for TGraph {
         tgraph_to_bytes(self)
     }
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        // Attached functions are `TF1`s in the `fFunctions` list.
+        // Attached functions are `Func1D`s in the `fFunctions` list.
         let functions = if self.functions.is_empty() {
             None
         } else {
@@ -195,7 +201,7 @@ impl WriteRoot for TGraph {
 }
 
 /// Streamer info (`TList<TStreamerInfo>`) describing the writable histogram
-/// hierarchy — `TH1/2/3{C,S,I,L,F,D}`, `TProfile`, and every base/member class —
+/// hierarchy — `Hist1D/2/3{C,S,I,L,F,D}`, `Profile1D`, and every base/member class —
 /// at the exact class versions this module emits (the `L` types are version 0).
 /// Embedded in every written file so it is self-describing. Sourced from a
 /// ROOT-written file with one of each type, kept uncompressed.
@@ -212,10 +218,10 @@ const TLIST_BITS: u32 = 0x0301_0000;
 /// layout (only the outer class version differs: 0 for the Long64 `L` types).
 type ArrayWriter = fn(&mut WBuffer, &[f64]);
 
-/// Serialize a `TH1{D,F,C,S,I,L}` object (with its byte-count/version header)
+/// Serialize a `Hist1D{D,F,C,S,I,L}` object (with its byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it. `version` is the class version
 /// (3 for C/S/I/F/D, 0 for L) and `write_array` picks the bin content type.
-fn write_th1_obj(w: &mut WBuffer, h: &TH1, version: u16, write_array: ArrayWriter) {
+fn write_th1_obj(w: &mut WBuffer, h: &Hist1D, version: u16, write_array: ArrayWriter) {
     let outer = w.begin_object(version);
     write_th1_base(w, h);
     write_array(w, &h.contents); // TArray{…} base: bin contents, inline
@@ -224,21 +230,21 @@ fn write_th1_obj(w: &mut WBuffer, h: &TH1, version: u16, write_array: ArrayWrite
 
 /// Serialize a `TH1D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
-pub(crate) fn write_th1d(w: &mut WBuffer, h: &TH1) {
+pub(crate) fn write_th1d(w: &mut WBuffer, h: &Hist1D) {
     write_th1_obj(w, h, 3, write_tarrayd);
 }
 
-/// Serialize a `TH1F` object (the float-precision `TH1`) into `w`.
-pub(crate) fn write_th1f(w: &mut WBuffer, h: &TH1) {
+/// Serialize a `TH1F` object (the float-precision `Hist1D`) into `w`.
+pub(crate) fn write_th1f(w: &mut WBuffer, h: &Hist1D) {
     write_th1_obj(w, h, 3, write_tarrayf);
 }
 
 /// Serialize a `TH2D`/`TH2F` object (with its byte-count/version header) into
-/// `w`, byte-for-byte as ROOT writes it. Layout: `TH2{D,F}{ TH2{ TH1{…},
+/// `w`, byte-for-byte as ROOT writes it. Layout: `Hist2D{D,F}{ Hist2D{ Hist1D{…},
 /// fScalefactor, fTsumwy, fTsumwy2, fTsumwxy }, TArray{D,F} }`.
-fn write_th2_obj(w: &mut WBuffer, h: &TH2, version: u16, write_array: ArrayWriter) {
-    let outer = w.begin_object(version); // TH2{D,F,C,S,I}=4, TH2L=0
-    let th2 = w.begin_object(5); // TH2 version 5
+fn write_th2_obj(w: &mut WBuffer, h: &Hist2D, version: u16, write_array: ArrayWriter) {
+    let outer = w.begin_object(version); // Hist2D{D,F,C,S,I}=4, TH2L=0
+    let th2 = w.begin_object(5); // Hist2D version 5
     write_th1_core(
         w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
         h.tsumwx, h.tsumwx2, &h.sumw2,
@@ -254,22 +260,22 @@ fn write_th2_obj(w: &mut WBuffer, h: &TH2, version: u16, write_array: ArrayWrite
 
 /// Serialize a `TH2D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
-pub(crate) fn write_th2d(w: &mut WBuffer, h: &TH2) {
+pub(crate) fn write_th2d(w: &mut WBuffer, h: &Hist2D) {
     write_th2_obj(w, h, 4, write_tarrayd);
 }
 
-/// Serialize a `TH2F` object (the float-precision `TH2`) into `w`.
-pub(crate) fn write_th2f(w: &mut WBuffer, h: &TH2) {
+/// Serialize a `TH2F` object (the float-precision `Hist2D`) into `w`.
+pub(crate) fn write_th2f(w: &mut WBuffer, h: &Hist2D) {
     write_th2_obj(w, h, 4, write_tarrayf);
 }
 
 /// Serialize a `TH3D`/`TH3F` object (with its byte-count/version header) into
-/// `w`, byte-for-byte as ROOT writes it. Layout: `TH3{D,F}{ TH3{ TH1{…}, TAtt3D,
+/// `w`, byte-for-byte as ROOT writes it. Layout: `Hist3D{D,F}{ Hist3D{ Hist1D{…}, TAtt3D,
 /// fTsumwy, fTsumwy2, fTsumwxy, fTsumwz, fTsumwz2, fTsumwxz, fTsumwyz },
 /// TArray{D,F} }`.
-fn write_th3_obj(w: &mut WBuffer, h: &TH3, version: u16, write_array: ArrayWriter) {
-    let outer = w.begin_object(version); // TH3{D,F,C,S,I}=4, TH3L=0
-    let th3 = w.begin_object(6); // TH3 version 6
+fn write_th3_obj(w: &mut WBuffer, h: &Hist3D, version: u16, write_array: ArrayWriter) {
+    let outer = w.begin_object(version); // Hist3D{D,F,C,S,I}=4, TH3L=0
+    let th3 = w.begin_object(6); // Hist3D version 6
     write_th1_core(
         w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
         h.tsumwx, h.tsumwx2, &h.sumw2,
@@ -290,12 +296,12 @@ fn write_th3_obj(w: &mut WBuffer, h: &TH3, version: u16, write_array: ArrayWrite
 
 /// Serialize a `TH3D` object (including its leading byte-count/version header)
 /// into `w`, byte-for-byte as ROOT writes it.
-pub(crate) fn write_th3d(w: &mut WBuffer, h: &TH3) {
+pub(crate) fn write_th3d(w: &mut WBuffer, h: &Hist3D) {
     write_th3_obj(w, h, 4, write_tarrayd);
 }
 
-/// Serialize a `TH3F` object (the float-precision `TH3`) into `w`.
-pub(crate) fn write_th3f(w: &mut WBuffer, h: &TH3) {
+/// Serialize a `TH3F` object (the float-precision `Hist3D`) into `w`.
+pub(crate) fn write_th3f(w: &mut WBuffer, h: &Hist3D) {
     write_th3_obj(w, h, 4, write_tarrayf);
 }
 
@@ -313,28 +319,28 @@ macro_rules! int_hist {
     };
 }
 
-int_hist!(write_th1c, "TH1C", TH1, write_th1_obj, 3, write_tarrayc);
-int_hist!(write_th1s, "TH1S", TH1, write_th1_obj, 3, write_tarrays);
-int_hist!(write_th1i, "TH1I", TH1, write_th1_obj, 3, write_tarrayi);
-int_hist!(write_th1l, "TH1L", TH1, write_th1_obj, 0, write_tarrayl);
-int_hist!(write_th2c, "TH2C", TH2, write_th2_obj, 4, write_tarrayc);
-int_hist!(write_th2s, "TH2S", TH2, write_th2_obj, 4, write_tarrays);
-int_hist!(write_th2i, "TH2I", TH2, write_th2_obj, 4, write_tarrayi);
-int_hist!(write_th2l, "TH2L", TH2, write_th2_obj, 0, write_tarrayl);
-int_hist!(write_th3c, "TH3C", TH3, write_th3_obj, 4, write_tarrayc);
-int_hist!(write_th3s, "TH3S", TH3, write_th3_obj, 4, write_tarrays);
-int_hist!(write_th3i, "TH3I", TH3, write_th3_obj, 4, write_tarrayi);
-int_hist!(write_th3l, "TH3L", TH3, write_th3_obj, 0, write_tarrayl);
+int_hist!(write_th1c, "TH1C", Hist1D, write_th1_obj, 3, write_tarrayc);
+int_hist!(write_th1s, "TH1S", Hist1D, write_th1_obj, 3, write_tarrays);
+int_hist!(write_th1i, "TH1I", Hist1D, write_th1_obj, 3, write_tarrayi);
+int_hist!(write_th1l, "TH1L", Hist1D, write_th1_obj, 0, write_tarrayl);
+int_hist!(write_th2c, "TH2C", Hist2D, write_th2_obj, 4, write_tarrayc);
+int_hist!(write_th2s, "TH2S", Hist2D, write_th2_obj, 4, write_tarrays);
+int_hist!(write_th2i, "TH2I", Hist2D, write_th2_obj, 4, write_tarrayi);
+int_hist!(write_th2l, "TH2L", Hist2D, write_th2_obj, 0, write_tarrayl);
+int_hist!(write_th3c, "TH3C", Hist3D, write_th3_obj, 4, write_tarrayc);
+int_hist!(write_th3s, "TH3S", Hist3D, write_th3_obj, 4, write_tarrays);
+int_hist!(write_th3i, "TH3I", Hist3D, write_th3_obj, 4, write_tarrayi);
+int_hist!(write_th3l, "TH3L", Hist3D, write_th3_obj, 0, write_tarrayl);
 
-/// Serialize a `TProfile` object (including its leading byte-count/version
-/// header) into `w`. Layout: `TProfile{ TH1D{ TH1{…, fSumw2=Σwy²}, TArrayD=Σwy },
+/// Serialize a `Profile1D` object (including its leading byte-count/version
+/// header) into `w`. Layout: `Profile1D{ TH1D{ Hist1D{…, fSumw2=Σwy²}, TArrayD=Σwy },
 /// fBinEntries, fErrorMode, fYmin, fYmax, fTsumwy, fTsumwy2, fBinSumw2 }`.
-pub(crate) fn write_tprofile(w: &mut WBuffer, h: &TProfile) {
-    // A 1-D profile keeps degenerate y/z axes, as ROOT's TH1 constructor does.
-    let yaxis = TAxis::new("yaxis", 1, 0.0, 1.0);
-    let zaxis = TAxis::new("zaxis", 1, 0.0, 1.0);
+pub(crate) fn write_tprofile(w: &mut WBuffer, h: &Profile1D) {
+    // A 1-D profile keeps degenerate y/z axes, as ROOT's Hist1D constructor does.
+    let yaxis = Axis::new("yaxis", 1, 0.0, 1.0);
+    let zaxis = Axis::new("zaxis", 1, 0.0, 1.0);
 
-    let tp = w.begin_object(7); // TProfile version 7
+    let tp = w.begin_object(7); // Profile1D version 7
     let th1d = w.begin_object(3); // TH1D version 3
     write_th1_core(
         w, &h.name, &h.title, &h.xaxis, &yaxis, &zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
@@ -352,24 +358,24 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &TProfile) {
     w.end_object(tp);
 }
 
-/// Serialize a `TProfile` object to a fresh byte vector.
-pub(crate) fn tprofile_to_bytes(h: &TProfile) -> Vec<u8> {
+/// Serialize a `Profile1D` object to a fresh byte vector.
+pub(crate) fn tprofile_to_bytes(h: &Profile1D) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile(&mut w, h);
     w.into_vec()
 }
 
-/// Serialize a `TProfile2D` object (with its byte-count/version header) into `w`.
-/// Layout: `TProfile2D{ TH2D{ TH2{ TH1{…, fSumw2=Σwz²}, fScalefactor, fTsumwy,
+/// Serialize a `Profile2D` object (with its byte-count/version header) into `w`.
+/// Layout: `Profile2D{ TH2D{ Hist2D{ Hist1D{…, fSumw2=Σwz²}, fScalefactor, fTsumwy,
 /// fTsumwy2, fTsumwxy }, TArrayD=Σwz }, fBinEntries, fErrorMode, fZmin, fZmax,
 /// fTsumwz, fTsumwz2, fBinSumw2 }`.
-pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &TProfile2D) {
-    // A 2-D profile keeps a degenerate z axis, as ROOT's TH2 constructor does.
-    let zaxis = TAxis::new("zaxis", 1, 0.0, 1.0);
+pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &Profile2D) {
+    // A 2-D profile keeps a degenerate z axis, as ROOT's Hist2D constructor does.
+    let zaxis = Axis::new("zaxis", 1, 0.0, 1.0);
 
-    let tp = w.begin_object(8); // TProfile2D version 8
+    let tp = w.begin_object(8); // Profile2D version 8
     let th2d = w.begin_object(4); // TH2D version 4
-    let th2 = w.begin_object(5); // TH2 version 5
+    let th2 = w.begin_object(5); // Hist2D version 5
     write_th1_core(
         w, &h.name, &h.title, &h.xaxis, &h.yaxis, &zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
         h.tsumwx, h.tsumwx2, &h.sumz2,
@@ -391,21 +397,21 @@ pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &TProfile2D) {
     w.end_object(tp);
 }
 
-/// Serialize a `TProfile2D` object to a fresh byte vector.
-pub(crate) fn tprofile2d_to_bytes(h: &TProfile2D) -> Vec<u8> {
+/// Serialize a `Profile2D` object to a fresh byte vector.
+pub(crate) fn tprofile2d_to_bytes(h: &Profile2D) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile2d(&mut w, h);
     w.into_vec()
 }
 
-/// Serialize a `TProfile3D` object (with its byte-count/version header) into `w`.
-/// Layout: `TProfile3D{ TH3D{ TH3{ TH1{…, fSumw2=Σwt²}, TAtt3D, fTsumwy…fTsumwyz },
+/// Serialize a `Profile3D` object (with its byte-count/version header) into `w`.
+/// Layout: `Profile3D{ TH3D{ Hist3D{ Hist1D{…, fSumw2=Σwt²}, TAtt3D, fTsumwy…fTsumwyz },
 /// TArrayD=Σwt }, fBinEntries, fErrorMode, fTmin, fTmax, fTsumwt, fTsumwt2,
 /// fBinSumw2 }`.
-pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &TProfile3D) {
-    let tp = w.begin_object(8); // TProfile3D version 8
+pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &Profile3D) {
+    let tp = w.begin_object(8); // Profile3D version 8
     let th3d = w.begin_object(4); // TH3D version 4
-    let th3 = w.begin_object(6); // TH3 version 6
+    let th3 = w.begin_object(6); // Hist3D version 6
     write_th1_core(
         w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
         h.tsumwx, h.tsumwx2, &h.sumt2,
@@ -432,8 +438,8 @@ pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &TProfile3D) {
     w.end_object(tp);
 }
 
-/// Serialize a `TProfile3D` object to a fresh byte vector.
-pub(crate) fn tprofile3d_to_bytes(h: &TProfile3D) -> Vec<u8> {
+/// Serialize a `Profile3D` object to a fresh byte vector.
+pub(crate) fn tprofile3d_to_bytes(h: &Profile3D) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tprofile3d(&mut w, h);
     w.into_vec()
@@ -452,10 +458,10 @@ const EFF_FUNCTIONS_EMPTY: [u8; 21] = [
     0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-/// Write an embedded `TH1*` object pointer: `{byte count}{kNewClassTag}{"TH1D\0"}
+/// Write an embedded `Hist1D*` object pointer: `{byte count}{kNewClassTag}{"TH1D\0"}
 /// {TH1D object}`. ROOT shares the class via a back-reference for the second
 /// histogram; a fresh `kNewClassTag` for both is read identically.
-fn write_th1d_ptr(w: &mut WBuffer, h: &TH1) {
+fn write_th1d_ptr(w: &mut WBuffer, h: &Hist1D) {
     let bc = w.reserve(4);
     let start = w.len();
     w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
@@ -467,7 +473,7 @@ fn write_th1d_ptr(w: &mut WBuffer, h: &TH1) {
 
 /// Write an embedded `TH1F*` object pointer (a graph's `fHistogram` display
 /// frame): `{byte count}{kNewClassTag}{"TH1F"}{TH1F object}`.
-fn write_th1f_ptr(w: &mut WBuffer, h: &TH1) {
+fn write_th1f_ptr(w: &mut WBuffer, h: &Hist1D) {
     let bc = w.reserve(4);
     let start = w.len();
     w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
@@ -477,13 +483,13 @@ fn write_th1f_ptr(w: &mut WBuffer, h: &TH1) {
     w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
-/// Serialize a `TEfficiency` object (with its byte-count/version header) into `w`.
-/// Layout: `TEfficiency{ TNamed, TAttLine, TAttFill, TAttMarker, fBeta_alpha,
+/// Serialize an `Efficiency` object (with its byte-count/version header) into `w`.
+/// Layout: `Efficiency{ Named, TAttLine, TAttFill, TAttMarker, fBeta_alpha,
 /// fBeta_beta, fBeta_bin_params, fConfLevel, fFunctions, fPassedHistogram(TH1D*),
 /// fStatisticOption, fTotalHistogram(TH1D*), fWeight }`.
-pub(crate) fn write_tefficiency(w: &mut WBuffer, h: &TEfficiency) {
-    let te = w.begin_object(2); // TEfficiency version 2
-    write_tnamed(w, HIST_BITS, &h.name, &h.title);
+pub(crate) fn write_tefficiency(w: &mut WBuffer, h: &Efficiency) {
+    let te = w.begin_object(2); // Efficiency version 2
+    write_named(w, HIST_BITS, &h.name, &h.title);
     write_attline(w);
     write_attfill(w);
     write_attmarker(w);
@@ -499,8 +505,8 @@ pub(crate) fn write_tefficiency(w: &mut WBuffer, h: &TEfficiency) {
     w.end_object(te);
 }
 
-/// Serialize a `TEfficiency` object to a fresh byte vector.
-pub(crate) fn tefficiency_to_bytes(h: &TEfficiency) -> Vec<u8> {
+/// Serialize an `Efficiency` object to a fresh byte vector.
+pub(crate) fn tefficiency_to_bytes(h: &Efficiency) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tefficiency(&mut w, h);
     w.into_vec()
@@ -523,7 +529,7 @@ pub(crate) fn write_object_ptr(w: &mut WBuffer, class: &str, f: impl FnOnce(&mut
 /// by `elem(w, i)`.
 fn write_objarray(w: &mut WBuffer, n: usize, mut elem: impl FnMut(&mut WBuffer, usize)) {
     let oa = w.begin_object(3); // TObjArray version 3
-    write_tobject(w, 0);
+    write_object_base(w, 0);
     w.string(""); // fName
     w.be_i32(n as i32); // fSize
     w.be_i32(0); // fLowerBound
@@ -533,20 +539,20 @@ fn write_objarray(w: &mut WBuffer, n: usize, mut elem: impl FnMut(&mut WBuffer, 
     w.end_object(oa);
 }
 
-/// Serialize a `THnSparse` object. Layout: `THnSparseT{ THnSparse{ THnBase{
-/// TNamed, fNdimensions, fAxes(TObjArray<TAxis>), fEntries, fTsumw, fTsumw2,
+/// Serialize a `SparseHist` object. Layout: `THnSparseT{ SparseHist{ THnBase{
+/// Named, fNdimensions, fAxes(TObjArray<Axis>), fEntries, fTsumw, fTsumw2,
 /// fTsumwx, fTsumwx2 }, fChunkSize, fFilledBins, fBinContent(TObjArray<chunk>) }}`.
 /// The single chunk packs every filled bin's compact coordinate and content.
-pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &THnSparse) {
+pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &SparseHist) {
     let bits = h.axis_bits();
     let total_bits: u32 = bits.iter().sum();
     let single = total_bits.div_ceil(8).max(1) as usize; // fSingleCoordinateSize
     let nfilled = h.bins.len();
 
     let tt = w.begin_object(1); // THnSparseT<TArrayD> version 1
-    let ts = w.begin_object(3); // THnSparse version 3
+    let ts = w.begin_object(3); // SparseHist version 3
     let tb = w.begin_object(1); // THnBase version 1
-    write_tnamed(w, HIST_BITS, &h.name, &h.title);
+    write_named(w, HIST_BITS, &h.name, &h.title);
     w.be_i32(h.ndim() as i32);
     write_objarray(w, h.ndim(), |w, i| {
         write_object_ptr(w, "TAxis", |w| write_taxis(w, &h.axes[i]));
@@ -563,7 +569,7 @@ pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &THnSparse) {
     write_objarray(w, 1, |w, _| {
         write_object_ptr(w, "THnSparseArrayChunk", |w| {
             let chunk = w.begin_object(1); // THnSparseArrayChunk version 1
-            write_tobject(w, 0);
+            write_object_base(w, 0);
             w.be_i32(single as i32); // fSingleCoordinateSize
             w.be_i32((nfilled * single) as i32); // fCoordinatesSize
             w.u8(1); // char* presence flag
@@ -583,8 +589,8 @@ pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &THnSparse) {
     w.end_object(tt);
 }
 
-/// Serialize a `THnSparse` object to a fresh byte vector.
-pub(crate) fn thnsparse_to_bytes(h: &THnSparse) -> Vec<u8> {
+/// Serialize a `SparseHist` object to a fresh byte vector.
+pub(crate) fn thnsparse_to_bytes(h: &SparseHist) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_thnsparse(&mut w, h);
     w.into_vec()
@@ -592,10 +598,10 @@ pub(crate) fn thnsparse_to_bytes(h: &THnSparse) -> Vec<u8> {
 
 /// The number of partition cells per axis ROOT uses by default (`fCellX`/`fCellY`).
 const POLY_CELLS_PER_AXIS: i32 = 25;
-/// `kMustCleanup` — the `fBits` value ROOT writes for a `TGraph`'s `TNamed`.
+/// `kMustCleanup` — the `fBits` value ROOT writes for a `Graph`'s `Named`.
 const GRAPH_BITS: u32 = 0x0000_0400;
 
-/// Serialize a `TH2Poly` object (with its byte-count/version header).
+/// Serialize a `PolyHist` object (with its byte-count/version header).
 ///
 /// The polygon bins are written **in full inside `fBins`**, and the `fCells`
 /// spatial-lookup grid is written empty (625 empty `TList`s). That is a valid
@@ -603,18 +609,18 @@ const GRAPH_BITS: u32 = 0x0000_0400;
 /// back-references are needed — and reproduces every bin faithfully; only the
 /// fast-fill grid is left unpopulated (a re-fill in ROOT would need to be
 /// rebuilt, which oxiroot does not do).
-pub(crate) fn write_th2poly(w: &mut WBuffer, h: &TH2Poly) {
+pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
     let mut bins: Vec<&PolyBin> = h.bins.iter().collect();
     bins.sort_by_key(|b| b.number);
     let n = bins.len();
     let ncells_grid = (POLY_CELLS_PER_AXIS * POLY_CELLS_PER_AXIS) as usize; // fNCells
 
-    let tp = w.begin_object(3); // TH2Poly version 3
-    let th2 = w.begin_object(5); // TH2 version 5
+    let tp = w.begin_object(3); // PolyHist version 3
+    let th2 = w.begin_object(5); // Hist2D version 5
 
-    // TH1 base. fNcells is the polygon-bin count plus the 9 over/underflow
+    // Hist1D base. fNcells is the polygon-bin count plus the 9 over/underflow
     // regions; fSumw2 is left empty so ROOT falls back to sqrt(content) errors.
-    let zaxis = TAxis::new("zaxis", 1, 0.0, 1.0);
+    let zaxis = Axis::new("zaxis", 1, 0.0, 1.0);
     write_th1_core(
         w,
         &h.name,
@@ -636,7 +642,7 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &TH2Poly) {
     w.be_f64(h.tsumwxy);
     w.end_object(th2);
 
-    // TH2Poly members.
+    // PolyHist members.
     for &o in &h.overflow {
         w.be_f64(o); // fOverflow[9]
     }
@@ -648,7 +654,7 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &TH2Poly) {
     // empty TLists. ROOT/uproot skip the 6-byte header; we patch the byte count.
     let cells_bc = w.reserve(4);
     let cells_start = w.len();
-    w.be_u16(10); // streamloop version (constant in ROOT's TH2Poly)
+    w.be_u16(10); // streamloop version (constant in ROOT's PolyHist)
     for _ in 0..ncells_grid {
         write_empty_tlist(w);
     }
@@ -675,7 +681,7 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &TH2Poly) {
     // fBins: a TList* holding every bin in full (first and only occurrence).
     write_object_ptr(w, "TList", |w| {
         let tl = w.begin_object(5); // TList version 5
-        write_tobject(w, TLIST_BITS);
+        write_object_base(w, TLIST_BITS);
         w.string(""); // fName
         w.be_i32(n as i32); // fSize
         for b in &bins {
@@ -689,11 +695,11 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &TH2Poly) {
 }
 
 /// Serialize one `TH2PolyBin` body (its object-pointer header is written by the
-/// caller). Layout: `TObject, fChanged, fNumber, fPoly(TGraph*), fArea,
+/// caller). Layout: `TObject, fChanged, fNumber, fPoly(Graph*), fArea,
 /// fContent, fXmin, fYmin, fXmax, fYmax`.
 fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
     let bin = w.begin_object(1); // TH2PolyBin version 1
-    write_tobject(w, 0);
+    write_object_base(w, 0);
     w.u8(1); // fChanged
     w.be_i32(b.number);
     write_object_ptr(w, "TGraph", |w| {
@@ -708,22 +714,22 @@ fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
     w.end_object(bin);
 }
 
-/// Serialize a `TGraph` base object (version 5): `TNamed`, the three `TAtt`
+/// Serialize a `Graph` base object (version 5): `Named`, the three `TAtt`
 /// bases, `fNpoints`/`fX`/`fY`, and the trailer ROOT writes for a graph (the
 /// `fFunctions` list, the `fHistogram` display frame or a null pointer,
 /// `fMinimum`/`fMaximum` of `-1111`, and an empty `fOption`). Shared by the
-/// standalone graph writer and `TH2Poly`'s polygon `fPoly`.
+/// standalone graph writer and `PolyHist`'s polygon `fPoly`.
 fn write_tgraph_base(
     w: &mut WBuffer,
     name: &str,
     title: &str,
     x: &[f64],
     y: &[f64],
-    histogram: Option<&TH1>,
+    histogram: Option<&Hist1D>,
     functions: &[GraphFunction],
 ) {
-    let g = w.begin_object(5); // TGraph version 5
-    write_tnamed(w, GRAPH_BITS, name, title);
+    let g = w.begin_object(5); // Graph version 5
+    write_named(w, GRAPH_BITS, name, title);
 
     let line = w.begin_object(2); // TAttLine
     w.be_i16(1); // fLineColor
@@ -753,7 +759,7 @@ fn write_tgraph_base(
     if functions.is_empty() {
         write_object_ptr(w, "TList", write_empty_tlist); // fFunctions (empty)
     } else {
-        write_functions(w, functions); // fFunctions (TList<TF1>)
+        write_functions(w, functions); // fFunctions (TList<Func1D>)
     }
     match histogram {
         Some(h) => write_th1f_ptr(w, h), // fHistogram (real TH1F* display frame)
@@ -765,12 +771,12 @@ fn write_tgraph_base(
     w.end_object(g);
 }
 
-/// Write a non-empty `fFunctions` `TList`, each element a `TF1` object pointer
+/// Write a non-empty `fFunctions` `TList`, each element a `Func1D` object pointer
 /// followed by its (empty) option `TString`.
 fn write_functions(w: &mut WBuffer, functions: &[GraphFunction]) {
     write_object_ptr(w, "TList", |w| {
         let tl = w.begin_object(5); // TList version 5
-        write_tobject(w, 0); // ROOT writes 0 bits for an embedded fFunctions list
+        write_object_base(w, 0); // ROOT writes 0 bits for an embedded fFunctions list
         w.string(""); // fName
         w.be_i32(functions.len() as i32); // fSize
         for f in functions {
@@ -781,8 +787,8 @@ fn write_functions(w: &mut WBuffer, functions: &[GraphFunction]) {
     });
 }
 
-/// Serialize a `TH2Poly` object to a fresh byte vector.
-pub(crate) fn th2poly_to_bytes(h: &TH2Poly) -> Vec<u8> {
+/// Serialize a `PolyHist` object to a fresh byte vector.
+pub(crate) fn th2poly_to_bytes(h: &PolyHist) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_th2poly(&mut w, h);
     w.into_vec()
@@ -797,9 +803,9 @@ fn write_basic_array(w: &mut WBuffer, data: &[f64], n: usize) {
     }
 }
 
-/// Serialize a [`TGraph`] (or its `TGraphErrors`/`TGraphAsymmErrors` variant,
-/// chosen by [`TGraph::errors`]) with its byte-count/version header.
-pub(crate) fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
+/// Serialize a [`Graph`] (or its `TGraphErrors`/`TGraphAsymmErrors` variant,
+/// chosen by [`Graph::errors`]) with its byte-count/version header.
+pub(crate) fn write_tgraph(w: &mut WBuffer, g: &Graph) {
     let n = g.len();
     let x = &g.x[..n];
     let y = &g.y[..n];
@@ -853,20 +859,20 @@ pub(crate) fn write_tgraph(w: &mut WBuffer, g: &TGraph) {
     }
 }
 
-/// Serialize a [`TGraph`] object to a fresh byte vector.
-pub(crate) fn tgraph_to_bytes(g: &TGraph) -> Vec<u8> {
+/// Serialize a [`Graph`] object to a fresh byte vector.
+pub(crate) fn tgraph_to_bytes(g: &Graph) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tgraph(&mut w, g);
     w.into_vec()
 }
 
-/// Serialize a [`TGraph2D`] (version 1): the three `TAtt` bases, the scalar
+/// Serialize a [`Graph2D`] (version 1): the three `TAtt` bases, the scalar
 /// display parameters at ROOT's defaults, the `fX`/`fY`/`fZ` arrays, and an empty
 /// `fFunctions` (the `fHistogram` frame is transient and not persisted).
-fn write_tgraph2d(w: &mut WBuffer, g: &TGraph2D) {
+fn write_tgraph2d(w: &mut WBuffer, g: &Graph2D) {
     let n = g.len();
-    let obj = w.begin_object(1); // TGraph2D version 1
-    write_tnamed(w, GRAPH_BITS, &g.name, &g.title);
+    let obj = w.begin_object(1); // Graph2D version 1
+    write_named(w, GRAPH_BITS, &g.name, &g.title);
 
     let line = w.begin_object(2); // TAttLine
     w.be_i16(1);
@@ -899,14 +905,14 @@ fn write_tgraph2d(w: &mut WBuffer, g: &TGraph2D) {
     w.end_object(obj);
 }
 
-/// Serialize a [`TGraph2D`] object to a fresh byte vector.
-pub(crate) fn tgraph2d_to_bytes(g: &TGraph2D) -> Vec<u8> {
+/// Serialize a [`Graph2D`] object to a fresh byte vector.
+pub(crate) fn tgraph2d_to_bytes(g: &Graph2D) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tgraph2d(&mut w, g);
     w.into_vec()
 }
 
-impl WriteRoot for TGraph2D {
+impl WriteRoot for Graph2D {
     fn root_class(&self) -> String {
         "TGraph2D".to_string()
     }
@@ -954,14 +960,14 @@ fn write_memberwise_att(w: &mut WBuffer, elem_version: i16, count: usize, member
     w.end_object(t);
 }
 
-/// Serialize a [`TGraphMultiErrors`] (version 1): the full `TGraph` base, the
+/// Serialize a [`MultiErrorGraph`] (version 1): the full `Graph` base, the
 /// `fNYErrors`/`fSumErrorsMode` scalars, the `fExL`/`fExH` arrays, the `fEyL`/
 /// `fEyH` objectwise `vector<TArrayD>`, and the `fAttFill`/`fAttLine` memberwise
 /// attribute vectors at ROOT's per-layer defaults.
-fn write_tgraphmultierrors(w: &mut WBuffer, g: &TGraphMultiErrors) {
+fn write_tgraphmultierrors(w: &mut WBuffer, g: &MultiErrorGraph) {
     let n = g.len();
     let layers = g.ey_low.len();
-    let obj = w.begin_object(1); // TGraphMultiErrors version 1
+    let obj = w.begin_object(1); // MultiErrorGraph version 1
     write_tgraph_base(w, &g.name, &g.title, &g.x[..n], &g.y[..n], None, &[]);
     w.be_i32(layers as i32); // fNYErrors
     w.be_i32(g.sum_errors_mode); // fSumErrorsMode
@@ -976,14 +982,14 @@ fn write_tgraphmultierrors(w: &mut WBuffer, g: &TGraphMultiErrors) {
     w.end_object(obj);
 }
 
-/// Serialize a [`TGraphMultiErrors`] object to a fresh byte vector.
-pub(crate) fn tgraphmultierrors_to_bytes(g: &TGraphMultiErrors) -> Vec<u8> {
+/// Serialize a [`MultiErrorGraph`] object to a fresh byte vector.
+pub(crate) fn tgraphmultierrors_to_bytes(g: &MultiErrorGraph) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tgraphmultierrors(&mut w, g);
     w.into_vec()
 }
 
-impl WriteRoot for TGraphMultiErrors {
+impl WriteRoot for MultiErrorGraph {
     fn root_class(&self) -> String {
         "TGraphMultiErrors".to_string()
     }
@@ -1001,14 +1007,14 @@ impl WriteRoot for TGraphMultiErrors {
     }
 }
 
-fn write_th1_base(w: &mut WBuffer, h: &TH1) {
+fn write_th1_base(w: &mut WBuffer, h: &Hist1D) {
     write_th1_core(
         w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
         h.tsumwx, h.tsumwx2, &h.sumw2,
     );
 }
 
-/// Write the shared `TH1` base object (version 8) used by every histogram
+/// Write the shared `Hist1D` base object (version 8) used by every histogram
 /// class. The dimension-specific stat sums (y/z) and the data `TArray` are
 /// written by the caller after this returns.
 #[allow(clippy::too_many_arguments)]
@@ -1016,9 +1022,9 @@ fn write_th1_core(
     w: &mut WBuffer,
     name: &str,
     title: &str,
-    xaxis: &TAxis,
-    yaxis: &TAxis,
-    zaxis: &TAxis,
+    xaxis: &Axis,
+    yaxis: &Axis,
+    zaxis: &Axis,
     ncells: i32,
     entries: f64,
     tsumw: f64,
@@ -1027,9 +1033,9 @@ fn write_th1_core(
     tsumwx2: f64,
     fsumw2: &[f64],
 ) {
-    let th1 = w.begin_object(8); // TH1 version 8
+    let th1 = w.begin_object(8); // Hist1D version 8
 
-    write_tnamed(w, HIST_BITS, name, title);
+    write_named(w, HIST_BITS, name, title);
     write_attline(w);
     write_attfill(w);
     write_attmarker(w);
@@ -1083,9 +1089,9 @@ fn write_attmarker(w: &mut WBuffer) {
     w.end_object(t);
 }
 
-fn write_taxis(w: &mut WBuffer, ax: &TAxis) {
-    let t = w.begin_object(10); // TAxis version 10
-    write_tnamed(w, AXIS_BITS, &ax.name, &ax.title);
+fn write_taxis(w: &mut WBuffer, ax: &Axis) {
+    let t = w.begin_object(10); // Axis version 10
+    write_named(w, AXIS_BITS, &ax.name, &ax.title);
 
     // TAttAxis base (drawing defaults).
     let att = w.begin_object(4);
@@ -1120,14 +1126,14 @@ fn write_taxis(w: &mut WBuffer, ax: &TAxis) {
     w.end_object(t);
 }
 
-/// Write `fLabels`: a `THashList*` of `TObjString`, one per labelled bin, with
-/// the 1-based bin number in each `TObjString`'s `fUniqueID` — the layout ROOT
+/// Write `fLabels`: a `THashList*` of `ObjString`, one per labelled bin, with
+/// the 1-based bin number in each `ObjString`'s `fUniqueID` — the layout ROOT
 /// writes for an alphanumeric axis. (Each entry names its class with
 /// `kNewClassTag`; ROOT and uproot read that as well as ROOT's own back-refs.)
 fn write_labels(w: &mut WBuffer, labels: &[String]) {
     write_object_ptr(w, "THashList", |w| {
         let hl = w.begin_object(5); // THashList (a TList, version 5)
-        write_tobject(w, 0);
+        write_object_base(w, 0);
         w.string(""); // fName
         let present: Vec<(usize, &String)> = labels
             .iter()
@@ -1138,7 +1144,7 @@ fn write_labels(w: &mut WBuffer, labels: &[String]) {
         w.be_i32(present.len() as i32); // fSize
         for (bin, label) in present {
             write_object_ptr(w, "TObjString", |w| {
-                let ts = w.begin_object(1); // TObjString version 1
+                let ts = w.begin_object(1); // ObjString version 1
                 w.be_u16(1); // TObject version
                 w.be_u32(bin as u32); // fUniqueID = bin number
                 w.be_u32(0); // fBits
@@ -1153,7 +1159,7 @@ fn write_labels(w: &mut WBuffer, labels: &[String]) {
 
 fn write_empty_tlist(w: &mut WBuffer) {
     let t = w.begin_object(5); // TList version 5
-    write_tobject(w, TLIST_BITS);
+    write_object_base(w, TLIST_BITS);
     w.string(""); // fName
     w.be_i32(0); // fSize
     w.end_object(t);

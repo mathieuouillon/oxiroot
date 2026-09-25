@@ -1,8 +1,8 @@
-//! TProfile3D: read a ROOT-written fixture (`p3` in tprofile2d.root) + round-trip.
+//! Profile3D: read a ROOT-written fixture (`p3` in tprofile2d.root) + round-trip.
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, TProfile3D, WriteRoot};
+use oxiroot_hist::{Hist, Profile3D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
@@ -15,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 fn reads_root_written_tprofile3d() {
     let f = FileReader::open(fixture("tprofile2d.root")).expect("open");
     assert_eq!(f.key("p3").unwrap().class_name, "TProfile3D");
-    let p = TProfile3D::read_root(&f, "p3").expect("read TProfile3D");
+    let p = Profile3D::read_root(&f, "p3").expect("read TProfile3D");
     // cell(1,1,1) mean t = 15; cell(2,2,2) mean t = 7.
     assert_eq!(p.values()[0][0][0], 15.0);
     assert_eq!(p.values()[1][1][1], 7.0);
@@ -38,5 +38,5 @@ fn tprofile3d_round_trips() {
     let out = PathBuf::from("/tmp/oxiroot_tprofile3d.root");
     p.write_root(&out, Compression::None).expect("write");
     let f = FileReader::open(&out).expect("reopen");
-    assert_eq!(TProfile3D::read_root(&f, "p3").unwrap(), p, "round-trips");
+    assert_eq!(Profile3D::read_root(&f, "p3").unwrap(), p, "round-trips");
 }

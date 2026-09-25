@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, ListKind, ObjList, ReadRoot, TObjString, TParameter, TH1};
+use oxiroot_hist::{FileWriter, Hist, Hist1D, ListKind, ObjList, ObjString, Parameter, ReadRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture() -> FileReader {
@@ -27,14 +27,14 @@ fn reads_root_written_list_and_array() {
         ["TH1F", "TObjString", "TParameter<double>"]
     );
     // Pull members out by type.
-    assert_eq!(l.items::<TH1>().unwrap().len(), 1);
-    assert_eq!(l.items::<TObjString>().unwrap()[0].value(), "hello");
-    assert_eq!(l.items::<TParameter>().unwrap()[0].value().as_f64(), 12.5);
+    assert_eq!(l.items::<Hist1D>().unwrap().len(), 1);
+    assert_eq!(l.items::<ObjString>().unwrap()[0].value(), "hello");
+    assert_eq!(l.items::<Parameter>().unwrap()[0].value().as_f64(), 12.5);
 
     let a = ObjList::read_root(&f, "myarr").unwrap();
     assert_eq!(a.kind(), ListKind::Array);
     assert_eq!(a.len(), 2);
-    assert_eq!(a.items::<TH1>().unwrap().len(), 2);
+    assert_eq!(a.items::<Hist1D>().unwrap().len(), 2);
 }
 
 #[test]
@@ -44,8 +44,8 @@ fn round_trips_list_and_array_through_oxiroot() {
     let list = ObjList::list()
         .named("mylist")
         .add(&h)
-        .add(&TObjString::new("hello"))
-        .add(&TParameter::f64("lumi", 12.5));
+        .add(&ObjString::new("hello"))
+        .add(&Parameter::f64("lumi", 12.5));
     let arr = ObjList::array()
         .named("myarr")
         .add(&Hist::reg(3, 0.0, 3.0).double().named("a0"))
@@ -61,11 +61,11 @@ fn round_trips_list_and_array_through_oxiroot() {
     let f = FileReader::open(&out).unwrap();
     let l = ObjList::read_root(&f, "mylist").unwrap();
     assert_eq!(l.len(), 3);
-    assert_eq!(l.items::<TH1>().unwrap().len(), 1);
-    assert_eq!(l.items::<TObjString>().unwrap()[0].value(), "hello");
-    assert_eq!(l.items::<TParameter>().unwrap()[0].value().as_f64(), 12.5);
+    assert_eq!(l.items::<Hist1D>().unwrap().len(), 1);
+    assert_eq!(l.items::<ObjString>().unwrap()[0].value(), "hello");
+    assert_eq!(l.items::<Parameter>().unwrap()[0].value().as_f64(), 12.5);
     let a = ObjList::read_root(&f, "myarr").unwrap();
     assert_eq!(a.kind(), ListKind::Array);
-    assert_eq!(a.items::<TH1>().unwrap().len(), 2);
+    assert_eq!(a.items::<Hist1D>().unwrap().len(), 2);
     let _ = std::fs::remove_file(&out);
 }

@@ -8,7 +8,7 @@
 //! ```
 //! use oxiroot_fit::{FitExt, Model, Points};
 //!
-//! // Raw (x, y, σ) measurements; the same API works for a TH1 or a TGraph.
+//! // Raw (x, y, σ) measurements; the same API works for a Hist1D or a Graph.
 //! let data = Points::new(&[0.0, 1.0, 2.0, 3.0], &[1.0, 3.0, 5.0, 7.0], &[0.1; 4])?;
 //! let line = Model::polynomial("line", 1).with_params(vec![0.0, 1.0]);
 //! let fit = data.fit(&line); // χ² by default
@@ -28,10 +28,10 @@
 //! (`Huber`/`SoftL1`/`Cauchy`/`Arctan` — `scipy.optimize.least_squares`'s `loss`)
 //! set via [`FitOptions::loss`].
 //!
-//! The evaluable, persistable ROOT function objects `TF1`/`TF2`/`TF3` live in
+//! The evaluable, persistable ROOT function objects (`TF1`/`TF2`/`TF3`) live in
 //! [`oxiroot_hist_func`](https://crates.io/crates/oxiroot-hist-func) (re-exported
-//! as `oxiroot::hist::{TF1, TF2, TF3}`); with that crate's `fit` feature,
-//! `TF1::to_model` converts one to a `Model` for fitting.
+//! as `oxiroot::hist::{Func1D, Func2D, Func3D}`); with that crate's `fit` feature,
+//! `Func1D::to_model` converts one to a `Model` for fitting.
 
 mod data;
 mod engine;

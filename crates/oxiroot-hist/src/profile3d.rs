@@ -1,33 +1,34 @@
-//! `TProfile3D` — a 3-D profile histogram. For each `(x, y, z)` cell it stores
+//! `Profile3D` — a 3-D profile histogram. For each `(x, y, z)` cell it stores
 //! the running sums to recover the mean of a fourth quantity `t`: `Σw`
-//! (`bin_entries`), `Σ(w·t)` (`sums`, the TH3 contents), and `Σ(w·t²)` (`sumt2`,
-//! the TH3 `fSumw2`). On disk it is a `TH3D` plus the profile members, exactly as
-//! `TProfile`/`TProfile2D` extend `TH1D`/`TH2D`.
+//! (`bin_entries`), `Σ(w·t)` (`sums`, the Hist3D contents), and `Σ(w·t²)` (`sumt2`,
+//! the Hist3D `fSumw2`). On disk it is a `TH3D` plus the profile members, exactly as
+//! `Profile1D`/`Profile2D` extend `TH1D`/`TH2D`.
 
 use oxiroot_io_core::{skip_versioned, Error, FileReader, RBuffer, Result};
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 use crate::base::{
     cell_count, check_cells, end_record, object_bytes, object_bytes_in, read_tarray, read_th1_base,
     unsupported_version, BinContentType,
 };
-use crate::tprofile::ErrorMode;
+use crate::profile1d::ErrorMode;
 
 /// A 3-D profile histogram (ROOT `TProfile3D`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TProfile3D {
+#[doc(alias = "TProfile3D")]
+pub struct Profile3D {
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: TAxis,
+    pub xaxis: Axis,
     /// Y axis.
-    pub yaxis: TAxis,
+    pub yaxis: Axis,
     /// Z axis.
-    pub zaxis: TAxis,
+    pub zaxis: Axis,
     /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)*(nz+2)`). Read via
-    /// [`ncells`](TProfile3D::ncells); `pub(crate)` so it cannot drift from the
+    /// [`ncells`](Profile3D::ncells); `pub(crate)` so it cannot drift from the
     /// per-bin vectors.
     pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
@@ -54,9 +55,9 @@ pub struct TProfile3D {
     pub tsumwxz: f64,
     /// Sum of `w·y·z` (`fTsumwyz`).
     pub tsumwyz: f64,
-    /// Per-cell `Σ(w·t)` (the TH3 contents, `fArray`); length `ncells`.
+    /// Per-cell `Σ(w·t)` (the Hist3D contents, `fArray`); length `ncells`.
     pub sums: Vec<f64>,
-    /// Per-cell `Σ(w·t²)` (the TH3 `fSumw2`); length `ncells`.
+    /// Per-cell `Σ(w·t²)` (the Hist3D `fSumw2`); length `ncells`.
     pub sumt2: Vec<f64>,
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
     pub bin_entries: Vec<f64>,
@@ -74,7 +75,7 @@ pub struct TProfile3D {
     pub bin_sumw2: Vec<f64>,
 }
 
-impl TProfile3D {
+impl Profile3D {
     /// Total cells including the flow bins (`fNcells`), derived from the per-bin
     /// vectors so it cannot disagree with them.
     #[must_use]
@@ -82,7 +83,7 @@ impl TProfile3D {
         self.bin_entries.len() as i32
     }
 
-    /// Create an empty `TProfile3D` with uniform x/y/z bins and no t
+    /// Create an empty `Profile3D` with uniform x/y/z bins and no t
     /// restriction. Internal primitive behind the public builder:
     /// [`Hist::reg`](crate::Hist::reg)`(nx, ..).reg(ny, ..).reg(nz, ..).profile()`.
     #[allow(clippy::too_many_arguments)]
@@ -96,14 +97,14 @@ impl TProfile3D {
         nz: i32,
         zlo: f64,
         zhi: f64,
-    ) -> TProfile3D {
+    ) -> Profile3D {
         let ncells = ((nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2)) as usize;
-        TProfile3D {
+        Profile3D {
             name: String::new(),
             title: String::new(),
-            xaxis: TAxis::new("xaxis", nx, xlo, xhi),
-            yaxis: TAxis::new("yaxis", ny, ylo, yhi),
-            zaxis: TAxis::new("zaxis", nz, zlo, zhi),
+            xaxis: Axis::new("xaxis", nx, xlo, xhi),
+            yaxis: Axis::new("yaxis", ny, ylo, yhi),
+            zaxis: Axis::new("zaxis", nz, zlo, zhi),
             ncells: ncells as i32,
             entries: 0.0,
             tsumw: 0.0,
@@ -142,7 +143,7 @@ impl TProfile3D {
         self.zaxis.nbins.max(0) as usize
     }
 
-    /// Turn on per-cell `Σw²` tracking (ROOT's `TProfile3D::Sumw2`), seeding each
+    /// Turn on per-cell `Σw²` tracking (ROOT's `Profile3D::Sumw2`), seeding each
     /// cell from its weight sum — exact for the unit-weight fills made so far.
     /// A no-op once tracking is on. Call before the current fill touches
     /// `bin_entries`.
@@ -157,7 +158,7 @@ impl TProfile3D {
         self.fill_weight(x, y, z, t, 1.0);
     }
 
-    /// Profile a point `(x, y, z, t)` with weight `w`, matching `TProfile3D::Fill`.
+    /// Profile a point `(x, y, z, t)` with weight `w`, matching `Profile3D::Fill`.
     ///
     /// The first fill with `w != 1` turns on per-cell tracking of `Σw²`
     /// (`fBinSumw2`), as ROOT's `Fill` does; without it the effective entry count,
@@ -236,16 +237,16 @@ impl TProfile3D {
             .collect()
     }
 
-    pub(crate) fn read(r: &mut RBuffer) -> Result<TProfile3D> {
+    pub(crate) fn read(r: &mut RBuffer) -> Result<Profile3D> {
         // fBinSumw2 arrived in class version 7 (ROOT 5.24). The class was added
         // at version 6 (ROOT 5.12), which already had the other members.
-        let tp = r.read_version()?; // TProfile3D wrapper
+        let tp = r.read_version()?; // Profile3D wrapper
         let version = tp.version;
         if version < 6 {
             return Err(unsupported_version("TProfile3D", version));
         }
         let _th3d = r.read_version()?; // TH3D wrapper
-        let th3 = r.read_version()?; // TH3 wrapper
+        let th3 = r.read_version()?; // Hist3D wrapper
 
         let c = read_th1_base(r)?;
         skip_versioned(r)?; // TAtt3D base (empty)
@@ -281,7 +282,7 @@ impl TProfile3D {
         check_cells("TProfile3D fSumw2", c.sumw2.len(), cells, true)?;
         check_cells("TProfile3D fBinSumw2", bin_sumw2.len(), cells, true)?;
 
-        Ok(TProfile3D {
+        Ok(Profile3D {
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -313,18 +314,14 @@ impl TProfile3D {
     }
 }
 
-/// Read a `TProfile3D` named `name` from `file`.
-pub(crate) fn read_tprofile3d(file: &FileReader, name: &str) -> Result<TProfile3D> {
-    TProfile3D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile3D")?))
+/// Read a `Profile3D` named `name` from `file`.
+pub(crate) fn read_tprofile3d(file: &FileReader, name: &str) -> Result<Profile3D> {
+    Profile3D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile3D")?))
 }
 
-/// Read a `TProfile3D` from subdirectory `subdir`.
-pub(crate) fn read_tprofile3d_in(
-    file: &FileReader,
-    subdir: &str,
-    name: &str,
-) -> Result<TProfile3D> {
-    TProfile3D::read(&mut RBuffer::new(&object_bytes_in(
+/// Read a `Profile3D` from subdirectory `subdir`.
+pub(crate) fn read_tprofile3d_in(file: &FileReader, subdir: &str, name: &str) -> Result<Profile3D> {
+    Profile3D::read(&mut RBuffer::new(&object_bytes_in(
         file,
         subdir,
         name,

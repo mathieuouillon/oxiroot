@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, ReadRoot, TH1, TH2};
+use oxiroot_hist::{FileWriter, Hist, Hist1D, Hist2D, ReadRoot};
 use oxiroot_io_core::FileReader;
 
 #[test]
@@ -36,6 +36,6 @@ fn writes_multiple_histograms_into_one_file() {
         .collect();
     assert_eq!(keys, vec![("hx", "TH1D"), ("hxy", "TH2D")]);
 
-    assert_eq!(TH1::read_root(&f, "hx").expect("read hx"), h1);
-    assert_eq!(TH2::read_root(&f, "hxy").expect("read hxy"), h2);
+    assert_eq!(Hist1D::read_root(&f, "hx").expect("read hx"), h1);
+    assert_eq!(Hist2D::read_root(&f, "hxy").expect("read hxy"), h2);
 }

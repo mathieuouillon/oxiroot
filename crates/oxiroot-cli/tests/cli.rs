@@ -138,7 +138,7 @@ fn json_mode_emits_json() {
 
 #[test]
 fn dump_shows_a_function_and_generically_dumps_other_classes() {
-    // A TF1: formula + params (a class with a dedicated `dump` view).
+    // A Func1D: formula + params (a class with a dedicated `dump` view).
     let (out, ok) = oxroot(&["dump", &spec("tf1.root", "myfunc")]);
     assert!(ok, "{out}");
     assert!(out.contains("formula") && out.contains("params"), "{out}");

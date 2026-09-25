@@ -1,7 +1,7 @@
 //! The typed errors a caller can match on when reading an RNTuple: a missing
 //! RNTuple, field or column, a key holding another class, and corrupt data.
 
-use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, TObjString};
+use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString};
 use oxiroot_rntuple::{rntuple_file_bytes, Field, NtupleReader};
 
 fn bytes() -> Vec<u8> {
@@ -36,7 +36,7 @@ fn a_missing_rntuple_field_or_column_is_not_found() {
 #[test]
 fn a_key_that_is_not_an_rntuple_is_the_wrong_class() {
     let bytes = FileWriter::create("unused.root")
-        .add(&TObjString::new("hi").named("s"))
+        .add(&ObjString::new("hi").named("s"))
         .to_bytes(Compression::None)
         .unwrap();
     let f = FileReader::from_bytes(bytes).unwrap();

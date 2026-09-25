@@ -3,7 +3,7 @@
 //! synthesizes one `branch.member` column per (basic / string) member of the
 //! object class, decoding it out of every entry's object. Cross-checked against
 //! ROOT C++ and uproot. The classes here cover string, double, and int members:
-//! `TNamed` (fName/fTitle), `TParameter<double>`, and `TParameter<int>`.
+//! `Named` (fName/fTitle), `Parameter<double>`, and `Parameter<int>`.
 
 use std::path::PathBuf;
 
@@ -36,7 +36,7 @@ fn reads_tbranchobject_members() {
     );
     assert!(t.unsupported_branches().is_empty());
 
-    // TNamed: two string members.
+    // Named: two string members.
     assert_eq!(
         t.read_branch(&f, "nm.fName").unwrap(),
         BranchValues::Str(vec!["name0".into(), "name1".into(), "name2".into()])
@@ -45,7 +45,7 @@ fn reads_tbranchobject_members() {
         t.read_branch(&f, "nm.fTitle").unwrap(),
         BranchValues::Str(vec!["ttl0".into(), "ttl1".into(), "ttl2".into()])
     );
-    // TParameter<double>: a string name and a double value.
+    // Parameter<double>: a string name and a double value.
     assert_eq!(
         t.read_branch(&f, "pd.fName").unwrap(),
         BranchValues::Str(vec!["pd".into(), "pd".into(), "pd".into()])
@@ -54,7 +54,7 @@ fn reads_tbranchobject_members() {
         t.read_branch(&f, "pd.fVal").unwrap(),
         BranchValues::F64(vec![0.5, 1.5, 2.5])
     );
-    // TParameter<int>: a string name and an int value.
+    // Parameter<int>: a string name and an int value.
     assert_eq!(
         t.read_branch(&f, "pi.fVal").unwrap(),
         BranchValues::I32(vec![0, 10, 20])

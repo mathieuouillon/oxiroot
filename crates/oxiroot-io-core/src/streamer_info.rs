@@ -13,7 +13,7 @@ use std::ops::Range;
 use crate::buffer::RBuffer;
 use crate::error::Result;
 use crate::object::TagReader;
-use crate::streamer::{read_tnamed, read_tobject};
+use crate::streamer::{read_named, read_object_base};
 
 /// One member (or base class) entry within a [`StreamerInfo`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,7 +143,7 @@ fn parse_list(object: &[u8], keylen: usize) -> Result<Vec<(StreamerInfo, Element
 
     // The top-level object is a TList (known from the key's class).
     let list = r.read_version()?;
-    read_tobject(&mut r)?;
+    read_object_base(&mut r)?;
     let _name = r.string()?;
     let count = r.be_i32()?.max(0);
 
@@ -170,7 +170,7 @@ fn parse_list(object: &[u8], keylen: usize) -> Result<Vec<(StreamerInfo, Element
 /// byte range of each element's body.
 fn parse_one_info(r: &mut RBuffer, tags: &mut TagReader) -> Result<(StreamerInfo, ElementRanges)> {
     let _version = r.read_version()?;
-    let named = read_tnamed(r)?;
+    let named = read_named(r)?;
     let checksum = r.be_u32()?;
     let class_version = r.be_i32()?;
 
@@ -202,7 +202,7 @@ fn parse_element_array(
     tags: &mut TagReader,
 ) -> Result<Vec<(StreamerElement, (String, Option<Range<usize>>))>> {
     let _version = r.read_version()?;
-    read_tobject(r)?;
+    read_object_base(r)?;
     let _name = r.string()?;
     let size = r.be_i32()?.max(0);
     let _lower_bound = r.be_i32()?;
@@ -235,7 +235,7 @@ fn parse_one_element(r: &mut RBuffer, element_class: &str) -> Result<StreamerEle
     }
     let element_base = r.read_version()?;
 
-    let named = read_tnamed(r)?;
+    let named = read_named(r)?;
     let el_type = r.be_i32()?;
     let size = r.be_i32()?;
     let array_length = r.be_i32()?;

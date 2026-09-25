@@ -7,20 +7,20 @@
 
 use oxiroot_hist::{FileWriter, ReadRoot};
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_linalg::{TMatrixD, TMatrixDSym, TVectorD};
+use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
 #[test]
 fn root_file_writes_linalg_objects() {
     let out = std::env::temp_dir().join("oxiroot_hist_linalg_rt.root");
     FileWriter::create(&out)
-        .add(&TVectorD::new(vec![1.5, 2.5, 3.5]).named("v"))
+        .add(&Vector::new(vec![1.5, 2.5, 3.5]).named("v"))
         .add(
-            &TMatrixD::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            &Matrix::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
                 .unwrap()
                 .named("m"),
         )
         .add(
-            &TMatrixDSym::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0])
+            &SymMatrix::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0])
                 .unwrap()
                 .named("s"),
         )
@@ -29,13 +29,13 @@ fn root_file_writes_linalg_objects() {
 
     let f = FileReader::open(&out).unwrap();
     assert_eq!(
-        TVectorD::read_root(&f, "v").unwrap().elements(),
+        Vector::read_root(&f, "v").unwrap().elements(),
         &[1.5, 2.5, 3.5]
     );
-    let m = TMatrixD::read_root(&f, "m").unwrap();
+    let m = Matrix::read_root(&f, "m").unwrap();
     assert_eq!(m.get(0, 0), 1.0);
     assert_eq!(m.get(1, 2), 6.0);
-    let s = TMatrixDSym::read_root(&f, "s").unwrap();
+    let s = SymMatrix::read_root(&f, "s").unwrap();
     assert_eq!(s.get(0, 1), 0.5);
     assert_eq!(s.get(1, 0), 0.5);
     let _ = std::fs::remove_file(&out);

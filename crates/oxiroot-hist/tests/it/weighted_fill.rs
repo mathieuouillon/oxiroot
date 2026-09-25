@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, TProfile, WriteRoot};
+use oxiroot_hist::{Hist, Profile1D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 // ---------------------------------------------------------------- histograms
@@ -152,7 +152,7 @@ fn weighted_tprofile_round_trips_its_squared_weights() {
         std::process::id()
     ));
     p.write_root(&out, Compression::None).expect("write");
-    let back = TProfile::read_root(&FileReader::open(&out).expect("open"), "wp").expect("read");
+    let back = Profile1D::read_root(&FileReader::open(&out).expect("open"), "wp").expect("read");
     let _ = std::fs::remove_file(&out);
 
     assert_eq!(back.bin_sumw2, p.bin_sumw2);
@@ -166,7 +166,7 @@ fn weighted_tprofile_round_trips_its_squared_weights() {
 fn unit_weight_root_fixture_still_has_no_squared_weights() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tprofile2d.root");
     let f = FileReader::open(path).expect("open fixture");
-    let p = oxiroot_hist::TProfile2D::read_root(&f, "p2").expect("read");
+    let p = oxiroot_hist::Profile2D::read_root(&f, "p2").expect("read");
     assert!(p.bin_sumw2.is_empty());
 }
 
@@ -279,7 +279,7 @@ fn profile_of_a_weighted_th2_matches_a_direct_weighted_profile() {
     assert_eq!(merged.bin_sumw2[1], 16.0);
     assert_eq!(merged.effective_entries(1), 4.0);
 
-    // An unweighted TH2 still profiles without tracking.
+    // An unweighted Hist2D still profiles without tracking.
     let mut counts = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double();
     counts.fill(0.5, 0.5);
     assert!(counts.profile_x("p").bin_sumw2.is_empty());

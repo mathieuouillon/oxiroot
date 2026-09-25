@@ -1,10 +1,10 @@
 //! Numerical integration and differentiation of a scalar function — the math
-//! behind `TF1::Integral` and `TF1::Derivative`. Both take any `Fn(f64) -> f64`,
+//! behind `Func1D::Integral` and `Func1D::Derivative`. Both take any `Fn(f64) -> f64`,
 //! so they work on a parsed formula or any closure.
 
 /// Definite integral of `f` over `[a, b]` — adaptive Gauss–Kronrod (the 15-point
 /// rule with its embedded 7-point Gauss estimate for the error), recursively
-/// bisecting the interval of largest error. Matches ROOT's `TF1::Integral`
+/// bisecting the interval of largest error. Matches ROOT's `Func1D::Integral`
 /// (default `ROOT::Math::GaussIntegrator`) to ~10 significant figures for smooth
 /// integrands. Reversed limits negate the result.
 #[must_use]
@@ -122,7 +122,7 @@ fn qk15<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64) -> (f64, f64) {
 }
 
 /// Derivative of `f` at `x` — a two-level Richardson-extrapolated central
-/// difference (`O(h⁴)`), matching ROOT's `TF1::Derivative` accuracy. `h` scales
+/// difference (`O(h⁴)`), matching ROOT's `Func1D::Derivative` accuracy. `h` scales
 /// with `|x|` so the step stays meaningful across magnitudes.
 #[must_use]
 pub fn derivative<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 {

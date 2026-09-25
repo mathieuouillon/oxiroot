@@ -1,10 +1,10 @@
 //! Naming is optional at construction and a write-time/file-key concern — and
 //! same-name collisions are a loud error, not ROOT's silent shadow-on-read.
 
-use oxiroot_hist::{Compression, FileWriter, Hist, ReadRoot, WriteRoot, TH1};
+use oxiroot_hist::{Compression, FileWriter, Hist, Hist1D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Error, FileReader};
 
-fn filled(name: &str) -> TH1 {
+fn filled(name: &str) -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named(name);
     for b in 0..4 {
         h.fill(b as f64 + 0.5);
@@ -63,8 +63,8 @@ fn same_name_in_different_directories_is_fine() {
         .expect("distinct namespaces — no collision");
 
     let f = FileReader::open(&path).expect("open");
-    assert_eq!(TH1::read_root(&f, "h").unwrap().entries, 4.0);
-    assert_eq!(TH1::read_root_in(&f, "sub", "h").unwrap().entries, 4.0);
+    assert_eq!(Hist1D::read_root(&f, "h").unwrap().entries, 4.0);
+    assert_eq!(Hist1D::read_root_in(&f, "sub", "h").unwrap().entries, 4.0);
 }
 
 #[test]
@@ -128,6 +128,9 @@ fn names_longer_than_255_bytes_round_trip() {
         .write(Compression::Zstd(3))
         .expect("write");
     let f = FileReader::open(&path).expect("open");
-    assert_eq!(TH1::read_root(&f, &name).unwrap(), filled(&name));
-    assert_eq!(TH1::read_root_in(&f, &dir, &name).unwrap(), filled(&name));
+    assert_eq!(Hist1D::read_root(&f, &name).unwrap(), filled(&name));
+    assert_eq!(
+        Hist1D::read_root_in(&f, &dir, &name).unwrap(),
+        filled(&name)
+    );
 }

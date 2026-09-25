@@ -17,7 +17,7 @@ both reference implementations:
 | ROOT C++ / uproot → oxiroot | A file written by ROOT or uproot reads back to the same values in oxiroot. |
 
 This holds across the full surface: every histogram precision and dimension,
-`TProfile`/`TProfile2D`, `TEfficiency`, `THnSparse`, `TH2Poly`, the `TGraph`
+`Profile1D`/`Profile2D`, `Efficiency`, `SparseHist`, `PolyHist`, the `Graph`
 family, every `TTree` branch kind (including split `std::vector<MyStruct>`), and
 the RNTuple field types — uncompressed and with each writable codec.
 
@@ -76,8 +76,8 @@ bash scripts/interop_local.sh --keep          # keep the work dir + regenerated 
 
 The matrix is the broad write-compat coverage. Its cases span:
 
-- **Histograms** — every `TH1`/`TH2`/`TH3` precision (`D`/`F`/`I`/`S`/`C`/`L`)
-  and dimension, `TProfile`, `Sumw2` per-bin errors, and variable bin edges.
+- **Histograms** — every `Hist1D`/`Hist2D`/`Hist3D` precision (`D`/`F`/`I`/`S`/`C`/`L`)
+  and dimension, `Profile1D`, `Sumw2` per-bin errors, and variable bin edges.
 - **File composition** — multiple objects, subdirectories, and append (the
   `FileWriter`, plus `read_root` / `read_root_in` on the read side).
 - **RNTuple** — every scalar and vector field type, across multiple clusters.
@@ -136,8 +136,8 @@ both from the top level and from a subdirectory:
 use oxiroot::prelude::*;
 
 let f = FileReader::open("oracle_dirs.root")?;
-let dh = TH1::read_root(&f, "dh")?;                 // top-level key
-let rh = TH1::read_root_in(&f, "region", "rh")?;    // inside subdirectory "region"
+let dh = Hist1D::read_root(&f, "dh")?;                 // top-level key
+let rh = Hist1D::read_root_in(&f, "region", "rh")?;    // inside subdirectory "region"
 assert_eq!(dh.values(), &[2.0, 4.0]);
 ```
 

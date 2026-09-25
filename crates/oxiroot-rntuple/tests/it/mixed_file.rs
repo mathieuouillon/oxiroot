@@ -1,20 +1,20 @@
 //! An RNTuple next to other objects in one file, written without the histogram
 //! crate: this crate depends only on io-core (and, for this test, linalg).
 
-use oxiroot_io_core::{Compression, FileReader, FileWriter, ReadRoot, TParameter, WriteRoot};
-use oxiroot_linalg::TMatrixD;
+use oxiroot_io_core::{Compression, FileReader, FileWriter, Parameter, ReadRoot, WriteRoot};
+use oxiroot_linalg::Matrix;
 use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader};
 
 #[test]
 fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_mixed.root");
-    let cov = TMatrixD::new(2, 2, vec![1.0, 0.5, 0.5, 2.0])
+    let cov = Matrix::new(2, 2, vec![1.0, 0.5, 0.5, 2.0])
         .unwrap()
         .named("cov");
     FileWriter::create(&path)
         .add(&cov)
         .put(Ntuple::new("events", vec![Field::f64("x", vec![0.5, 1.5])]))
-        .add(&TParameter::f64("lumi", 12.5))
+        .add(&Parameter::f64("lumi", 12.5))
         .dir("aux", |d| {
             d.put(Ntuple::new("runs", vec![Field::i32("run", vec![7])]))
         })
@@ -24,9 +24,9 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
     let f = FileReader::open(&path).unwrap();
     let names: Vec<&str> = f.keys().iter().map(|k| k.name.as_str()).collect();
     assert_eq!(names, ["cov", "events", "lumi", "aux"]);
-    assert_eq!(TMatrixD::read_root(&f, "cov").unwrap(), cov);
+    assert_eq!(Matrix::read_root(&f, "cov").unwrap(), cov);
     assert_eq!(
-        TParameter::read_root(&f, "lumi").unwrap().value().as_f64(),
+        Parameter::read_root(&f, "lumi").unwrap().value().as_f64(),
         12.5
     );
     assert_eq!(
@@ -54,7 +54,7 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
 #[test]
 fn an_rntuple_can_be_appended_to_an_existing_file() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_append_put.root");
-    TParameter::i32("n", 3)
+    Parameter::i32("n", 3)
         .write_root(&path, Compression::None)
         .unwrap();
     FileWriter::open(&path)
@@ -64,10 +64,7 @@ fn an_rntuple_can_be_appended_to_an_existing_file() {
         .unwrap();
 
     let f = FileReader::open(&path).unwrap();
-    assert_eq!(
-        TParameter::read_root(&f, "n").unwrap().value().as_f64(),
-        3.0
-    );
+    assert_eq!(Parameter::read_root(&f, "n").unwrap().value().as_f64(), 3.0);
     assert_eq!(
         NtupleReader::open(&f, "late")
             .unwrap()

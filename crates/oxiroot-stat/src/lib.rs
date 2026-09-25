@@ -165,7 +165,7 @@ mod tests {
     fn non_finite_input_terminates_and_propagates() {
         // Regression: both incomplete-gamma kernels exit on a `<= MACHEP` test,
         // which is false for NaN, so a non-finite argument used to spin forever
-        // here and in every caller — including `TH1::chi2_test`.
+        // here and in every caller — including `Hist1D::chi2_test`.
         assert!(chi_square_prob(f64::NAN, 3).is_nan());
         assert_eq!(chi_square_prob(f64::INFINITY, 3), 0.0);
 

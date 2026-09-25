@@ -1,6 +1,6 @@
-//! `TProfile` — a 1-D profile histogram.
+//! `Profile1D` — a 1-D profile histogram.
 //!
-//! Streamed layout: `TProfile{ TH1D{ … }, fBinEntries(TArrayD), fErrorMode,
+//! Streamed layout: `Profile1D{ TH1D{ … }, fBinEntries(TArrayD), fErrorMode,
 //! fYmin, fYmax, fTsumwy, fTsumwy2, fBinSumw2(TArrayD) }`. The `TH1D` base's
 //! bin contents are the per-bin sums of y; `fBinEntries` is the per-bin count.
 //! The profiled value of a bin is `sum / entries`.
@@ -11,14 +11,14 @@
 
 use oxiroot_io_core::{FileReader, RBuffer, Result};
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 use crate::base::{
     cell_count, check_cells, end_record, in_range_sum, object_bytes, object_bytes_in, read_tarray,
     read_th1_object, unsupported_version, BinContentType,
 };
 
 /// How a profile's per-bin error bar is computed (ROOT's `fErrorMode`). Shared
-/// by [`TProfile`], [`crate::TProfile2D`], and [`crate::TProfile3D`].
+/// by [`Profile1D`], [`crate::Profile2D`], and [`crate::Profile3D`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum ErrorMode {
@@ -59,15 +59,16 @@ impl ErrorMode {
     }
 }
 
-/// A 1-D profile histogram (`TProfile`).
+/// A 1-D profile histogram (`Profile1D`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TProfile {
+#[doc(alias = "TProfile")]
+pub struct Profile1D {
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: TAxis,
+    pub xaxis: Axis,
     /// Total cells, including flow (`fNcells = nbins + 2`).
     pub ncells: i32,
     /// Number of entries (`fEntries`).
@@ -82,7 +83,7 @@ pub struct TProfile {
     pub tsumwx2: f64,
     /// Per-bin sums of weight*y (the `TH1D` base contents, length `ncells`).
     pub sums: Vec<f64>,
-    /// Per-bin sums of weight*y^2 (the `TH1` base `fSumw2`, length `ncells`).
+    /// Per-bin sums of weight*y^2 (the `Hist1D` base `fSumw2`, length `ncells`).
     pub sumy2: Vec<f64>,
     /// Per-bin entry counts / sums of weight (`fBinEntries`, length `ncells`).
     pub bin_entries: Vec<f64>,
@@ -100,15 +101,15 @@ pub struct TProfile {
     pub bin_sumw2: Vec<f64>,
 }
 
-impl TProfile {
-    pub(crate) fn read(r: &mut RBuffer) -> Result<TProfile> {
-        let tprofile = r.read_version()?; // TProfile wrapper
+impl Profile1D {
+    pub(crate) fn read(r: &mut RBuffer) -> Result<Profile1D> {
+        let tprofile = r.read_version()?; // Profile1D wrapper
         let version = tprofile.version;
         if version < 2 {
             return Err(unsupported_version("TProfile", version));
         }
 
-        // The TH1D base: its own wrapper, the TH1 base, and the TArrayD sums.
+        // The TH1D base: its own wrapper, the Hist1D base, and the TArrayD sums.
         let (core, sums) = read_th1_object(r, BinContentType::F64)?;
 
         let bin_entries = read_tarray(r, BinContentType::F64)?;
@@ -143,7 +144,7 @@ impl TProfile {
             )
         });
 
-        Ok(TProfile {
+        Ok(Profile1D {
             name: core.name,
             title: core.title,
             xaxis: core.xaxis,
@@ -166,7 +167,7 @@ impl TProfile {
     }
 
     /// The profiled value per bin (excluding flow): `sum / entries`, or 0 where
-    /// a bin has no entries. Matches ROOT/uproot `TProfile::values()`.
+    /// a bin has no entries. Matches ROOT/uproot `Profile1D::values()`.
     pub fn values(&self) -> Vec<f64> {
         let n = self.sums.len();
         if n < 2 {
@@ -207,7 +208,7 @@ impl TProfile {
     }
 
     /// Per-bin error of the profiled value, following ROOT's
-    /// `TProfile::GetBinError` for this profile's `fErrorMode`. `bin` includes
+    /// `Profile1D::GetBinError` for this profile's `fErrorMode`. `bin` includes
     /// flow (0 = underflow).
     ///
     /// With weight sum `sumw = Σw`, profiled value `mean = Σwy / Σw`, spread
@@ -251,15 +252,15 @@ impl TProfile {
         }
     }
 
-    /// Create an empty `TProfile` with `nbins` uniform x bins over `[xlo, xhi)`
+    /// Create an empty `Profile1D` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and no y restriction. Internal primitive behind the public builder:
     /// [`Hist::reg`](crate::Hist::reg)`(nbins, xlo, xhi).profile()`.
-    pub(crate) fn new(nbins: i32, xlo: f64, xhi: f64) -> TProfile {
+    pub(crate) fn new(nbins: i32, xlo: f64, xhi: f64) -> Profile1D {
         let ncells = (nbins.max(0) + 2) as usize;
-        TProfile {
+        Profile1D {
             name: String::new(),
             title: String::new(),
-            xaxis: TAxis::new("xaxis", nbins, xlo, xhi),
+            xaxis: Axis::new("xaxis", nbins, xlo, xhi),
             ncells: ncells as i32,
             entries: 0.0,
             tsumw: 0.0,
@@ -278,7 +279,7 @@ impl TProfile {
         }
     }
 
-    /// Turn on per-bin `Σw²` tracking (ROOT's `TProfile::Sumw2`), seeding each
+    /// Turn on per-bin `Σw²` tracking (ROOT's `Profile1D::Sumw2`), seeding each
     /// bin from its weight sum — exact for the unit-weight fills made so far.
     /// A no-op once tracking is on. Call before the current fill touches
     /// `bin_entries`.
@@ -293,7 +294,7 @@ impl TProfile {
         self.fill_weight(x, y, 1.0);
     }
 
-    /// Profile a point `(x, y)` with weight `w`, matching ROOT's `TProfile::Fill`:
+    /// Profile a point `(x, y)` with weight `w`, matching ROOT's `Profile1D::Fill`:
     /// accumulate the per-bin sums of `w*y` and `w*y^2` and the per-bin weight,
     /// plus the x/y moment sums (the latter only when x is in range). A `y` range
     /// (`ymin != ymax`) rejects out-of-range points before they are counted.
@@ -335,14 +336,14 @@ impl TProfile {
     }
 }
 
-/// Read a `TProfile` from an open ROOT file.
-pub(crate) fn read_tprofile(file: &FileReader, name: &str) -> Result<TProfile> {
-    TProfile::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile")?))
+/// Read a `Profile1D` from an open ROOT file.
+pub(crate) fn read_tprofile(file: &FileReader, name: &str) -> Result<Profile1D> {
+    Profile1D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile")?))
 }
 
-/// Read a `TProfile` from subdirectory `subdir`.
-pub(crate) fn read_tprofile_in(file: &FileReader, subdir: &str, name: &str) -> Result<TProfile> {
-    TProfile::read(&mut RBuffer::new(&object_bytes_in(
+/// Read a `Profile1D` from subdirectory `subdir`.
+pub(crate) fn read_tprofile_in(file: &FileReader, subdir: &str, name: &str) -> Result<Profile1D> {
+    Profile1D::read(&mut RBuffer::new(&object_bytes_in(
         file, subdir, name, "TProfile",
     )?))
 }

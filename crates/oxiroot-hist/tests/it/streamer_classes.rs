@@ -3,8 +3,8 @@
 //! bring — for types defined outside this workspace too.
 
 use oxiroot_hist::{
-    hist_streamer_classes, FileWriter, GraphFunction, Hist, ObjList, ReadRoot, TEfficiency, TGraph,
-    TH2Poly, THStack, THnSparse, TMultiGraph, TObjString, TParameter, WriteRoot,
+    hist_streamer_classes, Efficiency, FileWriter, Graph, GraphFunction, GraphStack, Hist,
+    HistStack, ObjList, ObjString, Parameter, PolyHist, ReadRoot, SparseHist, WriteRoot,
 };
 use oxiroot_io_core::streamer_gen::{base, basic, Cls};
 use oxiroot_io_core::{Compression, FileReader, StreamerRegistry, WBuffer};
@@ -29,7 +29,7 @@ impl WriteRoot for Point {
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
         let obj = w.begin_object(1);
-        oxiroot_io_core::write_tobject(&mut w, 0);
+        oxiroot_io_core::write_object_base(&mut w, 0);
         w.be_f64(self.x);
         w.be_f64(self.y);
         w.end_object(obj);
@@ -102,8 +102,8 @@ fn a_foreign_class_is_described_wherever_it_is_stored() {
 fn a_file_without_histograms_does_not_carry_their_streamer_info() {
     let path = std::env::temp_dir().join("oxiroot_sc_param.root");
     FileWriter::create(&path)
-        .add(&TParameter::f64("lumi", 1.5))
-        .add(&TObjString::new("hello").named("s"))
+        .add(&Parameter::f64("lumi", 1.5))
+        .add(&ObjString::new("hello").named("s"))
         .write(Compression::None)
         .unwrap();
     let names: Vec<String> = registry(&path)
@@ -119,7 +119,7 @@ fn a_file_without_histograms_does_not_carry_their_streamer_info() {
 
     // The same holds for the single-object shorthand.
     let single = std::env::temp_dir().join("oxiroot_sc_param_single.root");
-    TParameter::i32("n", 3)
+    Parameter::i32("n", 3)
         .write_root(&single, Compression::None)
         .unwrap();
     let names = registry(&single);
@@ -134,8 +134,8 @@ fn a_collection_read_back_still_describes_its_members() {
         .add(
             &ObjList::list()
                 .named("l")
-                .add(&TParameter::f32("cut", 0.5))
-                .add(&TObjString::new("x")),
+                .add(&Parameter::f32("cut", 0.5))
+                .add(&ObjString::new("x")),
         )
         .write(Compression::None)
         .unwrap();
@@ -159,22 +159,22 @@ fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
     let mut h = Hist::reg(3, 0.0, 3.0).double().named("h");
     h.xaxis.set_label(1, "a");
     let p = Hist::reg(2, 0.0, 2.0).profile().named("p");
-    let mut e = TEfficiency::new(2, 0.0, 2.0).named("e");
+    let mut e = Efficiency::new(2, 0.0, 2.0).named("e");
     e.fill(true, 0.5);
-    let mut sp = THnSparse::new(&[(4, 0.0, 4.0)]).named("sp");
+    let mut sp = SparseHist::new(&[(4, 0.0, 4.0)]).named("sp");
     sp.fill(&[1.5]).unwrap();
-    let mut poly = TH2Poly::new(0.0, 2.0, 0.0, 2.0);
+    let mut poly = PolyHist::new(0.0, 2.0, 0.0, 2.0);
     poly.add_bin_rect(0.0, 0.0, 1.0, 1.0);
     poly.name = "poly".into();
     let line = GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 3.0);
-    let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0])
+    let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])
         .unwrap()
         .named("g")
         .with_function(line);
-    let st = THStack::new()
+    let st = HistStack::new()
         .named("st")
         .add(Hist::reg(2, 0.0, 2.0).float().named("m"));
-    let mg = TMultiGraph::new().named("mg").add(g.clone());
+    let mg = GraphStack::new().named("mg").add(g.clone());
     vec![
         ("h", Box::new(h)),
         ("p", Box::new(p)),

@@ -1,4 +1,4 @@
-//! `THnSparse` — a memory-efficient N-dimensional histogram. Only the cells that
+//! `SparseHist` — a memory-efficient N-dimensional histogram. Only the cells that
 //! actually get filled are stored, so a high-dimensional cut-optimization space
 //! (here 4-D: pt, eta, isolation, mass) costs memory proportional to the *events*
 //! seen, not to the astronomically large dense grid. We fill a few thousand
@@ -34,8 +34,8 @@ fn main() -> oxiroot::Result<()> {
     // --- A 4-D cut-optimization space: (pt, eta, isolation, mass). -------------
     // Each axis is (nbins, lo, hi). The dense grid would be the *product* of the
     // per-axis bin counts — here 40 × 20 × 25 × 60 = 1_200_000 cells — but a
-    // THnSparse only materializes the cells an event actually lands in.
-    let mut hs = THnSparse::new(&[
+    // SparseHist only materializes the cells an event actually lands in.
+    let mut hs = SparseHist::new(&[
         (40, 0.0, 200.0),  // pt   [GeV]
         (20, -2.5, 2.5),   // eta
         (25, 0.0, 1.0),    // isolation (relative)
@@ -98,7 +98,7 @@ fn main() -> oxiroot::Result<()> {
         );
     }
 
-    // --- Write the THnSparse to a ROOT file and read it back. ------------------
+    // --- Write the SparseHist to a ROOT file and read it back. -----------------
     // Under std::env::temp_dir(), named for THIS example, and removed before we
     // return — never litter the repo or cwd.
     let path = std::env::temp_dir().join("oxiroot_ex_sparse.root");
@@ -106,7 +106,7 @@ fn main() -> oxiroot::Result<()> {
     println!("\nwrote THnSparse -> {}", path.display());
 
     let f = FileReader::open(&path)?;
-    let back = THnSparse::read_root(&f, "cutspace")?; // ReadRoot trait
+    let back = SparseHist::read_root(&f, "cutspace")?; // ReadRoot trait
     println!(
         "read back `cutspace`: {} dims, {} entries, {} filled cells",
         back.ndim(),

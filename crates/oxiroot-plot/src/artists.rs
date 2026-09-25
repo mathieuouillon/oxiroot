@@ -287,7 +287,7 @@ fn staircase(edges: &[f64], values: &[f64], baseline: bool) -> Vec<(f64, f64)> {
     pts
 }
 
-/// An mplhep-style histogram (a `TH1` reduced to edges + values + optional yerr).
+/// An mplhep-style histogram (a `Hist1D` reduced to edges + values + optional yerr).
 #[derive(Debug, Clone)]
 pub(crate) struct StepArtist {
     pub edges: Vec<f64>,
@@ -562,7 +562,7 @@ impl ErrorbarArtist {
     }
 }
 
-/// A 2-D color mesh of a `TH2` (matplotlib `pcolormesh`). `values[ix][iy]` are
+/// A 2-D color mesh of a `Hist2D` (matplotlib `pcolormesh`). `values[ix][iy]` are
 /// in-range bin contents; cell `(ix, iy)` spans `xedges[ix..ix+1]` × `yedges`.
 #[derive(Debug, Clone)]
 pub(crate) struct MeshArtist {

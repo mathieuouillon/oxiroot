@@ -22,13 +22,13 @@ key:
 
 | Class | Action |
 |---|---|
-| `TH1`/`TH2`/`TH3`, `TProfile`/`TProfile2D`/`TProfile3D` | **summed** across every input that holds it (bin contents, `Sumw2`, entries, and all moment sums — the same exact `add` used by the [multithreaded fill](multithreading.md)) |
-| `TH2Poly`, `THnSparse` | **summed** bin by bin, with the entry count and moment sums |
-| `TEfficiency` | **summed**: its passed and its total histogram |
-| `TGraph`/`TGraphErrors`/`TGraphAsymmErrors` | **appended**: the inputs' points in order, with their errors, as ROOT's `TGraph::Merge` does |
-| `THStack` | **merged** histogram by histogram, matched by name |
-| `TParameter` | **summed** values |
-| `TF1`/`2`/`3`, `TGraph2D`, `TGraphMultiErrors`, `TMultiGraph`, `TObjString`, `TVectorD`, `TMatrixD`/`Sym`, `TMap` | **copied** from the first file that holds it. ROOT's `hadd` does not merge these either: it writes one key per input, which oxiroot cannot do, since it rejects two objects of the same name in one directory |
+| `Hist1D`/`Hist2D`/`Hist3D`, `Profile1D`/`Profile2D`/`Profile3D` | **summed** across every input that holds it (bin contents, `Sumw2`, entries, and all moment sums — the same exact `add` used by the [multithreaded fill](multithreading.md)) |
+| `PolyHist`, `SparseHist` | **summed** bin by bin, with the entry count and moment sums |
+| `Efficiency` | **summed**: its passed and its total histogram |
+| `Graph`/`TGraphErrors`/`TGraphAsymmErrors` | **appended**: the inputs' points in order, with their errors, as ROOT's `Graph::Merge` does |
+| `HistStack` | **merged** histogram by histogram, matched by name |
+| `Parameter` | **summed** values |
+| `Func1D`/`2`/`3`, `Graph2D`, `MultiErrorGraph`, `GraphStack`, `ObjString`, `Vector`, `Matrix`/`Sym`, `ObjMap` | **copied** from the first file that holds it. ROOT's `hadd` does not merge these either: it writes one key per input, which oxiroot cannot do, since it rejects two objects of the same name in one directory |
 | anything else | **skipped**, and listed in the report — never silently dropped |
 
 An object that cannot be read from one of the inputs is also skipped and listed,

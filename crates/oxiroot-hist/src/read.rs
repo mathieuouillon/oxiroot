@@ -2,19 +2,19 @@
 
 use oxiroot_io_core::{FileReader, Result};
 
-use crate::collections::{THStack, TMultiGraph};
-use crate::graph::TGraph;
-use crate::graph2d::TGraph2D;
-use crate::graphmultierrors::TGraphMultiErrors;
-use crate::tefficiency::TEfficiency;
-use crate::th1::TH1;
-use crate::th2::TH2;
-use crate::th2poly::TH2Poly;
-use crate::th3::TH3;
-use crate::thnsparse::THnSparse;
-use crate::tprofile::TProfile;
-use crate::tprofile2d::TProfile2D;
-use crate::tprofile3d::TProfile3D;
+use crate::collections::{GraphStack, HistStack};
+use crate::efficiency::Efficiency;
+use crate::graph::Graph;
+use crate::graph2d::Graph2D;
+use crate::hist1d::Hist1D;
+use crate::hist2d::Hist2D;
+use crate::hist3d::Hist3D;
+use crate::multierrorgraph::MultiErrorGraph;
+use crate::polyhist::PolyHist;
+use crate::profile1d::Profile1D;
+use crate::profile2d::Profile2D;
+use crate::profile3d::Profile3D;
+use crate::sparsehist::SparseHist;
 
 // The `ReadRoot` trait now lives in `oxiroot-io-core`; re-export it so
 // `oxiroot_hist::ReadRoot` keeps resolving. This module registers the histogram
@@ -34,61 +34,61 @@ macro_rules! impl_read_root {
     };
 }
 
-impl_read_root!(TH1, crate::th1::read_th1, crate::th1::read_th1_in);
-impl_read_root!(TH2, crate::th2::read_th2, crate::th2::read_th2_in);
-impl_read_root!(TH3, crate::th3::read_th3, crate::th3::read_th3_in);
+impl_read_root!(Hist1D, crate::hist1d::read_th1, crate::hist1d::read_th1_in);
+impl_read_root!(Hist2D, crate::hist2d::read_th2, crate::hist2d::read_th2_in);
+impl_read_root!(Hist3D, crate::hist3d::read_th3, crate::hist3d::read_th3_in);
 impl_read_root!(
-    TProfile,
-    crate::tprofile::read_tprofile,
-    crate::tprofile::read_tprofile_in
+    Profile1D,
+    crate::profile1d::read_tprofile,
+    crate::profile1d::read_tprofile_in
 );
 impl_read_root!(
-    TProfile2D,
-    crate::tprofile2d::read_tprofile2d,
-    crate::tprofile2d::read_tprofile2d_in
+    Profile2D,
+    crate::profile2d::read_tprofile2d,
+    crate::profile2d::read_tprofile2d_in
 );
 impl_read_root!(
-    TProfile3D,
-    crate::tprofile3d::read_tprofile3d,
-    crate::tprofile3d::read_tprofile3d_in
+    Profile3D,
+    crate::profile3d::read_tprofile3d,
+    crate::profile3d::read_tprofile3d_in
 );
 impl_read_root!(
-    TEfficiency,
-    crate::tefficiency::read_tefficiency,
-    crate::tefficiency::read_tefficiency_in
+    Efficiency,
+    crate::efficiency::read_tefficiency,
+    crate::efficiency::read_tefficiency_in
 );
 impl_read_root!(
-    THnSparse,
-    crate::thnsparse::read_thnsparse,
-    crate::thnsparse::read_thnsparse_in
+    SparseHist,
+    crate::sparsehist::read_thnsparse,
+    crate::sparsehist::read_thnsparse_in
 );
 impl_read_root!(
-    TH2Poly,
-    crate::th2poly::read_th2poly,
-    crate::th2poly::read_th2poly_in
+    PolyHist,
+    crate::polyhist::read_th2poly,
+    crate::polyhist::read_th2poly_in
 );
 impl_read_root!(
-    TGraph,
+    Graph,
     crate::graph::read_tgraph,
     crate::graph::read_tgraph_in
 );
 impl_read_root!(
-    TGraph2D,
+    Graph2D,
     crate::graph2d::read_tgraph2d,
     crate::graph2d::read_tgraph2d_in
 );
 impl_read_root!(
-    TGraphMultiErrors,
-    crate::graphmultierrors::read_tgraphmultierrors,
-    crate::graphmultierrors::read_tgraphmultierrors_in
+    MultiErrorGraph,
+    crate::multierrorgraph::read_tgraphmultierrors,
+    crate::multierrorgraph::read_tgraphmultierrors_in
 );
 impl_read_root!(
-    THStack,
+    HistStack,
     crate::collections::read_thstack,
     crate::collections::read_thstack_in
 );
 impl_read_root!(
-    TMultiGraph,
+    GraphStack,
     crate::collections::read_tmultigraph,
     crate::collections::read_tmultigraph_in
 );

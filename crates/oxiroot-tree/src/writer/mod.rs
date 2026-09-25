@@ -194,11 +194,11 @@ impl Tree {
 /// one basket per branch:
 ///
 /// ```no_run
-/// use oxiroot_io_core::{Compression, FileWriter, TParameter};
+/// use oxiroot_io_core::{Compression, FileWriter, Parameter};
 /// use oxiroot_tree::{Branch, Tree};
 ///
 /// FileWriter::create("run.root")
-///     .add(&TParameter::f64("lumi", 12.5))
+///     .add(&Parameter::f64("lumi", 12.5))
 ///     .put(Tree::new("Events", vec![Branch::f64("energy", vec![10.5, 20.1])]))
 ///     .dir("cal", |d| d.put(Tree::new("Pedestals", vec![Branch::i32("adc", vec![3, 4])])))
 ///     .write(Compression::Zstd(5))?;

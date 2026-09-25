@@ -1,16 +1,16 @@
-//! `THnSparse` — an N-dimensional *sparse* histogram. Only filled bins are
+//! `SparseHist` — an N-dimensional *sparse* histogram. Only filled bins are
 //! stored: ROOT keeps them in `THnSparseArrayChunk`s, each holding the filled
 //! bins' packed global coordinates (`char*`) and contents (`TArrayD`). On disk
-//! the class is `THnSparseT<TArrayD>` → `THnSparse` → `THnBase`.
+//! the class is `THnSparseT<TArrayD>` → `SparseHist` → `THnBase`.
 //!
 //! The compact coordinate of a filled bin is its global linear index across all
 //! axes, with `bits[d] = bitlength(nbins[d] + 2)` bits per axis (so axis `d`'s
 //! stride is `2^Σ_{e<d} bits[e]`), packed big-endian into
 //! `fSingleCoordinateSize = ceil(Σ bits / 8)` bytes.
 
-use oxiroot_io_core::{read_tnamed, read_tobject, FileReader, RBuffer, Result};
+use oxiroot_io_core::{read_named, read_object_base, FileReader, RBuffer, Result};
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 use crate::base::{check_len, object_bytes, object_bytes_in, read_tarray, BinContentType};
 
 /// A filled cell: one (per-axis, flow-inclusive) bin index per dimension, and its
@@ -25,13 +25,14 @@ pub struct SparseBin {
 
 /// An N-dimensional sparse histogram (ROOT `THnSparse`/`THnSparseT<TArrayD>`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct THnSparse {
+#[doc(alias = "THnSparse")]
+pub struct SparseHist {
     /// Name (`fName`).
     pub name: String,
     /// Title (`fTitle`).
     pub title: String,
     /// One axis per dimension (`fAxes`).
-    pub axes: Vec<TAxis>,
+    pub axes: Vec<Axis>,
     /// Number of entries (`fEntries`).
     pub entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -46,18 +47,18 @@ pub struct THnSparse {
     pub bins: Vec<SparseBin>,
 }
 
-impl THnSparse {
-    /// Create an empty `THnSparse` over the given per-dimension uniform axes,
+impl SparseHist {
+    /// Create an empty `SparseHist` over the given per-dimension uniform axes,
     /// `(nbins, xmin, xmax)`.
-    pub fn new(axes: &[(i32, f64, f64)]) -> THnSparse {
+    pub fn new(axes: &[(i32, f64, f64)]) -> SparseHist {
         let n = axes.len();
-        THnSparse {
+        SparseHist {
             name: String::new(),
             title: String::new(),
             axes: axes
                 .iter()
                 .enumerate()
-                .map(|(i, &(nb, lo, hi))| TAxis::new(&format!("axis{i}"), nb, lo, hi))
+                .map(|(i, &(nb, lo, hi))| Axis::new(&format!("axis{i}"), nb, lo, hi))
                 .collect(),
             entries: 0.0,
             tsumw: 0.0,
@@ -135,12 +136,12 @@ impl THnSparse {
             .collect()
     }
 
-    pub(crate) fn read(r: &mut RBuffer) -> Result<THnSparse> {
+    pub(crate) fn read(r: &mut RBuffer) -> Result<SparseHist> {
         let tt = r.read_version()?; // THnSparseT<TArrayD> wrapper
-        let _ts = r.read_version()?; // THnSparse v3
+        let _ts = r.read_version()?; // SparseHist v3
         let thnbase = r.read_version()?; // THnBase v1
 
-        let named = read_tnamed(r)?;
+        let named = read_named(r)?;
         let ndim = r.be_i32()? as usize;
         let axes = read_axis_array(r)?;
         let entries = r.be_f64()?;
@@ -160,7 +161,7 @@ impl THnSparse {
             r.seek(end)?;
         }
 
-        let mut h = THnSparse {
+        let mut h = SparseHist {
             name: named.name,
             title: named.title,
             axes,
@@ -200,20 +201,20 @@ fn enter_object(r: &mut RBuffer) -> Result<bool> {
 /// Read a `TObjArray` header, returning the element count.
 fn read_objarray_len(r: &mut RBuffer) -> Result<usize> {
     let _oa = r.read_version()?; // TObjArray version 3
-    read_tobject(r)?;
+    read_object_base(r)?;
     let _name = r.string()?;
     let size = r.be_i32()? as usize;
     let _lower_bound = r.be_i32()?;
     Ok(size)
 }
 
-/// Read `fAxes`: a `TObjArray` of `TAxis` object pointers.
-fn read_axis_array(r: &mut RBuffer) -> Result<Vec<TAxis>> {
+/// Read `fAxes`: a `TObjArray` of `Axis` object pointers.
+fn read_axis_array(r: &mut RBuffer) -> Result<Vec<Axis>> {
     let n = read_objarray_len(r)?;
     (0..n)
         .map(|_| {
             enter_object(r)?;
-            TAxis::read(r)
+            Axis::read(r)
         })
         .collect()
 }
@@ -228,7 +229,7 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
             continue;
         }
         let _chunk = r.read_version()?; // THnSparseArrayChunk v1
-        read_tobject(r)?;
+        read_object_base(r)?;
         let single = r.be_i32()? as usize; // fSingleCoordinateSize
         let coords_size = r.be_i32()? as usize; // fCoordinatesSize
         let _marker = r.u8()?; // char* presence flag
@@ -255,9 +256,9 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
     Ok(out)
 }
 
-/// Read a `THnSparse` named `name` from `file`.
-pub(crate) fn read_thnsparse(file: &FileReader, name: &str) -> Result<THnSparse> {
-    THnSparse::read(&mut RBuffer::new(&object_bytes(
+/// Read a `SparseHist` named `name` from `file`.
+pub(crate) fn read_thnsparse(file: &FileReader, name: &str) -> Result<SparseHist> {
+    SparseHist::read(&mut RBuffer::new(&object_bytes(
         file,
         name,
         "THnSparseT<TArrayD>",
@@ -265,8 +266,8 @@ pub(crate) fn read_thnsparse(file: &FileReader, name: &str) -> Result<THnSparse>
 }
 
 /// Read a `THnSparseT<TArrayD>` from subdirectory `subdir`.
-pub(crate) fn read_thnsparse_in(file: &FileReader, subdir: &str, name: &str) -> Result<THnSparse> {
-    THnSparse::read(&mut RBuffer::new(&object_bytes_in(
+pub(crate) fn read_thnsparse_in(file: &FileReader, subdir: &str, name: &str) -> Result<SparseHist> {
+    SparseHist::read(&mut RBuffer::new(&object_bytes_in(
         file,
         subdir,
         name,

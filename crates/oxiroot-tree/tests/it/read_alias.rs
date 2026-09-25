@@ -1,12 +1,12 @@
 //! Aliases & selections. `TTree::SetAlias` stores `(name, expression)` pairs in
-//! the tree's `fAliases` (a `TList<TNamed>`); a `TEntryList` is a standalone key
+//! the tree's `fAliases` (a `TList<Named>`); an `EntryList` is a standalone key
 //! holding a bit array of selected entry numbers. Both cross-checked against
 //! ROOT C++ / uproot.
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{TEntryList, TreeReader};
+use oxiroot_tree::{EntryList, TreeReader};
 
 fn fixture() -> FileReader {
     FileReader::open(
@@ -45,7 +45,7 @@ fn a_tree_without_aliases_has_none() {
 #[test]
 fn reads_entry_list() {
     let f = fixture();
-    let el = TEntryList::open(&f, "elist").expect("open entry list");
+    let el = EntryList::open(&f, "elist").expect("open entry list");
     assert_eq!(el.name(), "elist");
     assert_eq!(el.tree_name(), "t");
     assert_eq!(el.entries(), &[0, 2, 4]);
@@ -59,5 +59,5 @@ fn reads_entry_list() {
 #[test]
 fn opening_a_non_entry_list_key_errors() {
     let f = fixture();
-    assert!(TEntryList::open(&f, "t").is_err()); // "t" is a TTree
+    assert!(EntryList::open(&f, "t").is_err()); // "t" is a TTree
 }

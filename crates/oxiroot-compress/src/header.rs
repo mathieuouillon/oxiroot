@@ -1,6 +1,6 @@
 //! ROOT's 9-byte compression block header.
 //!
-//! Every compressed ROOT payload — TKey object data and RNTuple pages alike —
+//! Every compressed ROOT payload — Key object data and RNTuple pages alike —
 //! is a sequence of independently-compressed blocks, each prefixed by this
 //! 9-byte header. A single block holds at most [`MAX_CHUNK_SIZE`] uncompressed
 //! bytes; larger payloads are split across consecutive blocks.

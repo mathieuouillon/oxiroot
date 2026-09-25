@@ -2,7 +2,7 @@
 //! aliases.
 
 use oxiroot_io_core::{
-    read_tnamed, read_tobject, Error, RBuffer, Result, StreamerElement, StreamerRegistry,
+    read_named, read_object_base, Error, RBuffer, Result, StreamerElement, StreamerRegistry,
     TagReader, K_BYTE_COUNT_MASK,
 };
 
@@ -113,7 +113,7 @@ pub(super) fn read_tree(
 
 /// Read a `TTreeIndex` body, the cursor just past its object-pointer header.
 ///
-/// Version 2 (what ROOT 6 writes) is `TVirtualIndex` — a `TNamed` — then
+/// Version 2 (what ROOT 6 writes) is `TVirtualIndex` — a `Named` — then
 /// `fMajorName`, `fMinorName`, `fN`, and three `Long64_t[fN]` arrays written by
 /// its own streamer, so they carry no per-array framing: the major keys, the
 /// minor keys, and the entry each key names. An older version packed the two
@@ -123,7 +123,7 @@ fn read_tree_index(r: &mut RBuffer) -> Result<Option<TreeIndex>> {
     if header.version < 2 {
         return Ok(None);
     }
-    skip_object(r)?; // the TVirtualIndex (TNamed) base
+    skip_object(r)?; // the TVirtualIndex (Named) base
     let major_name = r.string()?;
     let minor_name = r.string()?;
     let n = r.be_i64()?;
@@ -183,7 +183,7 @@ fn open_tlist(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Option<usize>, i
     } else {
         r.read_version()?.end
     };
-    read_tobject(r)?;
+    read_object_base(r)?;
     r.string()?; // the list's fName
     let n = r.be_i32()?.max(0);
     Ok((end, n))
@@ -192,8 +192,8 @@ fn open_tlist(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Option<usize>, i
 /// Read a `TTree`'s `fFriends` (`TList<TFriendElement>` — the friends added with
 /// `TTree::AddFriend`). The cursor is positioned at the `fFriends` member; a null
 /// pointer (no friends) reads as an empty list. Each `TFriendElement` carries the
-/// friend's tree name (`fTreeName`), the alias (`TNamed::fName`), and the file it
-/// lives in (`TNamed::fTitle`, empty for a same-file friend).
+/// friend's tree name (`fTreeName`), the alias (`Named::fName`), and the file it
+/// lives in (`Named::fTitle`, empty for a same-file friend).
 fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
     let (end, n) = open_tlist(r, tags)?;
     let mut friends = Vec::with_capacity(n.max(0) as usize);
@@ -201,7 +201,7 @@ fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
         let elem = tags.read_header(r)?;
         if elem.class_name.as_deref() == Some("TFriendElement") {
             let vh = r.read_version()?;
-            let named = read_tnamed(r)?; // fName = alias, fTitle = file name
+            let named = read_named(r)?; // fName = alias, fTitle = file name
             let tree_name = r.string()?; // fTreeName
             friends.push(Friend {
                 tree_name,
@@ -223,7 +223,7 @@ fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
     Ok(friends)
 }
 
-/// Read a `TTree`'s `fAliases` (`TList<TNamed>` — the `(name, expression)` pairs
+/// Read a `TTree`'s `fAliases` (`TList<Named>` — the `(name, expression)` pairs
 /// set with `TTree::SetAlias`). The cursor is positioned at the `fAliases` member;
 /// a null pointer (no aliases) reads as an empty list. Each entry's `fName` is the
 /// alias and `fTitle` is the expression it stands for.
@@ -233,7 +233,7 @@ fn read_aliases(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<(String, St
     for _ in 0..n {
         let elem = tags.read_header(r)?;
         if elem.class_name.as_deref() == Some("TNamed") {
-            let named = read_tnamed(r)?;
+            let named = read_named(r)?;
             aliases.push((named.name, named.title));
         }
         if let Some(end) = elem.end {
@@ -630,7 +630,7 @@ fn read_leaf_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Leaf>> {
 fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<Leaf>> {
     r.read_version()?; // TLeafX (v1) — the leaf subclass wrapper
     r.read_version()?; // TLeaf base (v2)
-    let named = read_tnamed(r)?; // fName, fTitle
+    let named = read_named(r)?; // fName, fTitle
     let len = r.be_i32()?; // fLen
     r.be_i32()?; // fLenType
     let offset = r.be_i32()?; // fOffset
@@ -680,7 +680,7 @@ fn read_skip_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<()> {
 /// Read the `{version}` + `TObject` + name prefix common to `TObjArray`/`TList`.
 fn read_version_tobject_header(r: &mut RBuffer) -> Result<()> {
     r.read_version()?;
-    read_tobject(r)?;
+    read_object_base(r)?;
     r.string()?; // fName
     Ok(())
 }

@@ -3,15 +3,15 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{FitExt, Hist, Model, ReadRoot, TH1};
+use oxiroot_hist::{FitExt, Hist, Hist1D, Model, ReadRoot};
 use oxiroot_io_core::FileReader;
 
-fn read(name: &str) -> TH1 {
+fn read(name: &str) -> Hist1D {
     let f = FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/analysis.root"),
     )
     .expect("open");
-    TH1::read_root(&f, name).expect("read")
+    Hist1D::read_root(&f, name).expect("read")
 }
 
 fn rel_close(a: f64, b: f64, tol: f64) -> bool {
@@ -333,15 +333,15 @@ fn ergonomics_estimate_seed_and_fit_into() {
 
 #[test]
 fn fit_a_tgraph_with_errors() {
-    use oxiroot_hist::TGraph;
+    use oxiroot_hist::Graph;
 
     // Points exactly on y = 2x + 3 with small symmetric y-errors. The same
-    // `.fit(...)` API as a histogram works because `TGraph` is `FitData` too.
+    // `.fit(...)` API as a histogram works because `Graph` is `FitData` too.
     let x = vec![0.0, 1.0, 2.0, 3.0, 4.0];
     let y: Vec<f64> = x.iter().map(|&x| 2.0 * x + 3.0).collect();
     let ex = vec![0.0; x.len()];
     let ey = vec![0.1; x.len()];
-    let g = TGraph::with_errors(x, y, ex, ey)
+    let g = Graph::with_errors(x, y, ex, ey)
         .unwrap()
         .named("g")
         .titled("line");

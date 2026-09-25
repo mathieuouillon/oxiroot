@@ -3,15 +3,15 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, ReadRoot, TH1};
+use oxiroot_hist::{Hist, Hist1D, ReadRoot};
 use oxiroot_io_core::FileReader;
 
-fn h(name: &str) -> TH1 {
+fn h(name: &str) -> Hist1D {
     let f = FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/analysis.root"),
     )
     .expect("open");
-    TH1::read_root(&f, name).expect("read")
+    Hist1D::read_root(&f, name).expect("read")
 }
 
 fn close(a: f64, b: f64) -> bool {
@@ -21,7 +21,7 @@ fn close(a: f64, b: f64) -> bool {
 #[test]
 fn interpolate_matches_root() {
     let h = h("h");
-    // ROOT TH1::Interpolate values.
+    // ROOT Hist1D::Interpolate values.
     assert!(close(h.interpolate(5.0), 85.0));
     assert!(close(h.interpolate(5.5), 90.0));
     assert!(close(h.interpolate(10.3), 110.0));

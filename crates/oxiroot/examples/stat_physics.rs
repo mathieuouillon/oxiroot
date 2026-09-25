@@ -71,7 +71,7 @@ fn main() -> Result<(), StatError> {
     // A trigger fires on k = 95 of n = 100 signal events. The point efficiency is
     // k/n, but the error bar needs a proper binomial interval — the plain
     // ε(1−ε)/n Wald interval misbehaves near 0 or 1. Clopper–Pearson (exact,
-    // ROOT's TEfficiency default) and Wilson (score) both stay in [0, 1].
+    // ROOT's Efficiency default) and Wilson (score) both stay in [0, 1].
     let (k_pass, n_trig) = (95.0_f64, 100.0_f64);
     let eff = k_pass / n_trig;
     let (cp_lo, cp_hi) = clopper_pearson(k_pass, n_trig, CL_1SIGMA);

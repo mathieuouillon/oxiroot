@@ -1,5 +1,5 @@
-//! ROOT linear-algebra objects from `oxiroot::linalg`: a `TVectorD` (vector of
-//! doubles), a `TMatrixD` (dense matrix), and a `TMatrixDSym` (symmetric matrix —
+//! ROOT linear-algebra objects from `oxiroot::linalg`: a `Vector` (vector of
+//! doubles), a `Matrix` (dense matrix), and a `SymMatrix` (symmetric matrix —
 //! the shape a fit covariance takes). We build the three, write them into ONE
 //! ROOT file with `FileWriter`, read them back, and assert the
 //! round-trip is byte-exact. Official ROOT and uproot read this file too — the
@@ -17,11 +17,11 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Build three linear-algebra objects, as a fit would produce them. ------
     // A residual 3-vector: (data - model) at three points.
-    let residuals = TVectorD::new(vec![0.20, -0.15, 0.05]).named("residuals");
+    let residuals = Vector::new(vec![0.20, -0.15, 0.05]).named("residuals");
 
     // A 2x3 design matrix (Jacobian) — 2 parameters, 3 measurements — row-major.
     // Row 0 is the intercept column (all ones); row 1 is the slope column (x).
-    let design = TMatrixD::new(
+    let design = Matrix::new(
         2,
         3,
         vec![
@@ -32,9 +32,9 @@ fn main() -> oxiroot::Result<()> {
     .named("design");
 
     // A symmetric 3x3 covariance matrix — the full n*n given row-major (only the
-    // upper triangle is written to disk; TMatrixDSym re-expands it on read).
+    // upper triangle is written to disk; SymMatrix re-expands it on read).
     // Diagonal = variances; off-diagonal = covariances (mirrored across it).
-    let cov = TMatrixDSym::new(
+    let cov = SymMatrix::new(
         3,
         vec![
             0.040, 0.010, 0.000, //
@@ -65,9 +65,9 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Read them back (idiomatic `ReadRoot::read_root`, keyed by name). ------
     let f = FileReader::open(&path)?;
-    let v = TVectorD::read_root(&f, "residuals")?;
-    let m = TMatrixD::read_root(&f, "design")?;
-    let s = TMatrixDSym::read_root(&f, "cov")?;
+    let v = Vector::read_root(&f, "residuals")?;
+    let m = Matrix::read_root(&f, "design")?;
+    let s = SymMatrix::read_root(&f, "cov")?;
 
     // Print the design matrix as rows via get(i, j) — teaching the accessor.
     println!("read back `design` as rows:");
@@ -108,9 +108,9 @@ fn main() -> oxiroot::Result<()> {
     Ok(())
 }
 
-/// True if every off-diagonal pair matches its mirror — a `TMatrixDSym` always
+/// True if every off-diagonal pair matches its mirror — a `SymMatrix` always
 /// reads back symmetric because only the upper triangle is stored.
-fn cov_is_symmetric(s: &TMatrixDSym) -> bool {
+fn cov_is_symmetric(s: &SymMatrix) -> bool {
     let n = s.dim();
     (0..n).all(|i| (0..n).all(|j| s.get(i, j) == s.get(j, i)))
 }

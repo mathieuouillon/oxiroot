@@ -22,17 +22,17 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   `TStreamerInfo` into a dynamic `Value` tree (rootls / rootprint-style), even
   classes with no typed model — and `oxroot dump` prints it. Undecodable members
   degrade to `Unsupported`, never a crash.
-- 📊 **Histograms & profiles** — `TH1`/`TH2`/`TH3` (every precision, uniform or
-  irregular bins), `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`,
-  N-dimensional `THnSparse`, and polygon-binned `TH2Poly` — all read **and** write.
+- 📊 **Histograms & profiles** — `Hist1D`/`Hist2D`/`Hist3D` (every precision, uniform or
+  irregular bins), `Profile1D`/`Profile2D`/`Profile3D`, `Efficiency`,
+  N-dimensional `SparseHist`, and polygon-binned `PolyHist` — all read **and** write.
 - 🎲 **Sampling & smoothing** — draw from a histogram's or function's
   distribution (`get_random`/`fill_random`, ROOT's `GetRandom`/`FillRandom`) and
   smooth with ROOT's `353QH` (`smooth`), via a small seedable built-in `Random` (no
   `rand` dependency).
-- 📈 **Graphs** — `TGraph`, `TGraphErrors`, `TGraphAsymmErrors`, plus `TGraph2D`
-  and `TGraphMultiErrors` — read and write, including a graph's display frame
-  (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `TF1`).
-- 🧮 **Functions** — standalone `TF1`/`TF2`/`TF3` keys backed by a real
+- 📈 **Graphs** — `Graph`, `TGraphErrors`, `TGraphAsymmErrors`, plus `Graph2D`
+  and `MultiErrorGraph` — read and write, including a graph's display frame
+  (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `Func1D`).
+- 🧮 **Functions** — standalone `Func1D`/`Func2D`/`Func3D` keys backed by a real
   `TFormula` expression engine (arbitrary formulas, ROOT `gaus`/`expo`/`pol`
   shortcuts), with pure-Rust `eval`/`integral`/`derivative`; any formula is also
   fittable via `Model::from_formula`.
@@ -57,7 +57,7 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   old unsplit object branches (`TBranchObject`), `std::set`/`std::map` branches,
   `TNtuple`/`TNtupleD`, **friend trees** (`AddFriend`, entry-aligned or joined
   on a `BuildIndex` key), tree
-  aliases (`SetAlias`), and `TEntryList` selections; multi-basket via a
+  aliases (`SetAlias`), and `EntryList` selections; multi-basket via a
   bounded-memory streaming writer.
 - 🧱 **RNTuple** — read and write ROOT's columnar format (scalars, strings,
   vectors, **nested vectors and vectors of records**, fixed-size
@@ -78,7 +78,7 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
   `root://eospublic.cern.ch`. A large local file reads the same lazy way with
   `FileReader::open_ranged`.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
-  `TThreadedObject<TH1>`; optional one-call `rayon` parallel fill.
+  `TThreadedObject<Hist1D>`; optional one-call `rayon` parallel fill.
 - ➕ **`hadd`** — a pure-Rust file merger: everything ROOT's `hadd` merges
   merged the same way (histograms, profiles, efficiencies, poly and sparse
   histograms, stacks, parameters, and graphs by appending points), `TTree` /
@@ -87,7 +87,7 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 - 🔎 **Command-line inspector** — `oxroot ls` / `show` / `dump` / `stat` looks
   into any ROOT file (keys, `TTree`/RNTuple structure, entries, histogram bins)
   from the shell — no ROOT, no Python (the `oxiroot-cli` crate).
-- 🎨 **Plotting** (optional) — render `TH1`/`TH2`/`TGraph`/`TProfile` to **SVG,
+- 🎨 **Plotting** (optional) — render `Hist1D`/`Hist2D`/`Graph`/`Profile1D` to **SVG,
   PNG, and PDF** with a matplotlib-like API and an mplhep histogram style —
   grids, ratio plots, LaTeX (`$…$`) math labels — all pure Rust, no matplotlib,
   no system fonts.
@@ -113,7 +113,7 @@ oxiroot = "0.3"
 
 # …or depend on just one crate:
 oxiroot-hist      = "0.3"  # histograms + graphs
-oxiroot-hist-func = "0.3"  # TF1/TF2/TF3
+oxiroot-hist-func = "0.3"  # Func1D/Func2D/Func3D
 oxiroot-tree      = "0.3"  # TTree
 oxiroot-rntuple   = "0.3"  # RNTuple
 ```
@@ -125,7 +125,7 @@ use oxiroot::prelude::*;
 let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("p_{T}").weight();
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;            // any single writable object
-let same = TH1::read_root(&FileReader::open("hist.root")?, "pt")?; // any readable object
+let same = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?; // any readable object
 
 // Several objects, subdirectories, or appending — FileWriter.
 let prof = Hist::reg(5, 0.0, 5.0).name("prof").title("<pt> per region").profile();
@@ -134,7 +134,7 @@ FileWriter::create("out.root")
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
     .write(Compression::Zstd(5))?;
 let g = FileReader::open("out.root")?;
-let p = TProfile::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
+let p = Profile1D::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
 
 // Write a TTree, then read a branch back.
 let branches = vec![
@@ -152,10 +152,19 @@ Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
 let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.num_entries();
 ```
 
-Types that read a file end in `Reader` (`FileReader`, `TreeReader`,
-`NtupleReader`, `ChainReader`) and types that write one end in `Writer`
-(`FileWriter`, `TreeWriter`, `NtupleWriter`). ROOT's class names (`TFile`,
-`TTree`, `RNTuple`, `TChain`) are doc aliases for them.
+Types are named as Rust, not as C++: no `T` prefix. Readers end in `Reader`
+(`FileReader`, `TreeReader`, `NtupleReader`, `ChainReader`) and writers in
+`Writer` (`FileWriter`, `TreeWriter`, `NtupleWriter`); the rest is in-memory
+data named for what it is — `Hist1D`, `Profile1D`, `Graph`, `Func1D`, `Axis`,
+`Matrix`. **Every ROOT class name is a doc alias of the type that models it**,
+so searching the API docs for `TH1`, `TProfile`, `TGraph`, `TF1`, `TFile`,
+`TTree` or `TChain` still lands on the right page.
+
+None of this touches the file: a `Hist1D` still reads and writes a `TH1D`, and
+`class_name()` reports the ROOT class it came from. ROOT's own spelling
+survives in one place in the API — the dynamic `Value` tree, whose member keys
+(`fName`, `fBins`, …) are the file's own field names, read from its
+`TStreamerInfo`.
 
 The [`analysis` example](crates/oxiroot/examples/analysis.rs) is an end-to-end
 mini analysis — weighted/variable-bin histograms → scale/merge/normalize →
@@ -169,14 +178,14 @@ cargo run -p oxiroot --example analysis
 
 ### Histograms & profiles (`oxiroot::hist`)
 
-- **Read & write** `TH1`/`TH2`/`TH3` in every precision (`D`/`F`/`I`/`S`/`C`/`L`),
-  `TProfile`/`TProfile2D`/`TProfile3D`, `TEfficiency`, N-dimensional `THnSparse`,
-  and polygon-binned `TH2Poly` (arbitrary-shape bins, with a builder API).
+- **Read & write** `Hist1D`/`Hist2D`/`Hist3D` in every precision (`D`/`F`/`I`/`S`/`C`/`L`),
+  `Profile1D`/`Profile2D`/`Profile3D`, `Efficiency`, N-dimensional `SparseHist`,
+  and polygon-binned `PolyHist` (arbitrary-shape bins, with a builder API).
 - **One way per operation**, not a function per type. Write one object with
   `h.write_root(path, compression)?` and read one with
-  `TH1::read_root(&file, name)?` (the `WriteRoot`/`ReadRoot` traits; also
-  `h.to_root_bytes()` and `TH1::read_root_in(&file, dir, name)?` for a
-  subdirectory). A `TH1`/`TH2`/`TH3`'s on-disk bin content type is a typed
+  `Hist1D::read_root(&file, name)?` (the `WriteRoot`/`ReadRoot` traits; also
+  `h.to_root_bytes()` and `Hist1D::read_root_in(&file, dir, name)?` for a
+  subdirectory). A `Hist1D`/`Hist2D`/`Hist3D`'s on-disk bin content type is a typed
   `BinContentType` chosen by the builder's storage finalizer (`.float()` writes a `TH1F`; see
   below), or changed on a histogram you already built or read with
   `.with_bin_content_type(BinContentType::F32)`; `h.class_name()` reconstructs the ROOT
@@ -194,43 +203,43 @@ cargo run -p oxiroot --example analysis
   explicitly for a unit-weight histogram.
 - **The one way to build a histogram is the scikit-hep
   [`hist`](https://github.com/scikit-hep/hist)-style `Hist` builder**, mapped
-  onto ROOT so the result is an ordinary `TH1`/`TH2`/`TH3`.
+  onto ROOT so the result is an ordinary `TH1`/`TH2`/`TH3` on disk.
   `Hist::reg(50, 0.0, 100.0).name("pt").label("$p_T$ [GeV]").weight()` chains a
   regular (`reg`) axis; for **irregular bin edges** give them explicitly with
   `var` — `Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0]).double()` (a real ROOT
   variable-binned `TH1D`). Either kind chains a storage
   finalizer picks the ROOT class — `double()`→`TH1D`, `float()`→`TH1F`,
   `int64()`→`TH1L`, `int32()`→`TH1I`, `int16()`→`TH1S`, `int8()`→`TH1C`,
-  `weight()`→`TH1D`+`Sumw2`, `profile()`→`TProfile`. Chain `.reg`/`.var` again
-  for `TH2`/`TH3` (and `.profile()` on those for `TProfile2D`/`TProfile3D`).
+  `weight()`→`TH1D`+`Sumw2`, `profile()`→`Profile1D`. Chain `.reg`/`.var` again
+  for `Hist2D`/`Hist3D` (and `.profile()` on those for `Profile2D`/`Profile3D`).
   Axis labels (`label()` / `with_x_label()` / `x_label()`) live in ROOT's
   `fXaxis.fTitle` and round-trip. The `hist` accessor family is there too:
   `values()`, `variances()` (`Sumw2`), `errors()` (`√variance`), `counts()`
   (effective entries), `density()`, and `at(x)` (content at a coordinate); plus
   batch `fill_many()`, UHI-style `integral_range(a, b)` / `slice(a, b)`, and a
-  `Hist::reg(...).profile()` finalizer for a `TProfile` (`hist`'s `Mean` storage).
+  `Hist::reg(...).profile()` finalizer for a `Profile1D` (`hist`'s `Mean` storage).
 - Arithmetic with `Sumw2` error propagation: `scale` (also `h *= c` / `h * c`),
   `add` (the bin-by-bin merge used to combine job outputs), `multiply`, `divide`,
   `integral`. Bins read by cell index (`h[bin]`) or iterator (`for &c in &h`);
-  a shared `Histogram` trait (`contents`/`entries`/`sum`) abstracts over `TH1/2/3`,
+  a shared `Histogram` trait (`contents`/`entries`/`sum`) abstracts over `Hist1D/2/3`,
   and every type implements `Display` for a one-line summary.
 - Statistics & shape accessors: `mean`/`std_dev`, `maximum`/`minimum`/
   `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,
   `effective_entries`, `reset`, `interpolate`, `quantiles`; derived histograms
-  `rebin`/`rebin2d`/`rebin3d`, `cumulative`, projections (`TH2`→`TH1`;
-  `TH3`→`TH1`/`TH2`), and `profile_x`/`profile_y` — all carrying the statistical
+  `rebin`/`rebin2d`/`rebin3d`, `cumulative`, projections (`Hist2D`→`Hist1D`;
+  `Hist3D`→`Hist1D`/`Hist2D`), and `profile_x`/`profile_y` — all carrying the statistical
   moment sums so the results' `mean`/`std_dev` stay correct.
 - Sampling & smoothing: `get_random` / `fill_random` draw from a histogram's (or,
-  via `fill_random_fn` / `TF1::get_random`, a function's) distribution
+  via `fill_random_fn` / `Func1D::get_random`, a function's) distribution
   (inverse-CDF, ROOT's `GetRandom`/`FillRandom`); `smooth` is ROOT's `353QH`
   smoother. A small seedable `Random` means no `rand` dependency and reproducible
   draws.
 - Compatibility tests: `chi2_test`/`chi2_test_with` (Pearson χ², all three
   `UU`/`UW`/`WW` weighting schemes) and `kolmogorov_test`, returning ROOT-matched
-  p-values. Alphanumeric (labelled) axes round-trip through `TAxis::labels`
+  p-values. Alphanumeric (labelled) axes round-trip through `Axis::labels`
   (read **and** write, with `set_label`).
 - **Fitting** (the `fit` feature, on by default) — fit a parametric model to
-  **any 1-D data**: a histogram, a `TGraph`, or your own `(x, y, σ)` points. The
+  **any 1-D data**: a histogram, a `Graph`, or your own `(x, y, σ)` points. The
   standalone [`oxiroot::fit`](#fitting-oxirootfit-fit-feature) crate provides the
   `Model` (built-in `gaussian`/`exponential`/`polynomial`, the HEP peaks
   `crystal_ball`/`voigtian`/…, an arbitrary formula, or a custom closure) and a
@@ -240,7 +249,7 @@ cargo run -p oxiroot --example analysis
   `Loss` (`Huber`/`SoftL1`/`Cauchy`/`Arctan` — scipy's `least_squares` `loss`)
   down-weights outliers.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
-  `TThreadedObject<TH1>`: share `&hist`, call `hist.fill(x)` from any thread —
+  `TThreadedObject<Hist1D>`: share `&hist`, call `hist.fill(x)` from any thread —
   each thread transparently gets its own copy — then `hist.merge()` combines them
   exactly (contents + `Sumw2` + every moment sum), identical to a serial fill:
   ```rust
@@ -282,8 +291,8 @@ cargo run -p oxiroot --example analysis
 
 Fitting lives in its **own crate** (`oxiroot-fit`), so it works on **any 1-D
 data**, not just histograms. A dataset implements the `FitData` trait (yielding
-`(x, y, σ)` points) and the blanket `FitExt` gives it `.fit(&model)`. `TH1` and
-`TGraph` implement `FitData` out of the box, and `Points` (or your own `FitData`
+`(x, y, σ)` points) and the blanket `FitExt` gives it `.fit(&model)`. `Hist1D` and
+`Graph` implement `FitData` out of the box, and `Points` (or your own `FitData`
 impl) covers everything else. `fit` is χ² by default; `fit_opts` picks the cost
 (Neyman or Pearson chi-square, or a binned Poisson likelihood), a fit range, a
 robust loss, and opt-in MINOS errors. A `Model` is a built-in shape
@@ -338,8 +347,8 @@ let sig_bkg = Model::new(
 );
 let r = h.fit(&sig_bkg);
 
-// The SAME `Model` + `.fit()` works on a TGraph …
-let graph = TGraph::with_errors(x.clone(), y.clone(), ex, ey)?.named("g");
+// The SAME `Model` + `.fit()` works on a Graph …
+let graph = Graph::with_errors(x.clone(), y.clone(), ex, ey)?.named("g");
 let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
 
 // … and on raw points (a `Vec`/slice of `Point`, or your own `FitData` impl).
@@ -348,7 +357,7 @@ let peak = data.fit(&Model::gaussian("g").estimate_from(&data));
 ```
 
 A runnable worked example (fits a Z → μμ peak, then the same models to a
-`TGraph` and to raw points):
+`Graph` and to raw points):
 
 ```sh
 cargo run -p oxiroot --example fit
@@ -356,29 +365,29 @@ cargo run -p oxiroot --example fit
 
 ### Graphs (`oxiroot::hist`)
 
-A single `TGraph` type covers all three ROOT classes, selected by its `errors`
+A single `Graph` type covers all three ROOT classes, selected by its `errors`
 field: plain (`TGraph`), symmetric (`TGraphErrors`), or asymmetric
-(`TGraphAsymmErrors`); the class is detected on read by `TGraph::read_root`.
-`TGraph2D` (3-D scatter) and `TGraphMultiErrors` (several y-error layers) are
+(`TGraphAsymmErrors`); the class is detected on read by `Graph::read_root`.
+`Graph2D` (3-D scatter) and `MultiErrorGraph` (several y-error layers) are
 separate types with the same read/write traits.
 
 ```rust
 use oxiroot::prelude::*;
-let g = TGraph::with_errors(
+let g = Graph::with_errors(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],    // ex, ey
 )?.named("res").titled("resolution");
 g.write_root("graph.root", Compression::None)?;             // WriteRoot, like any object
-let same = TGraph::read_root(&FileReader::open("graph.root")?, "res")?;
+let same = Graph::read_root(&FileReader::open("graph.root")?, "res")?;
 ```
 
 A graph also round-trips ROOT's display frame (`fHistogram`) and the fitted
 functions ROOT stores in `fFunctions` — read back as `GraphFunction`s (faithful
-`TF1`/`TFormula`) and re-evaluable in ROOT:
+`Func1D`/`TFormula`) and re-evaluable in ROOT:
 
 ```rust
 use oxiroot::prelude::*;
-let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
+let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
     .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
 g.write_root("gfit.root", Compression::None)?;
@@ -386,20 +395,20 @@ g.write_root("gfit.root", Compression::None)?;
 
 ### Functions (`oxiroot::hist`)
 
-- **Standalone `TF1`/`TF2`/`TF3` keys** — real ROOT function objects (each
+- **Standalone `Func1D`/`Func2D`/`Func3D` keys** — real ROOT function objects (each
   embedding a `TFormula`), built from a formula and a range and read/written like
-  any other object. `TF1::new("f", "[0]*sin([1]*x)", 0.0, 6.3)?.with_params(...)`.
+  any other object. `Func1D::new("f", "[0]*sin([1]*x)", 0.0, 6.3)?.with_params(...)`.
 - **A real `TFormula` expression engine** ([`oxiroot-formula`], a dependency-free
   crate): a tokenizer + Pratt parser + AST evaluator for arbitrary formulas —
   operators `+ - * / ^`, the usual functions (`sin`/`exp`/`log`/`sqrt`/`pow`/…,
   with or without a `TMath::` prefix), comparisons/`?:`, and ROOT's `gaus`/`expo`/
   `pol0..N` shortcuts.
 - **`eval` / `integral` / `derivative`** in pure Rust — adaptive Gauss–Kronrod
-  quadrature and a Richardson central derivative, matching `TF1::Integral` /
-  `TF1::Derivative`.
+  quadrature and a Richardson central derivative, matching `Func1D::Integral` /
+  `Func1D::Derivative`.
 - The same engine powers `Model::from_formula`, so any formula is fittable, and
-  `TF1::to_model()` bridges a function to a fit. oxiroot embeds the
-  `TF1`/`TF2`/`TF3`/`TFormula` `TStreamerInfo`, so **ROOT C++ and uproot both read
+  `Func1D::to_model()` bridges a function to a fit. oxiroot embeds the
+  `Func1D`/`Func2D`/`Func3D`/`TFormula` `TStreamerInfo`, so **ROOT C++ and uproot both read
   and re-evaluate** all three.
 - See the [`functions` example](crates/oxiroot/examples/functions.rs).
 
@@ -408,24 +417,24 @@ g.write_root("gfit.root", Compression::None)?;
 ### Persistable objects (`oxiroot::hist`)
 
 The two small classes ROOT constantly stashes alongside histograms — a labelled
-string (`TObjString`) and a named scalar (`TParameter<T>`, for a luminosity, an
+string (`ObjString`) and a named scalar (`Parameter<T>`, for a luminosity, an
 event count, a cut threshold) — read and write byte-for-byte as ROOT serializes
 them, through the same `WriteRoot`/`ReadRoot` traits as everything else.
 
 ```rust
 use oxiroot::prelude::*;
 FileWriter::create("meta.root")
-    .add(&TObjString::new("v2.1").named("version"))
-    .add(&TParameter::f64("lumi", 137.5))      // TParameter<double>
-    .add(&TParameter::i64("nevents", 9_000_000_000))  // <Long64_t>
+    .add(&ObjString::new("v2.1").named("version"))
+    .add(&Parameter::f64("lumi", 137.5))      // Parameter<double>
+    .add(&Parameter::i64("nevents", 9_000_000_000))  // <Long64_t>
     .write(Compression::None)?;
 
 let f = FileReader::open("meta.root")?;
-assert_eq!(TObjString::read_root(&f, "version")?.value(), "v2.1");
-assert_eq!(TParameter::read_root(&f, "lumi")?.value().as_f64(), 137.5);
+assert_eq!(ObjString::read_root(&f, "version")?.value(), "v2.1");
+assert_eq!(Parameter::read_root(&f, "lumi")?.value().as_f64(), 137.5);
 ```
 
-`TParameter` comes in `f64`/`f32`/`i32`/`i64` flavours (the `double`/`float`/
+`Parameter` comes in `f64`/`f32`/`i32`/`i64` flavours (the `double`/`float`/
 `int`/`long long` instantiations). Both ROOT C++ and uproot read them from
 oxiroot's files: the writer embeds the `TStreamerInfo` for whichever
 `TParameter<…>`/`TObjString` classes a file contains (merged into the histogram
@@ -433,8 +442,8 @@ streamers), so uproot can model the templated `TParameter` class.
 
 ### Collections (`oxiroot::hist`)
 
-`THStack` (a stack of histograms) and `TMultiGraph` (several graphs in one frame)
-hold their members in a `TList`. Build them from existing `TH1`/`TGraph`s; on
+`HistStack` (a stack of histograms) and `GraphStack` (several graphs in one frame)
+hold their members in a `TList`. Build them from existing `Hist1D`/`Graph`s; on
 read they hand the members back. The members are serialized through ROOT's
 object protocol, so ROOT C++ and uproot read what oxiroot writes, and oxiroot
 reads ROOT's files (including the class back-references ROOT emits for repeated
@@ -442,22 +451,22 @@ member types).
 
 ```rust
 use oxiroot::prelude::*;
-let stack = THStack::new().named("hs").titled("backgrounds")
+let stack = HistStack::new().named("hs").titled("backgrounds")
     .add(Hist::reg(50, 0.0, 100.0).double().named("zjets"))
     .add(Hist::reg(50, 0.0, 100.0).double().named("ttbar"));
-let graphs = TMultiGraph::new().named("mg")
-    .add(TGraph::new(vec![0.0, 1.0], vec![1.0, 2.0])?.named("obs"))
-    .add(TGraph::new(vec![0.0, 1.0], vec![2.0, 1.0])?.named("exp"));
+let graphs = GraphStack::new().named("mg")
+    .add(Graph::new(vec![0.0, 1.0], vec![1.0, 2.0])?.named("obs"))
+    .add(Graph::new(vec![0.0, 1.0], vec![2.0, 1.0])?.named("exp"));
 FileWriter::create("plots.root").add(&stack).add(&graphs).write(Compression::None)?;
 
 let f = FileReader::open("plots.root")?;
-assert_eq!(THStack::read_root(&f, "hs")?.hists().len(), 2);
-assert_eq!(TMultiGraph::read_root(&f, "mg")?.graphs()[0].name, "obs");
+assert_eq!(HistStack::read_root(&f, "hs")?.hists().len(), 2);
+assert_eq!(GraphStack::read_root(&f, "mg")?.graphs()[0].name, "obs");
 ```
 
 ### Linear algebra (`oxiroot::linalg`)
 
-`TVectorD` (a vector), `TMatrixD` (a dense matrix), and `TMatrixDSym` (a symmetric
+`Vector` (a vector), `Matrix` (a dense matrix), and `SymMatrix` (a symmetric
 matrix — the shape a fit's covariance takes) read and write byte-for-byte as
 ROOT's `TVectorT<double>` / `TMatrixT<double>` / `TMatrixTSym<double>`. The
 symmetric matrix is stored as the full matrix in memory but, like ROOT, written
@@ -468,13 +477,13 @@ lower one, so the matrix reads back exactly as built. The constructors return
 ```rust
 use oxiroot::prelude::*;
 FileWriter::create("fit.root")
-    .add(&TVectorD::new(vec![91.2, 2.1]).named("pars"))
-    .add(&TMatrixDSym::new(2, vec![0.04, 0.01, 0.01, 0.09])?.named("cov")) // covariance
+    .add(&Vector::new(vec![91.2, 2.1]).named("pars"))
+    .add(&SymMatrix::new(2, vec![0.04, 0.01, 0.01, 0.09])?.named("cov")) // covariance
     .write(Compression::None)?;
 
 let f = FileReader::open("fit.root")?;
-assert_eq!(TVectorD::read_root(&f, "pars")?.elements(), &[91.2, 2.1]);
-let cov = TMatrixDSym::read_root(&f, "cov")?;
+assert_eq!(Vector::read_root(&f, "pars")?.elements(), &[91.2, 2.1]);
+let cov = SymMatrix::read_root(&f, "cov")?;
 assert_eq!(cov.get(0, 1), cov.get(1, 0)); // symmetric
 ```
 
@@ -512,43 +521,43 @@ accessors like `literals::proton()`, `literals::electron()`, `literals::jpsi()`.
 the way ROOT groups, say, a set of systematic-variation histograms. Add any
 writable objects; on read, pull the members back out by type with
 `items::<T>()`. The members' streamer info is embedded automatically, so a
-`TParameter` or matrix inside the list is readable by uproot too.
+`Parameter` or matrix inside the list is readable by uproot too.
 
 ```rust
 use oxiroot::prelude::*;
 let list = ObjList::list().named("systematics")
     .add(&Hist::reg(50, 0.0, 100.0).double().named("nominal"))
-    .add(&TObjString::new("2024-data").named("tag"))
-    .add(&TParameter::f64("lumi", 137.5));
+    .add(&ObjString::new("2024-data").named("tag"))
+    .add(&Parameter::f64("lumi", 137.5));
 FileWriter::create("syst.root").add(&list).write(Compression::None)?;
 
 let f = FileReader::open("syst.root")?;
 let list = ObjList::read_root(&f, "systematics")?;
 assert_eq!(list.len(), 3);
-assert_eq!(list.items::<TH1>()?.len(), 1);
-assert_eq!(list.items::<TParameter>()?[0].value().as_f64(), 137.5);
+assert_eq!(list.items::<Hist1D>()?.len(), 1);
+assert_eq!(list.items::<Parameter>()?[0].value().as_f64(), 137.5);
 ```
 
 `ObjList::array()` writes a `TObjArray` instead. `items::<T>()` covers the
-histogram family, `TGraph`, `TObjString`, `TParameter`, and the linear-algebra
+histogram family, `Graph`, `ObjString`, `Parameter`, and the linear-algebra
 types; `class_names()` lists every member.
 
-`TMap` is the keyed variant — ROOT's object → object map, the way ROOT stores
+`ObjMap` is the keyed variant — ROOT's object → object map, the way ROOT stores
 string-keyed metadata. `insert(key, value)` takes a string key; look values up by
 key with `get::<T>(key)`:
 
 ```rust
 use oxiroot::prelude::*;
-let meta = TMap::new().named("meta")
-    .insert("version", &TObjString::new("2.1"))
-    .insert("lumi", &TParameter::f64("lumi", 137.5));
+let meta = ObjMap::new().named("meta")
+    .insert("version", &ObjString::new("2.1"))
+    .insert("lumi", &Parameter::f64("lumi", 137.5));
 FileWriter::create("meta.root").add(&meta).write(Compression::None)?;
 
-let meta = TMap::read_root(&FileReader::open("meta.root")?, "meta")?;
-assert_eq!(meta.get::<TParameter>("lumi").unwrap()?.value().as_f64(), 137.5);
+let meta = ObjMap::read_root(&FileReader::open("meta.root")?, "meta")?;
+assert_eq!(meta.get::<Parameter>("lumi").unwrap()?.value().as_f64(), 137.5);
 ```
 
-> **uproot caveat:** uproot has no `TMap` model, so a `TMap` is not readable
+> **uproot caveat:** uproot has no `TMap` model, so an `ObjMap` is not readable
 > there — a limitation that ROOT's own `TMap`s share. ROOT C++ reads what oxiroot
 > writes, and oxiroot reads ROOT's `TMap`s.
 
@@ -568,7 +577,7 @@ labels are typeset as real LaTeX math by the pure-Rust
   <img src="docs/images/plot-mplhep.png" alt="The same histogram in the mplhep style with a bold CMS Preliminary label and luminosity/energy" width="46%">
 </p>
 <p align="center">
-  <img src="docs/images/plot-heatmap.png" alt="2-D TH2 rendered as a viridis heatmap with a colorbar" width="46%">
+  <img src="docs/images/plot-heatmap.png" alt="2-D Hist2D rendered as a viridis heatmap with a colorbar" width="46%">
   <img src="docs/images/plot-ratio.png" alt="A main panel over a data/MC ratio panel sharing the x-axis" width="46%">
 </p>
 
@@ -581,14 +590,14 @@ use oxiroot::prelude::*; // the `plot` feature is on by default
 // A filled MC histogram with "data" points overlaid + a legend.
 let mut ax = Axes::new();
 ax.hist_with(&mc, HistOpts::new().histtype(HistType::Fill).label("MC"));   // mplhep staircase
-ax.errorbar_with(&data, ErrorbarOpts::new().color(Color::BLACK).label("data")); // a TGraph
+ax.errorbar_with(&data, ErrorbarOpts::new().color(Color::BLACK).label("data")); // a Graph
 ax.xlabel("$m_{\\mu\\mu}$ [GeV]");       // LaTeX math axis label
 ax.ylabel("Events / 2 GeV");
 ax.legend();
 ax.save("mass.png")?;                    // format chosen by extension
 ax.save("mass.svg")?;
 
-// A TH2 as a viridis heatmap with a colorbar.
+// A Hist2D as a viridis heatmap with a colorbar.
 let mut ax2 = Axes::new();
 ax2.hist2d_with(&th2, Hist2dOpts::new().label("entries"));
 ax2.save("heatmap.svg")?;
@@ -596,9 +605,9 @@ ax2.save("heatmap.svg")?;
 ```
 
 - **`Axes`** mirrors matplotlib (with Rust-idiomatic names): `hist`/`hist_with`
-  (`TH1`, mplhep step/fill/band/errorbar staircase with `√N`/Sumw2 error bars),
-  `errorbar`/`errorbar_with` (`TGraph`, all three error variants), `profile`
-  (`TProfile`), `hist2d`/`hist2d_with` (`TH2` color mesh with a colorbar and the
+  (`Hist1D`, mplhep step/fill/band/errorbar staircase with `√N`/Sumw2 error bars),
+  `errorbar`/`errorbar_with` (`Graph`, all three error variants), `profile`
+  (`Profile1D`), `hist2d`/`hist2d_with` (`Hist2D` color mesh with a colorbar and the
   real matplotlib `viridis`/`plasma` colormaps; `Hist2dOpts::log()`/`.norm(Norm::…)`
   switches to a log / symlog color scale with a decade colorbar, like matplotlib's
   `LogNorm`/`SymLogNorm`), `plot`, `function` (overlay any
@@ -678,12 +687,12 @@ ax2.save("heatmap.svg")?;
   main tree, the friend entry carrying the same `(major, minor)` key.
 - `aliases()` / `alias(name)` return the `(name, expression)` shorthands defined
   with `TTree::SetAlias` (read from `fAliases`); oxiroot reads the expression
-  strings but does not evaluate them. `TEntryList::open(file, name)` reads a
+  strings but does not evaluate them. `EntryList::open(file, name)` reads a
   saved entry selection (a standalone key) into the ascending list of selected
   entry numbers, with `entries()` / `contains(entry)`.
 - Old unsplit object branches (`TBranchObject`, the pre-`TBranchElement` way of
   storing a whole object per entry) are read by synthesizing one `branch.member`
-  column per basic/string member of the object class — e.g. a branch of `TNamed`
+  column per basic/string member of the object class — e.g. a branch of `Named`
   reads as `branch.fName` / `branch.fTitle`.
 - The reader is **streamer-info-driven**: it parses `TTree`/`TBranch`/
   `TBranchElement` by walking the member list in the file's own `TStreamerInfo`
@@ -739,7 +748,7 @@ ax2.save("heatmap.svg")?;
 - **A pure-Rust [`hadd`](https://root.cern/doc/master/classTFileMerger.html)** —
   `merge_files("all.root", &["run1.root", "run2.root"], Compression::Zstd(5))?`
   combines several ROOT files the way ROOT's most-used command-line tool does:
-  **`TH1`/`TH2`/`TH3` and the 1-, 2- and 3-D profiles summed** bin-by-bin (the
+  **`Hist1D`/`Hist2D`/`Hist3D` and the 1-, 2- and 3-D profiles summed** bin-by-bin (the
   exact `add` reduction — contents, `Sumw2`, entries, moments), and **`TTree` /
   RNTuple entries concatenated**. Other supported objects (graphs, efficiencies,
   functions, strings, matrices, …) are copied from the first file; unknown
@@ -771,7 +780,7 @@ ax2.save("heatmap.svg")?;
   (`double`, `double[3]`, `double[]`, `char*`; unreadable branches flagged), or
   an RNTuple's fields with C++ type names.
 - `oxroot dump file.root:obj [-n N] [-b a,b]` — the first *N* `TTree`/RNTuple
-  entries as a column table, a `TH1`'s bins + stats, a `TGraph`'s points, or a
+  entries as a column table, a `Hist1D`'s bins + stats, a `Graph`'s points, or a
   scalar value.
 - `oxroot stat file.root` — size, ROOT version, compression, key count, and the
   embedded streamer classes.
@@ -836,19 +845,19 @@ on, so nothing extra is needed.
 | [`lineshapes`](crates/oxiroot/examples/lineshapes.rs) | HEP peak shapes (Crystal Ball, Voigt, Breit–Wigner, Novosibirsk, ARGUS…) + a Crystal Ball fit |
 | [`particles`](crates/oxiroot/examples/particles.rs) | PDG particle data — decode IDs (`PdgId`) and look up masses/widths/lifetimes (`Particle`) |
 | **Fitting** — `oxiroot::fit` | |
-| [`fit`](crates/oxiroot/examples/fit.rs) | Fit a Gaussian peak (χ² *and* likelihood), a peak-on-background, a `TGraph`, and raw points — one API |
+| [`fit`](crates/oxiroot/examples/fit.rs) | Fit a Gaussian peak (χ² *and* likelihood), a peak-on-background, a `Graph`, and raw points — one API |
 | [`robust_fit`](crates/oxiroot/examples/robust_fit.rs) | Outlier-resistant losses (`SoftL1`/`Huber`/`Cauchy`) versus ordinary least squares |
 | **Histograms & profiles** | |
-| [`profile`](crates/oxiroot/examples/profile.rs) | `TProfile` / `TProfile2D` — the mean of *y* in slices of *x* |
-| [`efficiency`](crates/oxiroot/examples/efficiency.rs) | `TEfficiency` turn-on curve with a Clopper–Pearson interval |
-| [`sparse`](crates/oxiroot/examples/sparse.rs) | `THnSparse` — a memory-efficient N-dimensional histogram |
+| [`profile`](crates/oxiroot/examples/profile.rs) | `Profile1D` / `Profile2D` — the mean of *y* in slices of *x* |
+| [`efficiency`](crates/oxiroot/examples/efficiency.rs) | `Efficiency` turn-on curve with a Clopper–Pearson interval |
+| [`sparse`](crates/oxiroot/examples/sparse.rs) | `SparseHist` — a memory-efficient N-dimensional histogram |
 | [`threaded`](crates/oxiroot/examples/threaded.rs) | Multithreaded fill with `ThreadedHist` (ROOT's `TThreadedObject` analog) |
 | **Graphs & functions** | |
-| [`graphs`](crates/oxiroot/examples/graphs.rs) | `TGraph` / `TGraphErrors` / `TGraphAsymmErrors` / `TGraph2D` / `TMultiGraph` |
-| [`functions`](crates/oxiroot/examples/functions.rs) | `TF1`/`TF2`/`TF3` from formulas: `eval` / `integral` / `derivative` + round-trip |
+| [`graphs`](crates/oxiroot/examples/graphs.rs) | `Graph` / `TGraphErrors` / `TGraphAsymmErrors` / `Graph2D` / `GraphStack` |
+| [`functions`](crates/oxiroot/examples/functions.rs) | `Func1D`/`Func2D`/`Func3D` from formulas: `eval` / `integral` / `derivative` + round-trip |
 | **Objects & linear algebra** | |
-| [`objects`](crates/oxiroot/examples/objects.rs) | Store run provenance (`TObjString` / `TParameter` / `TList`) next to your data |
-| [`linalg`](crates/oxiroot/examples/linalg.rs) | `TVectorD` / `TMatrixD` / `TMatrixDSym` round-trip (a fit-covariance shape) |
+| [`objects`](crates/oxiroot/examples/objects.rs) | Store run provenance (`ObjString` / `Parameter` / `TList`) next to your data |
+| [`linalg`](crates/oxiroot/examples/linalg.rs) | `Vector` / `Matrix` / `SymMatrix` round-trip (a fit-covariance shape) |
 | **I/O & formats** | |
 | [`tree`](crates/oxiroot/examples/tree.rs) | `TTree` write + read, introspection, entry ranges, streaming `TreeWriter` |
 | [`rntuple`](crates/oxiroot/examples/rntuple.rs) | A basic flat RNTuple write/read, plus several RNTuples in one file |
@@ -865,10 +874,10 @@ on, so nothing extra is needed.
 | `oxiroot-io-core` | `TFile` container, buffer primitives, streamer + object-reference engine, the `WriteRoot`/`ReadRoot` object framework, `Error` |
 | `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
-| `oxiroot-hist` | Histograms, profiles, `TEfficiency`/`THnSparse`/`TH2Poly`, and the `TGraph` family |
-| `oxiroot-hist-func` | `TF1`/`TF2`/`TF3` parametric functions, with ROOT read/write |
+| `oxiroot-hist` | Histograms, profiles, `Efficiency`/`SparseHist`/`PolyHist`, and the `Graph` family |
+| `oxiroot-hist-func` | `Func1D`/`Func2D`/`Func3D` parametric functions, with ROOT read/write |
 | `oxiroot-formula` | Dependency-free `TFormula` expression engine behind the functions and formula fits |
-| `oxiroot-linalg` | ROOT linear-algebra objects — `TVectorD`/`TMatrixD`/`TMatrixDSym` |
+| `oxiroot-linalg` | ROOT linear-algebra objects — `Vector`/`Matrix`/`SymMatrix` (`TVectorD`/`TMatrixD`/`TMatrixDSym`) |
 | `oxiroot-tree` | Classic `TTree` read/write |
 | `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
 | `oxiroot-stat` | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) |
@@ -889,9 +898,9 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 |---------|:---:|--------|
 | `mmap` | ✅ | Memory-mapped read path (`FileReader::open_mmap`) for large files; adds `memmap2`. |
 | `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TreeReader::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
-| `fit` | ✅ | Curve fitting (`oxiroot::fit`, `TH1::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
+| `fit` | ✅ | Curve fitting (`oxiroot::fit`, `Hist1D::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
-| `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `TH1`/`TH2`/`TGraph`/`TProfile`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
+| `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `Hist1D`/`Hist2D`/`Graph`/`Profile1D`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
 | `http` | — | Remote reads over HTTP(S) byte-range requests (`FileReader::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
 | `xrootd` | — | Remote reads over the XRootD `root://` protocol (`FileReader::open_url`), with `unix` auth for public data (e.g. `root://eospublic.cern.ch`). Pure `std::net` — adds no dependencies. |
 
@@ -926,7 +935,7 @@ bash scripts/interop_local.sh --big           # also exercise the >2 GiB (64-bit
 
 It exercises oxiroot's full read+write surface against **both** ROOT C++ and
 uproot, in both directions: the lean canonical round-trip, a manifest-driven
-**matrix** (every histogram precision×dimension, `TProfile`, Sumw2, variable
+**matrix** (every histogram precision×dimension, `Profile1D`, Sumw2, variable
 bins, multi-object/subdirs/append, every RNTuple scalar+vector type +
 multi-cluster, every `TTree` branch kind + scalar width + split
 `std::vector<Struct>`), `cargo test --workspace`, and a drift check that

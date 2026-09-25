@@ -13,7 +13,7 @@
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
 use oxiroot_io_core::{
-    decompress_payload, find_key, Error, FileReader, Result, StreamerElement, TKey,
+    decompress_payload, find_key, Error, FileReader, Key, Result, StreamerElement,
 };
 
 use crate::value::{BranchValues, Jagged, LeafType};
@@ -274,7 +274,7 @@ impl TreeReader {
     }
 
     /// Decode a `TTree` (or `TNtuple`/`TNtupleD`) from an already-located key.
-    fn open_from_key(file: &FileReader, key: &TKey) -> Result<TreeReader> {
+    fn open_from_key(file: &FileReader, key: &Key) -> Result<TreeReader> {
         // `TNtuple` / `TNtupleD` are `TTree` subclasses (a `TTree` base wrapped in
         // one extra header plus a trailing `Int_t fNvar`); read them as trees too.
         if !matches!(key.class_name.as_str(), "TTree" | "TNtuple" | "TNtupleD") {

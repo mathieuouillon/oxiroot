@@ -2,13 +2,13 @@
 //!
 //! The fitting engine lives in the standalone [`oxiroot_fit`] crate, which
 //! works on any 1-D data. This module just teaches it to read a
-//! [`TH1`] and a [`TGraph`] by implementing [`FitData`], so the `.fit(...)`
+//! [`Hist1D`] and a [`Graph`] by implementing [`FitData`], so the `.fit(...)`
 //! methods (from [`FitExt`]) work directly:
 //!
 //! ```ignore
 //! use oxiroot_hist::{Model, FitExt};
 //! let model = Model::gaussian("g").estimate_from(&h);
-//! let fit = h.fit(&model); // or g.fit(&model) for a TGraph
+//! let fit = h.fit(&model); // or g.fit(&model) for a Graph
 //! println!("mean = {} ± {}", fit.params[1], fit.errors[1]);
 //! ```
 //!
@@ -19,13 +19,13 @@ pub use oxiroot_fit::{
     FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points,
 };
 
-use crate::graph::{GraphErrors, TGraph};
-use crate::th1::TH1;
+use crate::graph::{Graph, GraphErrors};
+use crate::hist1d::Hist1D;
 
 /// Each in-range bin becomes a point `(center, content, error)`. An empty bin
 /// has error 0, so Neyman chi-square drops it (as ROOT does); the other costs
 /// keep it.
-impl FitData for TH1 {
+impl FitData for Hist1D {
     fn points(&self) -> Vec<Point> {
         let n = self.xaxis.nbins.max(0) as usize;
         (1..=n)
@@ -40,7 +40,7 @@ impl FitData for TH1 {
 /// Each graph point becomes `(x, y, σ)`, with `σ` the y-error bar: the symmetric
 /// `ey`, the mean of the asymmetric `(ey_low, ey_high)`, or `1.0` (an unweighted
 /// least-squares fit) when the graph carries no errors.
-impl FitData for TGraph {
+impl FitData for Graph {
     fn points(&self) -> Vec<Point> {
         self.x
             .iter()

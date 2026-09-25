@@ -1,7 +1,7 @@
 # Graphs
 
 oxiroot reads and writes ROOT's graph family — `TGraph`, `TGraphErrors`, and
-`TGraphAsymmErrors` — through a single Rust [`TGraph`](../api/oxiroot/index.html)
+`TGraphAsymmErrors` — through a single Rust [`Graph`](../api/oxiroot/index.html)
 type. This page covers constructing the three kinds, naming and titling them,
 writing them to a file, and reading them back.
 
@@ -9,26 +9,26 @@ writing them to a file, and reading them back.
 
 A graph is an (x, y) scatter of points. ROOT splits it across three persistable
 classes depending on the error bars attached; oxiroot collapses all three into
-one `TGraph` whose `errors` field selects the concrete class:
+one `Graph` whose `errors` field selects the concrete class:
 
 | Rust value | ROOT class | Error bars |
 | --- | --- | --- |
-| `GraphErrors::None` | `TGraph` | none |
+| `GraphErrors::None` | `Graph` | none |
 | `GraphErrors::Symmetric { ex, ey }` | `TGraphErrors` | symmetric x/y |
 | `GraphErrors::Asymmetric { ex_low, ex_high, ey_low, ey_high }` | `TGraphAsymmErrors` | independent low/high per axis |
 
-The class chosen for a given graph is reported by `TGraph::class_name()`, and it
+The class chosen for a given graph is reported by `Graph::class_name()`, and it
 is detected automatically on read.
 
 ```rust
 use oxiroot::prelude::*;
 
-let g = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?;
-assert_eq!(g.class_name(), "TGraph");
+let g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?;
+assert_eq!(g.class_name(), "Graph");
 assert_eq!(g.len(), 3);
 ```
 
-`TGraph` is a plain struct: `name`, `title`, `x`, `y`, and `errors` are all
+`Graph` is a plain struct: `name`, `title`, `x`, `y`, and `errors` are all
 public fields, so the `errors` enum can be inspected or matched directly after a
 read.
 
@@ -41,14 +41,14 @@ paired by index, so they must all have the same length; a constructor returns
 ```rust
 use oxiroot::prelude::*;
 
-// Plain TGraph.
-let plain = TGraph::new(
+// Plain Graph.
+let plain = Graph::new(
     vec![1.0, 2.0, 3.0],
     vec![10.0, 20.0, 30.0],
 )?;
 
 // TGraphErrors: symmetric x and y error bars.
-let sym = TGraph::with_errors(
+let sym = Graph::with_errors(
     vec![1.0, 2.0, 3.0],   // x
     vec![10.0, 20.0, 30.0], // y
     vec![0.1, 0.1, 0.1],    // ex
@@ -56,7 +56,7 @@ let sym = TGraph::with_errors(
 )?;
 
 // TGraphAsymmErrors: independent low/high errors on each axis.
-let asym = TGraph::with_asymm_errors(
+let asym = Graph::with_asymm_errors(
     vec![1.0, 2.0, 3.0],     // x
     vec![10.0, 20.0, 30.0],  // y
     vec![0.1, 0.1, 0.1],     // ex_low
@@ -75,7 +75,7 @@ Set the name and title with the chainable `named` / `titled` builders:
 ```rust
 use oxiroot::prelude::*;
 
-let g = TGraph::with_errors(
+let g = Graph::with_errors(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
 )?
@@ -90,7 +90,7 @@ let g = TGraph::with_errors(
 
 ## Writing
 
-`TGraph` implements the [`WriteRoot`](../api/oxiroot/index.html) trait, the one
+`Graph` implements the [`WriteRoot`](../api/oxiroot/index.html) trait, the one
 way to write any single writable object. `write_root` writes the graph as the
 sole content of a new file; `to_root_bytes` returns just the streamed object
 payload (no file framing).
@@ -98,7 +98,7 @@ payload (no file framing).
 ```rust
 use oxiroot::prelude::*;
 
-let g = TGraph::with_errors(
+let g = Graph::with_errors(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
 )?
@@ -115,7 +115,7 @@ to use subdirectories, use [`FileWriter`](../api/oxiroot/index.html).
 ```rust
 use oxiroot::prelude::*;
 
-let g = TGraph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("g");
+let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("g");
 let h = Hist::reg(10, 0.0, 1.0).double().named("h");
 
 FileWriter::create("out.root")
@@ -131,8 +131,8 @@ workflow.
 
 ## Reading
 
-`TGraph` implements the [`ReadRoot`](../api/oxiroot/index.html) trait. The class
-(`TGraph` / `TGraphErrors` / `TGraphAsymmErrors`) is detected from the file, and
+`Graph` implements the [`ReadRoot`](../api/oxiroot/index.html) trait. The class
+(`Graph` / `TGraphErrors` / `TGraphAsymmErrors`) is detected from the file, and
 the matching `errors` variant is filled in:
 
 ```rust
@@ -140,7 +140,7 @@ use oxiroot::prelude::*;
 use oxiroot::FileReader;
 
 let f = FileReader::open("graph.root")?;
-let g = TGraph::read_root(&f, "resolution")?;
+let g = Graph::read_root(&f, "resolution")?;
 
 println!("{} points, class {}", g.len(), g.class_name());
 match &g.errors {
@@ -161,13 +161,13 @@ use oxiroot::prelude::*;
 use oxiroot::FileReader;
 
 let f = FileReader::open("out.root")?;
-let g = TGraph::read_root_in(&f, "by_region", "g")?;
+let g = Graph::read_root_in(&f, "by_region", "g")?;
 ```
 
 ## Fitting a graph
 
-Under the `fit` feature, `TGraph` implements `FitData`, so the same `Model` and
-`fit` method that work on a `TH1` also work on a graph. Each point becomes
+Under the `fit` feature, `Graph` implements `FitData`, so the same `Model` and
+`fit` method that work on a `Hist1D` also work on a graph. Each point becomes
 `(x, y, σ)`, where σ is the y-error bar: the symmetric `ey`, the mean of the
 asymmetric `(ey_low, ey_high)`, or `1.0` (an unweighted least-squares fit) when
 the graph carries no errors.
@@ -175,7 +175,7 @@ the graph carries no errors.
 ```rust
 use oxiroot::prelude::*;
 
-let graph = TGraph::with_errors(
+let graph = Graph::with_errors(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
     vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
 )?
@@ -193,8 +193,8 @@ let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
 
 When ROOT fits a graph, it stores the resulting `TF1` in the graph's `fFunctions`
 list so the curve travels with the points. oxiroot reads those functions into
-`TGraph::functions` (a `Vec<GraphFunction>`) and writes them back as faithful
-`TF1`/`TFormula` objects — the file reads in ROOT and uproot, and ROOT can
+`Graph::functions` (a `Vec<GraphFunction>`) and writes them back as faithful
+`Func1D`/`TFormula` objects — the file reads in ROOT and uproot, and ROOT can
 re-evaluate the formula:
 
 ```rust
@@ -202,7 +202,7 @@ use oxiroot::prelude::*;
 use oxiroot::FileReader;
 
 let f = FileReader::open("graph_function.root")?;
-let g = TGraph::read_root(&f, "gfit")?;
+let g = Graph::read_root(&f, "gfit")?;
 
 for fun in &g.functions {
     // `formula` is in ROOT's `[pN]` form; `params` are the current values.
@@ -211,7 +211,7 @@ for fun in &g.functions {
 ```
 
 Build one from scratch with `GraphFunction::new(name, formula, params, xmin, xmax)`
-(or convert a `TF1` with `to_graph_function()`, see
+(or convert a `Func1D` with `to_graph_function()`, see
 [Functions](functions.md#read-and-write)) and attach it with `with_function`.
 The formula may use either `[0]`/`[1]` or `[p0]`/`[p1]` to reference parameters;
 it is stored in ROOT's `[pN]` form.
@@ -219,7 +219,7 @@ it is stored in ROOT's `[pN]` form.
 ```rust
 use oxiroot::prelude::*;
 
-let g = TGraph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
+let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
     .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
 
@@ -232,19 +232,19 @@ g.write_root("graph_function.root", Compression::None)?;
 fit quality (`chi2`/`ndf`) — all of which round-trip.
 
 !!! note
-    Only formula-based `TF1`s are supported. ROOT objects of other classes in the
+    Only formula-based `Func1D`s are supported. ROOT objects of other classes in the
     `fFunctions` list (e.g. a `TPaveStats`) are skipped on read.
 
-## 3-D graphs: `TGraph2D`
+## 3-D graphs: `Graph2D`
 
-A `TGraph2D` is a set of `(x, y, z)` points — a 3-D scatter or the input to a
+A `Graph2D` is a set of `(x, y, z)` points — a 3-D scatter or the input to a
 surface. It is a separate Rust type with the same read/write traits:
 
 ```rust
 use oxiroot::prelude::*;
 use oxiroot::FileReader;
 
-let g = TGraph2D::new(
+let g = Graph2D::new(
     vec![1.0, 2.0, 3.0],       // x
     vec![10.0, 20.0, 30.0],    // y
     vec![100.0, 200.0, 300.0], // z
@@ -254,7 +254,7 @@ let g = TGraph2D::new(
 
 g.write_root("g2d.root", Compression::Zstd(5))?;
 
-let back = TGraph2D::read_root(&FileReader::open("g2d.root")?, "surface")?;
+let back = Graph2D::read_root(&FileReader::open("g2d.root")?, "surface")?;
 assert_eq!(back.len(), 3);
 ```
 
@@ -263,9 +263,9 @@ parameters (the binning of the lazily-built `fHistogram`, the Delaunay iteration
 count) are written at ROOT's defaults, and the `fHistogram` frame itself is
 transient in ROOT and not persisted.
 
-## Multiple error sources: `TGraphMultiErrors`
+## Multiple error sources: `MultiErrorGraph`
 
-A `TGraphMultiErrors` carries asymmetric x errors and **several independent
+A `MultiErrorGraph` carries asymmetric x errors and **several independent
 layers** of asymmetric y errors — e.g. a statistical and a systematic band on the
 same points. Start from the first y-error layer and chain `add_y_error`:
 
@@ -273,7 +273,7 @@ same points. Start from the first y-error layer and chain `add_y_error`:
 use oxiroot::prelude::*;
 use oxiroot::FileReader;
 
-let g = TGraphMultiErrors::new(
+let g = MultiErrorGraph::new(
     vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0], // x, y
     vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5],    // x errors (low, high)
     vec![1.0, 2.0, 3.0], vec![1.0, 2.0, 3.0],    // statistical y error (low, high)
@@ -283,7 +283,7 @@ let g = TGraphMultiErrors::new(
 
 assert_eq!(g.n_y_errors(), 2);
 g.write_root("multi.root", Compression::Zstd(5))?;
-let back = TGraphMultiErrors::read_root(&FileReader::open("multi.root")?, "spectrum")?;
+let back = MultiErrorGraph::read_root(&FileReader::open("multi.root")?, "spectrum")?;
 ```
 
 The `ey_low`/`ey_high` fields are `Vec<Vec<f64>>` (one inner `Vec` per layer).
@@ -299,6 +299,6 @@ are written at ROOT's defaults.
 ## See also
 
 - [Reading & writing files](reading-writing.md) — `FileWriter`, append mode, and `ReadRoot`.
-- [Histograms](histograms.md) — the `TH1`/`TH2`/`TH3` family that shares the same write/read traits.
+- [Histograms](histograms.md) — the `Hist1D`/`Hist2D`/`Hist3D` family that shares the same write/read traits.
 - [Fitting](fitting.md) — fitting graphs, histograms, and raw points with a shared `Model`.
 - [Quickstart](../getting-started/quickstart.md) — a first end-to-end example.

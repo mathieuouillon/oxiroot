@@ -22,7 +22,7 @@ h.sumw2();                                  // per-bin (weighted) errors
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;        // any single writable object
 
-let same = TH1::read_root(&FileReader::open("hist.root")?, "pt")?;  // any readable object
+let same = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;  // any readable object
 ```
 
 ## Several objects, subdirectories, appending
@@ -38,7 +38,7 @@ FileWriter::create("out.root")
     .write(Compression::Zstd(5))?;
 
 let g = FileReader::open("out.root")?;
-let p = TProfile::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
+let p = Profile1D::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
 ```
 
 ## A TTree
@@ -79,9 +79,9 @@ cargo run -p oxiroot --example analysis
 
 Dive into any area:
 
-- **[Histograms](../guide/histograms.md)** — the full `TH1`/`TH2`/`TH3` family,
+- **[Histograms](../guide/histograms.md)** — the full `Hist1D`/`Hist2D`/`Hist3D` family,
   fill semantics, arithmetic, statistics, and derived histograms.
-- **[Graphs](../guide/graphs.md)** — `TGraph` and its error variants.
+- **[Graphs](../guide/graphs.md)** — `Graph` and its error variants.
 - **[TTree](../guide/ttree.md)** and **[RNTuple](../guide/rntuple.md)** — the two
   event-data formats.
 - **[Fitting](../guide/fitting.md)** — fit any 1-D data.

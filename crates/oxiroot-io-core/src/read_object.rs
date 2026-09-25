@@ -7,7 +7,7 @@
 //!
 //! It reuses ROOT's on-disk primitives verbatim: [`RBuffer`] (`read_version`,
 //! `string`, the big-endian readers), [`TagReader`] (`ReadObjectAny` — class tags
-//! and back-references), and [`read_tobject`]/[`read_tnamed`]. The member dispatch
+//! and back-references), and [`read_object_base`]/[`read_named`]. The member dispatch
 //! mirrors the adaptive walker that powers the `TTree` reader, generalised to emit
 //! `Value`s and to descend into nested objects, pointers, and STL containers.
 //!
@@ -25,7 +25,7 @@
 use crate::buffer::RBuffer;
 use crate::error::{Error, Result};
 use crate::object::TagReader;
-use crate::streamer::{read_tnamed, read_tobject};
+use crate::streamer::{read_named, read_object_base};
 use crate::streamer_info::{StreamerElement, StreamerRegistry};
 use crate::value::Value;
 
@@ -169,10 +169,10 @@ fn read_base(
 ) -> Result<()> {
     match class {
         "TObject" => {
-            read_tobject(r)?; // consumed; its fUniqueID/fBits are uninteresting
+            read_object_base(r)?; // consumed; its fUniqueID/fBits are uninteresting
         }
         "TNamed" => {
-            let named = read_tnamed(r)?;
+            let named = read_named(r)?;
             out.push(("fName".to_string(), Value::Str(named.name)));
             out.push(("fTitle".to_string(), Value::Str(named.title)));
         }
@@ -229,14 +229,14 @@ fn read_member(
     let v = match t {
         65 => Value::Str(r.string()?), // kTString
         66 => {
-            read_tobject(r)?;
+            read_object_base(r)?;
             Value::Object {
                 class: "TObject".to_string(),
                 members: Vec::new(),
             }
         }
         67 => {
-            let n = read_tnamed(r)?;
+            let n = read_named(r)?;
             Value::Object {
                 class: "TNamed".to_string(),
                 members: vec![
@@ -295,7 +295,7 @@ fn read_ref_object(
         }
         // A reference to an object written earlier in the same object: name what
         // it points at. ROOT streams a shared object once and points at it from
-        // everywhere else it appears (a `TH2Poly`'s `fBins` points at the bins
+        // everywhere else it appears (a `PolyHist`'s `fBins` points at the bins
         // its `fCells` grid holds in full), so the object is already in the tree
         // — repeating it here would blow a file up by whatever it is shared by.
         (None, end) if header.back_ref.is_some() => {
@@ -316,7 +316,7 @@ fn read_ref_object(
     }
 }
 
-/// Read a `TList`/`TObjArray`/`TMap`/… collection body into an object with a
+/// Read a `TList`/`TObjArray`/`ObjMap`/… collection body into an object with a
 /// `fName` and an `items` array (map entries become `{key, value}` objects).
 fn read_collection(
     reg: &StreamerRegistry,
@@ -326,7 +326,7 @@ fn read_collection(
     depth: usize,
 ) -> Result<Value> {
     let vh = r.read_version()?;
-    read_tobject(r)?;
+    read_object_base(r)?;
     let name = r.string()?; // fName
     let n = (r.be_i32()?.max(0) as usize).min(r.remaining());
     let has_lower_bound = matches!(class, "TObjArray" | "TClonesArray");
@@ -508,7 +508,7 @@ fn stl_failure(decoded: bool, memberwise: bool) -> &'static str {
 
 /// Read a `TStreamerLoop` member (`T* //[fCount]`, an array of objects held by
 /// pointer): a `{byte-count, version}` header, then one inline object per count.
-/// `TH2Poly::fCells` — the bins overlapping each cell of the lookup grid, a
+/// `PolyHist::fCells` — the bins overlapping each cell of the lookup grid, a
 /// `TList` per cell — is the one the histogram family writes.
 fn read_stream_loop(
     reg: &StreamerRegistry,
@@ -939,7 +939,7 @@ mod tests {
         assert_eq!(template_parts("TH1D"), None);
     }
 
-    /// A memberwise `vector<pair<double,double>>` (`TEfficiency`'s per-bin beta
+    /// A memberwise `vector<pair<double,double>>` (`Efficiency`'s per-bin beta
     /// parameters): the header carries the pair's checksum in place of a version,
     /// then every `first`, then every `second`.
     #[test]

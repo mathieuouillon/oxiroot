@@ -2,8 +2,8 @@
 
 use clap::Args as ClapArgs;
 use oxiroot::hist::{
-    Histogram, ParamValue, ReadRoot, TGraph, TObjString, TParameter, TProfile, TF1, TF2, TF3, TH1,
-    TH2, TH3,
+    Func1D, Func2D, Func3D, Graph, Hist1D, Hist2D, Hist3D, Histogram, ObjString, ParamValue,
+    Parameter, Profile1D, ReadRoot,
 };
 use oxiroot::ntuple::{FieldValues, NtupleReader};
 use oxiroot::tree::{BranchValues, TreeReader};
@@ -36,26 +36,26 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     match classify(&class) {
         Kind::Tree => dump_tree(&file, subdir, name, &args, json),
         Kind::RNtuple => dump_rntuple(&file, subdir, name, &args, json),
-        Kind::Hist1 => dump_th1(&read_obj::<TH1>(&file, subdir, name)?, name, json),
-        Kind::Hist2 => dump_th2(&read_obj::<TH2>(&file, subdir, name)?, name, json),
-        Kind::Hist3 => dump_th3(&read_obj::<TH3>(&file, subdir, name)?, name, json),
-        Kind::Profile => dump_profile(&read_obj::<TProfile>(&file, subdir, name)?, name, json),
+        Kind::Hist1 => dump_th1(&read_obj::<Hist1D>(&file, subdir, name)?, name, json),
+        Kind::Hist2 => dump_th2(&read_obj::<Hist2D>(&file, subdir, name)?, name, json),
+        Kind::Hist3 => dump_th3(&read_obj::<Hist3D>(&file, subdir, name)?, name, json),
+        Kind::Profile => dump_profile(&read_obj::<Profile1D>(&file, subdir, name)?, name, json),
         Kind::Graph => dump_graph(
-            &read_obj::<TGraph>(&file, subdir, name)?,
+            &read_obj::<Graph>(&file, subdir, name)?,
             name,
             args.entries,
             json,
         ),
         Kind::Function => dump_function(&file, subdir, name, &class, json),
         Kind::ObjString => {
-            let value = read_obj::<TObjString>(&file, subdir, name)?
+            let value = read_obj::<ObjString>(&file, subdir, name)?
                 .value()
                 .to_string();
             emit_value(name, Json::s(value.clone()), &value, json);
             Ok(())
         }
         Kind::Parameter => {
-            let param = read_obj::<TParameter>(&file, subdir, name)?;
+            let param = read_obj::<Parameter>(&file, subdir, name)?;
             let (value, text) = param_value(param.value());
             emit_value(name, value, &text, json);
             Ok(())
@@ -132,7 +132,7 @@ fn value_to_json(v: &Value) -> Json {
     }
 }
 
-/// A `TF1`/`TF2`/`TF3`: its formula, parameters, and (for `TF1`) its range.
+/// A `Func1D`/`Func2D`/`Func3D`: its formula, parameters, and (for `Func1D`) its range.
 fn dump_function(
     file: &FileReader,
     subdir: Option<&str>,
@@ -143,15 +143,15 @@ fn dump_function(
     // All three share `formula`/`params`; only the read type and range differ.
     let (formula, params, range) = match class {
         "TF2" => {
-            let f = read_obj::<TF2>(file, subdir, name)?;
+            let f = read_obj::<Func2D>(file, subdir, name)?;
             (f.formula().to_string(), f.params().to_vec(), None)
         }
         "TF3" => {
-            let f = read_obj::<TF3>(file, subdir, name)?;
+            let f = read_obj::<Func3D>(file, subdir, name)?;
             (f.formula().to_string(), f.params().to_vec(), None)
         }
         _ => {
-            let f = read_obj::<TF1>(file, subdir, name)?;
+            let f = read_obj::<Func1D>(file, subdir, name)?;
             (
                 f.formula().to_string(),
                 f.params().to_vec(),
@@ -212,7 +212,7 @@ fn emit_value(name: &str, value: Json, text: &str, json: bool) {
     }
 }
 
-/// A `TParameter`'s value as `(json, text)`.
+/// A `Parameter`'s value as `(json, text)`.
 fn param_value(value: ParamValue) -> (Json, String) {
     match value {
         ParamValue::Double(x) => (Json::F64(x), num(x)),
@@ -349,8 +349,8 @@ fn rows_json<T>(cols: &[(String, Option<T>)], n: usize, cell: fn(&T, usize) -> J
     )
 }
 
-/// Bins, contents, errors, and summary stats of a `TH1`.
-fn dump_th1(hist: &TH1, name: &str, json: bool) -> CmdResult {
+/// Bins, contents, errors, and summary stats of a `Hist1D`.
+fn dump_th1(hist: &Hist1D, name: &str, json: bool) -> CmdResult {
     let edges = hist.edges();
     let errors = hist.errors();
     let bin = |i: usize, content: f64| {
@@ -414,8 +414,8 @@ fn dump_th1(hist: &TH1, name: &str, json: bool) -> CmdResult {
     Ok(())
 }
 
-/// A summary of a `TH2` (its full grid is not printed).
-fn dump_th2(hist: &TH2, name: &str, json: bool) -> CmdResult {
+/// A summary of a `Hist2D` (its full grid is not printed).
+fn dump_th2(hist: &Hist2D, name: &str, json: bool) -> CmdResult {
     let values = hist.values();
     let ny = values.len();
     let nx = values.first().map_or(0, Vec::len);
@@ -444,8 +444,8 @@ fn dump_th2(hist: &TH2, name: &str, json: bool) -> CmdResult {
     Ok(())
 }
 
-/// A summary of a `TH3` (its full grid is not printed).
-fn dump_th3(hist: &TH3, name: &str, json: bool) -> CmdResult {
+/// A summary of a `Hist3D` (its full grid is not printed).
+fn dump_th3(hist: &Hist3D, name: &str, json: bool) -> CmdResult {
     let values = hist.values();
     let nz = values.len();
     let ny = values.first().map_or(0, Vec::len);
@@ -476,8 +476,8 @@ fn dump_th3(hist: &TH3, name: &str, json: bool) -> CmdResult {
     Ok(())
 }
 
-/// Per-bin mean-y of a `TProfile`.
-fn dump_profile(profile: &TProfile, name: &str, json: bool) -> CmdResult {
+/// Per-bin mean-y of a `Profile1D`.
+fn dump_profile(profile: &Profile1D, name: &str, json: bool) -> CmdResult {
     let edges = profile.edges();
     let low = |i: usize| edges.get(i).copied().unwrap_or(f64::NAN);
     let high = |i: usize| edges.get(i + 1).copied().unwrap_or(f64::NAN);
@@ -520,8 +520,8 @@ fn dump_profile(profile: &TProfile, name: &str, json: bool) -> CmdResult {
     Ok(())
 }
 
-/// The first `n` points of a `TGraph`.
-fn dump_graph(graph: &TGraph, name: &str, n: usize, json: bool) -> CmdResult {
+/// The first `n` points of a `Graph`.
+fn dump_graph(graph: &Graph, name: &str, n: usize, json: bool) -> CmdResult {
     // Bound by both coordinate lengths: a graph decoded from a corrupt file can
     // have `fX.len() != fY.len()`, and indexing the shorter one would panic.
     let count = graph.x.len().min(graph.y.len()).min(n);
@@ -738,13 +738,13 @@ fn num(x: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::dump_graph;
-    use oxiroot::hist::TGraph;
+    use oxiroot::hist::Graph;
 
     #[test]
     fn dump_graph_survives_mismatched_x_y_lengths() {
         // A corrupt graph with more x than y coordinates: dumping (either format)
         // must clamp to the shorter length instead of panicking.
-        let mut graph = TGraph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
+        let mut graph = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
         graph.y.truncate(1);
         assert!(dump_graph(&graph, "g", 10, false).is_ok());
         assert!(dump_graph(&graph, "g", 10, true).is_ok());

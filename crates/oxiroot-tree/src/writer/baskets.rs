@@ -2,7 +2,7 @@
 
 use std::io::{Seek, Write};
 
-use oxiroot_io_core::{compress_if_smaller, ContainerWriter, DirId, Result, TKey, WBuffer, DATIME};
+use oxiroot_io_core::{compress_if_smaller, ContainerWriter, DirId, Key, Result, WBuffer, DATIME};
 
 use super::branch::{vec_row_lengths, Branch, BranchKind};
 use super::layout::Kind;
@@ -58,7 +58,7 @@ fn basket_bytes(
         _ => branch.flen() * leaf.size,
     };
 
-    let klen = TKey::header_len("TBasket", &branch.name, tree_name, true) as u32 + 19;
+    let klen = Key::header_len("TBasket", &branch.name, tree_name, true) as u32 + 19;
     let border = data.len() as u32;
 
     // The uncompressed buffer is the entry data, then (for a variable branch)
@@ -77,7 +77,7 @@ fn basket_bytes(
     let f_last = klen + border; // entry data ends at the border
 
     let mut w = WBuffer::with_capacity(nbytes as usize);
-    // Big-format TKey header.
+    // Big-format Key header.
     w.be_i32(nbytes as i32);
     w.be_u16(1004); // big-format key version
     w.be_u32(obj_len);

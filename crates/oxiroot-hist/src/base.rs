@@ -1,20 +1,20 @@
 //! Shared building blocks for the classic histogram hierarchy.
 //!
-//! `TH1` and its `ClassDef` bases each carry a `{byte-count, version}` header,
-//! so we read the members we need and seek to `TH1`'s end. `TArray*` bin
+//! `Hist1D` and its `ClassDef` bases each carry a `{byte-count, version}` header,
+//! so we read the members we need and seek to `Hist1D`'s end. `TArray*` bin
 //! contents are streamed inline — just a count and the values, no header.
 
 use oxiroot_io_core::{
-    read_tnamed, skip_versioned, Error, FileReader, RBuffer, Result, VersionHeader,
+    read_named, skip_versioned, Error, FileReader, RBuffer, Result, VersionHeader,
 };
 // The generic object-byte readers now live in `oxiroot-io-core`; re-export them
 // here so the histogram modules keep addressing them as `crate::base::…`.
 pub(crate) use oxiroot_io_core::{object_bytes_any, object_bytes_any_keyed};
 
-use crate::axis::TAxis;
+use crate::axis::Axis;
 
 /// The on-disk type of a histogram's bin contents, named by the class suffix
-/// (`TH1**D**`, `TH2**F**`, …). Contents are always held in memory as `f64`;
+/// (`Hist1D**D**`, `Hist2D**F**`, …). Contents are always held in memory as `f64`;
 /// this only selects the `TArray*` element type written to (and read from) the
 /// file. The default is [`BinContentType::F64`] (ROOT's `TH1D`/`TH2D`/`TH3D`).
 #[doc(alias = "Precision")]
@@ -50,9 +50,9 @@ impl BinContentType {
         }
     }
 
-    /// The full ROOT class name for a histogram of dimension `dim` (`"TH1"`,
-    /// `"TH2"`, `"TH3"`) with this bin content type, e.g.
-    /// `BinContentType::F32.class_name("TH1") == "TH1F"`.
+    /// The full ROOT class name for a histogram of dimension `dim` (`"Hist1D"`,
+    /// `"Hist2D"`, `"Hist3D"`) with this bin content type, e.g.
+    /// `BinContentType::F32.class_name("Hist1D") == "TH1F"`.
     #[must_use]
     pub fn class_name(self, dim: &str) -> String {
         let mut s = String::with_capacity(dim.len() + 1);
@@ -63,7 +63,7 @@ impl BinContentType {
 }
 
 /// Determine the bin-content type from a histogram class name's suffix
-/// (`TH1D`/`TH2F`/`TH1I`/…). `TProfile` and similar are handled by their own
+/// (`TH1D`/`TH2F`/`TH1I`/…). `Profile1D` and similar are handled by their own
 /// readers.
 pub(crate) fn bin_content_type_of(class: &str) -> Result<BinContentType> {
     match class.chars().last() {
@@ -93,19 +93,19 @@ pub(crate) fn check_len(what: &str, expected: usize, found: usize) -> Result<()>
     }
 }
 
-/// The members shared by every `TH1`-derived histogram.
+/// The members shared by every `Hist1D`-derived histogram.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TH1Core {
+pub struct HistBase {
     /// Histogram name (`fName`).
     pub name: String,
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: TAxis,
+    pub xaxis: Axis,
     /// Y axis.
-    pub yaxis: TAxis,
+    pub yaxis: Axis,
     /// Z axis.
-    pub zaxis: TAxis,
+    pub zaxis: Axis,
     /// Total number of cells, including flow (`fNcells`).
     pub ncells: i32,
     /// Number of entries (`fEntries`).
@@ -119,7 +119,7 @@ pub struct TH1Core {
     /// Sum of weight*x^2 (`fTsumwx2`).
     pub tsumwx2: f64,
     /// Per-bin sum of squared weights (`fSumw2`); empty for an unweighted
-    /// histogram, but used by `TProfile` to store the per-bin sum of `y^2`.
+    /// histogram, but used by `Profile1D` to store the per-bin sum of `y^2`.
     pub sumw2: Vec<f64>,
 }
 
@@ -183,9 +183,9 @@ pub(crate) fn in_range_sum(values: &[f64], axis_nbins: &[i32]) -> f64 {
     }
 }
 
-/// Read a `TH1` base object (its header, the `TNamed`/`TAtt*` bases, and the
-/// members up to the core statistics), then seek to the `TH1` record's end.
-pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<TH1Core> {
+/// Read a `Hist1D` base object (its header, the `Named`/`TAtt*` bases, and the
+/// members up to the core statistics), then seek to the `Hist1D` record's end.
+pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<HistBase> {
     let th1 = r.read_version()?;
     // Class version 1 (ROOT 1) stored fMaximum, fMinimum, fNormFactor and
     // fContour as floats; every later version reads the same up to fSumw2.
@@ -193,15 +193,15 @@ pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<TH1Core> {
         return Err(unsupported_version("TH1", th1.version));
     }
 
-    let named = read_tnamed(r)?;
+    let named = read_named(r)?;
     skip_versioned(r)?; // TAttLine
     skip_versioned(r)?; // TAttFill
     skip_versioned(r)?; // TAttMarker
 
     let ncells = r.be_i32()?;
-    let xaxis = TAxis::read(r)?;
-    let yaxis = TAxis::read(r)?;
-    let zaxis = TAxis::read(r)?;
+    let xaxis = Axis::read(r)?;
+    let yaxis = Axis::read(r)?;
+    let zaxis = Axis::read(r)?;
     let _bar_offset = r.be_i16()?;
     let _bar_width = r.be_i16()?;
     let entries = r.be_f64()?;
@@ -220,7 +220,7 @@ pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<TH1Core> {
         .ok_or_else(|| Error::Format("TH1 record has no byte count".into()))?;
     r.seek(end)?;
 
-    Ok(TH1Core {
+    Ok(HistBase {
         name: named.name,
         title: named.title,
         xaxis,
@@ -285,13 +285,13 @@ pub(crate) fn read_tarray(r: &mut RBuffer, bin_content_type: BinContentType) -> 
     Ok(v)
 }
 
-/// Read a standalone `TH1x` object: its wrapper, the `TH1` base, and the inline
+/// Read a standalone `TH1x` object: its wrapper, the `Hist1D` base, and the inline
 /// `TArray` bin contents; seek to the wrapper's end. Used both for a top-level
-/// `TH1D`/`TH1F` and for the `TH1D` base inside a `TProfile`.
+/// `TH1D`/`TH1F` and for the `TH1D` base inside a `Profile1D`.
 pub(crate) fn read_th1_object(
     r: &mut RBuffer,
     bin_content_type: BinContentType,
-) -> Result<(TH1Core, Vec<f64>)> {
+) -> Result<(HistBase, Vec<f64>)> {
     let wrapper = r.read_version()?;
     let core = read_th1_base(r)?;
     let contents = read_tarray(r, bin_content_type)?;
@@ -327,7 +327,7 @@ pub(crate) fn object_bytes(file: &FileReader, name: &str, class: &str) -> Result
 ///
 /// ROOT keys objects relative to `-fKeyLen`, so the object-reference map (see
 /// [`oxiroot_io_core::TagReader`]) needs the key length to resolve the
-/// class/object back-references inside a streamed object (e.g. `TH2Poly`'s bins).
+/// class/object back-references inside a streamed object (e.g. `PolyHist`'s bins).
 pub(crate) fn object_bytes_keyed(
     file: &FileReader,
     name: &str,
@@ -339,7 +339,7 @@ pub(crate) fn object_bytes_keyed(
 }
 
 /// Fetch a histogram object, requiring a 4-character class with the given
-/// dimension prefix (e.g. `"TH1"`), so a `read_th1` cannot accept a `TH2`.
+/// dimension prefix (e.g. `"Hist1D"`), so a `read_th1` cannot accept a `Hist2D`.
 pub(crate) fn histogram_object(
     file: &FileReader,
     name: &str,
@@ -359,7 +359,7 @@ pub(crate) fn histogram_object_in(
 }
 
 /// Require a looked-up `(class, object)` to be a 4-character histogram class with
-/// the given dimension prefix (e.g. `"TH1"`).
+/// the given dimension prefix (e.g. `"Hist1D"`).
 fn check_dim(
     name: &str,
     (class, object): (String, Vec<u8>),

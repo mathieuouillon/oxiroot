@@ -1,5 +1,5 @@
-//! Statistical comparison of two histograms: ROOT's `TH1::Chi2Test` (the
-//! unweighted/unweighted case) and `TH1::KolmogorovTest`.
+//! Statistical comparison of two histograms: ROOT's `Hist1D::Chi2Test` (the
+//! unweighted/unweighted case) and `Hist1D::KolmogorovTest`.
 //!
 //! Both need a special function ROOT pulls from its math library — the
 //! chi-square survival function (the complemented incomplete gamma `igamc`) and
@@ -9,7 +9,7 @@
 use oxiroot_io_core::{Error, Result};
 use oxiroot_stat::{chi_square_prob, kolmogorov_prob};
 
-use crate::th1::TH1;
+use crate::hist1d::Hist1D;
 
 /// Which weighting scheme a chi-square test assumes for the two histograms
 /// (ROOT's `Chi2Test` options).
@@ -25,7 +25,7 @@ pub enum Chi2TestKind {
     WeightedWeighted,
 }
 
-/// Result of a chi-square compatibility test ([`TH1::chi2_test`]).
+/// Result of a chi-square compatibility test ([`Hist1D::chi2_test`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Chi2TestResult {
     /// The test's p-value (probability the two histograms are drawn from the
@@ -37,7 +37,7 @@ pub struct Chi2TestResult {
     pub ndf: usize,
 }
 
-/// Result of a Kolmogorov–Smirnov test ([`TH1::kolmogorov_test`]).
+/// Result of a Kolmogorov–Smirnov test ([`Hist1D::kolmogorov_test`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KsTestResult {
     /// The KS probability that the two histograms come from the same
@@ -48,7 +48,7 @@ pub struct KsTestResult {
     pub distance: f64,
 }
 
-impl TH1 {
+impl Hist1D {
     /// Pearson chi-square compatibility test against `other` for two *unweighted*
     /// (count) histograms — ROOT's `Chi2Test "UU"`; shorthand for
     /// [`chi2_test_with`](Self::chi2_test_with) with
@@ -56,7 +56,7 @@ impl TH1 {
     ///
     /// # Errors
     /// Returns [`Error::BinningMismatch`] if the two axes are not identical.
-    pub fn chi2_test(&self, other: &TH1) -> Result<Chi2TestResult> {
+    pub fn chi2_test(&self, other: &Hist1D) -> Result<Chi2TestResult> {
         self.chi2_test_with(other, Chi2TestKind::UnweightedUnweighted)
     }
 
@@ -66,7 +66,7 @@ impl TH1 {
     ///
     /// # Errors
     /// Returns [`Error::BinningMismatch`] if the two axes are not identical.
-    pub fn chi2_test_with(&self, other: &TH1, kind: Chi2TestKind) -> Result<Chi2TestResult> {
+    pub fn chi2_test_with(&self, other: &Hist1D, kind: Chi2TestKind) -> Result<Chi2TestResult> {
         if !self.xaxis.same_binning(&other.xaxis) {
             return Err(Error::BinningMismatch {
                 detail: "chi2_test: histograms have different binning".into(),
@@ -150,19 +150,19 @@ impl TH1 {
     }
 
     /// Kolmogorov–Smirnov compatibility test against `other` (ROOT's
-    /// `TH1::KolmogorovTest` for unweighted histograms). Errors if the binnings
+    /// `Hist1D::KolmogorovTest` for unweighted histograms). Errors if the binnings
     /// differ.
     ///
     /// # Errors
     /// Returns [`Error::BinningMismatch`] if the two axes are not identical.
-    pub fn kolmogorov_test(&self, other: &TH1) -> Result<KsTestResult> {
+    pub fn kolmogorov_test(&self, other: &Hist1D) -> Result<KsTestResult> {
         if !self.xaxis.same_binning(&other.xaxis) {
             return Err(Error::BinningMismatch {
                 detail: "kolmogorov_test: histograms have different binning".into(),
             });
         }
         let n = self.xaxis.nbins.max(0) as usize;
-        let bin = |h: &TH1, i: usize| h.contents.get(i).copied().unwrap_or(0.0);
+        let bin = |h: &Hist1D, i: usize| h.contents.get(i).copied().unwrap_or(0.0);
         let sum1: f64 = (1..=n).map(|i| bin(self, i)).sum();
         let sum2: f64 = (1..=n).map(|i| bin(other, i)).sum();
         if sum1 <= 0.0 || sum2 <= 0.0 {

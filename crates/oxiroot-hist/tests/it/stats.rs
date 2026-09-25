@@ -1,9 +1,9 @@
 //! Tier-1 statistics accessors (std_dev/maximum/find_bin/effective_entries/reset)
 //! against hand-computed values.
 
-use oxiroot_hist::{Hist, TH1};
+use oxiroot_hist::{Hist, Hist1D};
 
-fn filled_th1() -> TH1 {
+fn filled_th1() -> Hist1D {
     // 4 bins over [0,4); fills at 0.5,0.5,1.5,2.5,2.5,2.5 → contents [2,1,3,0].
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
     for x in [0.5, 0.5, 1.5, 2.5, 2.5, 2.5] {

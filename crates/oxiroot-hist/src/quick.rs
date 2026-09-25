@@ -15,22 +15,22 @@
 //!
 //! | `hist` storage | builder | ROOT class | notes |
 //! |----------------|---------|------------|-------|
-//! | `Double()`     | [`double`](H1::double) | `TH1D` | |
-//! | `Weight()`     | [`weight`](H1::weight) | `TH1D` + `Sumw2` | value **and** variance |
-//! | `Int64()`      | [`int64`](H1::int64)   | `TH1L` | 64-bit integer bins |
-//! | (ROOT)         | [`float`](H1::float)   | `TH1F` | 32-bit float bins |
-//! | (ROOT)         | [`int32`](H1::int32)   | `TH1I` | 32-bit integer bins |
-//! | (ROOT)         | [`int16`](H1::int16)   | `TH1S` | 16-bit integer bins |
-//! | (ROOT)         | [`int8`](H1::int8)     | `TH1C` | 8-bit integer bins |
-//! | `Mean()`       | [`profile`](H1::profile) | `TProfile` | per-bin mean (1-, 2-, 3-D) |
+//! | `Double()`     | [`double`](Build1D::double) | `TH1D` | |
+//! | `Weight()`     | [`weight`](Build1D::weight) | `TH1D` + `Sumw2` | value **and** variance |
+//! | `Int64()`      | [`int64`](Build1D::int64)   | `TH1L` | 64-bit integer bins |
+//! | (ROOT)         | [`float`](Build1D::float)   | `TH1F` | 32-bit float bins |
+//! | (ROOT)         | [`int32`](Build1D::int32)   | `TH1I` | 32-bit integer bins |
+//! | (ROOT)         | [`int16`](Build1D::int16)   | `TH1S` | 16-bit integer bins |
+//! | (ROOT)         | [`int8`](Build1D::int8)     | `TH1C` | 8-bit integer bins |
+//! | `Mean()`       | [`profile`](Build1D::profile) | `Profile1D` | per-bin mean (1-, 2-, 3-D) |
 
 use crate::base::BinContentType;
-use crate::th1::TH1;
-use crate::th2::TH2;
-use crate::th3::TH3;
-use crate::tprofile::TProfile;
-use crate::tprofile2d::TProfile2D;
-use crate::tprofile3d::TProfile3D;
+use crate::hist1d::Hist1D;
+use crate::hist2d::Hist2D;
+use crate::hist3d::Hist3D;
+use crate::profile1d::Profile1D;
+use crate::profile2d::Profile2D;
+use crate::profile3d::Profile3D;
 
 /// One axis of the builder: a regular range or explicit edges, plus a label.
 #[derive(Debug, Clone)]
@@ -83,7 +83,7 @@ impl AxisSpec {
 }
 
 /// Apply the chosen storage and the shared name/title to a freshly built
-/// histogram. Implemented for `TH1`/`TH2`/`TH3` so the finalizers are one line.
+/// histogram. Implemented for `Hist1D`/`Hist2D`/`Hist3D` so the finalizers are one line.
 trait Finish: Sized {
     fn sumw2(&mut self);
     fn set_bin_content_type(self, p: BinContentType) -> Self;
@@ -126,9 +126,9 @@ macro_rules! impl_finish {
         }
     };
 }
-impl_finish!(TH1);
-impl_finish!(TH2);
-impl_finish!(TH3);
+impl_finish!(Hist1D);
+impl_finish!(Hist2D);
+impl_finish!(Hist3D);
 
 /// The entry point of the quick-construction builder (mirrors `hist`'s
 /// `Hist.new`). Start an axis with [`reg`](Hist::reg) or [`var`](Hist::var).
@@ -138,8 +138,8 @@ impl Hist {
     /// Begin with a regular axis of `nbins` uniform bins over `[lo, hi)`
     /// (`hist`'s `Reg`).
     #[must_use]
-    pub fn reg(nbins: i32, lo: f64, hi: f64) -> H1 {
-        H1 {
+    pub fn reg(nbins: i32, lo: f64, hi: f64) -> Build1D {
+        Build1D {
             ax: AxisSpec::reg(nbins, lo, hi),
             name: String::new(),
             title: String::new(),
@@ -148,8 +148,8 @@ impl Hist {
 
     /// Begin with a variable-width axis from explicit `edges` (`hist`'s `Var`).
     #[must_use]
-    pub fn var(edges: &[f64]) -> H1 {
-        H1 {
+    pub fn var(edges: &[f64]) -> Build1D {
+        Build1D {
             ax: AxisSpec::var(edges),
             name: String::new(),
             title: String::new(),
@@ -221,22 +221,22 @@ macro_rules! builder {
     };
 }
 
-/// A one-axis builder → [`TH1`].
-pub struct H1 {
+/// A one-axis builder → [`Hist1D`].
+pub struct Build1D {
     ax: AxisSpec,
     name: String,
     title: String,
 }
 
-impl H1 {
+impl Build1D {
     fn last_axis(&mut self) -> &mut AxisSpec {
         &mut self.ax
     }
 
     /// Add a regular second axis, producing a 2-D builder.
     #[must_use]
-    pub fn reg(self, nbins: i32, lo: f64, hi: f64) -> H2 {
-        H2 {
+    pub fn reg(self, nbins: i32, lo: f64, hi: f64) -> Build2D {
+        Build2D {
             axes: [self.ax, AxisSpec::reg(nbins, lo, hi)],
             name: self.name,
             title: self.title,
@@ -244,32 +244,32 @@ impl H1 {
     }
     /// Add a variable-width second axis, producing a 2-D builder.
     #[must_use]
-    pub fn var(self, edges: &[f64]) -> H2 {
-        H2 {
+    pub fn var(self, edges: &[f64]) -> Build2D {
+        Build2D {
             axes: [self.ax, AxisSpec::var(edges)],
             name: self.name,
             title: self.title,
         }
     }
 
-    fn build1(self, content_type: BinContentType, weight: bool) -> TH1 {
+    fn build1(self, content_type: BinContentType, weight: bool) -> Hist1D {
         let mut h = if self.ax.is_regular() {
-            TH1::new(self.ax.nbins, self.ax.lo, self.ax.hi)
+            Hist1D::new(self.ax.nbins, self.ax.lo, self.ax.hi)
         } else {
-            TH1::new_variable(&self.ax.edge_vec())
+            Hist1D::new_variable(&self.ax.edge_vec())
         };
         h.xaxis.title = self.ax.label;
         h.finish(self.name, self.title, content_type, weight)
     }
 
-    /// Build a [`TProfile`] — `hist`'s `Mean` storage on a 1-D axis. Fill it with
+    /// Build a [`Profile1D`] — `hist`'s `Mean` storage on a 1-D axis. Fill it with
     /// `(x, y)` pairs (`profile.fill(x, y)`); each bin then holds the mean `y`
     /// and its error, instead of a count.
     #[must_use]
-    pub fn profile(self) -> TProfile {
-        // TProfile has only a regular-axis constructor; overlay explicit edges
+    pub fn profile(self) -> Profile1D {
+        // Profile1D has only a regular-axis constructor; overlay explicit edges
         // for a variable axis (the bin count already matches).
-        let mut p = TProfile::new(self.ax.nbins, self.ax.lo, self.ax.hi);
+        let mut p = Profile1D::new(self.ax.nbins, self.ax.lo, self.ax.hi);
         if let Some(e) = &self.ax.edges {
             p.xaxis.xbins = e.clone();
         }
@@ -277,25 +277,25 @@ impl H1 {
         p.named(self.name).titled(self.title)
     }
 }
-builder!(H1, TH1, build1);
+builder!(Build1D, Hist1D, build1);
 
-/// A two-axis builder → [`TH2`].
-pub struct H2 {
+/// A two-axis builder → [`Hist2D`].
+pub struct Build2D {
     axes: [AxisSpec; 2],
     name: String,
     title: String,
 }
 
-impl H2 {
+impl Build2D {
     fn last_axis(&mut self) -> &mut AxisSpec {
         &mut self.axes[1]
     }
 
     /// Add a third axis (regular), producing a 3-D builder.
     #[must_use]
-    pub fn reg(self, nbins: i32, lo: f64, hi: f64) -> H3 {
+    pub fn reg(self, nbins: i32, lo: f64, hi: f64) -> Build3D {
         let [x, y] = self.axes;
-        H3 {
+        Build3D {
             axes: [x, y, AxisSpec::reg(nbins, lo, hi)],
             name: self.name,
             title: self.title,
@@ -303,36 +303,36 @@ impl H2 {
     }
     /// Add a third axis (variable-width), producing a 3-D builder.
     #[must_use]
-    pub fn var(self, edges: &[f64]) -> H3 {
+    pub fn var(self, edges: &[f64]) -> Build3D {
         let [x, y] = self.axes;
-        H3 {
+        Build3D {
             axes: [x, y, AxisSpec::var(edges)],
             name: self.name,
             title: self.title,
         }
     }
 
-    fn build2(self, content_type: BinContentType, weight: bool) -> TH2 {
+    fn build2(self, content_type: BinContentType, weight: bool) -> Hist2D {
         let [x, y] = &self.axes;
         let mut h = if x.is_regular() && y.is_regular() {
-            TH2::new(x.nbins, x.lo, x.hi, y.nbins, y.lo, y.hi)
+            Hist2D::new(x.nbins, x.lo, x.hi, y.nbins, y.lo, y.hi)
         } else {
-            TH2::new_variable(&x.edge_vec(), &y.edge_vec())
+            Hist2D::new_variable(&x.edge_vec(), &y.edge_vec())
         };
         h.xaxis.title = x.label.clone();
         h.yaxis.title = y.label.clone();
         h.finish(self.name, self.title, content_type, weight)
     }
 
-    /// Build a [`TProfile2D`] — `hist`'s `Mean` storage over two axes. Fill it
+    /// Build a [`Profile2D`] — `hist`'s `Mean` storage over two axes. Fill it
     /// with `(x, y, z)` triples (`profile.fill(x, y, z)`); each bin holds the
     /// mean `z` and its error, instead of a count.
     #[must_use]
-    pub fn profile(self) -> TProfile2D {
+    pub fn profile(self) -> Profile2D {
         let [x, y] = &self.axes;
-        // TProfile2D has only a regular-axis constructor; overlay explicit edges
+        // Profile2D has only a regular-axis constructor; overlay explicit edges
         // for any variable axis (the bin counts already match).
-        let mut p = TProfile2D::new(x.nbins, x.lo, x.hi, y.nbins, y.lo, y.hi);
+        let mut p = Profile2D::new(x.nbins, x.lo, x.hi, y.nbins, y.lo, y.hi);
         if let Some(e) = &x.edges {
             p.xaxis.xbins = e.clone();
         }
@@ -344,27 +344,27 @@ impl H2 {
         p.named(self.name).titled(self.title)
     }
 }
-builder!(H2, TH2, build2);
+builder!(Build2D, Hist2D, build2);
 
-/// A three-axis builder → [`TH3`].
-pub struct H3 {
+/// A three-axis builder → [`Hist3D`].
+pub struct Build3D {
     axes: [AxisSpec; 3],
     name: String,
     title: String,
 }
 
-impl H3 {
+impl Build3D {
     fn last_axis(&mut self) -> &mut AxisSpec {
         &mut self.axes[2]
     }
 
-    fn build3(self, content_type: BinContentType, weight: bool) -> TH3 {
+    fn build3(self, content_type: BinContentType, weight: bool) -> Hist3D {
         let [x, y, z] = &self.axes;
-        // TH3 has no variable-axis constructor; build a regular `TH3` with the
+        // Hist3D has no variable-axis constructor; build a regular `Hist3D` with the
         // right bin counts/ranges, then overlay explicit edges on any variable
         // axis (a populated `fXbins` is exactly how ROOT marks a variable axis,
         // and the cell counts already match).
-        let mut h = TH3::new(
+        let mut h = Hist3D::new(
             x.nbins, x.lo, x.hi, y.nbins, y.lo, y.hi, z.nbins, z.lo, z.hi,
         );
         if let Some(e) = &x.edges {
@@ -382,13 +382,13 @@ impl H3 {
         h.finish(self.name, self.title, content_type, weight)
     }
 
-    /// Build a [`TProfile3D`] — `hist`'s `Mean` storage over three axes. Fill it
+    /// Build a [`Profile3D`] — `hist`'s `Mean` storage over three axes. Fill it
     /// with `(x, y, z, t)` (`profile.fill(x, y, z, t)`); each bin holds the mean
     /// `t` and its error, instead of a count.
     #[must_use]
-    pub fn profile(self) -> TProfile3D {
+    pub fn profile(self) -> Profile3D {
         let [x, y, z] = &self.axes;
-        let mut p = TProfile3D::new(
+        let mut p = Profile3D::new(
             x.nbins, x.lo, x.hi, y.nbins, y.lo, y.hi, z.nbins, z.lo, z.hi,
         );
         if let Some(e) = &x.edges {
@@ -406,4 +406,4 @@ impl H3 {
         p.named(self.name).titled(self.title)
     }
 }
-builder!(H3, TH3, build3);
+builder!(Build3D, Hist3D, build3);

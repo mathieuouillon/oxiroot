@@ -2,26 +2,26 @@
 //!
 //! ROOT's classes gained members over time, and a file keeps the class version
 //! it was written with:
-//! - `TAxis` added `fLabels` in class version 7 and `fBits2` in version 8.
-//! - `TProfile` added `fTsumwy`/`fTsumwy2` in version 4 and `fBinSumw2` in 6.
-//! - `TProfile2D` added `fTsumwz`/`fTsumwz2` in version 5 and `fBinSumw2` in 7.
-//! - `TProfile3D` added `fBinSumw2` in version 7.
+//! - `Axis` added `fLabels` in class version 7 and `fBits2` in version 8.
+//! - `Profile1D` added `fTsumwy`/`fTsumwy2` in version 4 and `fBinSumw2` in 6.
+//! - `Profile2D` added `fTsumwz`/`fTsumwz2` in version 5 and `fBinSumw2` in 7.
+//! - `Profile3D` added `fBinSumw2` in version 7.
 //!
 //! The old profiles here are the current serialization with those trailing
 //! members removed, stored with streamer info that describes the old version,
 //! as the ROOT release that used it would have written them.
 
-use oxiroot_hist::{Hist, TAxis, TProfile, TProfile2D, TProfile3D, WriteRoot, TH2};
+use oxiroot_hist::{Axis, Hist, Hist2D, Profile1D, Profile2D, Profile3D, WriteRoot};
 use oxiroot_io_core::streamer_gen::{any, base, basic, Cls, El};
-use oxiroot_io_core::{write_tnamed, Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer};
+use oxiroot_io_core::{write_named, Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer};
 
-// --- TAxis ------------------------------------------------------------------
+// --- Axis -------------------------------------------------------------------
 
-/// A `TAxis` record at class `version`, laid out as ROOT wrote that version.
+/// An `Axis` record at class `version`, laid out as ROOT wrote that version.
 fn axis_record(version: u16, nbins: i32, xmin: f64, xmax: f64, edges: &[f64]) -> Vec<u8> {
     let mut w = WBuffer::new();
     let t = w.begin_object(version);
-    write_tnamed(&mut w, 0x0300_0000, "xaxis", "");
+    write_named(&mut w, 0x0300_0000, "xaxis", "");
     let att = w.begin_object(4); // TAttAxis
     w.be_i32(510); // fNdivisions
     for _ in 0..3 {
@@ -67,7 +67,7 @@ fn every_streamed_axis_version_reads() {
         bytes.extend(axis_record(version, 3, 0.0, 3.0, &edges));
         let mut r = RBuffer::new(&bytes);
 
-        let first = TAxis::read(&mut r).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
+        let first = Axis::read(&mut r).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
         assert_eq!(
             (first.nbins, first.xmin, first.xmax),
             (4, -1.0, 1.0),
@@ -75,7 +75,7 @@ fn every_streamed_axis_version_reads() {
         );
         assert!(first.labels.is_empty(), "v{version}");
 
-        let second = TAxis::read(&mut r).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
+        let second = Axis::read(&mut r).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
         assert_eq!(
             (second.nbins, second.xbins.as_slice()),
             (3, &edges[..]),
@@ -88,7 +88,7 @@ fn every_streamed_axis_version_reads() {
 #[test]
 fn an_axis_older_than_streamer_info_is_an_error() {
     let bytes = axis_record(5, 3, 0.0, 3.0, &[]);
-    let Err(Error::UnsupportedVersion { class, version }) = TAxis::read(&mut RBuffer::new(&bytes))
+    let Err(Error::UnsupportedVersion { class, version }) = Axis::read(&mut RBuffer::new(&bytes))
     else {
         panic!("TAxis v5 read");
     };
@@ -119,7 +119,7 @@ impl WriteRoot for OldObject {
         self.bytes.clone()
     }
     // Only the old class version is described: ROOT knows the current versions
-    // of the other classes (TH1D, TAxis, …) the profile contains.
+    // of the other classes (TH1D, Axis, …) the profile contains.
     fn streamer_classes(&self) -> Vec<Cls<'static>> {
         vec![self.info.clone()]
     }
@@ -237,7 +237,7 @@ fn every_streamed_tprofile_version_reads() {
 
     for version in 2..=7 {
         let old = downgrade(&TPROFILE, p.to_root_bytes(), p.bin_sumw2.len(), version);
-        let back: TProfile =
+        let back: Profile1D =
             read_back(&old, version).unwrap_or_else(|e| panic!("TProfile v{version}: {e}"));
         // Versions without fBinSumw2 did not track weights; the sums missing
         // before version 4 are taken from the bins.
@@ -259,7 +259,7 @@ fn every_streamed_tprofile2d_version_reads() {
 
     for version in 2..=8 {
         let old = downgrade(&TPROFILE2D, p.to_root_bytes(), p.bin_sumw2.len(), version);
-        let back: TProfile2D =
+        let back: Profile2D =
             read_back(&old, version).unwrap_or_else(|e| panic!("TProfile2D v{version}: {e}"));
         let mut expected = p.clone();
         if version < 7 {
@@ -281,7 +281,7 @@ fn every_streamed_tprofile3d_version_reads() {
 
     for version in 6..=8 {
         let old = downgrade(&TPROFILE3D, p.to_root_bytes(), p.bin_sumw2.len(), version);
-        let back: TProfile3D =
+        let back: Profile3D =
             read_back(&old, version).unwrap_or_else(|e| panic!("TProfile3D v{version}: {e}"));
         let mut expected = p.clone();
         if version < 7 {
@@ -295,7 +295,7 @@ fn every_streamed_tprofile3d_version_reads() {
 fn profiles_older_than_streamer_info_are_an_error() {
     let p1 = Hist::reg(2, 0.0, 2.0).profile().named("p");
     let old = downgrade(&TPROFILE, p1.to_root_bytes(), 0, 1);
-    let Err(Error::UnsupportedVersion { class, version }) = read_back::<TProfile>(&old, 1) else {
+    let Err(Error::UnsupportedVersion { class, version }) = read_back::<Profile1D>(&old, 1) else {
         panic!("TProfile v1 read");
     };
     assert_eq!((class.as_str(), version), ("TProfile", 1));
@@ -306,13 +306,13 @@ fn profiles_older_than_streamer_info_are_an_error() {
         .profile()
         .named("p");
     let old = downgrade(&TPROFILE3D, p3.to_root_bytes(), 0, 5);
-    let Err(Error::UnsupportedVersion { class, version }) = read_back::<TProfile3D>(&old, 5) else {
+    let Err(Error::UnsupportedVersion { class, version }) = read_back::<Profile3D>(&old, 5) else {
         panic!("TProfile3D v5 read");
     };
     assert_eq!((class.as_str(), version), ("TProfile3D", 5));
 
-    // A TH1 base at class version 1 stored floats where later ones store
-    // doubles. It sits after the TProfile and TH1D headers (6 bytes each).
+    // A Hist1D base at class version 1 stored floats where later ones store
+    // doubles. It sits after the Profile1D and TH1D headers (6 bytes each).
     let mut bytes = p1.to_root_bytes();
     bytes[16..18].copy_from_slice(&1u16.to_be_bytes());
     let old = OldObject {
@@ -320,7 +320,7 @@ fn profiles_older_than_streamer_info_are_an_error() {
         bytes,
         info: downgrade(&TPROFILE, p1.to_root_bytes(), 0, 7).info,
     };
-    let Err(Error::UnsupportedVersion { class, version }) = read_back::<TProfile>(&old, 71) else {
+    let Err(Error::UnsupportedVersion { class, version }) = read_back::<Profile1D>(&old, 71) else {
         panic!("TH1 v1 read");
     };
     assert_eq!((class.as_str(), version), ("TH1", 1));
@@ -328,7 +328,7 @@ fn profiles_older_than_streamer_info_are_an_error() {
 
 #[test]
 fn a_root_1_th2d_is_an_error() {
-    // Class version 1 had no TH2 record: the TH1 base, the bins, then the TH2
+    // Class version 1 had no Hist2D record: the Hist1D base, the bins, then the Hist2D
     // members. Read as the later layout it would be garbage.
     let h = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().named("p");
     let mut bytes = h.to_root_bytes();
@@ -343,7 +343,7 @@ fn a_root_1_th2d_is_an_error() {
             elements: Vec::new(),
         },
     };
-    let Err(Error::UnsupportedVersion { class, version }) = read_back::<TH2>(&old, 1) else {
+    let Err(Error::UnsupportedVersion { class, version }) = read_back::<Hist2D>(&old, 1) else {
         panic!("TH2D v1 read");
     };
     assert_eq!((class.as_str(), version), ("TH2", 1));

@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, ReadRoot, WriteRoot, TH1, TH2};
+use oxiroot_hist::{FileWriter, Hist, Hist1D, Hist2D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
@@ -42,9 +42,9 @@ fn appends_objects_to_an_existing_file() {
         names.contains(&"a") && names.contains(&"b") && names.contains(&"c"),
         "{names:?}"
     );
-    assert_eq!(TH1::read_root(&f, "a").unwrap(), a, "original survived");
-    assert_eq!(TH1::read_root(&f, "b").unwrap(), b);
-    assert_eq!(TH2::read_root(&f, "c").unwrap(), c);
+    assert_eq!(Hist1D::read_root(&f, "a").unwrap(), a, "original survived");
+    assert_eq!(Hist1D::read_root(&f, "b").unwrap(), b);
+    assert_eq!(Hist2D::read_root(&f, "c").unwrap(), c);
 
     // The embedded streamer info is preserved across the update.
     let reg = f.streamer_registry().expect("streamer info");
@@ -80,7 +80,7 @@ fn re_adding_a_name_bumps_the_cycle() {
     assert_eq!(cycles.len(), 2, "both cycles present: {cycles:?}");
     assert!(cycles.contains(&1) && cycles.contains(&2), "{cycles:?}");
     // Our reader returns the highest cycle (newest) -> v2.
-    assert_eq!(TH1::read_root(&f, "h").unwrap(), v2, "newest cycle wins");
+    assert_eq!(Hist1D::read_root(&f, "h").unwrap(), v2, "newest cycle wins");
 }
 
 /// Appending into a file that already holds a subdirectory keeps the
@@ -121,13 +121,13 @@ fn appends_to_a_file_with_a_subdirectory() {
         "{names:?}"
     );
     assert_eq!(
-        TH1::read_root(&f, "a").unwrap(),
+        Hist1D::read_root(&f, "a").unwrap(),
         a,
         "original root object survived"
     );
-    assert_eq!(TH1::read_root(&f, "b").unwrap(), b, "appended object");
+    assert_eq!(Hist1D::read_root(&f, "b").unwrap(), b, "appended object");
     assert_eq!(
-        TH1::read_root_in(&f, "region", "s").unwrap(),
+        Hist1D::read_root_in(&f, "region", "s").unwrap(),
         s,
         "subdirectory object survived"
     );
@@ -165,7 +165,7 @@ fn appending_adds_the_streamer_info_the_file_lacks() {
 
     FileWriter::open(&out)
         .expect("open")
-        .add(&oxiroot_hist::TParameter::f64("lumi", 12.5))
+        .add(&oxiroot_hist::Parameter::f64("lumi", 12.5))
         .write(Compression::None)
         .expect("append");
 
@@ -177,13 +177,13 @@ fn appending_adds_the_streamer_info_the_file_lacks() {
         before.infos(),
         "existing entries are kept, in order"
     );
-    assert_eq!(TH1::read_root(&f, "h").unwrap(), h);
+    assert_eq!(Hist1D::read_root(&f, "h").unwrap(), h);
 
     // Appending again with nothing new leaves the record where it is.
     let seek_info = f.header().seek_info;
     FileWriter::open(&out)
         .expect("open")
-        .add(&oxiroot_hist::TParameter::f64("lumi2", 1.0))
+        .add(&oxiroot_hist::Parameter::f64("lumi2", 1.0))
         .write(Compression::None)
         .expect("append again");
     assert_eq!(

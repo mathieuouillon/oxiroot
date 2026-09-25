@@ -1,22 +1,22 @@
-//! The `TF1` object body codec: one reader and one writer for the record a
-//! graph's `fFunctions` entries and the standalone `TF1`/`TF2`/`TF3` keys (in
+//! The `Func1D` object body codec: one reader and one writer for the record a
+//! graph's `fFunctions` entries and the standalone `Func1D`/`Func2D`/`Func3D` keys (in
 //! `oxiroot-hist-func`) share.
 
-use oxiroot_io_core::{read_tnamed, skip_versioned, write_tnamed, RBuffer, Result, WBuffer};
+use oxiroot_io_core::{read_named, skip_versioned, write_named, RBuffer, Result, WBuffer};
 
 use crate::graph::GraphFunction;
 use crate::write::write_object_ptr;
 
 impl GraphFunction {
-    /// Decode a streamed `TF1` object body (version 12), starting at its
+    /// Decode a streamed `Func1D` object body (version 12), starting at its
     /// byte-count/version header (no class tag). The `TFormula` it embeds gives
     /// [`formula`](Self::formula) and [`params`](Self::params).
     ///
     /// # Errors
     /// Returns an error if the buffer ends early or a header is malformed.
     pub fn read_tf1_body(r: &mut RBuffer) -> Result<GraphFunction> {
-        let tf1 = r.read_version()?; // TF1 v12
-        let named = read_tnamed(r)?;
+        let tf1 = r.read_version()?; // Func1D v12
+        let named = read_named(r)?;
         skip_versioned(r)?; // TAttLine
         skip_versioned(r)?; // TAttFill
         skip_versioned(r)?; // TAttMarker
@@ -65,16 +65,16 @@ impl GraphFunction {
     /// is `fNpx` (ROOT writes 100 for a `TF1` and 30 for a `TF2`/`TF3` base).
     pub fn write_tf1_body(&self, w: &mut WBuffer, ndim: i32, npx: i32) {
         let npar = self.params.len();
-        let obj = w.begin_object(12); // TF1 version 12
-        write_tnamed(w, 0, &self.name, &self.title);
+        let obj = w.begin_object(12); // Func1D version 12
+        write_named(w, 0, &self.name, &self.title);
 
         let line = w.begin_object(2); // TAttLine
-        w.be_i16(2); // fLineColor (ROOT's TF1 default)
+        w.be_i16(2); // fLineColor (ROOT's Func1D default)
         w.be_i16(1); // fLineStyle
-        w.be_i16(2); // fLineWidth (ROOT's TF1 default)
+        w.be_i16(2); // fLineWidth (ROOT's Func1D default)
         w.end_object(line);
         let fill = w.begin_object(2); // TAttFill
-        w.be_i16(19); // fFillColor (ROOT's TF1 default)
+        w.be_i16(19); // fFillColor (ROOT's Func1D default)
         w.be_i16(0); // fFillStyle
         w.end_object(fill);
         let marker = w.begin_object(3); // TAttMarker
@@ -131,7 +131,7 @@ fn read_tformula_ptr(r: &mut RBuffer) -> Result<(String, Vec<f64>)> {
         while r.u8()? != 0 {}
     }
     let _ver = r.read_version()?; // TFormula v14
-    let _named = read_tnamed(r)?;
+    let _named = read_named(r)?;
     let params = read_vector_f64(r)?; // fClingParameters
     let _all_set = r.u8()?;
     skip_param_map(r)?; // fParams
@@ -160,13 +160,13 @@ fn skip_param_map(r: &mut RBuffer) -> Result<()> {
 /// this on every embedded `TFormula`; omitting it makes ROOT segfault on read.
 const FORMULA_NOT_GLOBAL: u32 = 0x0000_0400;
 
-/// Write a `TFormula` object body (version 14): `TNamed`, `fClingParameters`,
+/// Write a `TFormula` object body (version 14): `Named`, `fClingParameters`,
 /// `fAllParametersSetted`, the `fParams` name→index map, the `[pN]`-form formula
 /// string, and the trailing scalars/empty `fLinearParts`.
 fn write_tformula_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32) {
     let npar = f.params.len();
     let obj = w.begin_object(14); // TFormula version 14
-    write_tnamed(w, FORMULA_NOT_GLOBAL, &f.name, &f.title);
+    write_named(w, FORMULA_NOT_GLOBAL, &f.name, &f.title);
     write_vector_f64(w, &f.params); // fClingParameters
     w.u8(1); // fAllParametersSetted
     write_param_map(w, npar); // fParams (map<TString,int>)

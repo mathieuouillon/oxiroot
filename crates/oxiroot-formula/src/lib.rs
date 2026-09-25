@@ -2,7 +2,7 @@
 //! expression engine — parse an arbitrary formula string and evaluate it, plus
 //! numerical integration and differentiation.
 //!
-//! Dependency-free leaf crate. It powers oxiroot's `TF1`/`TF2`/`TF3` function
+//! Dependency-free leaf crate. It powers oxiroot's `Func1D`/`Func2D`/`Func3D` function
 //! objects (evaluation, `Integral`, `Derivative`) and `oxiroot_fit`'s
 //! `Model::from_formula`, so any ROOT formula can be evaluated and fitted.
 //!
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn parses_and_evaluates_against_root() {
-        // ROOT: TF1 f("f","[0]*sin([1]*x) + [2]"); SetParameters(2,1.5,0.5)
+        // ROOT: Func1D f("f","[0]*sin([1]*x) + [2]"); SetParameters(2,1.5,0.5)
         let f = Formula::parse("[0]*sin([1]*x) + [2]").unwrap();
         assert_eq!(f.npar(), 3);
         assert_eq!(f.ndim(), 1);
@@ -249,11 +249,11 @@ mod tests {
 
     #[test]
     fn multidimensional_matches_root() {
-        // ROOT TF2 f2("f2","[0]*sin(x) + [1]*y*y"); Eval(1,1) = 1.962206
+        // ROOT Func2D f2("f2","[0]*sin(x) + [1]*y*y"); Eval(1,1) = 1.962206
         let f2 = Formula::parse("[0]*sin(x) + [1]*y*y").unwrap();
         assert_eq!(f2.ndim(), 2);
         assert!((f2.eval(&[1.0, 1.0], &[1.5, 0.7]) - 1.962_206).abs() < 1e-5);
-        // ROOT TF3 f3("f3","[0]*x + y*z"); Eval(1,1,1) = 3.0
+        // ROOT Func3D f3("f3","[0]*x + y*z"); Eval(1,1,1) = 3.0
         let f3 = Formula::parse("[0]*x + y*z").unwrap();
         assert_eq!(f3.ndim(), 3);
         assert_eq!(f3.eval(&[1.0, 1.0, 1.0], &[2.0]), 3.0);

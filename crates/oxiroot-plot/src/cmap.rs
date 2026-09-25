@@ -1,4 +1,4 @@
-//! Colormaps for the TH2 heatmap.
+//! Colormaps for the Hist2D heatmap.
 
 use std::fmt;
 use std::str::FromStr;

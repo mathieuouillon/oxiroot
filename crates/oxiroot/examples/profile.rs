@@ -1,4 +1,4 @@
-//! `TProfile` (and a short `TProfile2D`): collapse a 2-D scatter into a 1-D
+//! `Profile1D` (and a short `Profile2D`): collapse a 2-D scatter into a 1-D
 //! trend. For each event we draw a true energy `x` and a *measured* response
 //! `y = response(x) + Gaussian scatter`, then `fill(x, y)`. A profile keeps the
 //! mean response per x-bin with the error on that mean — the physicist's way to
@@ -39,7 +39,7 @@ fn main() -> oxiroot::Result<()> {
     let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
 
     // --- Fill a 1-D profile from a stream of (x, y) events. --------------------
-    // A profile has the same shape as a TH1 (bins in x), but each bin stores the
+    // A profile has the same shape as a Hist1D (bins in x), but each bin stores the
     // running mean of y and the count needed for its error on the mean.
     let mut prof = Hist::reg(10, 0.0, 10.0)
         .profile()
@@ -88,8 +88,8 @@ fn main() -> oxiroot::Result<()> {
     println!("wrote profile -> {}", path.display());
 
     let f = FileReader::open(&path)?;
-    let back = TProfile::read_root(&f, "resp")?;
-    // TProfile derives PartialEq, so a full round-trip is a single comparison.
+    let back = Profile1D::read_root(&f, "resp")?;
+    // Profile1D derives PartialEq, so a full round-trip is a single comparison.
     println!(
         "read back `{}`: identical to what we wrote? {}",
         back.name,
@@ -104,7 +104,7 @@ fn main() -> oxiroot::Result<()> {
     // --- A 2-D profile: mean z over an (x, y) grid. ----------------------------
     // Same idea, one dimension up. Each (x, y) cell holds the mean of a third
     // quantity z; here z is a smooth surface plus scatter. `.reg(...).reg(...)`
-    // gives two axes, then `.profile()` makes it a TProfile2D.
+    // gives two axes, then `.profile()` makes it a Profile2D.
     let mut prof2d = Hist::reg(4, 0.0, 4.0)
         .reg(3, 0.0, 3.0)
         .profile()

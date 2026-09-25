@@ -336,7 +336,7 @@ impl Axes {
         }
     }
 
-    /// Plot a 1-D histogram (a `TH1`, or any [`Hist1dData`]) as an mplhep step
+    /// Plot a 1-D histogram (a `Hist1D`, or any [`Hist1dData`]) as an mplhep step
     /// staircase (the matplotlib `hist` analog).
     pub fn hist(&mut self, h: &impl Hist1dData) -> &mut Self {
         self.hist_with(h, HistOpts::default())
@@ -392,15 +392,15 @@ impl Axes {
         self
     }
 
-    /// Plot points with their error bars: a `TGraph` (any error variant), or any
+    /// Plot points with their error bars: a `Graph` (any error variant), or any
     /// [`PointData`].
     ///
     /// # Examples
     /// ```no_run
     /// # #[cfg(feature = "hist")] {
     /// use oxiroot_plot::Axes;
-    /// use oxiroot_hist::TGraph;
-    /// let g = TGraph::with_errors(vec![1.0, 2.0], vec![3.0, 4.0], vec![0.1, 0.1], vec![0.2, 0.3])
+    /// use oxiroot_hist::Graph;
+    /// let g = Graph::with_errors(vec![1.0, 2.0], vec![3.0, 4.0], vec![0.1, 0.1], vec![0.2, 0.3])
     ///     .unwrap();
     /// let mut ax = Axes::new();
     /// ax.errorbar(&g);
@@ -436,7 +436,7 @@ impl Axes {
         self
     }
 
-    /// Plot a profile (a `TProfile`, or any [`Hist1dData`]) as data points with y
+    /// Plot a profile (a `Profile1D`, or any [`Hist1dData`]) as data points with y
     /// error bars at bin centers.
     ///
     /// # Examples
@@ -476,7 +476,7 @@ impl Axes {
         self
     }
 
-    /// Plot a 2-D histogram (a `TH2`, or any [`Hist2dData`]) as a color mesh
+    /// Plot a 2-D histogram (a `Hist2D`, or any [`Hist2dData`]) as a color mesh
     /// with a colorbar (matplotlib `pcolormesh`).
     pub fn hist2d(&mut self, h: &impl Hist2dData) -> &mut Self {
         self.hist2d_with(h, Hist2dOpts::default())

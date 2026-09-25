@@ -1,5 +1,5 @@
 //! ROOT I/O for the function types: the `WriteRoot`/`ReadRoot` impls, the
-//! `TF2`/`TF3` object bodies around the shared `TF1` record, and the
+//! `Func2D`/`Func3D` object bodies around the shared `Func1D` record, and the
 //! `TStreamerInfo`s a file storing them embeds.
 
 use oxiroot_hist::{hist_streamer_classes, GraphFunction};
@@ -8,11 +8,11 @@ use oxiroot_io_core::{
     object_bytes_any, Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot,
 };
 
-use crate::tf::{FuncCore, TF1, TF2, TF3};
+use crate::func::{Func1D, Func2D, Func3D, FuncCore};
 
 // --- write ------------------------------------------------------------------
 
-impl WriteRoot for TF1 {
+impl WriteRoot for Func1D {
     fn root_class(&self) -> String {
         "TF1".to_string()
     }
@@ -34,7 +34,7 @@ impl WriteRoot for TF1 {
     }
 }
 
-impl WriteRoot for TF2 {
+impl WriteRoot for Func2D {
     fn root_class(&self) -> String {
         "TF2".to_string()
     }
@@ -55,7 +55,7 @@ impl WriteRoot for TF2 {
     }
 }
 
-impl WriteRoot for TF3 {
+impl WriteRoot for Func3D {
     fn root_class(&self) -> String {
         "TF3".to_string()
     }
@@ -76,12 +76,12 @@ impl WriteRoot for TF3 {
     }
 }
 
-/// Write a `TF2` object body (version 4): the `TF1` base (`fNdim` = `ndim`,
+/// Write a `Func2D` object body (version 4): the `Func1D` base (`fNdim` = `ndim`,
 /// `fNpx` = 30), then `fYmin`/`fYmax`, `fNpy`, and an empty `fContour`
 /// (`TArrayD`).
 fn write_tf2_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32, ymin: f64, ymax: f64) {
-    let obj = w.begin_object(4); // TF2 version 4
-    f.write_tf1_body(w, ndim, 30); // TF1 base
+    let obj = w.begin_object(4); // Func2D version 4
+    f.write_tf1_body(w, ndim, 30); // Func1D base
     w.be_f64(ymin); // fYmin
     w.be_f64(ymax); // fYmax
     w.be_i32(30); // fNpy (ROOT keeps npx == npy by default)
@@ -89,11 +89,11 @@ fn write_tf2_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32, ymin: f64, ymax
     w.end_object(obj);
 }
 
-/// Write a `TF3` object body (version 3): the `TF2` base (`fNdim` = 3), then
+/// Write a `Func3D` object body (version 3): the `Func2D` base (`fNdim` = 3), then
 /// `fZmin`/`fZmax` and `fNpz`.
 fn write_tf3_body(w: &mut WBuffer, f: &GraphFunction, ymin: f64, ymax: f64, zmin: f64, zmax: f64) {
-    let obj = w.begin_object(3); // TF3 version 3
-    write_tf2_body(w, f, 3, ymin, ymax); // TF2 base
+    let obj = w.begin_object(3); // Func3D version 3
+    write_tf2_body(w, f, 3, ymin, ymax); // Func2D base
     w.be_f64(zmin); // fZmin
     w.be_f64(zmax); // fZmax
     w.be_i32(30); // fNpz
@@ -101,10 +101,10 @@ fn write_tf3_body(w: &mut WBuffer, f: &GraphFunction, ymin: f64, ymax: f64, zmin
 }
 
 // ROOT C++ has these classes compiled in; uproot builds a function model from
-// its streamer, so a file storing a TF1/TF2/TF3 embeds them (versions and
+// its streamer, so a file storing a Func1D/Func2D/Func3D embeds them (versions and
 // checksums as ROOT writes them).
 
-/// The `TStreamerInfo`s a `TF1` (`dim` 1), `TF2` or `TF3` needs: its formula,
+/// The `TStreamerInfo`s a `Func1D` (`dim` 1), `Func2D` or `Func3D` needs: its formula,
 /// then its base classes deepest first, then itself.
 /// The classes a `dim`-dimensional function needs: ROOT's captured `TF1`, with
 /// its `TFormula`, `TF1Parameters` and bases, then the generated `TF2`/`TF3`.
@@ -201,9 +201,9 @@ fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
 
 // --- read -------------------------------------------------------------------
 
-/// Read a `TF2` object body (version 4): the `TF1` base then `fYmin`/`fYmax`.
+/// Read a `Func2D` object body (version 4): the `Func1D` base then `fYmin`/`fYmax`.
 fn read_tf2_body(r: &mut RBuffer) -> Result<(GraphFunction, f64, f64)> {
-    let tf2 = r.read_version()?; // TF2 v4
+    let tf2 = r.read_version()?; // Func2D v4
     let base = GraphFunction::read_tf1_body(r)?;
     let ymin = r.be_f64()?;
     let ymax = r.be_f64()?;
@@ -218,7 +218,7 @@ fn read_tf2_body(r: &mut RBuffer) -> Result<(GraphFunction, f64, f64)> {
     Ok((base, ymin, ymax))
 }
 
-fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> {
+fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<Func1D> {
     if class != "TF1" {
         return Err(Error::WrongClass {
             name: name.to_string(),
@@ -227,10 +227,10 @@ fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<TF1> {
         });
     }
     let mut r = RBuffer::new(object);
-    TF1::from_graph_function(GraphFunction::read_tf1_body(&mut r)?)
+    Func1D::from_graph_function(GraphFunction::read_tf1_body(&mut r)?)
 }
 
-fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> {
+fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<Func2D> {
     if class != "TF2" {
         return Err(Error::WrongClass {
             name: name.to_string(),
@@ -241,7 +241,7 @@ fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> {
     let mut r = RBuffer::new(object);
     let (d, ymin, ymax) = read_tf2_body(&mut r)?;
     let (xmin, xmax) = (d.xmin, d.xmax);
-    Ok(TF2 {
+    Ok(Func2D {
         core: FuncCore::from_record(d)?,
         xmin,
         xmax,
@@ -250,7 +250,7 @@ fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<TF2> {
     })
 }
 
-fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> {
+fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<Func3D> {
     if class != "TF3" {
         return Err(Error::WrongClass {
             name: name.to_string(),
@@ -259,13 +259,13 @@ fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> {
         });
     }
     let mut r = RBuffer::new(object);
-    let _tf3 = r.read_version()?; // TF3 v3
+    let _tf3 = r.read_version()?; // Func3D v3
     let (d, ymin, ymax) = read_tf2_body(&mut r)?;
     let zmin = r.be_f64()?;
     let zmax = r.be_f64()?;
     let _npz = r.be_i32()?;
     let (xmin, xmax) = (d.xmin, d.xmax);
-    Ok(TF3 {
+    Ok(Func3D {
         core: FuncCore::from_record(d)?,
         xmin,
         xmax,
@@ -276,7 +276,7 @@ fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<TF3> {
     })
 }
 
-impl ReadRoot for TF1 {
+impl ReadRoot for Func1D {
     fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tf1(name, &class, &object)
@@ -287,7 +287,7 @@ impl ReadRoot for TF1 {
     }
 }
 
-impl ReadRoot for TF2 {
+impl ReadRoot for Func2D {
     fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tf2(name, &class, &object)
@@ -298,7 +298,7 @@ impl ReadRoot for TF2 {
     }
 }
 
-impl ReadRoot for TF3 {
+impl ReadRoot for Func3D {
     fn read_root(file: &FileReader, name: &str) -> Result<Self> {
         let (class, object) = object_bytes_any(file, name)?;
         decode_tf3(name, &class, &object)

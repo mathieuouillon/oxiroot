@@ -33,11 +33,11 @@ fn main() -> oxiroot::Result<()> {
         }
         FileWriter::create(path(file))
             .add(&h)
-            .add(&TObjString::new("skim v2").named("provenance"))
+            .add(&ObjString::new("skim v2").named("provenance"))
             .write(Compression::Zstd(5))?;
     }
 
-    // Sum the histograms; the TObjString is copied from the first file.
+    // Sum the histograms; the ObjString is copied from the first file.
     let report = merge_files(
         path("hists.root"),
         &[path("run1.root"), path("run2.root")],

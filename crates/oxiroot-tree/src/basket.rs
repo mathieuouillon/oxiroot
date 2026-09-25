@@ -1,6 +1,6 @@
 //! Reading a `TBasket` — the unit of branch data on disk.
 //!
-//! A basket is a `TKey` whose `fKeyLen` *includes* a 19-byte TBasket extension
+//! A basket is a `Key` whose `fKeyLen` *includes* a 19-byte TBasket extension
 //! after the title strings: `fVersion(u16) fBufferSize(i32) fNevBufSize(i32)
 //! fNevBuf(i32) fLast(i32) flag(u8)`. The data starts at `fSeekKey + fKeyLen`
 //! and is compressed iff its on-disk size differs from the key's `fObjLen`. The
@@ -10,7 +10,7 @@
 
 use oxiroot_io_core::{decompress_payload, Error, FileReader, RBuffer, Result};
 
-/// Key version at or above which a `TKey` uses 64-bit seek pointers.
+/// Key version at or above which a `Key` uses 64-bit seek pointers.
 const KEY_BIG_VERSION: u16 = 1000;
 
 /// Bytes fetched at a basket's start to parse its key header before the record
@@ -54,7 +54,7 @@ impl Basket {
         let head = file.read_at(seek, want as usize)?;
         let mut r = RBuffer::new(&head);
 
-        // Standard TKey header.
+        // Standard Key header.
         let nbytes = r.be_i32()?;
         let key_version = r.be_u16()?;
         let obj_len = r.be_u32()?;
